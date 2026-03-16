@@ -1,0 +1,280 @@
+---
+name: planning
+description: >
+  Implementation planning for features, design documents, and multi-step tasks. Use this skill
+  whenever you need to create an implementation plan before writing code — whether from a design
+  document, a feature request, a bug fix, or any non-trivial task. Trigger when the user says
+  "plan", "create a plan", "implementation plan", "break this down", "how should we implement",
+  or when transitioning from brainstorming/design to implementation. Also trigger when the user
+  provides a design document and wants to move to execution, or when a task clearly needs
+  decomposition before coding begins. This skill bridges the gap between understanding a problem
+  (brainstorm skill) and executing it (tdd skill). If no brainstorm/design doc exists and the
+  feature is non-trivial, suggest brainstorming first — but don't block on it for smaller features.
+  Also trigger when the user wants to update an existing plan using @fix tags.
+---
+
+# Implementation Planning
+
+Produces actionable implementation plans as a folder of documents — one overview and
+one file per phase. Each phase is a logical feature or capability. The folder structure
+lets you work on early phases while refining later ones in parallel sessions.
+
+**Announce at start:** "Using the planning skill to create an implementation plan."
+
+**Plan output:**
+```
+docs/plans/<feature-name>/
+├── plan.md          # Overview — what each phase achieves
+├── phase-1.md       # First logical feature
+├── phase-2.md       # Second logical feature
+└── ...
+```
+
+**For small, obvious changes** (single file, clear fix): skip planning, go straight to TDD.
+
+---
+
+## The Planning Process
+
+### Step 1: Understand the Input
+
+The input is either a **design document** or a **feature description**.
+
+**If `qa.md` exists in the spec directory:**
+- Read it first — it contains settled implementation decisions from interactive Q&A with the user
+- Treat all resolved questions as final decisions, do not re-ask them
+- Use codebase findings (files to touch, patterns to follow, conflicts) as your starting point
+- Skip redundant exploration for areas already covered
+
+**If a design document exists:**
+- Read it thoroughly — requirements, chosen approach, decisions, edge cases
+- Note open questions or assumptions that affect implementation
+
+**Goal:** What are we building, what are the acceptance criteria, what's already decided?
+
+### Step 2: Explore the Codebase
+
+**When `qa.md` exists** (came from orchestrate pipeline):
+
+Q&A already explored files to touch, existing patterns, test infrastructure, and conflicts. Don't redo that work. Only explore:
+
+1. **Phase dependencies** — what depends on what, what can run in parallel
+2. **Library docs** — for external libraries the feature touches, use context7 or web search to check current API signatures and usage patterns
+3. **Gaps** — anything `qa.md` flagged as incomplete, uncertain, or worth deeper investigation
+
+**When `qa.md` does NOT exist** (standalone `/plan` usage):
+
+Build understanding of existing code before planning changes. Use `Glob`, `Grep`, and `Read` to explore:
+
+1. **Find similar patterns** — existing endpoints, background tasks, models as templates
+2. **Identify touch points** — which files change, which are new, trace the data flow
+3. **Understand test patterns** — how similar features are tested, what fixtures exist
+4. **Check existing infrastructure** — shared utilities, base classes, configurations
+5. **Identify dependencies** — what depends on what, what can run in parallel
+6. **Look up library docs** — for any external libraries the feature touches, use context7 or web search to check current API signatures and usage patterns
+
+Record findings — they go into plan.md's Codebase Context section.
+
+### Step 3: Design the Phases
+
+Each phase is a **logical feature or capability** — a coherent piece of functionality
+that makes sense on its own. A phase typically follows one TDD cycle (RED-GREEN-REFACTOR)
+resulting in one commit. Occasionally a complex phase may need multiple TDD cycles, each
+with its own commit — but this should be rare. If a phase needs many cycles, it's
+probably two features and should be split.
+
+**Phase design:**
+- Delivers a recognizable capability: "user registration," "rate limiting," "report generation"
+- Has clear done criteria
+- Leaves codebase in a working state with all tests passing
+- Express dependencies as a DOT digraph in plan.md — nodes with no edges between them are independent
+
+**Step design (optional):**
+- Only add steps when a phase has genuinely independent work that benefits from parallelism
+- Each step must leave the codebase in a compilable/testable state
+- Steps should be coarse enough to be worth parallelizing — not single-function granularity
+- If all work in a phase is sequential, skip the Steps section
+
+### Step 4: Write the Plan Documents
+
+Create the folder and write all documents. Present plan.md to the user for approval
+before finalizing phase files.
+
+---
+
+## plan.md Format
+
+The overview is concise — what each phase delivers and how they relate. No
+implementation details. See `references/plan-template.md` for annotated example.
+
+```markdown
+# Plan: [Feature Name]
+
+> **Source:** [Design doc link or "Feature request"]
+> **Created:** YYYY-MM-DD
+> **Status:** planning | in-progress | complete
+
+## Goal
+
+[One sentence: what this plan delivers when complete]
+
+## Acceptance Criteria
+
+- [ ] Criterion 1
+- [ ] Criterion 2
+
+## Codebase Context
+
+### Existing Patterns to Follow
+- **[Pattern]**: `path/to/example.py` — [brief description]
+
+### Test Infrastructure
+- Test runner, fixtures, factories, run command
+
+## Phase Graph
+
+```dot
+digraph phases {
+  rankdir=LR
+  node [shape=box]
+
+  phase_1 [label="Phase 1: What phase 1 delivers"]
+  phase_2 [label="Phase 2: What phase 2 delivers"]
+  phase_3 [label="Phase 3: What phase 3 delivers"]
+
+  phase_1 -> phase_2 -> phase_3
+}
+```
+
+Nodes with no incoming edges are ready to dispatch. Nodes with no edges between them are independent and can run in parallel.
+```
+
+---
+
+## phase-N.md Format
+
+Each phase file describes what to build, which files to touch, and includes code
+for anything non-obvious. The `tdd` skill handles the RED-GREEN-REFACTOR mechanics
+during execution.
+
+```markdown
+# Phase N: [What This Phase Delivers]
+
+> **Status:** pending | in-progress | complete
+
+## Step Graph (optional — only when phase has independent work)
+
+```dot
+digraph steps {
+  rankdir=LR
+  node [shape=box]
+
+  step_1 [label="Step 1: Description"]
+  step_2 [label="Step 2: Description"]
+  step_3 [label="Step 3: Description"]
+
+  step_1 -> step_3
+  step_2 -> step_3
+}
+```
+
+### Step 1: [Description]
+- Files: `path/to/file.ext`
+- Tests: [Key behaviors to test]
+- Done: [Completion criteria]
+
+### Step 2: [Description]
+- Files: `path/to/file.ext`
+- Tests: [Key behaviors to test]
+- Done: [Completion criteria]
+
+## Overview
+
+[What capability exists after this phase that didn't before. Short paragraph.]
+
+## Implementation
+
+**Files:**
+- Create: `exact/path/to/file.py`
+- Modify: `exact/path/to/existing.py` — [what changes]
+- Test: `tests/exact/path/to/test_file.py`
+
+**Pattern to follow:** `path/to/similar_feature.py`
+
+**What to test:**
+- [Key behavior 1 the test should assert]
+- [Key behavior 2]
+- [Edge case worth calling out]
+
+**Traces to:** REQ-001, EDGE-003 (from spec)
+
+**What to build:**
+[Describe the implementation. Reference the pattern file for straightforward parts.
+Include code for complex/non-obvious parts — algorithms, tricky integrations,
+business rules that could easily be gotten wrong.]
+
+**Commit:** `feat(scope): description`
+
+## Done When
+
+- [ ] Tests pass for [key behaviors]
+- [ ] Existing tests still pass
+- [ ] [Any phase-specific verification]
+
+## Smoke Test (optional)
+
+- `curl localhost:3000/api/health` → 200
+- `npm run e2e -- --grep "user registration"`
+```
+
+### When to include code in a phase
+
+Include code when the logic is non-obvious, the algorithm matters, the business rule
+is complex, or the pattern diverges from codebase conventions. Skip code when a
+reference to "follow the pattern in `path/to/example.py`" is sufficient — the TDD
+cycle will produce the right code naturally.
+
+---
+
+## @fix Tags
+
+Annotate phase files with `@fix` tags to mark what needs changing. The agent reads
+the tags, applies changes, and removes them.
+
+**Format:** `<!-- @fix: description of what needs to change -->`
+
+Place directly above the content that needs updating.
+
+**Examples:**
+```markdown
+<!-- @fix: use argon2 instead of bcrypt — it's already a project dependency -->
+Hash the password with bcrypt before storing.
+
+<!-- @fix: this phase is too large — split webhook delivery into its own phase -->
+## Overview
+This phase implements notifications: email, SMS, and webhook delivery.
+```
+
+When processing: collect all `@fix` tags, summarize changes to user, apply them,
+remove tags. If fixes change phase structure, update plan.md too.
+
+---
+
+## Integration with Other Skills
+
+**From brainstorm:** Read the design doc, skip Step 1 (already covered), focus on
+codebase exploration and phase design.
+
+**From Q&A:** Read `qa.md` for settled implementation decisions, codebase context,
+and files to modify. Skip re-asking questions that are already resolved.
+
+**To execution:** After plan approval, work through phases in dependency order.
+Load each phase-N.md, use the `tdd` skill for RED-GREEN-REFACTOR, commit after
+each cycle. Update phase status as they complete. User can say "implement through
+phase 3" to set a stopping point.
+
+**Parallel sessions:** Session A implements phases 1-2 while Session B refines
+phase-3.md and phase-4.md with `@fix` tags or direct edits.
+
+**Tasks:** Create one task per phase with dependency relationships matching plan.md.
+Update status as phases complete.

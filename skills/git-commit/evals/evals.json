@@ -1,0 +1,48 @@
+{
+  "skill_name": "git-commit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Commit my changes",
+      "expected_output": "Multiple logical commits grouping related changes, with conventional commit messages. Tests and implementation should be grouped together. Should present a plan before executing.",
+      "files": [],
+      "expectations": [
+        "Runs git status and git diff before proposing any commits",
+        "Checks git log for existing commit message conventions",
+        "Groups test file changes with their corresponding implementation file changes in the same commit",
+        "Presents a commit plan to the user before executing any git commit commands",
+        "Uses conventional commit prefixes (feat, fix, refactor, test, chore, etc.)",
+        "Does not use git add . or git add -A",
+        "Uses HEREDOC format for commit messages",
+        "Does not run git reset HEAD"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Split these into logical commits",
+      "expected_output": "Analyzes the working tree, identifies distinct concerns, and proposes separate commits for each. Should handle the case where changes in the same file may belong to different commits.",
+      "files": [],
+      "expectations": [
+        "Reads the actual diff content to understand what changed, not just which files changed",
+        "Identifies distinct logical concerns across the changeset",
+        "Proposes more than one commit when changes span multiple concerns",
+        "Each proposed commit has a clear conventional commit message",
+        "Waits for user confirmation before executing commits",
+        "Does not auto-stage untracked files without mentioning them"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Commit this",
+      "expected_output": "Handles a simple commit request by still doing reconnaissance, understanding intent, and writing a good commit message. Even for simple cases, should not blindly add everything.",
+      "files": [],
+      "expectations": [
+        "Runs reconnaissance commands (git status, git diff) before committing",
+        "Does not blindly run git add . even for a simple 'commit this' request",
+        "Proposes a commit message using conventional commit format",
+        "Presents the plan before executing",
+        "Handles untracked files appropriately — either includes them with justification or mentions them in a single grouped question, not individually"
+      ]
+    }
+  ]
+}
