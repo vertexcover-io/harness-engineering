@@ -78,12 +78,32 @@ Detect debt in these categories:
 | Debt Type | What It Looks Like | Severity |
 |-----------|--------------------|----------|
 | **God module** | Python file that is excessively long — too many responsibilities in one module | High |
-| **High cyclomatic complexity** | Function with complexity >= 16 (use `radon` if available) | High |
+| **High cyclomatic complexity** | Function with complexity >= 16 | High |
 | **Moderate cyclomatic complexity** | Function with complexity 11–15 | Medium |
 | **Deep nesting** | Code indented beyond `nesting_depth` levels | Medium |
 | **Business logic leakage** | ORM/DB calls, HTTP client calls, or validation logic in controller/handler/view files instead of the appropriate layer | High |
 | **Import direction violation** | Lower layer importing from higher layer (e.g. models importing from providers, utils importing from domain code) | High |
 | **Code duplication** | Substantial blocks of near-identical code across files — same logic with only minor variations (variable names, literals). Look for duplicated functions, repeated conditional chains, and copy-pasted blocks | Medium |
+
+**Cyclomatic complexity detection via `radon`:**
+
+```bash
+# Step 1: Check if radon is available, install if missing
+radon --version || pip install radon
+
+# Step 2: Run cyclomatic complexity analysis (threshold B = CC >= 11)
+radon cc -s -n B <scope_path>
+
+# Step 3: For JSON output (easier to parse)
+radon cc -s -n B -j <scope_path>
+```
+
+- `-s` shows the complexity score
+- `-n B` filters to grade B and worse (CC >= 11), covering both Moderate (11–15) and High (>=16)
+- `-j` outputs JSON for structured parsing
+- Classify CC >= 16 as High severity, CC 11–15 as Medium severity
+
+If `radon` is not found and `pip install radon` fails, skip complexity checks and note in report: "Complexity checks skipped — radon install failed".
 
 Return findings with category `architecture`, `complexity`, or `duplication`.
 
@@ -224,7 +244,7 @@ EOF
 
 | Scenario | Action |
 |----------|--------|
-| `radon` not installed | Skip complexity checks. Note in report: "Complexity checks skipped — install `radon`" |
+| `radon` not installed | Install with `pip install radon` and retry. If install fails, skip complexity checks. Note in report: "Complexity checks skipped — radon install failed" |
 | `pip-audit` not installed | Skip CVE checks. Note in report: "CVE checks skipped — install `pip-audit`" |
 | Scope path doesn't exist | Report error and **stop** |
 | No Python files in scope | Report "no files to scan" and **stop** |
