@@ -184,62 +184,11 @@ gh label create "tech-debt" --color "D93F0B" --description "Technical debt findi
 
 **5b. Build the issue body.**
 
-Format every finding as a checkbox so the team can track resolution:
-
-```markdown
-# Tech Debt Audit — {scope}
-
-**Scanned:** {file_count} files | **Date:** {YYYY-MM-DD}
-**Findings:** {critical} critical, {high} high, {medium} medium, {low} low
-
----
-
-## Critical
-- [ ] `file.py:42` — Known CVE in dependency X *(dependency)*
-- [ ] `file.py:88` — Bare `except:` with `pass` *(error-handling)*
-
-## High
-- [ ] `provider.py` — God module, too many responsibilities *(architecture)*
-- [ ] `handler.py:55` — Exception swallowed, no re-raise *(error-handling)*
-- [ ] `utils.py:30` — `time.sleep` inside `async def` *(async)*
-
-## Medium
-- [ ] `api.py:120` — Cyclomatic complexity 14 *(complexity)*
-- [ ] `models.py:45` — `-> Any` return type *(code-smell)*
-- [ ] `config.py:33` — Magic number `8473` *(code-smell)*
-- [ ] `handlers.py` + `views.py` — Near-identical request validation logic *(duplication)*
-
-## Low
-- [ ] `utils.py:10` — Commented-out function definition *(code-smell)*
-
----
-
-## Summary
-
-| Category | Critical | High | Medium | Low | Total |
-|----------|----------|------|--------|-----|-------|
-| ... | ... | ... | ... | ... | ... |
-
-## Hotspots (files with 3+ findings)
-
-| File | Findings | Highest Severity |
-|------|----------|------------------|
-| ... | ... | ... |
-
-## Recommended Actions
-
-1. **Critical** — fix immediately, security/correctness risks
-2. **High** — schedule for current sprint, use `/refactor` for code-level fixes
-3. **Medium** — plan for next sprint, use `/planning` for architectural items
-4. **Low** — address opportunistically during related work
-```
+Read `references/issue-format.md` and follow the format specification exactly to build the issue body from the collected findings.
 
 **5c. Handle body size limit.**
 
-GitHub issues have a 65536 character body limit. If the body exceeds 60000 characters:
-1. Truncate **Low** findings first, replacing with `- [ ] ... and {N} more low-severity findings`
-2. If still too large, truncate **Medium** findings similarly
-3. Never truncate Critical or High findings
+Follow the truncation rules in `references/issue-format.md`. Summary: if body exceeds 60000 characters, truncate Low findings first, then Medium. Never truncate Critical or High.
 
 **5d. Create the issue:**
 
