@@ -6,15 +6,23 @@ description: >
   CLAUDE.md for TDD signals (mentions of TDD, test-driven, RED-GREEN-REFACTOR, "tests first",
   or similar). If TDD is indicated, this skill MUST be loaded before writing any production code.
   Even if the user doesn't explicitly ask for TDD, trigger this skill for any implementation task
-  in a TDD-configured project. This is the workflow/process skill; for how to write good tests,
-  load the `testing` skill.
+  in a TDD-configured project.
 ---
+
+## Project-Specific Guidelines
+
+1. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
+   its guidelines over the defaults below.
+2. Otherwise, check if `.claude/harness/tdd-reference.md` exists in the
+   project root. If it does, read it and apply its guidelines.
+3. If neither exists, use the defaults below.
+
+User-provided guidelines take precedence on conflicts with defaults.
+
 
 # Test-Driven Development
 
 TDD is the fundamental practice. Every line of production code must be written in response to a failing test.
-
-**For how to write good tests** (behavior-driven testing, factory functions, mocking discipline, test organization), load the `testing` skill. This skill focuses on the TDD *workflow and process*.
 
 ---
 

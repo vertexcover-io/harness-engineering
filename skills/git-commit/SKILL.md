@@ -3,6 +3,16 @@ name: git-commit
 description: "Analyzes dirty working trees, groups related changes into logical commits using hunk-level staging, and writes conventional commit messages with proper prefixes (feat, fix, refactor, etc.). Triggers when committing code, staging changes, splitting changes into commits, or organizing git changes. Use whenever the user says 'commit', 'commit this', 'commit my changes', 'create commits', 'split into commits', 'stage and commit', or asks for help with their git changes. Does not handle branch management, rebasing, merging, or pushing."
 ---
 
+## Project-Specific Guidelines
+
+1. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
+   its guidelines over the defaults below.
+2. Otherwise, check if `.claude/harness/git-commit-reference.md` exists in the
+   project root. If it does, read it and apply its guidelines.
+3. If neither exists, use the defaults below.
+
+User-provided guidelines take precedence on conflicts with defaults.
+
 # Git Commit
 
 Analyze a dirty working tree, understand the intent behind changes, group related modifications into logical commits, and write well-formed commit messages.

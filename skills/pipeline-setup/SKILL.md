@@ -7,6 +7,7 @@ description: >
   variables needed by downstream pipeline stages.
 argument-hint: "<TASK_CONTEXT string>"
 allowed-tools: Bash, Read, Write, Glob, Grep, Skill
+user-invocable: false
 ---
 
 # Pipeline Setup

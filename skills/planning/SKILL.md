@@ -38,15 +38,8 @@ docs/plans/<feature-name>/
 
 ### Step 1: Understand the Input
 
-The input is either a **design document** or a **feature description**.
+The input is either a **design document**, a **spec**, or a **feature description**.
 
-**If `qa.md` exists in the spec directory:**
-- Read it first — it contains settled implementation decisions from interactive Q&A with the user
-- Treat all resolved questions as final decisions, do not re-ask them
-- Use codebase findings (files to touch, patterns to follow, conflicts) as your starting point
-- Skip redundant exploration for areas already covered
-
-**If a design document exists:**
 - Read it thoroughly — requirements, chosen approach, decisions, edge cases
 - Note open questions or assumptions that affect implementation
 
@@ -54,28 +47,59 @@ The input is either a **design document** or a **feature description**.
 
 ### Step 2: Explore the Codebase
 
-**When `qa.md` exists** (came from orchestrate pipeline):
+Build understanding of existing code before planning changes. Use `Agent` sub-agents (subagent_type=Explore) in parallel to investigate multiple areas simultaneously. Also use `Glob`, `Grep`, and `Read` directly for targeted lookups.
 
-Q&A already explored files to touch, existing patterns, test infrastructure, and conflicts. Don't redo that work. Only explore:
+**What to explore:**
 
-1. **Phase dependencies** — what depends on what, what can run in parallel
-2. **Library docs** — for external libraries the feature touches, use context7 or web search to check current API signatures and usage patterns
-3. **Gaps** — anything `qa.md` flagged as incomplete, uncertain, or worth deeper investigation
+1. **Files that will be touched/extended** — find them, read them, understand their structure
+2. **Data flow** — trace how data moves through the parts of the codebase this feature touches
+3. **Existing patterns** — utilities, base classes, conventions that the implementation should follow
+4. **Potential conflicts** — modules that share state, coupling risks, migration concerns
+5. **Test infrastructure** — how similar features are tested, what fixtures and helpers exist
+6. **Dependencies** — what depends on what, what can run in parallel
+7. **Library docs** — for external libraries the feature touches, use context7 or web search to check current API signatures and usage patterns
 
-**When `qa.md` does NOT exist** (standalone `/plan` usage):
-
-Build understanding of existing code before planning changes. Use `Glob`, `Grep`, and `Read` to explore:
-
-1. **Find similar patterns** — existing endpoints, background tasks, models as templates
-2. **Identify touch points** — which files change, which are new, trace the data flow
-3. **Understand test patterns** — how similar features are tested, what fixtures exist
-4. **Check existing infrastructure** — shared utilities, base classes, configurations
-5. **Identify dependencies** — what depends on what, what can run in parallel
-6. **Look up library docs** — for any external libraries the feature touches, use context7 or web search to check current API signatures and usage patterns
+**Depth scaling** (match effort to change size):
+- **Minor changes:** Quick scan of 2-3 files, skip parallel agents
+- **Medium changes:** Thorough scan, use 2-3 parallel explore agents
+- **Major changes:** Deep exploration with 4+ parallel agents covering different areas
 
 Record findings — they go into plan.md's Codebase Context section.
 
-### Step 3: Design the Phases
+### Step 3: Interactive Q&A
+
+From the codebase exploration, identify implementation questions and resolve them with the user before designing phases. This ensures the planner starts with zero ambiguity.
+
+**Question categories:**
+
+**A. Implementation Approach**
+- "The spec says X, but the codebase does Y — should we follow the existing pattern or change it?"
+- "There are two ways to extend this — via Z or via W. Which do you prefer?"
+
+**B. Integration Points**
+- "This touches module M which also affects feature F — is that intentional?"
+- "Should this reuse the existing utility at `path/to/util` or create a new one?"
+
+**C. Edge Cases & Error Handling**
+- "The spec doesn't cover what happens when X fails — should we retry, fail silently, or propagate?"
+
+**D. Scope Boundaries**
+- "Implementing REQ-003 would require changing the shared Z interface — is that in scope?"
+
+**E. Technical Decisions**
+- "What's the preferred approach for state management here — option A or option B?"
+- "Should tests use real DB or mocks for this feature?"
+
+**Rules:**
+- Ask questions **one at a time** (or small batches of 2-3 closely related ones)
+- Use **multiple-choice** when possible to reduce cognitive load
+- After each answer, check if it raises follow-up questions
+- If the user says "you decide" or "your call," make the decision, state it clearly, and record the rationale
+- If the codebase exploration reveals no questions (rare — typically only for trivial changes), skip this step
+
+**Hard gate:** All questions must be resolved before proceeding to phase design.
+
+### Step 5: Design the Phases
 
 Each phase is a **logical feature or capability** — a coherent piece of functionality
 that makes sense on its own. A phase typically follows one TDD cycle (RED-GREEN-REFACTOR)
@@ -95,7 +119,7 @@ probably two features and should be split.
 - Steps should be coarse enough to be worth parallelizing — not single-function granularity
 - If all work in a phase is sequential, skip the Steps section
 
-### Step 4: Write the Plan Documents
+### Step 6: Write the Plan Documents
 
 Create the folder and write all documents. Present plan.md to the user for approval
 before finalizing phase files.
@@ -262,11 +286,8 @@ remove tags. If fixes change phase structure, update plan.md too.
 
 ## Integration with Other Skills
 
-**From brainstorm:** Read the design doc, skip Step 1 (already covered), focus on
-codebase exploration and phase design.
-
-**From Q&A:** Read `qa.md` for settled implementation decisions, codebase context,
-and files to modify. Skip re-asking questions that are already resolved.
+**From brainstorm:** Read the design doc/spec, focus on codebase exploration,
+interactive Q&A, and phase design.
 
 **To execution:** After plan approval, work through phases in dependency order.
 Load each phase-N.md, use the `tdd` skill for RED-GREEN-REFACTOR, commit after

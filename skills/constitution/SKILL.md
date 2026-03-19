@@ -1,6 +1,7 @@
 ---
 name: constitution
 description: "Inviolable rules injected into every sub-agent context as a preamble. Not directly invocable — loaded by the orchestrate skill and prepended to all sub-agent prompts to enforce scope discipline, verification rigor, and safe coding practices."
+user-invocable: false
 ---
 
 # Constitution: Sub-Agent Rules

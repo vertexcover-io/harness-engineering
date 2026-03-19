@@ -1,6 +1,7 @@
 ---
 name: quality-gate
 description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Captures baseline metrics to docs/spec/<SPEC_NAME>/baseline.json."
+user-invocable: false
 ---
 
 # Quality Gate: Tool-Based Verification

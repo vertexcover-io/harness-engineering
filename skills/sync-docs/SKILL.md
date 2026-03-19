@@ -6,6 +6,7 @@ description: >
   human readability and AI consumption. Use after code changes are complete and quality
   gate has passed — before committing.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+user-invocable: false
 ---
 
 # Sync Docs

@@ -8,6 +8,17 @@ description: >
   also read references/react-testing.md after this file.
 ---
 
+## Project-Specific Guidelines
+
+1. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
+   its guidelines over the defaults below.
+2. Otherwise, check if `.claude/harness/testing-reference.md` exists in the
+   project root. If it does, read it and apply its guidelines.
+3. If neither exists, use the defaults below.
+
+User-provided guidelines take precedence on conflicts with defaults.
+
+
 # Testing: Behavior Over Implementation
 
 This skill is language-agnostic. For framework-specific patterns, read the relevant reference file:

@@ -3,6 +3,16 @@ name: code-quality
 description: High-quality code patterns with strict types, functional programming, and immutability. Use when writing ANY code in any language. Trigger whenever the user writes, reviews, or refactors code — even if they don't explicitly ask for "quality" or "strict" patterns. This skill applies to TypeScript, Python, and any future languages. Always load this skill for implementation tasks.
 ---
 
+## Project-Specific Guidelines
+
+1. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
+   its guidelines over the defaults below.
+2. Otherwise, check if `.claude/harness/code-quality-reference.md` exists in the
+   project root. If it does, read it and apply its guidelines.
+3. If neither exists, use the defaults below.
+
+User-provided guidelines take precedence on conflicts with defaults.
+
 # Code Quality
 
 Write code that is correct, predictable, and simple. These principles are language-agnostic — they apply everywhere. Language-specific guidance lives in reference files loaded on demand.
