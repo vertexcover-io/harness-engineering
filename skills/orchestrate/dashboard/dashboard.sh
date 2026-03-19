@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="$SCRIPT_DIR/index.html"
 
-STAGE_NAMES=("Setup" "Brainstorm" "Q&A" "Planner" "Coder" "Quality Gate" "Sync Docs" "Learnings" "Commit & PR")
+STAGE_NAMES=("Setup" "Brainstorm" "Planner" "Coder" "Quality Gate" "Sync Docs" "Learnings" "Commit & PR")
 
 dashboard_init() {
   local spec_name="$1" task_summary="$2" branch_name="$3" worktree_path="$4"
@@ -20,7 +20,7 @@ dashboard_init() {
   # Clean up stale state from previous runs
   rm -f "$dashboard_dir/.dashboard-disabled" "$dashboard_dir/.server-log" "$dashboard_dir/.server-pid" "$dashboard_dir/.server-port"
 
-  # Seed status.json with all 9 stages
+  # Seed status.json with all 8 stages
   local stages="[]"
   for i in "${!STAGE_NAMES[@]}"; do
     stages=$(echo "$stages" | jq --argjson id "$i" --arg name "${STAGE_NAMES[$i]}" \
@@ -60,8 +60,9 @@ dashboard_init() {
     return 0
   fi
 
-  # Start server in background
-  python3 -m http.server 0 --directory "$dashboard_dir" &>/dev/null &
+  # Start server in background (nohup + disown to survive hook exit)
+  nohup python3 -m http.server 0 --directory "$dashboard_dir" &>/dev/null &
+  disown
   local server_pid=$!
   echo "$server_pid" > "$dashboard_dir/.server-pid"
 

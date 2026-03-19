@@ -41,7 +41,7 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 [ -z "$TOOL_NAME" ] && exit 0
 
 # ── Map tool events to pipeline stages ──
-# Returns stage ID (0-8) or empty if not a pipeline event
+# Returns stage ID (0-7) or empty if not a pipeline event
 map_stage() {
   local tool="$1"
 
@@ -52,7 +52,7 @@ map_stage() {
       pipeline-setup)      echo 0 ;;
       brainstorm)          echo 1 ;;
       spec-generation)     echo 1 ;;  # part of brainstorm stage
-      qa)                  echo 2 ;;
+      planning)            echo 2 ;;
       *)                   echo "" ;;
     esac
   elif [ "$tool" = "Agent" ]; then
@@ -61,18 +61,16 @@ map_stage() {
     [ -z "$prompt" ] && return
 
     # Match by skill name mentioned in the agent prompt
-    if echo "$prompt" | grep -q "planning skill\|invoke the planning"; then
+    if echo "$prompt" | grep -q "tdd skill\|invoke the tdd"; then
       echo 3
-    elif echo "$prompt" | grep -q "tdd skill\|invoke the tdd"; then
-      echo 4
     elif echo "$prompt" | grep -q "quality-gate skill\|invoke the quality-gate"; then
-      echo 5
+      echo 4
     elif echo "$prompt" | grep -q "sync-docs skill\|invoke the sync-docs"; then
-      echo 6
+      echo 5
     elif echo "$prompt" | grep -q "learn skill\|invoke the learn"; then
-      echo 7
+      echo 6
     elif echo "$prompt" | grep -q "git-commit skill\|invoke the git-commit"; then
-      echo 8
+      echo 7
     else
       echo ""
     fi
@@ -83,7 +81,7 @@ STAGE_ID=$(map_stage "$TOOL_NAME")
 [ -z "$STAGE_ID" ] && exit 0
 
 # ── Stage names for log messages ──
-STAGE_NAMES=("Setup" "Brainstorm" "Q&A" "Planner" "Coder" "Quality Gate" "Sync Docs" "Learnings" "Commit & PR")
+STAGE_NAMES=("Setup" "Brainstorm" "Planner" "Coder" "Quality Gate" "Sync Docs" "Learnings" "Commit & PR")
 STAGE_NAME="${STAGE_NAMES[$STAGE_ID]}"
 
 # ── Handle pre/post ──
@@ -94,7 +92,11 @@ case "$PHASE" in
       TASK=$(jq -r '.task' "$SESSION_FILE")
       BRANCH=$(jq -r '.branch' "$SESSION_FILE")
       WORKTREE=$(jq -r '.worktree' "$SESSION_FILE")
-      bash "$DASHBOARD" init "$SPEC_NAME" "$TASK" "$BRANCH" "$WORKTREE" 2>/dev/null || true
+      INIT_OUTPUT=$(bash "$DASHBOARD" init "$SPEC_NAME" "$TASK" "$BRANCH" "$WORKTREE" 2>/dev/null) || true
+      # Print dashboard URL to stderr so it appears in Claude Code conversation
+      if echo "$INIT_OUTPUT" | grep -q "Dashboard:"; then
+        echo "$INIT_OUTPUT" >&2
+      fi
     fi
     bash "$DASHBOARD" update "$SPEC_NAME" "$STAGE_ID" running --log "$STAGE_NAME started" 2>/dev/null || true
     ;;
@@ -108,13 +110,13 @@ case "$PHASE" in
     fi
 
     # Auto-finalize after last stage (Commit & PR)
-    if [ "$STAGE_ID" = "8" ] && [ "$is_error" != "true" ]; then
+    if [ "$STAGE_ID" = "7" ] && [ "$is_error" != "true" ]; then
       bash "$DASHBOARD" finalize "$SPEC_NAME" success --log "Pipeline complete" 2>/dev/null || true
       rm -f "$SESSION_FILE"
     fi
 
     # Finalize on failure if quality gate fails
-    if [ "$STAGE_ID" = "5" ] && [ "$is_error" = "true" ]; then
+    if [ "$STAGE_ID" = "4" ] && [ "$is_error" = "true" ]; then
       bash "$DASHBOARD" finalize "$SPEC_NAME" blocked --log "Pipeline blocked at Quality Gate" 2>/dev/null || true
       rm -f "$SESSION_FILE"
     fi
