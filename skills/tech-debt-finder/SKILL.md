@@ -46,7 +46,7 @@ Parse `$ARGUMENTS`:
 
 ### Step 2: Dispatch Parallel Scanners
 
-Launch **3 agents in parallel** using the Agent tool. Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, item, severity, detail, file, line}`.
+Launch **3 agents in parallel** using the Agent tool. Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`).
 
 Each agent is free to use whatever detection approach works best — grep, AST parsing, external tools (radon, ruff, pip-audit), file reading, or any combination. The goal is accurate detection, not a specific technique.
 
@@ -124,6 +124,17 @@ Merge all agent results into a single list. Classify by severity:
 
 **Sorting:** Within each severity group, sort by file path then line number.
 
+**Suppression filtering:**
+
+After deduplication and sorting, check if `.claude/harness/tech-debt-ignore.md` exists in the project root. If it does, read `references/suppression-rules.md` for the full pattern matching specification, then:
+
+1. Parse all suppression rules from the ignore file
+2. For each finding, check if any rule matches (using the finding's `file` and `rule` fields against the suppression patterns)
+3. Remove matching findings from the list
+4. Track the suppression count for the Notes section
+
+If any suppression rules reference unknown rule names or categories, skip them and note in the report: "Warning: {N} invalid suppression rules skipped."
+
 ### Step 4: Print Report to Terminal
 
 Output the report directly to the user:
@@ -185,6 +196,9 @@ gh label create "tech-debt" --color "D93F0B" --description "Technical debt findi
 **5b. Build the issue body.**
 
 Read `references/issue-format.md` and follow the format specification exactly to build the issue body from the collected findings.
+
+If findings were suppressed, include in the Notes section (Section 5) of the issue body:
+`**Suppressed:** {N} findings excluded by .claude/harness/tech-debt-ignore.md`
 
 **5c. Handle body size limit.**
 
