@@ -21,6 +21,16 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/hook.sh\" cleanup"
+          }
+        ]
+      }
     ]
   }
 }

@@ -13,6 +13,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DASHBOARD="$SCRIPT_DIR/dashboard.sh"
 SESSION_FILE="/tmp/orchestrate-session.json"
 
+# ── Handle cleanup (SessionEnd) ──
+if [ "${1:-}" = "cleanup" ]; then
+  if [ -f "$SESSION_FILE" ]; then
+    SPEC_NAME=$(jq -r '.specName' "$SESSION_FILE")
+    DASHBOARD_DIR="/tmp/orchestrate-${SPEC_NAME}"
+    if [ -f "$DASHBOARD_DIR/.server-pid" ]; then
+      kill "$(cat "$DASHBOARD_DIR/.server-pid")" 2>/dev/null || true
+    fi
+    rm -f "$SESSION_FILE"
+  fi
+  exit 0
+fi
+
 # ── Gate: only run during orchestrate ──
 [ -f "$SESSION_FILE" ] || exit 0
 
