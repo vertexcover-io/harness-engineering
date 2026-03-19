@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orchestrate Dashboard</title>
+<script>
+// __INLINE_DATA_PLACEHOLDER__
+</script>
+</head>
+<body>
+<h1>Orchestrate Pipeline Dashboard</h1>
+<div id="app"></div>
+<script>
+async function load() {
+  let data = typeof INLINE_DATA !== 'undefined' ? INLINE_DATA : null;
+  if (!data) {
+    const r = await fetch('/status.json');
+    data = await r.json();
+  }
+  document.getElementById('app').textContent = JSON.stringify(data, null, 2);
+}
+load();
+setInterval(load, 2000);
+</script>
+</body>
+</html>
