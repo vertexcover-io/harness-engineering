@@ -6,8 +6,19 @@ description: >
   Invoke explicitly with /code-review — this skill never triggers automatically.
   Use when the user says "/code-review", "review my code", "review this change",
   or "review against the plan".
-user_invocable: true
+disable-model-invocation: true
 ---
+
+## Project-Specific Guidelines
+
+1. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
+   its guidelines over the defaults below.
+2. Otherwise, check if `.claude/harness/code-review-reference.md` exists in the
+   project root. If it does, read it and apply its guidelines.
+3. If neither exists, use the defaults below.
+
+User-provided guidelines take precedence on conflicts with defaults.
+
 
 # Code Review
 

@@ -3,6 +3,7 @@ name: learn
 description: "Capture learnings from the current conversation as a clean, human-readable doc in docs/. Use after solving a non-trivial problem, discovering a design pattern, hitting a gotcha, or making an architectural decision worth remembering. Triggers on: 'document this', 'capture this learning', 'that was tricky', 'let's compound this', or /learn."
 argument-hint: "[optional: brief context about what to capture]"
 allowed-tools: Bash, Read, Edit, Write, Task, Grep, Glob
+user-invocable: false
 ---
 
 # /learn — Capture What You Learned

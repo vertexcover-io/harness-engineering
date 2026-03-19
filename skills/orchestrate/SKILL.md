@@ -2,7 +2,7 @@
 name: orchestrate
 description: >
   Multi-agent pipeline orchestrator. Takes a prompt or spec file and runs:
-  brainstorm (interactive), Q&A (interactive), planner (sub-agent), coder (sub-agent with
+  brainstorm (interactive), planner (interactive), coder (sub-agent with
   TDD + stagnation detection), quality gate, sync-docs, capture learnings, and commit/PR. Artifacts stored in
   docs/spec/<name>/. Use when the user says orchestrate, run the pipeline, full workflow,
   or wants end-to-end development from spec to PR.
@@ -12,7 +12,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
 
 # Orchestrate: Multi-Agent Development Pipeline
 
-Runs a full development pipeline in 9 stages. Brainstorm and Q&A run interactively in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
+Runs a full development pipeline in 8 stages. Brainstorm and Planner run interactively in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
@@ -53,13 +53,12 @@ This ensures the dashboard opens immediately when Stage 0 begins.
 |---|-------|-----------|--------|
 | 0 | Setup | **Main conversation** | Worktree path, baseline metrics, spec directory |
 | 1 | Brainstorm + Spec | **Main conversation** | `docs/spec/<name>/spec.md` |
-| 2 | Q&A | **Main conversation** | `docs/spec/<name>/qa.md` |
-| 3 | Planner | Sub-agent | `docs/spec/<name>/plan.md` + `phase-*.md` |
-| 4 | Coder | Sub-agent (parallelizable) | Implementation + tests |
-| 5 | Quality Gate | Sub-agent | PASS/BLOCKED verdict |
-| 6 | Sync Docs | Sub-agent | Updated/created docs list |
-| 7 | Capture Learnings | Sub-agent | `docs/solutions/<category>/<learning>.md` |
-| 8 | Commit & PR | Sub-agent | Commits + PR URL |
+| 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` + `phase-*.md` |
+| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests |
+| 4 | Quality Gate | Sub-agent | PASS/BLOCKED verdict |
+| 5 | Sync Docs | Sub-agent | Updated/created docs list |
+| 6 | Capture Learnings | Sub-agent | `docs/solutions/<category>/<learning>.md` |
+| 7 | Commit & PR | Sub-agent | Commits + PR URL |
 
 ---
 
@@ -79,13 +78,13 @@ Your working directory is <WORKTREE_PATH>.
 
 ### Stages 0-2 Run in Main Conversation
 
-Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Q&A) run directly in the main conversation — NOT as sub-agents.
+Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the main conversation — NOT as sub-agents.
 
 - **Stage 0** runs in main so we can `cd` into the worktree and set the working directory for everything that follows.
 - **Stage 1** runs in main because brainstorm requires interactive dialogue with the user.
-- **Stage 2** runs in main because Q&A requires interactive dialogue with the user.
+- **Stage 2** runs in main because the planner explores the codebase and asks the user implementation questions interactively.
 
-Invoke their respective skills directly using the `Skill` tool. All other stages (3-8) run as sub-agents via the `Agent` tool.
+Invoke their respective skills directly using the `Skill` tool. All other stages (3-7) run as sub-agents via the `Agent` tool.
 
 ### Pipeline Flow
 
@@ -96,24 +95,23 @@ digraph pipeline {
 
   stage_0 [label="0: Setup"]
   stage_1 [label="1: Brainstorm"]
-  stage_2 [label="2: Q&A"]
-  stage_3 [label="3: Planner"]
-  stage_4 [label="4: Coder"]
-  stage_5 [label="5: Quality Gate"]
-  stage_6 [label="6: Sync Docs"]
-  stage_7 [label="7: Learnings"]
-  stage_8 [label="8: Commit & PR"]
+  stage_2 [label="2: Planner"]
+  stage_3 [label="3: Coder"]
+  stage_4 [label="4: Quality Gate"]
+  stage_5 [label="5: Sync Docs"]
+  stage_6 [label="6: Learnings"]
+  stage_7 [label="7: Commit & PR"]
 
-  stage_0 -> stage_1 -> stage_2 -> stage_3 -> stage_4
-  stage_4 -> stage_5 -> stage_6 -> stage_7 -> stage_8
+  stage_0 -> stage_1 -> stage_2 -> stage_3
+  stage_3 -> stage_4 -> stage_5 -> stage_6 -> stage_7
 }
 ```
 
-Stage 4 (Coder) is the only stage with internal parallelism — see "Parallel When Possible" below.
+Stage 3 (Coder) is the only stage with internal parallelism — see "Parallel When Possible" below.
 
 ### Parallel When Possible
 
-After Stage 3, read the **phase graph** from plan.md (DOT digraph) and dispatch in waves:
+After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch in waves:
 
 **Phase waves:** Compute **ready nodes** = phases with no incomplete predecessors. Dispatch all ready phases in parallel. After each wave completes, recompute → dispatch next wave.
 
@@ -145,30 +143,18 @@ Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `CONSTITUTION`, `SPEC_NAME`, 
 
 Then continue to Stage 2.
 
-### Stage 2: Q&A (Main Conversation)
+### Stage 2: Planner (Main Conversation)
 
-1. Invoke the `qa` skill using the `Skill` tool
-2. Q&A explores the codebase and asks the user implementation-level questions interactively
-3. After all questions are resolved, Q&A writes output to `docs/spec/<SPEC_NAME>/qa.md`
-4. Store `QA_PATH`
+1. Invoke the `planning` skill using the `Skill` tool
+2. The planner explores the codebase deeply, asks the user implementation questions interactively, then designs phases
+3. After plan approval, plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
+4. Store `PLAN_DIR`
 
-Then continue to Stage 3 as a sub-agent.
+**Extract:** `PLAN_DIR`, phase graph (DOT from plan.md), phase count
 
-### Stage 3: Planner
+Then continue to Stage 3 as sub-agents.
 
-```
-Agent(prompt="
-  [PREAMBLE]
-  Invoke the planning skill.
-  Spec: <SPEC_PATH>. Q&A: <QA_PATH>. Write all outputs to docs/spec/<SPEC_NAME>/.
-  Task context: <TASK_CONTEXT>
-  Return: plan directory path, phase graph (DOT digraph from plan.md), summary.
-")
-```
-
-**Extract from result:** `PLAN_DIR`, phase graph (DOT), phase count
-
-### Stage 4: Coder
+### Stage 3: Coder
 
 Dispatch based on phase and step dependency graphs. Two-level parallelism:
 
@@ -204,7 +190,7 @@ Agent(prompt="
 
 Dispatch in waves: send all independent steps in parallel → wait for completion → dispatch next wave of steps whose dependencies are satisfied → repeat until all steps in the phase are done.
 
-### Stage 5: Quality Gate
+### Stage 4: Quality Gate
 
 Single quality gate after all coding is complete:
 
@@ -221,11 +207,11 @@ Agent(prompt="
 
 **Extract from result:** verdict (PASS/BLOCKED/STAGNATION), gate report path
 
-**If BLOCKED → stop pipeline and report what failed and potential ways to solve it. Do not proceed to Stage 6.**
+**If BLOCKED → stop pipeline and report what failed and potential ways to solve it. Do not proceed to Stage 5.**
 
 **If STAGNATION → stop pipeline entirely. Do not retry. Report which check stagnated and the repeated error. This signals a fundamental issue that retrying won't fix.**
 
-### Stage 6: Sync Docs
+### Stage 5: Sync Docs
 
 ```
 Agent(prompt="
@@ -239,7 +225,7 @@ Agent(prompt="
 
 **Extract from result:** list of docs updated/created
 
-### Stage 7: Capture Learnings
+### Stage 6: Capture Learnings
 
 ```
 Agent(prompt="
@@ -254,7 +240,7 @@ Agent(prompt="
 
 **Extract from result:** learning doc path (if any)
 
-### Stage 8: Commit & PR
+### Stage 7: Commit & PR
 
 ```
 Agent(prompt="
@@ -284,13 +270,12 @@ After all stages complete, present a compact summary:
 |-------|--------|
 | 0. Setup | Worktree at <path>, baseline captured |
 | 1. Brainstorm | Spec: docs/spec/<name>/spec.md |
-| 2. Q&A | qa.md: <question_count> questions resolved |
-| 3. Plan | <phase_count> phases, <parallel> parallel |
-| 4. TDD | <files> files, <tests> tests passing |
-| 5. Gate | <PASS/BLOCKED/STAGNATION> |
-| 6. Sync Docs | <docs_count> docs updated |
-| 7. Learnings | <doc_path or "none"> |
-| 8. PR | <PR_URL> |
+| 2. Plan | <phase_count> phases, <parallel> parallel |
+| 3. TDD | <files> files, <tests> tests passing |
+| 4. Gate | <PASS/BLOCKED/STAGNATION> |
+| 5. Sync Docs | <docs_count> docs updated |
+| 6. Learnings | <doc_path or "none"> |
+| 7. PR | <PR_URL> |
 
 **Issues:** <any retries, failures, stagnation, or "None">
 ```

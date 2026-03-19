@@ -1,6 +1,7 @@
 ---
 name: spec-generation
 description: "Transforms an approved design doc (from brainstorm) into a structured SPEC with testable acceptance criteria using EARS format. Trigger after brainstorm approval, before planning. Input: design doc path. Output: SPEC.md with requirements, edge cases, and verification matrix."
+user-invocable: false
 ---
 
 # Spec Generation: Design Doc → Testable SPEC
