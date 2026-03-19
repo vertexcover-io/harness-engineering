@@ -29,6 +29,22 @@ The argument is either an **inline prompt** or a **spec file path**.
 
 Store the resolved input as `TASK_CONTEXT` — this is passed to every stage.
 
+### Dashboard Bootstrap (MUST be the very first action)
+
+Before ANY Skill or Agent call, write the dashboard session file. This enables hooks to track pipeline progress from the very first stage.
+
+1. Generate a temporary spec name from the task prompt: lowercase, replace spaces with hyphens, truncate to 30 chars. Example: `"Add user auth system"` → `"add-user-auth-system"`
+2. Write the session file:
+   ```
+   Bash("echo '{\"specName\":\"<TEMP_SPEC_NAME>\",\"task\":\"<TASK_CONTEXT summary>\",\"branch\":\"unknown\",\"worktree\":\"unknown\"}' > /tmp/orchestrate-session.json")
+   ```
+3. After Stage 0 completes and you have the real `SPEC_NAME`, `BRANCH_NAME`, and `WORKTREE_PATH`, update the session file and rename the dashboard directory:
+   ```
+   Bash("echo '{\"specName\":\"<SPEC_NAME>\",\"task\":\"<TASK_CONTEXT summary>\",\"branch\":\"<BRANCH_NAME>\",\"worktree\":\"<WORKTREE_PATH>\"}' > /tmp/orchestrate-session.json && [ -d /tmp/orchestrate-<TEMP_SPEC_NAME> ] && mv /tmp/orchestrate-<TEMP_SPEC_NAME> /tmp/orchestrate-<SPEC_NAME> || true")
+   ```
+
+This ensures the dashboard opens immediately when Stage 0 begins.
+
 ---
 
 ## Pipeline Stages
@@ -118,16 +134,7 @@ After Stage 3, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 
 Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `CONSTITUTION`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
 
-3. Write the dashboard session file so hooks can track pipeline progress:
-   ```
-   Write("/tmp/orchestrate-session.json", JSON.stringify({
-     "specName": "<SPEC_NAME>",
-     "task": "<TASK_CONTEXT summary>",
-     "branch": "<BRANCH_NAME>",
-     "worktree": "<WORKTREE_PATH>"
-   }))
-   ```
-   The dashboard is managed automatically by hooks — no manual dashboard calls needed.
+3. Update the dashboard session file with real values and rename the dashboard directory (see "Dashboard Bootstrap" above).
 
 ### Stage 1: Brainstorm (Main Conversation)
 
