@@ -12,6 +12,14 @@ dashboard_init() {
 
   mkdir -p "$dashboard_dir"
 
+  # Kill any orphan server from a previous run
+  if [ -f "$dashboard_dir/.server-pid" ]; then
+    kill "$(cat "$dashboard_dir/.server-pid")" 2>/dev/null || true
+  fi
+
+  # Clean up stale state from previous runs
+  rm -f "$dashboard_dir/.dashboard-disabled" "$dashboard_dir/.server-log" "$dashboard_dir/.server-pid" "$dashboard_dir/.server-port"
+
   # Seed status.json with all 9 stages
   local stages="[]"
   for i in "${!STAGE_NAMES[@]}"; do
