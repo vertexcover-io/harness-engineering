@@ -116,10 +116,10 @@ File sub-groups are ordered by:
 <summary><code>{file_path}</code> — {count} findings</summary>
 
 - [ ] 🟠 HIGH · `{file}:{line}` — **{short title}**
-  {one-line explanation of why this matters}
+  {one-line explanation of why this matters} <!-- suppress:{file}:{rule} -->
 
 - [ ] 🟡 MEDIUM · `{file}:{line}` — **{short title}**
-  {one-line explanation of why this matters}
+  {one-line explanation of why this matters} <!-- suppress:{file}:{rule} -->
 
 </details>
 ```
@@ -130,10 +130,10 @@ Each finding is a checkbox with the **full badge** form, a middle dot separator,
 
 ```markdown
 - [ ] {full_badge} · `{file}:{line}` — **{short title}**
-  {one-line explanation of why this matters}
+  {one-line explanation of why this matters} <!-- suppress:{file}:{rule} -->
 ```
 
-The `detail` field returned by scanner agents provides the explanation line.
+The `detail` field returned by scanner agents provides the explanation line. The `<!-- suppress:{file}:{rule} -->` HTML comment is invisible when rendered on GitHub but enables @claude-driven suppression (see `references/suppression-rules.md`). Note: `{file}` in the suppress comment uses the full relative path from repo root (e.g., `providers/google.py`), which may differ from the short name shown in the finding's display location.
 
 ---
 
@@ -200,10 +200,10 @@ A minimal example demonstrating all patterns: multi-file category, single-file s
 <summary><code>providers/google.py</code> — 2 findings</summary>
 
 - [ ] 🟠 HIGH · `google.py:308` — **CC=29 in `_convert_request`**
-  29 independent code paths — nearly impossible to test exhaustively.
+  29 independent code paths — nearly impossible to test exhaustively. <!-- suppress:providers/google.py:high-cyclomatic-complexity -->
 
 - [ ] 🟡 MEDIUM · `google.py:560` — **CC=15 in `_handle_error`**
-  Error classification logic with 15 branches. Easy to miss an error type.
+  Error classification logic with 15 branches. Easy to miss an error type. <!-- suppress:providers/google.py:moderate-cyclomatic-complexity -->
 
 </details>
 
@@ -211,10 +211,10 @@ A minimal example demonstrating all patterns: multi-file category, single-file s
 <summary><code>providers/runway.py</code> — 2 findings</summary>
 
 - [ ] 🟠 HIGH · `runway.py:297` — **CC=22 in `_convert_request`**
-  22 code paths in request conversion, likely candidates for extract-method refactoring.
+  22 code paths in request conversion, likely candidates for extract-method refactoring. <!-- suppress:providers/runway.py:high-cyclomatic-complexity -->
 
 - [ ] 🟡 MEDIUM · `runway.py:580` — **CC=13 in `_poll_until_complete`**
-  Polling loop with 13 branches handling various completion/failure states.
+  Polling loop with 13 branches handling various completion/failure states. <!-- suppress:providers/runway.py:moderate-cyclomatic-complexity -->
 
 </details>
 
@@ -228,7 +228,7 @@ A minimal example demonstrating all patterns: multi-file category, single-file s
 > Exceptions being silenced or caught too broadly — hiding failures and making production issues harder to diagnose.
 
 - [ ] 🔴 CRITICAL · `utils.py:42` — **Bare `except:` with `pass` in `_parse_config`**
-  Catches SystemExit and KeyboardInterrupt silently. Masks every possible failure.
+  Catches SystemExit and KeyboardInterrupt silently. Masks every possible failure. <!-- suppress:utils.py:bare-except -->
 
 </details>
 
@@ -243,10 +243,10 @@ A minimal example demonstrating all patterns: multi-file category, single-file s
 <summary><code>pyproject.toml</code> — 2 findings</summary>
 
 - [ ] 🟢 LOW · `pyproject.toml:11` — **Pinning gap: `pydantic>=2.0.0` no upper bound**
-  A future pydantic 3.0 could break serialization without warning.
+  A future pydantic 3.0 could break serialization without warning. <!-- suppress:pyproject.toml:pinning-gap -->
 
 - [ ] 🟢 LOW · `pyproject.toml:20` — **Unused dependency: `google-cloud-aiplatform` never imported**
-  Dead weight in the dependency tree.
+  Dead weight in the dependency tree. <!-- suppress:pyproject.toml:unused-dependency -->
 
 </details>
 
@@ -254,7 +254,7 @@ A minimal example demonstrating all patterns: multi-file category, single-file s
 <summary><code>models.py</code> — 1 finding</summary>
 
 - [ ] 🟠 HIGH · `models.py:5` — **Outdated dependency: `requests` 1.x (latest 3.x)**
-  Two major versions behind — breaking API changes likely.
+  Two major versions behind — breaking API changes likely. <!-- suppress:models.py:outdated-dependency -->
 
 </details>
 
