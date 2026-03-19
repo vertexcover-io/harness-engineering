@@ -1,27 +1,213 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Orchestrate Dashboard</title>
-<script>
-// __INLINE_DATA_PLACEHOLDER__
-</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orchestrate Pipeline</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+      background: #0d1117; color: #c9d1d9; padding: 24px; min-height: 100vh;
+    }
+    .header { margin-bottom: 24px; }
+    .header h1 { font-size: 20px; color: #f0f6fc; margin-bottom: 8px; }
+    .header .meta { font-size: 13px; color: #8b949e; display: flex; gap: 16px; }
+    .progress-container {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 16px; margin-bottom: 24px;
+    }
+    .progress-label { font-size: 13px; color: #8b949e; margin-bottom: 8px; }
+    .progress-bar { background: #21262d; border-radius: 4px; height: 8px; overflow: hidden; }
+    .progress-fill {
+      height: 100%; background: #238636; border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+    .stages { display: flex; gap: 4px; margin-bottom: 24px; flex-wrap: wrap; }
+    .stage-box {
+      flex: 1; min-width: 100px; background: #161b22; border: 1px solid #30363d;
+      border-radius: 8px; padding: 12px; text-align: center; transition: border-color 0.3s;
+    }
+    .stage-box.running { border-color: #1f6feb; }
+    .stage-box.done { border-color: #238636; }
+    .stage-box.failed { border-color: #da3633; }
+    .stage-box .stage-id { font-size: 11px; color: #8b949e; }
+    .stage-box .stage-name { font-size: 13px; color: #f0f6fc; margin: 4px 0; }
+    .stage-box .stage-icon { font-size: 18px; }
+    .stage-box .stage-duration { font-size: 11px; color: #8b949e; }
+    .icon-waiting { color: #484f58; }
+    .icon-running { color: #1f6feb; animation: pulse 1.5s infinite; }
+    .icon-done { color: #238636; }
+    .icon-failed { color: #da3633; }
+    .icon-skipped { color: #484f58; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .current-stage {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 16px; margin-bottom: 24px;
+    }
+    .current-stage h2 { font-size: 16px; color: #f0f6fc; margin-bottom: 8px; }
+    .current-stage .artifacts { font-size: 13px; color: #8b949e; }
+    .current-stage .artifacts span { color: #58a6ff; }
+    .log-container {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 16px; max-height: 300px; overflow-y: auto;
+    }
+    .log-container h2 { font-size: 14px; color: #8b949e; margin-bottom: 12px; }
+    .log-entry {
+      font-size: 13px; font-family: 'SF Mono', 'Fira Code', monospace;
+      padding: 4px 0; border-bottom: 1px solid #21262d;
+    }
+    .log-time { color: #484f58; }
+    .log-stage { color: #d2a8ff; }
+    .log-msg { color: #c9d1d9; }
+    .banner {
+      padding: 16px; border-radius: 8px; text-align: center;
+      font-size: 16px; font-weight: 600; margin-bottom: 24px;
+    }
+    .banner.success { background: #0d2818; border: 1px solid #238636; color: #3fb950; }
+    .banner.failed, .banner.blocked, .banner.stagnation {
+      background: #2d1215; border: 1px solid #da3633; color: #f85149;
+    }
+  </style>
 </head>
 <body>
-<h1>Orchestrate Pipeline Dashboard</h1>
-<div id="app"></div>
-<script>
-async function load() {
-  let data = typeof INLINE_DATA !== 'undefined' ? INLINE_DATA : null;
-  if (!data) {
-    const r = await fetch('/status.json');
-    data = await r.json();
-  }
-  document.getElementById('app').textContent = JSON.stringify(data, null, 2);
-}
-load();
-setInterval(load, 2000);
-</script>
+  <div id="app">Loading...</div>
+  <script>
+    // __INLINE_DATA_PLACEHOLDER__
+
+    function esc(str) {
+      var d = document.createElement('div');
+      d.textContent = String(str);
+      return d.innerHTML;
+    }
+
+    var STATUS_ICONS = {
+      waiting: { text: '\u25CB', cls: 'icon-waiting' },
+      running: { text: '\u25C9', cls: 'icon-running' },
+      done:    { text: '\u2713', cls: 'icon-done' },
+      failed:  { text: '\u2717', cls: 'icon-failed' },
+      skipped: { text: '\u2013', cls: 'icon-skipped' }
+    };
+
+    function formatDuration(start, end) {
+      if (!start) return '\u2014';
+      var s = new Date(start);
+      var e = end ? new Date(end) : new Date();
+      var diff = Math.floor((e - s) / 1000);
+      if (diff < 60) return diff + 's';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ' + (diff % 60) + 's';
+      return Math.floor(diff / 3600) + 'h ' + Math.floor((diff % 3600) / 60) + 'm';
+    }
+
+    function formatTime(iso) {
+      if (!iso) return '';
+      return new Date(iso).toLocaleTimeString();
+    }
+
+    function render(data) {
+      var app = document.getElementById('app');
+      app.innerHTML = '';
+
+      var completed = data.stages.filter(function(s) { return s.status === 'done'; }).length;
+      var pct = Math.round((completed / data.stages.length) * 100);
+      var current = data.stages[data.currentStage];
+      var elapsed = formatDuration(data.startedAt, data.completedAt);
+
+      if (data.outcome !== 'running') {
+        var banner = document.createElement('div');
+        var cls = data.outcome === 'success' ? 'success' : 'failed';
+        banner.className = 'banner ' + cls;
+        var label = data.outcome.charAt(0).toUpperCase() + data.outcome.slice(1);
+        banner.textContent = 'Pipeline ' + label + ' \u2014 ' + elapsed;
+        app.appendChild(banner);
+      }
+
+      var header = document.createElement('div');
+      header.className = 'header';
+      var h1 = document.createElement('h1');
+      h1.textContent = '\uD83D\uDD27 ' + data.task;
+      header.appendChild(h1);
+      var meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.innerHTML = '<span>Branch: <strong>' + esc(data.branch) + '</strong></span>'
+        + '<span>Spec: <strong>' + esc(data.specName) + '</strong></span>'
+        + '<span>Elapsed: <strong>' + esc(elapsed) + '</strong></span>';
+      header.appendChild(meta);
+      app.appendChild(header);
+
+      var prog = document.createElement('div');
+      prog.className = 'progress-container';
+      prog.innerHTML = '<div class="progress-label">Pipeline Progress \u2014 '
+        + esc(pct + '% (' + completed + '/' + data.stages.length + ' stages)')
+        + '</div><div class="progress-bar"><div class="progress-fill" style="width:'
+        + pct + '%"></div></div>';
+      app.appendChild(prog);
+
+      var stagesDiv = document.createElement('div');
+      stagesDiv.className = 'stages';
+      data.stages.forEach(function(stage) {
+        var box = document.createElement('div');
+        box.className = 'stage-box ' + stage.status;
+        var icon = STATUS_ICONS[stage.status] || STATUS_ICONS.waiting;
+        var dur = formatDuration(stage.startedAt, stage.completedAt);
+        box.innerHTML = '<div class="stage-id">' + esc(String(stage.id)) + '</div>'
+          + '<div class="stage-icon"><span class="' + esc(icon.cls) + '">' + esc(icon.text) + '</span></div>'
+          + '<div class="stage-name">' + esc(stage.name) + '</div>'
+          + '<div class="stage-duration">' + esc(dur) + '</div>';
+        stagesDiv.appendChild(box);
+      });
+      app.appendChild(stagesDiv);
+
+      if (data.outcome === 'running') {
+        var detail = document.createElement('div');
+        detail.className = 'current-stage';
+        var h2 = document.createElement('h2');
+        h2.textContent = 'Current: ' + current.name;
+        detail.appendChild(h2);
+        var arts = Object.entries(current.artifacts || {});
+        var artsDiv = document.createElement('div');
+        artsDiv.className = 'artifacts';
+        if (arts.length > 0) {
+          artsDiv.innerHTML = arts.map(function(a) {
+            return '<span>' + esc(a[0]) + '</span>: ' + esc(a[1]);
+          }).join(' &nbsp;|&nbsp; ');
+        } else {
+          artsDiv.textContent = 'No artifacts yet';
+        }
+        detail.appendChild(artsDiv);
+        app.appendChild(detail);
+      }
+
+      var logDiv = document.createElement('div');
+      logDiv.className = 'log-container';
+      var logH2 = document.createElement('h2');
+      logH2.textContent = 'Activity Log';
+      logDiv.appendChild(logH2);
+      var reversed = data.log.slice().reverse();
+      reversed.forEach(function(entry) {
+        var row = document.createElement('div');
+        row.className = 'log-entry';
+        row.innerHTML = '<span class="log-time">' + esc(formatTime(entry.time)) + '</span> '
+          + '<span class="log-stage">[' + esc(entry.stage) + ']</span> '
+          + '<span class="log-msg">' + esc(entry.message) + '</span>';
+        logDiv.appendChild(row);
+      });
+      app.appendChild(logDiv);
+    }
+
+    if (typeof INLINE_DATA !== 'undefined') {
+      render(INLINE_DATA);
+    } else {
+      (function poll() {
+        fetch('status.json?' + Date.now())
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            render(data);
+            if (data.outcome === 'running') setTimeout(poll, 2000);
+          })
+          .catch(function() { setTimeout(poll, 5000); });
+      })();
+    }
+  </script>
 </body>
 </html>
