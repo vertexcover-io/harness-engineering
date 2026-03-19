@@ -52,17 +52,16 @@ dashboard_init() {
     return 0
   fi
 
-  # Start server and capture stderr to extract the port
-  local server_log="$dashboard_dir/.server-log"
-  python3 -m http.server 0 --directory "$dashboard_dir" 2>"$server_log" &
+  # Start server in background
+  python3 -m http.server 0 --directory "$dashboard_dir" &>/dev/null &
   local server_pid=$!
   echo "$server_pid" > "$dashboard_dir/.server-pid"
 
-  # Wait for server to print its port (e.g., "Serving HTTP on 0.0.0.0 port 54321")
+  # Detect the port via ss (server log is buffered and unreliable)
   local port="" attempts=0
   while [ -z "$port" ] && [ "$attempts" -lt 6 ]; do
     sleep 0.5
-    port=$(grep -oP 'port \K[0-9]+' "$server_log" 2>/dev/null | head -1) || true
+    port=$(ss -tlnp 2>/dev/null | grep "pid=${server_pid}," | grep -oP ':\K[0-9]+(?=\s)' | head -1) || true
     attempts=$((attempts + 1))
   done
 
