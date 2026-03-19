@@ -118,41 +118,36 @@ After Stage 3, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 
 Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `CONSTITUTION`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
 
-3. Initialize the live dashboard:
+3. Write the dashboard session file so hooks can track pipeline progress:
    ```
-   Bash("skills/orchestrate/dashboard/dashboard.sh init <SPEC_NAME> '<TASK_CONTEXT summary>' <BRANCH_NAME> <WORKTREE_PATH>")
+   Write("/tmp/orchestrate-session.json", JSON.stringify({
+     "specName": "<SPEC_NAME>",
+     "task": "<TASK_CONTEXT summary>",
+     "branch": "<BRANCH_NAME>",
+     "worktree": "<WORKTREE_PATH>"
+   }))
    ```
-   Store the script path as `DASHBOARD_SCRIPT` for subsequent calls. Dashboard failures are non-fatal — if it fails, continue the pipeline.
+   The dashboard is managed automatically by hooks — no manual dashboard calls needed.
 
 ### Stage 1: Brainstorm (Main Conversation)
-
-Before dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 1 running --log 'Brainstorm started'")`
 
 1. Invoke the `brainstorm` skill using the `Skill` tool
 2. After design approval, invoke the `spec-generation` skill (still in main session — it's quick and needs the brainstorm context)
 3. Move/save spec output to `docs/spec/<SPEC_NAME>/spec.md`
 4. Store `SPEC_PATH`
 
-After dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 1 done --artifact spec=<SPEC_PATH> --log 'Brainstorm complete, spec generated'")`
-
 Then continue to Stage 2.
 
 ### Stage 2: Q&A (Main Conversation)
-
-Before dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 2 running --log 'Q&A started'")`
 
 1. Invoke the `qa` skill using the `Skill` tool
 2. Q&A explores the codebase and asks the user implementation-level questions interactively
 3. After all questions are resolved, Q&A writes output to `docs/spec/<SPEC_NAME>/qa.md`
 4. Store `QA_PATH`
 
-After dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 2 done --artifact qa=<QA_PATH> --log 'Q&A complete'")`
-
 Then continue to Stage 3 as a sub-agent.
 
 ### Stage 3: Planner
-
-Before dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 3 running --log 'Planner started'")`
 
 ```
 Agent(prompt="
@@ -166,11 +161,7 @@ Agent(prompt="
 
 **Extract from result:** `PLAN_DIR`, phase graph (DOT), phase count
 
-After dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 3 done --artifact plan=<PLAN_DIR> --log 'Plan complete: <phase_count> phases'")`
-
 ### Stage 4: Coder
-
-Before dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 4 running --log 'Coder started'")`
 
 Dispatch based on phase and step dependency graphs. Two-level parallelism:
 
@@ -206,11 +197,7 @@ Agent(prompt="
 
 Dispatch in waves: send all independent steps in parallel → wait for completion → dispatch next wave of steps whose dependencies are satisfied → repeat until all steps in the phase are done.
 
-After dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 4 done --artifact files=<files_count> --artifact tests=<tests_count> --log 'Coder complete: <files_count> files, <tests_count> tests'")`
-
 ### Stage 5: Quality Gate
-
-Before dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 5 running --log 'Quality Gate started'")`
 
 Single quality gate after all coding is complete:
 
@@ -227,17 +214,11 @@ Agent(prompt="
 
 **Extract from result:** verdict (PASS/BLOCKED/STAGNATION), gate report path
 
-After dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 5 done --artifact verdict=<verdict> --log 'Quality Gate: <verdict>'")`
-
 **If BLOCKED → stop pipeline and report what failed and potential ways to solve it. Do not proceed to Stage 6.**
-`Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 5 failed --log 'Quality Gate BLOCKED: <failure reason>'")`
 
 **If STAGNATION → stop pipeline entirely. Do not retry. Report which check stagnated and the repeated error. This signals a fundamental issue that retrying won't fix.**
-`Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 5 failed --log 'Quality Gate STAGNATION: <failure reason>'")`
 
 ### Stage 6: Sync Docs
-
-Before dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 6 running --log 'Sync Docs started'")`
 
 ```
 Agent(prompt="
@@ -251,11 +232,7 @@ Agent(prompt="
 
 **Extract from result:** list of docs updated/created
 
-After dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 6 done --artifact docs=<docs_count> --log 'Sync Docs complete: <docs_count> docs updated'")`
-
 ### Stage 7: Capture Learnings
-
-Before dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 7 running --log 'Capture Learnings started'")`
 
 ```
 Agent(prompt="
@@ -270,11 +247,7 @@ Agent(prompt="
 
 **Extract from result:** learning doc path (if any)
 
-After dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 7 done --artifact learning=<doc_path> --log 'Learnings captured'")`
-
 ### Stage 8: Commit & PR
-
-Before dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 8 running --log 'Commit & PR started'")`
 
 ```
 Agent(prompt="
@@ -288,25 +261,9 @@ Agent(prompt="
 
 **Extract from result:** commits, `PR_URL`
 
-After dispatch: `Bash("$DASHBOARD_SCRIPT update <SPEC_NAME> 8 done --artifact pr=<PR_URL> --log 'PR created: <PR_URL>'")`
-
 ---
 
 ## Summary
-
-### Dashboard Finalize
-
-Before presenting the summary, finalize the dashboard:
-
-**On success:**
-```
-Bash("$DASHBOARD_SCRIPT finalize <SPEC_NAME> success --log 'Pipeline complete'")
-```
-
-**On failure/blocked/stagnation:**
-```
-Bash("$DASHBOARD_SCRIPT finalize <SPEC_NAME> <outcome> --log '<failure details>'")
-```
 
 After all stages complete, present a compact summary:
 
@@ -335,7 +292,6 @@ After all stages complete, present a compact summary:
 
 ## Error Handling
 
-- Before stopping the pipeline on error, finalize the dashboard: `Bash("$DASHBOARD_SCRIPT finalize <SPEC_NAME> <outcome> --log '<error details>'")`
 - If any sub-agent fails or returns an error, **stop the pipeline** and report which stage failed and why
 - If the quality gate returns BLOCKED, **stop the pipeline** and report what failed
 - If the quality gate returns STAGNATION, **stop the pipeline entirely** — do not retry. Report which check stagnated, the repeated error signature, and that manual intervention is required
@@ -354,4 +310,4 @@ After all stages complete, present a compact summary:
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly
 - **Spec folder structure** — all artifacts for a task live in `docs/spec/<name>/` for traceability
-- **Dashboard is non-fatal** — if dashboard.sh fails at any point, the pipeline continues. Dashboard calls should not block or fail the pipeline.
+- **Dashboard is automatic** — hooks handle all dashboard updates. The only manual step is writing `/tmp/orchestrate-session.json` during Setup. If the dashboard fails, the pipeline continues unaffected.
