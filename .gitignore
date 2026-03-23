@@ -2,3 +2,10 @@ dot-not-commit
 .worktrees/
 .harness/
 docs/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.coverage
+.mypy_cache/
+.ruff_cache/
