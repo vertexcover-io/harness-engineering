@@ -1,53 +1,34 @@
 # Issue Format Reference
 
-This file defines the GitHub issue body format for the tech-debt-finder skill. When building the issue body in Step 5b, follow this specification exactly.
+This file defines the GitHub issue body formats for the tech-debt-finder skill. The skill creates **sub-issues** (one per category) and a **parent issue** linking them.
+
+When building issue bodies in Step 5, follow this specification exactly.
 
 ---
 
 ## Layout
 
-Build the issue body in this order:
+Two issue types are created:
 
+**A. Sub-Issue (one per category):**
+```
+1. Category header + metadata
+2. Findings with code snippets (grouped by file)
+3. Notes
+```
+
+**B. Parent Issue (one per scan):**
 ```
 1. Title + scan metadata
 2. Hotspots table
-3. Category sections (collapsible)
+3. Categories task list (linking sub-issues)
 4. Recommended actions
 5. Notes
 ```
 
 ---
 
-## Section 1: Title + Metadata
-
-```markdown
-# Tech Debt Audit — {scope}
-
-**Scanned:** {file_count} files | **Date:** {YYYY-MM-DD}
-**Findings:** {critical} critical | {high} high | {medium} medium | {low} low
-```
-
----
-
-## Section 2: Hotspots
-
-Files with 3+ findings, sorted by finding count descending. **Omit this section entirely if no file has 3+ findings.**
-
-```markdown
-## Hotspots
-
-| File | Findings | Highest |
-|------|----------|---------|
-| `{file}` | {count} | {severity} |
-```
-
----
-
-## Section 3: Category Sections
-
-Each category is a collapsible `<details>` block. **Omit categories with 0 findings entirely.**
-
-### Severity Badges
+## Severity Badges
 
 Two forms are used depending on context:
 
@@ -60,18 +41,9 @@ Two forms are used depending on context:
 
 Critical and High use different emoji (🔴 vs 🟠) so they are always distinguishable.
 
-### Category Ordering
+---
 
-Categories are ordered by highest severity found, then by total finding count:
-
-1. Categories with Critical findings first
-2. Then categories with High findings
-3. Then Medium-only
-4. Then Low-only
-
-Within the same tier, more findings sorts first.
-
-### Category Explainers
+## Category Explainers
 
 Agents return hyphenated lowercase category keys. Display names in the issue use title-case.
 
@@ -85,59 +57,142 @@ Agents return hyphenated lowercase category keys. Display names in the issue use
 | `dependency` | Dependency | Issues with how external packages are declared — missing bounds, unused packages, or circular import workarounds. |
 | `async` | Async | Blocking calls inside async functions — stalling the event loop and degrading throughput for all concurrent requests. |
 
-### Outer Level — Category
+---
 
-The severity counts in the header use the **short badge** form. Only include severity tiers that have findings in this category.
+## Finding Format
 
-```html
-<details>
-<summary><strong>{Display Name}</strong> — {total} findings ({N} {short_badge}, {M} {short_badge})</summary>
+Each finding is a checkbox with the **full badge** form, a permalink to the source, bold title, explanation, optional fix hint, and a code snippet:
+
+```markdown
+- [ ] {full_badge} · [`{file}:{line}`](https://github.com/{owner}/{repo}/blob/{sha}/{file}#L{start}-L{end}) — **{short title}**
+  {one-line explanation of why this matters} <!-- suppress:{file}:{rule} -->
+  **Fix:** {fix_hint}
+
+  ```{language}
+  {start} | {code_line}
+  ...
+  {end}   | {code_line}
+  ```
+```
+
+- The `detail` field provides the explanation line
+- The `fix_hint` field provides the Fix line. **Omit the `**Fix:**` line entirely if `fix_hint` is absent.**
+- The `<!-- suppress:{file}:{rule} -->` comment stays on the same line as the `detail` text to preserve compatibility with suppression parsing (see `suppression-rules.md`)
+- `{file}` in the suppress comment uses the full relative path from repo root
+- **Every finding MUST include a code snippet.** The only acceptable reason to omit one is if the file cannot be read (deleted, binary, permission error)
+- For file-level findings (e.g., god modules at line 1), show lines 1-10 to give context on file structure
+- The `{file}:{line}` text is a clickable permalink to the exact commit SHA
+
+---
+
+## Section A: Sub-Issue Format
+
+One sub-issue is created per category that has findings.
+
+### Sub-Issue Title
+
+```
+Tech Debt: {Category Display Name} — {YYYY-MM-DD} — {scope}
+```
+
+### Sub-Issue Body
+
+```markdown
+## {Category Display Name}
 
 > {Category explainer from table above}
 
-<!-- file sub-groups here -->
+**Findings:** {count} | **Highest severity:** {severity badge}
+
+---
+
+### Findings
+
+<!-- file sub-groups or flat findings here -->
+
+---
+
+**Notes:** {notes about skipped checks, suppressed findings for this category}
+```
+
+### File Sub-Grouping Within Sub-Issues
+
+If a category has findings in **multiple files**, group findings under collapsible `<details>` blocks per file:
+
+```html
+<details>
+<summary><code>{file_path}</code> — {count} findings</summary>
+
+<!-- findings here using Finding Format -->
 
 </details>
 ```
 
-Separate each category `<details>` block with a `---` horizontal rule.
-
-### Inner Level — File/Module Sub-group
-
-Each file within a category gets a nested `<details>` block. **If a category has findings in only one file, skip the inner `<details>` and render findings directly under the category explainer.**
+If a category has findings in **only one file**, render findings directly under the `### Findings` header without any `<details>` wrapper.
 
 File sub-groups are ordered by:
 1. Highest severity finding first
 2. Then finding count descending
 3. Then alphabetically
 
-```html
-<details>
-<summary><code>{file_path}</code> — {count} findings</summary>
+Within each file group, findings are sorted by severity (critical first), then line number.
 
-- [ ] 🟠 HIGH · `{file}:{line}` — **{short title}**
-  {one-line explanation of why this matters} <!-- suppress:{file}:{rule} -->
+### Sub-Issue Truncation
 
-- [ ] 🟡 MEDIUM · `{file}:{line}` — **{short title}**
-  {one-line explanation of why this matters} <!-- suppress:{file}:{rule} -->
+GitHub issues have a 65536 character body limit. If a sub-issue body exceeds 60000 characters:
 
-</details>
-```
-
-### Finding Format
-
-Each finding is a checkbox with the **full badge** form, a middle dot separator, file location, bold title, and a one-line explanation:
-
-```markdown
-- [ ] {full_badge} · `{file}:{line}` — **{short title}**
-  {one-line explanation of why this matters} <!-- suppress:{file}:{rule} -->
-```
-
-The `detail` field returned by scanner agents provides the explanation line. The `<!-- suppress:{file}:{rule} -->` HTML comment is invisible when rendered on GitHub but enables @claude-driven suppression (see `references/suppression-rules.md`). Note: `{file}` in the suppress comment uses the full relative path from repo root (e.g., `providers/google.py`), which may differ from the short name shown in the finding's display location.
+1. Truncate **Low** findings first, replacing with: `... and {N} more 🟢 LOW findings`
+2. If still too large, truncate **Medium** findings similarly
+3. Never truncate Critical or High findings
 
 ---
 
-## Section 4: Recommended Actions
+## Section B: Parent Issue Format
+
+One parent issue is created per scan run, after all sub-issues exist.
+
+### Parent Issue Title
+
+```
+Tech Debt Audit — {YYYY-MM-DD} — {scope}
+```
+
+### Parent Issue Body
+
+Build in this order:
+
+#### 1. Title + Metadata
+
+```markdown
+# Tech Debt Audit — {scope}
+
+**Scanned:** {file_count} files | **Date:** {YYYY-MM-DD} | **Commit:** {short_sha}
+**Findings:** {critical} critical | {high} high | {medium} medium | {low} low
+```
+
+#### 2. Hotspots
+
+Files with 3+ findings, sorted by finding count descending. **Omit this section entirely if no file has 3+ findings.** Severity uses badge format for consistency.
+
+```markdown
+## Hotspots
+
+| File | Findings | Highest |
+|------|----------|---------|
+| `{file}` | {count} | {severity badge} |
+```
+
+#### 3. Categories Task List
+
+Links to the sub-issues created in Step 5e. Ordered by highest severity found, then by total finding count (same ordering as sub-issue creation).
+
+```markdown
+## Categories
+
+- [ ] #{issue_number} — {Category Display Name} ({count} findings, highest: {severity badge})
+```
+
+#### 4. Recommended Actions
 
 Only include severity tiers that have actual findings. Omit tiers with 0 findings.
 
@@ -150,117 +205,128 @@ Only include severity tiers that have actual findings. Omit tiers with 0 finding
 4. **Low** — address opportunistically during related work
 ```
 
----
-
-## Section 5: Notes
-
-Rendered after Recommended Actions as the final section. Include any skipped checks or tool availability issues.
+#### 5. Notes
 
 ```markdown
-**Notes:** {notes about skipped checks, missing tools, etc.}
+**Notes:** {notes about skipped checks, missing tools, suppressed count}
 ```
 
----
+If findings were suppressed:
+`**Suppressed:** {N} findings excluded by .claude/harness/tech-debt-ignore.md`
 
-## Truncation Rules
+#### Parent Truncation
 
-GitHub issues have a 65536 character body limit. If the body exceeds 60000 characters:
-
-1. Truncate **Low** findings first, replacing with: `... and {N} more 🟢 LOW findings`
-2. If still too large, truncate **Medium** findings similarly
-3. Never truncate Critical or High findings
+Parent issues are unlikely to hit the 65536 character limit. If they do, remove Low-severity category entries from the Categories task list first, then Medium.
 
 ---
 
-## Full Example
+## Full Examples
 
-A minimal example demonstrating all patterns: multi-file category, single-file shortcut, mixed severities, and all badge types.
+### Example Sub-Issue: Complexity
 
 ```markdown
-# Tech Debt Audit — myproject (repo root)
+## Complexity
 
-**Scanned:** 42 files | **Date:** 2026-03-18
-**Findings:** 1 critical | 3 high | 4 medium | 2 low
+> Functions with too many branches or deeply nested logic — harder to test, review, and modify safely.
 
-## Hotspots
-
-| File | Findings | Highest |
-|------|----------|---------|
-| `providers/google.py` | 4 | High |
-| `registry.py` | 3 | Medium |
+**Findings:** 4 | **Highest severity:** 🟠 HIGH
 
 ---
 
-<details>
-<summary><strong>Complexity</strong> — 4 findings (2 🟠 high, 2 🟡 medium)</summary>
-
-> Functions with too many branches or deeply nested logic — harder to test, review, and modify safely.
+### Findings
 
 <details>
 <summary><code>providers/google.py</code> — 2 findings</summary>
 
-- [ ] 🟠 HIGH · `google.py:308` — **CC=29 in `_convert_request`**
+- [ ] 🟠 HIGH · [`providers/google.py:308`](https://github.com/myorg/myproject/blob/abc123/providers/google.py#L305-L311) — **CC=29 in `_convert_request`**
   29 independent code paths — nearly impossible to test exhaustively. <!-- suppress:providers/google.py:high-cyclomatic-complexity -->
+  **Fix:** Extract sub-functions for each request type to reduce branching.
 
-- [ ] 🟡 MEDIUM · `google.py:560` — **CC=15 in `_handle_error`**
+  ```python
+  305 |     def _convert_request(self, req):
+  306 |         if req.type == "text":
+  307 |             return self._text(req)
+  308 |         elif req.type == "image":
+  309 |             return self._image(req)
+  310 |         elif req.type == "video":
+  311 |             return self._video(req)
+  ```
+
+- [ ] 🟡 MEDIUM · [`providers/google.py:560`](https://github.com/myorg/myproject/blob/abc123/providers/google.py#L557-L563) — **CC=15 in `_handle_error`**
   Error classification logic with 15 branches. Easy to miss an error type. <!-- suppress:providers/google.py:moderate-cyclomatic-complexity -->
+
+  ```python
+  557 |     def _handle_error(self, err):
+  558 |         if isinstance(err, TimeoutError):
+  559 |             return RetryableError(err)
+  560 |         elif isinstance(err, AuthError):
+  561 |             return FatalError(err)
+  562 |         elif isinstance(err, RateLimitError):
+  563 |             return RetryableError(err)
+  ```
 
 </details>
 
 <details>
 <summary><code>providers/runway.py</code> — 2 findings</summary>
 
-- [ ] 🟠 HIGH · `runway.py:297` — **CC=22 in `_convert_request`**
-  22 code paths in request conversion, likely candidates for extract-method refactoring. <!-- suppress:providers/runway.py:high-cyclomatic-complexity -->
+- [ ] 🟠 HIGH · [`providers/runway.py:297`](https://github.com/myorg/myproject/blob/abc123/providers/runway.py#L294-L300) — **CC=22 in `_convert_request`**
+  22 code paths in request conversion. <!-- suppress:providers/runway.py:high-cyclomatic-complexity -->
+  **Fix:** Use a dispatch table mapping request types to handler functions.
 
-- [ ] 🟡 MEDIUM · `runway.py:580` — **CC=13 in `_poll_until_complete`**
+  ```python
+  294 |     def _convert_request(self, req):
+  295 |         if req.model == "gen3":
+  296 |             payload = self._gen3(req)
+  297 |         elif req.model == "gen2":
+  298 |             payload = self._gen2(req)
+  299 |         elif req.model == "turbo":
+  300 |             payload = self._turbo(req)
+  ```
+
+- [ ] 🟡 MEDIUM · [`providers/runway.py:580`](https://github.com/myorg/myproject/blob/abc123/providers/runway.py#L577-L583) — **CC=13 in `_poll_until_complete`**
   Polling loop with 13 branches handling various completion/failure states. <!-- suppress:providers/runway.py:moderate-cyclomatic-complexity -->
 
-</details>
+  ```python
+  577 |     async def _poll_until_complete(self, job_id):
+  578 |         while True:
+  579 |             status = await self._check(job_id)
+  580 |             if status == "complete":
+  581 |                 return await self._result(job_id)
+  582 |             elif status == "failed":
+  583 |                 raise JobFailed(job_id)
+  ```
 
 </details>
 
 ---
 
-<details>
-<summary><strong>Error Handling</strong> — 1 finding (1 🔴 critical)</summary>
-
-> Exceptions being silenced or caught too broadly — hiding failures and making production issues harder to diagnose.
-
-- [ ] 🔴 CRITICAL · `utils.py:42` — **Bare `except:` with `pass` in `_parse_config`**
-  Catches SystemExit and KeyboardInterrupt silently. Masks every possible failure. <!-- suppress:utils.py:bare-except -->
-
-</details>
+**Notes:** Complexity checks run via `radon cc -s -n B`.
+```
 
 ---
 
-<details>
-<summary><strong>Dependency</strong> — 3 findings (1 🟠 high, 2 🟢 low)</summary>
+### Example Parent Issue
 
-> Issues with how external packages are declared — missing bounds, unused packages, or circular import workarounds.
+```markdown
+# Tech Debt Audit — myproject (repo root)
 
-<details>
-<summary><code>pyproject.toml</code> — 2 findings</summary>
+**Scanned:** 42 files | **Date:** 2026-03-18 | **Commit:** abc1234
+**Findings:** 1 critical | 3 high | 4 medium | 2 low
 
-- [ ] 🟢 LOW · `pyproject.toml:11` — **Pinning gap: `pydantic>=2.0.0` no upper bound**
-  A future pydantic 3.0 could break serialization without warning. <!-- suppress:pyproject.toml:pinning-gap -->
+## Hotspots
 
-- [ ] 🟢 LOW · `pyproject.toml:20` — **Unused dependency: `google-cloud-aiplatform` never imported**
-  Dead weight in the dependency tree. <!-- suppress:pyproject.toml:unused-dependency -->
+| File | Findings | Highest |
+|------|----------|---------|
+| `providers/google.py` | 4 | 🟠 HIGH |
+| `registry.py` | 3 | 🟡 MEDIUM |
 
-</details>
+## Categories
 
-<details>
-<summary><code>models.py</code> — 1 finding</summary>
-
-- [ ] 🟠 HIGH · `models.py:5` — **Outdated dependency: `requests` 1.x (latest 3.x)**
-  Two major versions behind — breaking API changes likely. <!-- suppress:models.py:outdated-dependency -->
-
-</details>
-
-</details>
-
----
+- [ ] #42 — Complexity (4 findings, highest: 🟠 HIGH)
+- [ ] #43 — Error Handling (1 finding, highest: 🔴 CRITICAL)
+- [ ] #44 — Dependency (3 findings, highest: 🟠 HIGH)
+- [ ] #45 — Code Smell (2 findings, highest: 🟡 MEDIUM)
 
 ## Recommended Actions
 
