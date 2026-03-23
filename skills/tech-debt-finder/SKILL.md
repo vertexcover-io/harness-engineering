@@ -46,7 +46,7 @@ Parse `$ARGUMENTS`:
 
 ### Step 2: Dispatch Parallel Scanners
 
-Launch **3 agents in parallel** using the Agent tool. Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, item, severity, detail, file, line}`.
+Launch **3 agents in parallel** using the Agent tool. Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`).
 
 Each agent is free to use whatever detection approach works best — grep, AST parsing, external tools (radon, ruff, pip-audit), file reading, or any combination. The goal is accurate detection, not a specific technique.
 
@@ -78,12 +78,32 @@ Detect debt in these categories:
 | Debt Type | What It Looks Like | Severity |
 |-----------|--------------------|----------|
 | **God module** | Python file that is excessively long — too many responsibilities in one module | High |
-| **High cyclomatic complexity** | Function with complexity >= 16 (use `radon` if available) | High |
+| **High cyclomatic complexity** | Function with complexity >= 16 | High |
 | **Moderate cyclomatic complexity** | Function with complexity 11–15 | Medium |
 | **Deep nesting** | Code indented beyond `nesting_depth` levels | Medium |
 | **Business logic leakage** | ORM/DB calls, HTTP client calls, or validation logic in controller/handler/view files instead of the appropriate layer | High |
 | **Import direction violation** | Lower layer importing from higher layer (e.g. models importing from providers, utils importing from domain code) | High |
 | **Code duplication** | Substantial blocks of near-identical code across files — same logic with only minor variations (variable names, literals). Look for duplicated functions, repeated conditional chains, and copy-pasted blocks | Medium |
+
+**Cyclomatic complexity detection via `radon`:**
+
+```bash
+# Step 1: Check if radon is available, install if missing
+radon --version || pip install radon
+
+# Step 2: Run cyclomatic complexity analysis (threshold B = CC >= 11)
+radon cc -s -n B <scope_path>
+
+# Step 3: For JSON output (easier to parse)
+radon cc -s -n B -j <scope_path>
+```
+
+- `-s` shows the complexity score
+- `-n B` filters to grade B and worse (CC >= 11), covering both Moderate (11–15) and High (>=16)
+- `-j` outputs JSON for structured parsing
+- Classify CC >= 16 as High severity, CC 11–15 as Medium severity
+
+If `radon` is not found and `pip install radon` fails, skip complexity checks and note in report: "Complexity checks skipped — radon install failed".
 
 Return findings with category `architecture`, `complexity`, or `duplication`.
 
@@ -123,6 +143,17 @@ Merge all agent results into a single list. Classify by severity:
 **Deduplication:** If the same `file:line` appears in multiple categories, keep the highest severity instance.
 
 **Sorting:** Within each severity group, sort by file path then line number.
+
+**Suppression filtering:**
+
+After deduplication and sorting, check if `.claude/harness/tech-debt-ignore.md` exists in the project root. If it does, read `references/suppression-rules.md` for the full pattern matching specification, then:
+
+1. Parse all suppression rules from the ignore file
+2. For each finding, check if any rule matches (using the finding's `file` and `rule` fields against the suppression patterns)
+3. Remove matching findings from the list
+4. Track the suppression count for the Notes section
+
+If any suppression rules reference unknown rule names or categories, skip them and note in the report: "Warning: {N} invalid suppression rules skipped."
 
 ### Step 4: Print Report to Terminal
 
@@ -184,62 +215,14 @@ gh label create "tech-debt" --color "D93F0B" --description "Technical debt findi
 
 **5b. Build the issue body.**
 
-Format every finding as a checkbox so the team can track resolution:
+Read `references/issue-format.md` and follow the format specification exactly to build the issue body from the collected findings.
 
-```markdown
-# Tech Debt Audit — {scope}
-
-**Scanned:** {file_count} files | **Date:** {YYYY-MM-DD}
-**Findings:** {critical} critical, {high} high, {medium} medium, {low} low
-
----
-
-## Critical
-- [ ] `file.py:42` — Known CVE in dependency X *(dependency)*
-- [ ] `file.py:88` — Bare `except:` with `pass` *(error-handling)*
-
-## High
-- [ ] `provider.py` — God module, too many responsibilities *(architecture)*
-- [ ] `handler.py:55` — Exception swallowed, no re-raise *(error-handling)*
-- [ ] `utils.py:30` — `time.sleep` inside `async def` *(async)*
-
-## Medium
-- [ ] `api.py:120` — Cyclomatic complexity 14 *(complexity)*
-- [ ] `models.py:45` — `-> Any` return type *(code-smell)*
-- [ ] `config.py:33` — Magic number `8473` *(code-smell)*
-- [ ] `handlers.py` + `views.py` — Near-identical request validation logic *(duplication)*
-
-## Low
-- [ ] `utils.py:10` — Commented-out function definition *(code-smell)*
-
----
-
-## Summary
-
-| Category | Critical | High | Medium | Low | Total |
-|----------|----------|------|--------|-----|-------|
-| ... | ... | ... | ... | ... | ... |
-
-## Hotspots (files with 3+ findings)
-
-| File | Findings | Highest Severity |
-|------|----------|------------------|
-| ... | ... | ... |
-
-## Recommended Actions
-
-1. **Critical** — fix immediately, security/correctness risks
-2. **High** — schedule for current sprint, use `/refactor` for code-level fixes
-3. **Medium** — plan for next sprint, use `/planning` for architectural items
-4. **Low** — address opportunistically during related work
-```
+If findings were suppressed, include in the Notes section (Section 5) of the issue body:
+`**Suppressed:** {N} findings excluded by .claude/harness/tech-debt-ignore.md`
 
 **5c. Handle body size limit.**
 
-GitHub issues have a 65536 character body limit. If the body exceeds 60000 characters:
-1. Truncate **Low** findings first, replacing with `- [ ] ... and {N} more low-severity findings`
-2. If still too large, truncate **Medium** findings similarly
-3. Never truncate Critical or High findings
+Follow the truncation rules in `references/issue-format.md`. Summary: if body exceeds 60000 characters, truncate Low findings first, then Medium. Never truncate Critical or High.
 
 **5d. Create the issue:**
 
@@ -261,7 +244,7 @@ EOF
 
 | Scenario | Action |
 |----------|--------|
-| `radon` not installed | Skip complexity checks. Note in report: "Complexity checks skipped — install `radon`" |
+| `radon` not installed | Install with `pip install radon` and retry. If install fails, skip complexity checks. Note in report: "Complexity checks skipped — radon install failed" |
 | `pip-audit` not installed | Skip CVE checks. Note in report: "CVE checks skipped — install `pip-audit`" |
 | Scope path doesn't exist | Report error and **stop** |
 | No Python files in scope | Report "no files to scan" and **stop** |
