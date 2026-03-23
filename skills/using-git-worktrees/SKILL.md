@@ -1,7 +1,6 @@
 ---
 name: using-git-worktrees
 description: Use when starting feature work that needs isolation from current workspace or before executing implementation plans - creates isolated git worktrees with smart directory selection and safety verification
-user-invocable: false
 ---
 
 # Using Git Worktrees
@@ -103,16 +102,54 @@ git worktree add "$path" -b "$BRANCH_NAME"
 cd "$path"
 ```
 
-### 3. Run Project Setup
+### 3. Handle Environment Files
 
-Auto-detect and run appropriate setup:
+Check for `.env*` files (`.env`, `.env.local`, `.env.development`, etc.) in the source project root. These contain local secrets, API keys, and configuration that aren't committed to git — without them the worktree often won't run.
+
+If `.env*` files exist, ask the user how to handle them:
+
+```
+Found env files: .env, .env.local
+How should I handle these in the worktree?
+1. Copy — independent copies (edits in worktree won't affect source)
+2. Symlink — linked to source (always in sync, single source of truth)
+3. Skip — don't bring env files over
+```
+
+Then apply the chosen strategy:
 
 ```bash
-# Node.js
-if [ -f package.json ]; then npm install; fi
+SOURCE_ROOT=$(git rev-parse --show-toplevel)
 
-# Rust
-if [ -f Cargo.toml ]; then cargo build; fi
+# Option 1: Copy
+for f in "$SOURCE_ROOT"/.env*; do
+  [ -f "$f" ] && cp "$f" "$path/"
+done
+
+# Option 2: Symlink
+for f in "$SOURCE_ROOT"/.env*; do
+  [ -f "$f" ] && ln -s "$f" "$path/$(basename "$f")"
+done
+
+# Option 3: Skip — do nothing
+```
+
+Skip this step entirely if no `.env*` files exist — not every project uses them.
+
+### 4. Run Project Setup
+
+Auto-detect and run appropriate setup. Run install commands with flags that skip unnecessary work where possible:
+
+```bash
+# Node.js — prefer ci for speed in worktrees (skips package resolution)
+if [ -f package-lock.json ]; then npm ci
+elif [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile
+elif [ -f yarn.lock ]; then yarn install --frozen-lockfile
+elif [ -f package.json ]; then npm install
+fi
+
+# Rust — fetch deps only, skip full compilation
+if [ -f Cargo.toml ]; then cargo fetch; fi
 
 # Python
 if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
@@ -122,7 +159,9 @@ if [ -f pyproject.toml ]; then poetry install; fi
 if [ -f go.mod ]; then go mod download; fi
 ```
 
-### 4. Verify Clean Baseline
+Why these flags matter: worktrees share git objects but not `node_modules` or build artifacts. `npm ci` / `--frozen-lockfile` is faster than `npm install` because it skips dependency resolution and installs directly from the lockfile. `cargo fetch` downloads crates without compiling — the first `cargo build` or `cargo test` in the next step will compile, but fetching upfront keeps setup and verification as distinct steps.
+
+### 5. Verify Clean Baseline
 
 Run tests to ensure worktree starts clean:
 
@@ -138,7 +177,7 @@ go test ./...
 
 **If tests pass:** Report ready.
 
-### 5. Report Location
+### 6. Report Location
 
 ```
 Worktree ready at <path>
@@ -157,6 +196,9 @@ Ready to implement <feature>
 | Both exist | Use `.worktrees/` |
 | Neither exists | Check CLAUDE.md → Ask user |
 | Directory not in .gitignore | Add it immediately + commit |
+| `.env*` files in source root | Ask: copy, symlink, or skip |
+| No `.env*` files | Skip silently |
+| Lockfile exists | Use `ci`/`--frozen-lockfile` for speed |
 | Tests fail during baseline | Report failures + ask |
 | No package.json/Cargo.toml | Skip dependency install |
 
@@ -189,10 +231,13 @@ You: I'm using the using-git-worktrees skill to set up an isolated workspace.
 [Check .worktrees/ - exists]
 [Verify .gitignore - contains .worktrees/]
 [Create worktree: git worktree add .worktrees/auth -b feature/auth]
-[Run npm install]
+[Found .env, .env.local — user chose symlink]
+[Symlinked .env, .env.local → .worktrees/auth/]
+[Run npm ci]
 [Run npm test - 47 passing]
 
 Worktree ready at /Users/jesse/myproject/.worktrees/auth
+Symlinked 2 env files (.env, .env.local)
 Tests passing (47 tests, 0 failures)
 Ready to implement auth feature
 ```

@@ -91,6 +91,7 @@ From the codebase exploration, identify implementation questions and resolve the
 - "Should tests use real DB or mocks for this feature?"
 
 **Rules:**
+- **Always use the `AskUserQuestion` tool** to ask questions — never embed questions in plain text output
 - Ask questions **one at a time** (or small batches of 2-3 closely related ones)
 - Use **multiple-choice** when possible to reduce cognitive load
 - After each answer, check if it raises follow-up questions
