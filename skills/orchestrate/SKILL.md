@@ -42,14 +42,15 @@ Before ANY Skill or Agent call, initialize the DAG dashboard. This starts the li
      $DU add-node setup 'Setup'
      $DU add-node brainstorm 'Brainstorm & Spec' --depends-on setup
      $DU add-node planning 'Planning' --depends-on brainstorm
-     $DU add-node quality-gate 'Quality Gate'
+     $DU add-node coder 'Coder' --depends-on planning
+     $DU add-node quality-gate 'Quality Gate' --depends-on coder
      $DU add-node docs 'Sync Docs' --depends-on quality-gate
      $DU add-node learnings 'Capture Learnings' --depends-on quality-gate
      $DU add-node commit-pr 'Commit & PR' --depends-on docs,learnings
      $DU serve
    ")
    ```
-   Note: Phase nodes and their edges to quality-gate are added after planning (Stage 2) when phases are known.
+   Note: Phase nodes are added as children of `coder` after planning (Stage 2) when phases are known.
 3. Store `HARNESS_DIR` for use in all subsequent `dag-update` calls.
 
 ---
@@ -148,7 +149,11 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 4. Move/save spec output to `docs/spec/<SPEC_NAME>/spec.md`
 5. Store `SPEC_PATH`
 6. `dag-update set-status brainstorm done`
-7. `dag-update set-artifact brainstorm report docs/spec/<SPEC_NAME>/spec.md`
+7. Copy spec into dashboard reports and set artifact:
+   ```
+   cp docs/spec/<SPEC_NAME>/spec.md $HARNESS_DIR/reports/brainstorm-report.md
+   dag-update set-artifact brainstorm report reports/brainstorm-report.md
+   ```
 
 Then continue to Stage 2.
 
@@ -160,17 +165,24 @@ Then continue to Stage 2.
 4. After plan approval, plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
 5. Store `PLAN_DIR`
 6. `dag-update set-status planning done`
-7. `dag-update set-artifact planning report docs/spec/<SPEC_NAME>/plan.md`
+7. Copy plan and phase files into dashboard reports:
+   ```
+   cp docs/spec/<SPEC_NAME>/plan.md $HARNESS_DIR/reports/planning-report.md
+   for f in docs/spec/<SPEC_NAME>/phase-*.md; do
+     cp "$f" "$HARNESS_DIR/reports/$(basename "$f")"
+   done
+   dag-update set-artifact planning report reports/planning-report.md
+   dag-update set-artifact planning phases "$(ls docs/spec/<SPEC_NAME>/phase-*.md 2>/dev/null | while read f; do echo "reports/$(basename "$f")"; done | paste -sd, -)"
+   ```
 
 **Extract:** `PLAN_DIR`, phase graph (DOT from plan.md), phase count
 
-**Add phase nodes to the DAG:**
+**Add phase nodes as children of coder:**
 ```
 DU='bash $CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh'
-$DU add-node phase-1 'Phase 1: <label>' --depends-on planning
-$DU add-node phase-2 'Phase 2: <label>' --depends-on phase-1
+$DU add-node phase-1 'Phase 1: <label>' --parent coder
+$DU add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1
 # ... for each phase from the plan
-$DU add-edge <last-phase> quality-gate
 ```
 
 Then continue to Stage 3 as sub-agents.
@@ -185,8 +197,10 @@ Dispatch based on phase and step dependency graphs. Two-level parallelism:
 
 For each phase, choose **one** dispatch strategy:
 
-Before dispatching each phase agent: `dag-update set-status <phase-node> running`
-After each phase agent returns: `dag-update set-status <phase-node> done` (or `failed`)
+Before dispatching any phase agents: `dag-update set-status coder running`
+Before each phase: `dag-update set-status <phase-node> running`
+After each phase returns: `dag-update set-status <phase-node> done` (or `failed`)
+After all phases complete: `dag-update set-status coder done`
 
 **A) Phase has no Steps section** → single agent for the whole phase:
 
@@ -199,11 +213,27 @@ Agent(prompt="
   Dashboard updates (use these to register sub-tasks and report progress):
     export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>'
     DU='bash $CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh'
-    # Register sub-tasks as you discover them:
+    # Register sub-tasks as you discover them (phases are children of coder):
     $DU add-node '$NODE_ID.task-1' '<label>' --parent '$NODE_ID'
     $DU set-status '$NODE_ID.task-1' running
-    # When done with the phase, write a report:
-    $DU write-report '$NODE_ID' '<detailed summary of what you did>'
+    # When done with the phase, write a detailed report using this format:
+    $DU write-report '$NODE_ID' '# Phase N: <name>
+
+## Summary
+2-3 sentences on what was accomplished.
+
+## Files Changed
+- `path/to/file.ts` — created/modified (what changed)
+
+## Tests
+- X tests added, all passing
+- Coverage: X%
+
+## Key Decisions
+- Decision and reasoning
+
+## Issues Encountered
+- Issue and resolution (or "None")'
 
   Return: files created/modified, tests with pass/fail and REQ/EDGE coverage, phase completed or blocked.
 ")
@@ -236,9 +266,22 @@ Agent(prompt="
   Plan dir: docs/spec/<SPEC_NAME>/
   Stage: post-tdd
 
-  When done, write a report:
+  When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report quality-gate '<verdict and summary>'
+    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report quality-gate '# Quality Gate
+
+## Verdict: PASS/BLOCKED/STAGNATION
+
+## Metrics Comparison
+| Metric | Baseline | Current | Status |
+|--------|----------|---------|--------|
+| Type check | 0 errors | X errors | PASS/FAIL |
+| Lint | X warnings | Y warnings | PASS/FAIL |
+| Tests | X passed | Y passed | PASS/FAIL |
+| Coverage | X% | Y% | PASS/FAIL |
+
+## Failures
+- Details of any failures (or "None")'
 
   Return: gate report path, verdict (PASS/BLOCKED/STAGNATION).
 ")
@@ -261,9 +304,15 @@ Agent(prompt="
   Spec dir: docs/spec/<SPEC_NAME>/
   Plan dir: docs/spec/<SPEC_NAME>/
 
-  When done, write a report:
+  When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report docs '<list of docs updated/created>'
+    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report docs '# Sync Docs
+
+## Documents Updated
+- `path/to/doc.md` — what changed
+
+## Documents Created
+- `path/to/new-doc.md` — what it covers'
 
   Return: list of docs updated/created.
 ")
@@ -283,9 +332,18 @@ Agent(prompt="
   Spec dir: docs/spec/<SPEC_NAME>/
   If nothing went wrong, skip.
 
-  When done, write a report:
+  When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report learnings '<summary of learnings captured>'
+    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report learnings '# Learnings
+
+## Friction Points
+- What caused delays or confusion
+
+## Patterns Documented
+- `path/to/learning.md` — what it covers
+
+## Recommendations
+- Suggestions for future runs (or "None — clean run")'
 
   Return: doc path written (or 'none').
 ")
@@ -304,9 +362,18 @@ Agent(prompt="
   Then push: git push -u origin <BRANCH_NAME>
   Then create PR: gh pr create referencing task summary, spec, and plan.
 
-  When done, write a report:
+  When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report commit-pr '<commits made and PR URL>'
+    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report commit-pr '# Commit & PR
+
+## Commits
+- `abc1234` — commit message 1
+- `def5678` — commit message 2
+
+## Pull Request
+- URL: <PR_URL>
+- Title: <PR title>
+- Branch: <branch> → main'
 
   Return: commits list, PR URL.
 ")

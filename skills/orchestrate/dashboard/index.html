@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Orchestrate Dashboard</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@1.1.4/dist/dagre.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@1.0.2/dist/dagre.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -281,6 +281,55 @@
     .modal-meta { color: #777; font-size: 12px; }
     .modal-meta dt { font-weight: 600; color: #999; margin-top: 8px; }
     .modal-meta dd { margin-left: 0; margin-top: 2px; }
+
+    /* ── Phase tabs ── */
+    .phase-tabs {
+      background: #2D2D2D;
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-top: 16px;
+    }
+    .phase-tabs-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #777;
+      margin-bottom: 8px;
+    }
+    .phase-tabs-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .phase-tab {
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: #3D3D3D;
+      color: #DDD;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-family: 'JetBrains Mono', monospace;
+      transition: background 0.15s;
+    }
+    .phase-tab:hover { background: #555; }
+    .phase-tab.active {
+      background: #FF6B35;
+      color: #0D0D0D;
+    }
+    .modal-back {
+      display: inline-block;
+      color: #FF6B35;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 12px;
+      border: none;
+      background: none;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 0;
+    }
+    .modal-back:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -419,6 +468,105 @@
       return data.edges.filter(function(e) { return visibleNodes.has(e[0]) && visibleNodes.has(e[1]); });
     }
 
+    // ── Constants for manual child layout ──
+    var CHILD_NODE_HEIGHT = 40;
+    var CHILD_NODE_GAP = 10;
+    var CHILD_PAD_TOP = 40;   // space for group label
+    var CHILD_PAD_SIDE = 16;
+    var CHILD_PAD_BOTTOM = 16;
+
+    // ── Recursive height calculation ──
+    // Returns the height a node needs if it's expanded (or CHILD_NODE_HEIGHT if collapsed/leaf)
+    function calcNodeHeight(data, nodeId) {
+      var node = data.nodes[nodeId];
+      if (!node) return CHILD_NODE_HEIGHT;
+      var hasKids = node.children && node.children.length > 0;
+      if (!hasKids || !expandedNodes.has(nodeId)) return CHILD_NODE_HEIGHT;
+
+      var totalH = CHILD_PAD_TOP;
+      node.children.forEach(function(cid, i) {
+        if (i > 0) totalH += CHILD_NODE_GAP;
+        totalH += calcNodeHeight(data, cid);
+      });
+      totalH += CHILD_PAD_BOTTOM;
+      return totalH;
+    }
+
+    // ── Recursive width calculation ──
+    // Returns the max width needed by a node and its expanded descendants
+    function calcNodeWidth(data, nodeId) {
+      var node = data.nodes[nodeId];
+      if (!node) return 200;
+      var labelW = node.label.length * 8.5 + 60;
+      var hasKids = node.children && node.children.length > 0;
+      if (!hasKids || !expandedNodes.has(nodeId)) return Math.max(160, labelW);
+
+      var maxChildW = 0;
+      node.children.forEach(function(cid) {
+        var cw = calcNodeWidth(data, cid);
+        if (cw > maxChildW) maxChildW = cw;
+      });
+      return maxChildW + CHILD_PAD_SIDE * 2;
+    }
+
+    // ── Recursively position children inside a parent ──
+    // Returns array of positioned nodes (with nested children flattened)
+    function positionChildren(data, parentId, centerX, topY) {
+      var parent = data.nodes[parentId];
+      if (!parent || !parent.children) return { nodes: [], groups: [] };
+
+      var allNodes = [];
+      var allGroups = [];
+      var currentY = topY + CHILD_PAD_TOP;
+      var parentW = calcNodeWidth(data, parentId);
+      var innerW = parentW - CHILD_PAD_SIDE * 2;
+
+      parent.children.forEach(function(cid, i) {
+        var cn = data.nodes[cid];
+        if (!cn) return;
+
+        var childH = calcNodeHeight(data, cid);
+        var hasKids = cn.children && cn.children.length > 0;
+        var isExpanded = hasKids && expandedNodes.has(cid);
+
+        if (isExpanded) {
+          // This child is also expanded — draw group box and recurse
+          var groupBox = {
+            x: centerX - innerW / 2,
+            y: currentY,
+            width: innerW,
+            height: childH
+          };
+          allGroups.push({ id: cid, box: groupBox, node: cn });
+
+          // Recurse into this child's children
+          var nested = positionChildren(data, cid, centerX, currentY);
+          nested.nodes.forEach(function(n) { allNodes.push(n); });
+          nested.groups.forEach(function(g) { allGroups.push(g); });
+        } else {
+          // Leaf or collapsed node — position as a regular child node
+          allNodes.push({
+            id: cid,
+            x: centerX,
+            y: currentY + childH / 2,
+            width: innerW,
+            height: childH,
+            label: cn.label,
+            status: cn.status,
+            startedAt: cn.startedAt,
+            completedAt: cn.completedAt,
+            artifacts: cn.artifacts,
+            children: cn.children,
+            isChild: true
+          });
+        }
+
+        currentY += childH + CHILD_NODE_GAP;
+      });
+
+      return { nodes: allNodes, groups: allGroups };
+    }
+
     // ── Build dagre graph ──
     function buildGraph(data) {
       var g = new dagre.graphlib.Graph();
@@ -431,21 +579,222 @@
         if (node.children) node.children.forEach(function(c) { allChildren.add(c); });
       });
 
+      // Only 'coder' is the dagre-level expanded parent (children laid out by dagre)
+      // All other expanded nodes use recursive manual positioning
+      var coderExpanded = expandedNodes.has('coder') && data.nodes['coder'] &&
+        data.nodes['coder'].children && data.nodes['coder'].children.length > 0;
+
+      // Collect all manually-expanded nodes (everything except coder)
+      var manualExpanded = new Set();
+      expandedNodes.forEach(function(id) {
+        if (id === 'coder') return;
+        var node = data.nodes[id];
+        if (node && node.children && node.children.length > 0) {
+          manualExpanded.add(id);
+        }
+      });
+
+      // Collect all nodes that are descendants of manually-expanded parents (at any depth)
+      var manualDescendants = new Set();
+      function collectDescendants(parentId) {
+        var parent = data.nodes[parentId];
+        if (!parent || !parent.children) return;
+        parent.children.forEach(function(cid) {
+          manualDescendants.add(cid);
+          if (expandedNodes.has(cid)) collectDescendants(cid);
+        });
+      }
+      manualExpanded.forEach(collectDescendants);
+
+      // Add visible nodes to dagre
       visible.forEach(function(id) {
+        if (coderExpanded && id === 'coder') return; // skip coder — drawn as group box
+        if (manualDescendants.has(id)) return; // skip — manually positioned
+
         var node = data.nodes[id];
         var hasKids = node.children && node.children.length > 0;
-        var arrow = hasKids ? (expandedNodes.has(id) ? ' ▼' : ' ▶') : '';
+
+        // Manually expanded node: add as enlarged node to dagre
+        if (manualExpanded.has(id)) {
+          var w = calcNodeWidth(data, id);
+          var h = calcNodeHeight(data, id);
+          g.setNode(id, { label: node.label, width: w, height: h });
+          return;
+        }
+
+        var arrow = hasKids ? ' ▶' : '';
         var labelText = node.label + arrow;
         var width = Math.max(160, labelText.length * 8.5 + 60);
         var height = allChildren.has(id) ? 40 : 48;
         g.setNode(id, { label: labelText, width: width, height: height });
       });
 
+      // Reroute edges touching coder (if expanded) to first/last dagre child
       var visibleEdges = getVisibleEdges(data, visible);
-      visibleEdges.forEach(function(e) { g.setEdge(e[0], e[1]); });
+      var routedEdges = [];
+      visibleEdges.forEach(function(e) {
+        var from = e[0], to = e[1];
+
+        // Skip edges between manual descendants (not in dagre)
+        if (manualDescendants.has(from) || manualDescendants.has(to)) return;
+
+        if (coderExpanded && from === 'coder') {
+          var kids = data.nodes['coder'].children.filter(function(c) { return g.hasNode(c); });
+          if (kids.length > 0) from = kids[kids.length - 1];
+        }
+        if (coderExpanded && to === 'coder') {
+          var kids2 = data.nodes['coder'].children.filter(function(c) { return g.hasNode(c); });
+          if (kids2.length > 0) to = kids2[0];
+        }
+
+        if (g.hasNode(from) && g.hasNode(to)) {
+          routedEdges.push([from, to]);
+          g.setEdge(from, to);
+        }
+      });
 
       dagre.layout(g);
-      return { graph: g, visible: visible, visibleEdges: visibleEdges };
+
+      // Compute coder group box from dagre-laid-out children
+      var groupBoxes = {};
+      if (coderExpanded) {
+        var coderNode = data.nodes['coder'];
+        var kids = coderNode.children.filter(function(c) { return g.hasNode(c); });
+        if (kids.length > 0) {
+          var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          kids.forEach(function(childId) {
+            var cn = g.node(childId);
+            if (!cn) return;
+            minX = Math.min(minX, cn.x - cn.width / 2);
+            minY = Math.min(minY, cn.y - cn.height / 2);
+            maxX = Math.max(maxX, cn.x + cn.width / 2);
+            maxY = Math.max(maxY, cn.y + cn.height / 2);
+          });
+          var pad = 20;
+          groupBoxes['coder'] = {
+            x: minX - pad,
+            y: minY - CHILD_PAD_TOP,
+            width: (maxX - minX) + pad * 2,
+            height: (maxY - minY) + CHILD_PAD_TOP + pad
+          };
+        }
+      }
+
+      // Compute manually positioned children recursively
+      var manualResults = {}; // parentId → { nodes: [...], groups: [...] }
+      manualExpanded.forEach(function(parentId) {
+        var gNode = g.node(parentId);
+        if (!gNode) return;
+        var topY = gNode.y - gNode.height / 2;
+        var result = positionChildren(data, parentId, gNode.x, topY);
+
+        // Add the parent itself as a group
+        result.groups.unshift({
+          id: parentId,
+          box: {
+            x: gNode.x - gNode.width / 2,
+            y: topY,
+            width: gNode.width,
+            height: gNode.height
+          },
+          node: data.nodes[parentId]
+        });
+
+        manualResults[parentId] = result;
+      });
+
+      return {
+        graph: g,
+        visible: visible,
+        routedEdges: routedEdges,
+        coderExpanded: coderExpanded,
+        manualExpanded: manualExpanded,
+        manualDescendants: manualDescendants,
+        groupBoxes: groupBoxes,
+        manualResults: manualResults
+      };
+    }
+
+    // ── Zoom state (preserved across renders) ──
+    var currentZoom = null;
+    var zoomBehavior = null;
+
+    // ── Helper: draw a single node rect + label + status dot ──
+    function drawNode(container, d) {
+      var colors = STATUS_COLORS[d.status] || STATUS_COLORS.pending;
+      var isChild = d.isChild || false;
+      var hasKids = d.children && d.children.length > 0;
+      var arrow = hasKids ? (expandedNodes.has(d.id) ? ' ▼' : ' ▶') : '';
+
+      var nodeG = container.append('g')
+        .attr('class', 'node' + (d.status === 'running' ? ' node-running' : ''))
+        .attr('transform', 'translate(' + (d.x - d.width/2) + ',' + (d.y - d.height/2) + ')');
+
+      nodeG.append('rect')
+        .attr('width', d.width)
+        .attr('height', d.height)
+        .attr('rx', isChild ? 10 : 14)
+        .attr('fill', isChild ? CHILD_FILL : colors.fill)
+        .attr('stroke', colors.border)
+        .attr('stroke-width', 2)
+        .style('cursor', 'pointer')
+        .on('click', function() { onNodeClick(d); });
+
+      nodeG.append('circle')
+        .attr('class', 'node-status-dot')
+        .attr('cx', 16)
+        .attr('cy', d.height / 2)
+        .attr('r', isChild ? 4 : 5)
+        .attr('fill', d.status === 'pending' ? 'transparent' : colors.border)
+        .attr('stroke', d.status === 'pending' ? colors.border : 'none')
+        .attr('stroke-width', 1.5);
+
+      nodeG.append('text')
+        .attr('class', 'node-label')
+        .attr('x', 32)
+        .attr('y', d.height / 2 + 1)
+        .attr('dominant-baseline', 'middle')
+        .attr('font-size', isChild ? '11px' : '12px')
+        .text(d.label + arrow);
+
+      nodeG.append('text')
+        .attr('class', 'node-time')
+        .attr('x', d.width - 12)
+        .attr('y', d.height / 2 + 1)
+        .attr('dominant-baseline', 'middle')
+        .attr('text-anchor', 'end')
+        .text(nodeDuration(d));
+    }
+
+    // ── Helper: draw a group box (dashed border + label) ──
+    function drawGroupBox(container, box, dNode) {
+      var d = Object.assign({ id: dNode.id || '' }, dNode);
+      var borderColor = (STATUS_COLORS[d.status] || STATUS_COLORS.pending).border;
+
+      var grp = container.append('g').attr('class', 'group');
+      grp.append('rect')
+        .attr('x', box.x)
+        .attr('y', box.y)
+        .attr('width', box.width)
+        .attr('height', box.height)
+        .attr('rx', 16)
+        .attr('fill', '#1A1A1A')
+        .attr('stroke', borderColor)
+        .attr('stroke-width', 2)
+        .attr('stroke-dasharray', '6,3')
+        .style('cursor', 'pointer')
+        .on('click', function() { onNodeClick(d); });
+
+      grp.append('text')
+        .attr('x', box.x + 16)
+        .attr('y', box.y + 22)
+        .attr('font-family', "'JetBrains Mono', monospace")
+        .attr('font-size', '12px')
+        .attr('font-weight', '600')
+        .attr('fill', borderColor)
+        .style('cursor', 'pointer')
+        .text(d.label + ' ▼')
+        .on('click', function() { onNodeClick(d); });
     }
 
     // ── Render DAG ──
@@ -454,18 +803,30 @@
       var result = buildGraph(data);
       var graph = result.graph;
       var visible = result.visible;
-      var visibleEdges = result.visibleEdges;
+      var coderExpanded = result.coderExpanded;
+      var manualExpanded = result.manualExpanded;
+      var manualDescendants = result.manualDescendants;
       var svg = d3.select('#dag-svg');
-      var container = svg.select('.dag-content');
 
-      if (container.empty()) {
-        container = svg.append('g').attr('class', 'dag-content');
-
-        var zoom = d3.zoom()
+      // Set up zoom once
+      if (!zoomBehavior) {
+        zoomBehavior = d3.zoom()
           .scaleExtent([0.3, 3])
-          .on('zoom', function(e) { container.attr('transform', e.transform); });
-        svg.call(zoom);
+          .on('zoom', function(e) {
+            currentZoom = e.transform;
+            svg.select('.dag-content').attr('transform', e.transform);
+          });
+        svg.call(zoomBehavior);
+      }
 
+      // Clear and rebuild content layer
+      svg.select('.dag-content').remove();
+      var container = svg.append('g').attr('class', 'dag-content');
+
+      // Apply zoom
+      if (currentZoom) {
+        container.attr('transform', currentZoom);
+      } else {
         var gInfo = graph.graph();
         var svgEl = svg.node();
         var w = svgEl.clientWidth;
@@ -473,94 +834,113 @@
         var scale = Math.min(w / (gInfo.width + 80), h / (gInfo.height + 80), 1);
         var tx = (w - gInfo.width * scale) / 2;
         var ty = (h - gInfo.height * scale) / 2;
-        svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+        currentZoom = d3.zoomIdentity.translate(tx, ty).scale(scale);
+        svg.call(zoomBehavior.transform, currentZoom);
       }
 
-      // ── Edges ──
-      var edgeData = visibleEdges.map(function(e) {
-        var edge = graph.edge(e[0], e[1]);
-        return { from: e[0], to: e[1], points: edge.points };
+      // ── 1. Coder group box (behind everything) ──
+      var groupBoxes = result.groupBoxes;
+      if (coderExpanded && groupBoxes['coder']) {
+        drawGroupBox(container, groupBoxes['coder'], Object.assign({ id: 'coder' }, data.nodes['coder']));
+      }
+
+      // ── 2. Manually expanded group boxes (recursive) ──
+      var manualResults = result.manualResults;
+      Object.keys(manualResults).forEach(function(parentId) {
+        var res = manualResults[parentId];
+        // Draw all group boxes (parent + nested expanded children)
+        res.groups.forEach(function(g) {
+          drawGroupBox(container, g.box, Object.assign({ id: g.id }, g.node));
+        });
       });
 
-      var line = d3.line().x(function(d) { return d.x; }).y(function(d) { return d.y; }).curve(d3.curveBasis);
+      // ── 3. Edges (dagre-level) ──
+      var routedEdges = result.routedEdges;
+      var line = d3.line().x(function(p) { return p.x; }).y(function(p) { return p.y; }).curve(d3.curveBasis);
 
-      var edges = container.selectAll('.edge').data(edgeData, function(d) { return d.from + '->' + d.to; });
-      edges.exit().remove();
-      var edgesEnter = edges.enter().append('g').attr('class', 'edge');
-      edgesEnter.append('path');
-      var edgesMerge = edgesEnter.merge(edges);
-      edgesMerge.select('path')
-        .attr('d', function(d) { return line(d.points); })
-        .attr('marker-end', 'url(#arrowhead)');
+      routedEdges.forEach(function(e) {
+        var edge = graph.edge(e[0], e[1]);
+        if (!edge) return;
+        container.append('g').attr('class', 'edge')
+          .append('path')
+          .attr('d', line(edge.points))
+          .attr('marker-end', 'url(#arrowhead)');
+      });
 
-      // ── Nodes ──
+      // ── 4. Dagre-laid-out nodes (skip expanded parents and manual descendants) ──
       var allChildren = new Set();
       Object.values(data.nodes).forEach(function(node) {
         if (node.children) node.children.forEach(function(c) { allChildren.add(c); });
       });
 
-      var nodeData = [];
       visible.forEach(function(id) {
+        if (coderExpanded && id === 'coder') return;
+        if (manualExpanded.has(id)) return; // drawn as group box
+        if (manualDescendants.has(id)) return; // positioned manually below
         var gNode = graph.node(id);
+        if (!gNode) return;
         var dNode = data.nodes[id];
-        nodeData.push(Object.assign({ id: id, isChild: allChildren.has(id) }, gNode, dNode));
+        drawNode(container, Object.assign({ id: id, isChild: allChildren.has(id) }, gNode, dNode));
       });
 
-      var nodes = container.selectAll('.node').data(nodeData, function(d) { return d.id; });
-      nodes.exit().remove();
+      // ── 5. Manually positioned children (recursive) ──
+      Object.keys(manualResults).forEach(function(parentId) {
+        var res = manualResults[parentId];
+        var nodes = res.nodes;
 
-      var nodesEnter = nodes.enter().append('g');
-      nodesEnter.append('rect');
-      nodesEnter.append('circle').attr('class', 'node-status-dot');
-      nodesEnter.append('text').attr('class', 'node-label');
-      nodesEnter.append('text').attr('class', 'node-time');
+        // Draw connecting lines between sibling nodes within each group
+        // Group nodes by their direct parent
+        var byParent = {};
+        // Collect direct children per expanded parent
+        function collectDirectChildren(pid) {
+          var p = data.nodes[pid];
+          if (!p || !p.children) return;
+          byParent[pid] = [];
+          p.children.forEach(function(cid) {
+            // Find the positioned node for this child
+            var found = nodes.filter(function(n) { return n.id === cid; });
+            if (found.length > 0) {
+              byParent[pid].push(found[0]);
+            } else {
+              // Child is expanded — find its group box center
+              var grp = res.groups.filter(function(g) { return g.id === cid; });
+              if (grp.length > 0) {
+                byParent[pid].push({
+                  id: cid,
+                  x: grp[0].box.x + grp[0].box.width / 2,
+                  y: grp[0].box.y + grp[0].box.height / 2,
+                  width: grp[0].box.width,
+                  height: grp[0].box.height
+                });
+                // Recurse
+                collectDirectChildren(cid);
+              }
+            }
+          });
+        }
+        collectDirectChildren(parentId);
 
-      var nodesMerge = nodesEnter.merge(nodes);
-
-      nodesMerge
-        .attr('class', function(d) { return 'node' + (d.status === 'running' ? ' node-running' : ''); })
-        .attr('transform', function(d) { return 'translate(' + (d.x - d.width/2) + ', ' + (d.y - d.height/2) + ')'; });
-
-      nodesMerge.select('rect')
-        .attr('width', function(d) { return d.width; })
-        .attr('height', function(d) { return d.height; })
-        .attr('rx', function(d) { return d.isChild ? 10 : 14; })
-        .attr('fill', function(d) { return d.isChild ? CHILD_FILL : (STATUS_COLORS[d.status] || STATUS_COLORS.pending).fill; })
-        .attr('stroke', function(d) { return (STATUS_COLORS[d.status] || STATUS_COLORS.pending).border; })
-        .attr('stroke-width', 2)
-        .on('click', function(e, d) { onNodeClick(d); });
-
-      nodesMerge.select('.node-status-dot')
-        .attr('cx', 20)
-        .attr('cy', function(d) { return d.height / 2; })
-        .attr('r', function(d) { return d.isChild ? 4 : 5; })
-        .attr('fill', function(d) {
-          var c = STATUS_COLORS[d.status] || STATUS_COLORS.pending;
-          return d.status === 'pending' ? 'transparent' : c.border;
-        })
-        .attr('stroke', function(d) {
-          var c = STATUS_COLORS[d.status] || STATUS_COLORS.pending;
-          return d.status === 'pending' ? c.border : 'none';
-        })
-        .attr('stroke-width', 1.5);
-
-      nodesMerge.select('.node-label')
-        .attr('x', 36)
-        .attr('y', function(d) { return d.height / 2 + 1; })
-        .attr('dominant-baseline', 'middle')
-        .attr('font-size', function(d) { return d.isChild ? '11px' : '12px'; })
-        .text(function(d) {
-          var hasKids = d.children && d.children.length > 0;
-          var arrow = hasKids ? (expandedNodes.has(d.id) ? ' ▼' : ' ▶') : '';
-          return d.label + arrow;
+        // Draw connecting lines for each group
+        Object.keys(byParent).forEach(function(pid) {
+          var siblings = byParent[pid];
+          for (var i = 0; i < siblings.length - 1; i++) {
+            var from = siblings[i];
+            var to = siblings[i + 1];
+            container.append('g').attr('class', 'edge')
+              .append('path')
+              .attr('d', line([
+                { x: from.x, y: from.y + from.height / 2 },
+                { x: to.x, y: to.y - to.height / 2 }
+              ]))
+              .attr('marker-end', 'url(#arrowhead)');
+          }
         });
 
-      nodesMerge.select('.node-time')
-        .attr('x', function(d) { return d.width - 12; })
-        .attr('y', function(d) { return d.height / 2 + 1; })
-        .attr('dominant-baseline', 'middle')
-        .attr('text-anchor', 'end')
-        .text(function(d) { return nodeDuration(d); });
+        // Draw leaf/collapsed child nodes
+        nodes.forEach(function(child) {
+          drawNode(container, child);
+        });
+      });
     }
 
     // ── Node click ──
@@ -583,43 +963,123 @@
     }
 
     // ── Modal ──
+    var modalNode = null; // current node being shown
+    var modalPhases = []; // phase file paths for planning node
+
+    function renderMarkdownToBody(body, md) {
+      body.replaceChildren();
+      var sanitized = DOMPurify.sanitize(marked.parse(md));
+      var wrapper = document.createElement('div');
+      wrapper.innerHTML = sanitized;
+      body.appendChild(wrapper);
+    }
+
+    function fetchAndRender(body, path, cacheKey) {
+      if (isStatic && reportsCache[cacheKey]) {
+        renderMarkdownToBody(body, reportsCache[cacheKey]);
+        return;
+      }
+      if (isStatic) {
+        body.textContent = '(Report not available in static mode)';
+        return;
+      }
+      fetch(path + '?t=' + Date.now())
+        .then(function(resp) { return resp.ok ? resp.text() : '*(Report file not found)*'; })
+        .then(function(text) { renderMarkdownToBody(body, text); })
+        .catch(function() { body.textContent = '(Could not load report)'; });
+    }
+
+    function buildPhaseTabs(body, phases, activeIndex) {
+      var tabsContainer = document.createElement('div');
+      tabsContainer.className = 'phase-tabs';
+
+      var title = document.createElement('div');
+      title.className = 'phase-tabs-title';
+      title.textContent = 'Phase Details';
+      tabsContainer.appendChild(title);
+
+      var row = document.createElement('div');
+      row.className = 'phase-tabs-row';
+
+      phases.forEach(function(phasePath, i) {
+        var btn = document.createElement('button');
+        btn.className = 'phase-tab' + (i === activeIndex ? ' active' : '');
+        // Extract phase name from filename: "reports/phase-1.md" → "Phase 1"
+        var name = phasePath.replace(/.*\//, '').replace('.md', '').replace(/-/g, ' ');
+        name = name.charAt(0).toUpperCase() + name.slice(1);
+        btn.textContent = name;
+        btn.addEventListener('click', function() { showPhase(i); });
+        row.appendChild(btn);
+      });
+
+      tabsContainer.appendChild(row);
+      body.appendChild(tabsContainer);
+    }
+
+    function showMainReport() {
+      var body = document.getElementById('modal-body');
+      var reportPath = modalNode.artifacts && modalNode.artifacts.report;
+      if (!reportPath) return;
+
+      fetchAndRender(body, reportPath, modalNode.id);
+
+      // Wait for render, then append phase tabs
+      setTimeout(function() {
+        if (modalPhases.length > 0) {
+          buildPhaseTabs(body, modalPhases, -1);
+        }
+      }, 100);
+    }
+
+    function showPhase(index) {
+      var body = document.getElementById('modal-body');
+      body.replaceChildren();
+
+      // Back button
+      var back = document.createElement('button');
+      back.className = 'modal-back';
+      back.textContent = '← Back to Plan';
+      back.addEventListener('click', showMainReport);
+      body.appendChild(back);
+
+      // Phase content container
+      var content = document.createElement('div');
+      body.appendChild(content);
+
+      var phasePath = modalPhases[index];
+      var cacheKey = 'phase-' + index;
+      fetchAndRender(content, phasePath, cacheKey);
+
+      // Append tabs after content loads
+      setTimeout(function() {
+        buildPhaseTabs(body, modalPhases, index);
+      }, 100);
+    }
+
     function openModal(node) {
       var overlay = document.getElementById('modal-overlay');
       document.getElementById('modal-title').textContent = node.label;
       document.getElementById('modal-duration').textContent = node.startedAt ? '// completed in ' + nodeDuration(node) : '';
       var body = document.getElementById('modal-body');
+      modalNode = node;
+
+      // Check for phase files (planning node)
+      var phasesStr = node.artifacts && node.artifacts.phases;
+      modalPhases = phasesStr ? phasesStr.split(',').filter(function(p) { return p.trim(); }) : [];
 
       var reportPath = node.artifacts && node.artifacts.report;
 
       if (reportPath) {
-        var md = '';
+        fetchAndRender(body, reportPath, node.id);
 
-        if (isStatic && reportsCache[node.id]) {
-          md = reportsCache[node.id];
-          body.replaceChildren();
-          var sanitized = DOMPurify.sanitize(marked.parse(md));
-          var wrapper = document.createElement('div');
-          wrapper.innerHTML = sanitized;
-          body.appendChild(wrapper);
-          overlay.classList.add('visible');
-        } else if (isStatic) {
-          body.textContent = '(Report not available in static mode)';
-          overlay.classList.add('visible');
-        } else {
-          fetch(reportPath + '?t=' + Date.now())
-            .then(function(resp) { return resp.ok ? resp.text() : '*(Report file not found)*'; })
-            .then(function(text) {
-              body.replaceChildren();
-              var sanitized = DOMPurify.sanitize(marked.parse(text));
-              var wrapper = document.createElement('div');
-              wrapper.innerHTML = sanitized;
-              body.appendChild(wrapper);
-            })
-            .catch(function() {
-              body.textContent = '(Could not load report)';
-            });
-          overlay.classList.add('visible');
+        // Append phase tabs after markdown renders
+        if (modalPhases.length > 0) {
+          setTimeout(function() {
+            buildPhaseTabs(body, modalPhases, -1);
+          }, 100);
         }
+
+        overlay.classList.add('visible');
       } else {
         // Show node metadata using safe DOM methods
         body.replaceChildren();

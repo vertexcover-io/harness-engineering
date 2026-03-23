@@ -163,11 +163,13 @@ cmd_set_artifact() {
 cmd_write_report() {
   local node_id="$1"
   local content="$2"
-  local report_path="$HARNESS_DIR/reports/${node_id}-report.md"
+  local report_file="reports/${node_id}-report.md"
+  local report_path="$HARNESS_DIR/$report_file"
 
   printf '%s' "$content" > "$report_path"
 
-  cmd_set_artifact "$node_id" "report" "$report_path"
+  # Store path relative to HARNESS_DIR (the HTTP server root)
+  cmd_set_artifact "$node_id" "report" "$report_file"
 }
 
 cmd_serve() {
@@ -176,18 +178,24 @@ cmd_serve() {
   # Copy HTML template
   cp "$SCRIPT_DIR/index.html" "$harness_dir/index.html"
 
-  # Start Python HTTP server on random port
-  python3 -m http.server 0 --directory "$harness_dir" > "$harness_dir/server.log" 2>&1 &
+  # Start Python HTTP server on random port with unbuffered output
+  python3 -u -m http.server 0 --directory "$harness_dir" > "$harness_dir/server.log" 2>&1 &
   local server_pid=$!
   echo "$server_pid" > "$harness_dir/server.pid"
 
-  # Wait briefly for server to start, then extract port
-  sleep 1
-  local port
-  port="$(grep -oP 'port \K[0-9]+' "$harness_dir/server.log" 2>/dev/null || true)"
+  # Wait for server to print its port (retry up to 3 seconds)
+  local port=""
+  for i in 1 2 3 4 5 6; do
+    sleep 0.5
+    port="$(grep -oP 'port \K[0-9]+' "$harness_dir/server.log" 2>/dev/null || true)"
+    if [[ -n "$port" ]]; then
+      break
+    fi
+  done
 
+  # Fallback: read port from the process's listening socket
   if [[ -z "$port" ]]; then
-    port="$(lsof -p "$server_pid" -iTCP -sTCP:LISTEN -Fn 2>/dev/null | grep -oP ':\K[0-9]+' | head -1 || true)"
+    port="$(ss -tlnp 2>/dev/null | grep "pid=$server_pid" | grep -oP ':(\d+)' | head -1 | tr -d ':' || true)"
   fi
 
   if [[ -n "$port" ]]; then
@@ -199,7 +207,7 @@ cmd_serve() {
     fi
     echo "http://localhost:$port"
   else
-    echo "WARNING: Could not determine server port" >&2
+    echo "WARNING: Could not determine server port. Check $harness_dir/server.log" >&2
   fi
 }
 
@@ -251,9 +259,14 @@ cmd_finalize() {
     while IFS= read -r node_id; do
       local report_path
       report_path="$(jq -r ".nodes[\"$node_id\"].artifacts.report // empty" "$dag_file")"
-      if [[ -n "$report_path" && -f "$report_path" ]]; then
+      # Resolve relative paths against HARNESS_DIR
+      local resolved_path="$report_path"
+      if [[ -n "$report_path" && ! "$report_path" = /* && -f "$HARNESS_DIR/$report_path" ]]; then
+        resolved_path="$HARNESS_DIR/$report_path"
+      fi
+      if [[ -n "$report_path" && -f "$resolved_path" ]]; then
         local content
-        content="$(jq -Rs . "$report_path")"
+        content="$(jq -Rs . "$resolved_path")"
         reports_data="$(echo "$reports_data" | jq --arg k "$node_id" --argjson v "$content" '. + {($k): $v}')"
       fi
     done < <(jq -r '.nodes | keys[]' "$dag_file")
