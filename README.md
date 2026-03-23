@@ -86,7 +86,6 @@ This is a Claude Code plugin. It's not yet available in the marketplace, so inst
 ```bash
 # Clone the repo
 git clone https://github.com/vertexcover-io/harness-engineering.git
-cd harness-engineering/agents/claude
 
 # Run Claude Code with the plugin loaded from this directory
 claude --plugin-dir .
