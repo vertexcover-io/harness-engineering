@@ -286,12 +286,16 @@ html = open(html_path).read()
 dag = open(dag_file).read()
 reports = open(reports_path).read()
 
+# Escape </script> in data to prevent breaking the HTML
+dag_safe = dag.replace('</script>', '<\\/script>')
+reports_safe = reports.replace('</script>', '<\\/script>')
+
 html = re.sub(
     r'(<script type="application/json" id="dag-data">)(.*?)(</script>)',
-    lambda m: m.group(1) + dag + m.group(3), html, flags=re.DOTALL)
+    lambda m: m.group(1) + dag_safe + m.group(3), html, count=1, flags=re.DOTALL)
 html = re.sub(
     r'(<script type="application/json" id="reports-data">)(.*?)(</script>)',
-    lambda m: m.group(1) + reports + m.group(3), html, flags=re.DOTALL)
+    lambda m: m.group(1) + reports_safe + m.group(3), html, count=1, flags=re.DOTALL)
 open(html_path, 'w').write(html)
 PYEOF
     rm -f "$HARNESS_DIR/reports-data.tmp"
