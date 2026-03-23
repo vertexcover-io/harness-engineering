@@ -419,6 +419,8 @@
     }
 
     // ── Header ──
+    var headerTimerInterval = null;
+
     function renderHeader(meta) {
       document.getElementById('header-task').textContent = meta.task || '';
       document.getElementById('badge-branch').textContent = meta.branch || 'unknown';
@@ -433,8 +435,14 @@
           document.getElementById('badge-timer').textContent = formatDuration(end - start);
         };
         updateTimer();
+
+        // Clear any previous timer, only start a new one if still running
+        if (headerTimerInterval) {
+          clearInterval(headerTimerInterval);
+          headerTimerInterval = null;
+        }
         if (!meta.completedAt) {
-          setInterval(updateTimer, 1000);
+          headerTimerInterval = setInterval(updateTimer, 1000);
         }
       }
     }
@@ -492,14 +500,28 @@
       return totalH;
     }
 
+    // ── Node width calculation ──
+    // Accounts for: dot + label + arrow + time + report icon + padding
+    function calcSingleNodeWidth(node) {
+      if (!node) return 200;
+      var hasKids = node.children && node.children.length > 0;
+      var hasReport = node.artifacts && node.artifacts.report;
+      var dotAndPad = 32;       // status dot + left gap
+      var labelW = node.label.length * 8;
+      var arrowW = hasKids ? 20 : 0;
+      var timeW = 60;           // "00:03:28"
+      var reportW = hasReport ? 32 : 0;
+      var rightPad = 12;
+      return Math.max(200, dotAndPad + labelW + arrowW + timeW + reportW + rightPad);
+    }
+
     // ── Recursive width calculation ──
     // Returns the max width needed by a node and its expanded descendants
     function calcNodeWidth(data, nodeId) {
       var node = data.nodes[nodeId];
       if (!node) return 200;
-      var labelW = node.label.length * 8.5 + 60;
       var hasKids = node.children && node.children.length > 0;
-      if (!hasKids || !expandedNodes.has(nodeId)) return Math.max(160, labelW);
+      if (!hasKids || !expandedNodes.has(nodeId)) return calcSingleNodeWidth(node);
 
       var maxChildW = 0;
       node.children.forEach(function(cid) {
@@ -622,11 +644,9 @@
           return;
         }
 
-        var arrow = hasKids ? ' ▶' : '';
-        var labelText = node.label + arrow;
-        var width = Math.max(160, labelText.length * 8.5 + 60);
+        var width = calcSingleNodeWidth(node);
         var height = allChildren.has(id) ? 40 : 48;
-        g.setNode(id, { label: labelText, width: width, height: height });
+        g.setNode(id, { label: node.label, width: width, height: height });
       });
 
       // Reroute edges touching coder (if expanded) to first/last dagre child
@@ -724,12 +744,14 @@
       var colors = STATUS_COLORS[d.status] || STATUS_COLORS.pending;
       var isChild = d.isChild || false;
       var hasKids = d.children && d.children.length > 0;
+      var hasReport = d.artifacts && d.artifacts.report;
       var arrow = hasKids ? (expandedNodes.has(d.id) ? ' ▼' : ' ▶') : '';
 
       var nodeG = container.append('g')
         .attr('class', 'node' + (d.status === 'running' ? ' node-running' : ''))
         .attr('transform', 'translate(' + (d.x - d.width/2) + ',' + (d.y - d.height/2) + ')');
 
+      // Main rect — click toggles expand (if has kids) or opens modal (if leaf)
       nodeG.append('rect')
         .attr('width', d.width)
         .attr('height', d.height)
@@ -740,6 +762,7 @@
         .style('cursor', 'pointer')
         .on('click', function() { onNodeClick(d); });
 
+      // Status dot
       nodeG.append('circle')
         .attr('class', 'node-status-dot')
         .attr('cx', 16)
@@ -749,6 +772,7 @@
         .attr('stroke', d.status === 'pending' ? colors.border : 'none')
         .attr('stroke-width', 1.5);
 
+      // Label
       nodeG.append('text')
         .attr('class', 'node-label')
         .attr('x', 32)
@@ -757,13 +781,44 @@
         .attr('font-size', isChild ? '11px' : '12px')
         .text(d.label + arrow);
 
+      // Time (shift left if report icon present)
+      var timeX = hasReport ? d.width - 36 : d.width - 12;
       nodeG.append('text')
         .attr('class', 'node-time')
-        .attr('x', d.width - 12)
+        .attr('x', timeX)
         .attr('y', d.height / 2 + 1)
         .attr('dominant-baseline', 'middle')
         .attr('text-anchor', 'end')
         .text(nodeDuration(d));
+
+      // Report icon — only shown when node has a report artifact
+      if (hasReport) {
+        var iconG = nodeG.append('g')
+          .attr('class', 'node-report-icon')
+          .style('cursor', 'pointer')
+          .on('click', function(event) {
+            event.stopPropagation();
+            openModal(d);
+          });
+
+        // Icon background circle
+        iconG.append('circle')
+          .attr('cx', d.width - 18)
+          .attr('cy', d.height / 2)
+          .attr('r', 12)
+          .attr('fill', '#2D2D2D')
+          .attr('stroke', '#555')
+          .attr('stroke-width', 1);
+
+        // Document icon (SVG path)
+        iconG.append('path')
+          .attr('d', 'M-4,-5 L2,-5 L5,-2 L5,5 L-4,5 Z M2,-5 L2,-2 L5,-2')
+          .attr('transform', 'translate(' + (d.width - 18) + ',' + (d.height / 2) + ')')
+          .attr('fill', 'none')
+          .attr('stroke', '#999')
+          .attr('stroke-width', 1.2)
+          .attr('stroke-linejoin', 'round');
+      }
     }
 
     // ── Helper: draw a group box (dashed border + label) ──
