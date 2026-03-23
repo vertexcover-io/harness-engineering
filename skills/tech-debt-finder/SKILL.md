@@ -46,7 +46,9 @@ Parse `$ARGUMENTS`:
 
 ### Step 2: Dispatch Parallel Scanners
 
-Launch **3 agents in parallel** using the Agent tool. Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`).
+Launch **3 agents in parallel** using the Agent tool. Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, fix_hint, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`).
+
+The `fix_hint` field is a one-liner describing why the finding matters and a suggested fix direction (e.g., "Re-raise or log with context before continuing"). If a finding has no clear fix direction, omit `fix_hint`.
 
 Each agent is free to use whatever detection approach works best — grep, AST parsing, external tools (radon, ruff, pip-audit), file reading, or any combination. The goal is accurate detection, not a specific technique.
 
@@ -67,7 +69,7 @@ Detect debt in these categories:
 | **Circular dependency signal** | `if TYPE_CHECKING:` blocks or function-level imports used as circular import workarounds | Medium |
 | **Pinning gap** | Dependency with no upper bound on major version (e.g. `>=2.0` with no `<3`) | Low |
 
-Return findings with category `dependency`.
+Return findings with category `dependency`. Include a `fix_hint` for each finding — a brief "why this matters + fix direction" one-liner.
 
 ---
 
@@ -105,7 +107,7 @@ radon cc -s -n B -j <scope_path>
 
 If `radon` is not found and `pip install radon` fails, skip complexity checks and note in report: "Complexity checks skipped — radon install failed".
 
-Return findings with category `architecture`, `complexity`, or `duplication`.
+Return findings with category `architecture`, `complexity`, or `duplication`. Include a `fix_hint` for each finding — a brief "why this matters + fix direction" one-liner.
 
 ---
 
@@ -125,7 +127,7 @@ Detect debt in these categories:
 | 8 | **Dead code — commented out** | Commented-out function defs, imports, returns, or class definitions. Git has the history | `# def old_handler():` | Low | code-smell |
 | 9 | **Global mutable state** | Module-level mutable collections (dicts, lists, sets) that get mutated at runtime — thread-safety risk in async contexts | `CACHE = {}\n...\nCACHE[key] = val` | Medium | code-smell |
 
-Return findings with their respective categories.
+Return findings with their respective categories. Include a `fix_hint` for each finding — a brief "why this matters + fix direction" one-liner.
 
 ---
 
@@ -203,40 +205,102 @@ Output the report directly to the user:
 | ... | ... | ... |
 ```
 
-### Step 5: Create GitHub Issue
+### Step 5: Create GitHub Issues
 
-Automatically create a GitHub issue with the findings. No confirmation needed.
+Automatically create GitHub issues with the findings. No confirmation needed. Creates one sub-issue per category, then a parent issue linking them all.
 
-**5a. Ensure the `tech-debt` label exists:**
+**5a. Extract code snippets for all findings.**
+
+**Every finding MUST have an embedded code snippet.** For each finding, use the Read tool to read the source file and extract 3 lines before and 3 lines after `file:line` (7 lines total). Format as a fenced code block with the language inferred from file extension (`.py` → `python`, `.ts` → `typescript`, etc.).
+
+- If multiple findings in the same file are within 5 lines of each other, merge into one snippet
+- If a file can't be read (deleted, binary, permission error), fall back to `file:line` with no snippet — this is the ONLY acceptable reason to omit a snippet
+- Include line numbers in the snippet: `{line_num} | {code}`
+- For file-level findings (e.g., god modules at line 1), read lines 1-10 to show the file header, imports, and class/function structure
+
+**5b. Get current commit SHA:**
+
+```bash
+git rev-parse HEAD
+```
+
+Store the full SHA for permalink construction.
+
+**5c. Get repo info:**
+
+```bash
+gh repo view --json nameWithOwner -q .nameWithOwner
+```
+
+Permalink format: `https://github.com/{nameWithOwner}/blob/{sha}/{file}#L{start}-L{end}`
+where `start` = `line - 3` and `end` = `line + 3`.
+
+**5d. Ensure labels exist:**
 
 ```bash
 gh label create "tech-debt" --color "D93F0B" --description "Technical debt findings" 2>/dev/null || true
+gh label create "tech-debt:{YYYY-MM-DD}" --color "D93F0B" --description "Tech debt audit run {YYYY-MM-DD}" 2>/dev/null || true
 ```
 
-**5b. Build the issue body.**
+The run-specific label groups all issues from one scan for easy filtering and cleanup.
 
-Read `references/issue-format.md` and follow the format specification exactly to build the issue body from the collected findings.
+**5e. Create sub-issues (one per category).**
 
-If findings were suppressed, include in the Notes section (Section 5) of the issue body:
+For each category that has findings (after suppression filtering), create a GitHub issue. Process categories in the same order as the terminal report (by highest severity, then count). Collect the issue number from each creation.
+
+Read `references/issue-format.md` Section A (Sub-Issue Format) and follow it exactly to build each sub-issue body.
+
+If findings were suppressed for this category, include in the Notes line:
 `**Suppressed:** {N} findings excluded by .claude/harness/tech-debt-ignore.md`
 
-**5c. Handle body size limit.**
+Handle body size per sub-issue: if body exceeds 60000 characters, truncate Low findings first, then Medium. Never truncate Critical or High.
 
-Follow the truncation rules in `references/issue-format.md`. Summary: if body exceeds 60000 characters, truncate Low findings first, then Medium. Never truncate Critical or High.
+```bash
+gh issue create \
+  --title "Tech Debt: {Category Display Name} — {YYYY-MM-DD} — {scope}" \
+  --label "tech-debt" \
+  --label "tech-debt:{YYYY-MM-DD}" \
+  --body-file /tmp/tech-debt-sub-{category}.md
+```
 
-**5d. Create the issue:**
+Write the body to a temp file first to avoid shell argument length limits.
+
+**5f. Create parent issue.**
+
+After all sub-issues are created, build the parent issue body. Read `references/issue-format.md` Section B (Parent Issue Format) and follow it exactly.
+
+The Categories task list references the sub-issue numbers collected in Step 5e:
+```markdown
+- [ ] #{issue_number} — {Category Display Name} ({count} findings, highest: {severity badge})
+```
 
 ```bash
 gh issue create \
   --title "Tech Debt Audit — {YYYY-MM-DD} — {scope}" \
   --label "tech-debt" \
-  --body "$(cat <<'EOF'
-{issue body}
-EOF
-)"
+  --label "tech-debt:{YYYY-MM-DD}" \
+  --body-file /tmp/tech-debt-parent.md
 ```
 
-**5e. Print the issue URL** to the user after creation.
+**5g. Link sub-issues to parent using GitHub's native sub-issues API.**
+
+For each sub-issue, get its node ID and add it as a sub-issue of the parent:
+
+```bash
+# Get the node ID of a sub-issue
+SUB_NODE_ID=$(gh api graphql -f query='{ repository(owner:"{owner}", name:"{repo}") { issue(number: {sub_issue_number}) { id } } }' -q '.data.repository.issue.id')
+
+# Add as sub-issue of parent
+gh api repos/{owner}/{repo}/issues/{parent_number}/sub_issues \
+  --method POST \
+  -f sub_issue_id="$SUB_NODE_ID"
+```
+
+This creates a native parent-child relationship — GitHub shows sub-issues under the parent with a progress bar, and each sub-issue shows a breadcrumb back to the parent automatically.
+
+If the sub-issue API call fails (e.g., feature not available on the repo), fall back to editing the sub-issue body to append `**Parent issue:** #{parent_number}`.
+
+**5h. Print the parent issue URL** to the user after creation.
 
 ---
 
@@ -250,7 +314,12 @@ EOF
 | No Python files in scope | Report "no files to scan" and **stop** |
 | An agent fails | Report partial results from successful agents. Note which scanner failed and why |
 | `gh` not authenticated | Print report to terminal. Warn: "GitHub issue creation skipped — run `gh auth login`" |
-| Issue body exceeds limit | Truncate Low then Medium findings (see Step 5c) |
+| Code snippet read fails | Skip snippet for that finding, use `file:line` only |
+| Agent omits `fix_hint` | Omit the `**Fix:**` line for that finding |
+| Sub-issue body exceeds limit | Truncate Low then Medium findings per sub-issue (see Step 5e) |
+| Sub-issue creation fails | Skip it, note in parent's Notes section |
+| Parent creation fails | Print all sub-issue URLs directly to terminal |
+| Sub-issue API linking fails | Fall back to editing sub-issue body with `**Parent issue:** #{parent_number}` |
 
 ---
 
