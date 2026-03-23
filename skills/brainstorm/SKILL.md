@@ -93,7 +93,9 @@ Start by understanding what already exists and what prompted this exploration.
 
 **Questioning approach:** Begin with small batches (2-3 related questions) to efficiently
 establish context. Focus on: what triggered this, who is affected, and what success
-looks like.
+looks like. **Always use the `AskUserQuestion` tool** to ask questions — never embed
+questions in plain text output. This ensures the user sees a clear interactive prompt
+and the conversation blocks until they respond.
 
 ### Phase 2: Problem and Requirements Exploration
 
@@ -119,7 +121,9 @@ rarely arrive complete; draw them out through exploration.
 - Time-based concerns (data growth, schema evolution, version migration)
 
 **Questioning approach:** Switch to one question at a time for deeper exploration.
-Use multiple-choice when possible to reduce cognitive load.
+Use multiple-choice when possible to reduce cognitive load. **Always use the
+`AskUserQuestion` tool** for each question — this guarantees interactive flow where
+the user must respond before exploration continues.
 
 **Structured exploration techniques:**
 - **Assumption surfacing:** "What are we assuming is true here? What if it isn't?"
@@ -172,8 +176,9 @@ Before producing the design, explicitly check for thinking gaps:
 Produce the design document. Read `references/design-template.md` for the full template.
 Save to `docs/plans/YYYY-MM-DD-<topic>-design.md`.
 
-Present the design to the user **section by section**, getting approval on each before
-moving on. This catches misunderstandings early.
+Present the design to the user **section by section**, using the `AskUserQuestion` tool
+to get explicit approval on each section before moving on. This catches misunderstandings
+early and ensures the user actively confirms each part of the design.
 
 The document covers: Problem Statement, Context, Requirements (functional, non-functional,
 edge cases), Key Insights, Architectural Challenges, Approaches Considered, Chosen Approach,
