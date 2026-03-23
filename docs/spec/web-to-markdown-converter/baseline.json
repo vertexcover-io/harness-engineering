@@ -1,0 +1,8 @@
+{
+  "type_check": null,
+  "lint": null,
+  "test": null,
+  "coverage": null,
+  "timestamp": "2026-03-23T00:00:00Z",
+  "notes": "New project - no existing tooling"
+}
