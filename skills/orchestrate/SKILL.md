@@ -29,22 +29,6 @@ The argument is either an **inline prompt** or a **spec file path**.
 
 Store the resolved input as `TASK_CONTEXT` — this is passed to every stage.
 
-### Dashboard Bootstrap (MUST be the very first action)
-
-Before ANY Skill or Agent call, write the dashboard session file. This enables hooks to track pipeline progress from the very first stage.
-
-1. Generate a temporary spec name from the task prompt: lowercase, replace spaces with hyphens, truncate to 30 chars. Example: `"Add user auth system"` → `"add-user-auth-system"`
-2. Write the session file:
-   ```
-   Bash("echo '{\"specName\":\"<TEMP_SPEC_NAME>\",\"task\":\"<TASK_CONTEXT summary>\",\"branch\":\"unknown\",\"worktree\":\"unknown\"}' > /tmp/orchestrate-session.json")
-   ```
-3. After Stage 0 completes and you have the real `SPEC_NAME`, `BRANCH_NAME`, and `WORKTREE_PATH`, update the session file and rename the dashboard directory:
-   ```
-   Bash("echo '{\"specName\":\"<SPEC_NAME>\",\"task\":\"<TASK_CONTEXT summary>\",\"branch\":\"<BRANCH_NAME>\",\"worktree\":\"<WORKTREE_PATH>\"}' > /tmp/orchestrate-session.json && [ -d /tmp/orchestrate-<TEMP_SPEC_NAME> ] && mv /tmp/orchestrate-<TEMP_SPEC_NAME> /tmp/orchestrate-<SPEC_NAME> || true")
-   ```
-
-This ensures the dashboard opens immediately when Stage 0 begins.
-
 ---
 
 ## Pipeline Stages
@@ -131,8 +115,6 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 2. `cd` into the worktree
 
 Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `CONSTITUTION`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
-
-3. Update the dashboard session file with real values and rename the dashboard directory (see "Dashboard Bootstrap" above).
 
 ### Stage 1: Brainstorm (Main Conversation)
 
@@ -302,4 +284,4 @@ After all stages complete, present a compact summary:
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly
 - **Spec folder structure** — all artifacts for a task live in `docs/spec/<name>/` for traceability
-- **Dashboard is automatic** — hooks handle all dashboard updates. The only manual step is writing `/tmp/orchestrate-session.json` during Setup. If the dashboard fails, the pipeline continues unaffected.
+- **Dashboard is explicit** — the orchestrator calls `dag-update set-status` at each stage transition. Sub-agents call `dag-update add-node` and `dag-update write-report` for sub-task tracking. A `SessionEnd` hook provides safety-net finalization if the session terminates unexpectedly.
