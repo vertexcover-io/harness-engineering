@@ -1,33 +1,11 @@
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Skill|Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/hook.sh\" pre"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Skill|Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/hook.sh\" post"
-          }
-        ]
-      }
-    ],
     "SessionEnd": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/hook.sh\" cleanup"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh\" finalize interrupted 2>/dev/null || true"
           }
         ]
       }

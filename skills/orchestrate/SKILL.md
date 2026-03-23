@@ -29,21 +29,29 @@ The argument is either an **inline prompt** or a **spec file path**.
 
 Store the resolved input as `TASK_CONTEXT` — this is passed to every stage.
 
-### Dashboard Bootstrap (MUST be the very first action)
+### DAG Dashboard Bootstrap (MUST be the very first action)
 
-Before ANY Skill or Agent call, write the dashboard session file. This enables hooks to track pipeline progress from the very first stage.
+Before ANY Skill or Agent call, initialize the DAG dashboard. This starts the live visualization.
 
-1. Generate a temporary spec name from the task prompt: lowercase, replace spaces with hyphens, truncate to 30 chars. Example: `"Add user auth system"` → `"add-user-auth-system"`
-2. Write the session file:
+1. Generate a spec name from the task prompt: lowercase, replace spaces with hyphens, truncate to 30 chars. Example: `"Add user auth system"` → `"add-user-auth-system"`
+2. Initialize the DAG and start the dashboard:
    ```
-   Bash("echo '{\"specName\":\"<TEMP_SPEC_NAME>\",\"task\":\"<TASK_CONTEXT summary>\",\"branch\":\"unknown\",\"worktree\":\"unknown\"}' > /tmp/orchestrate-session.json")
+   Bash("
+     export HARNESS_DIR=$(bash \"$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh\" init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
+     DU='bash $CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh'
+     $DU add-node setup 'Setup'
+     $DU add-node brainstorm 'Brainstorm & Spec' --depends-on setup
+     $DU add-node planning 'Planning' --depends-on brainstorm
+     $DU add-node coder 'Coder' --depends-on planning
+     $DU add-node quality-gate 'Quality Gate' --depends-on coder
+     $DU add-node docs 'Sync Docs' --depends-on quality-gate
+     $DU add-node learnings 'Capture Learnings' --depends-on quality-gate
+     $DU add-node commit-pr 'Commit & PR' --depends-on docs,learnings
+     $DU serve
+   ")
    ```
-3. After Stage 0 completes and you have the real `SPEC_NAME`, `BRANCH_NAME`, and `WORKTREE_PATH`, update the session file and rename the dashboard directory:
-   ```
-   Bash("echo '{\"specName\":\"<SPEC_NAME>\",\"task\":\"<TASK_CONTEXT summary>\",\"branch\":\"<BRANCH_NAME>\",\"worktree\":\"<WORKTREE_PATH>\"}' > /tmp/orchestrate-session.json && [ -d /tmp/orchestrate-<TEMP_SPEC_NAME> ] && mv /tmp/orchestrate-<TEMP_SPEC_NAME> /tmp/orchestrate-<SPEC_NAME> || true")
-   ```
-
-This ensures the dashboard opens immediately when Stage 0 begins.
+   Note: Phase nodes are added as children of `coder` after planning (Stage 2) when phases are known.
+3. Store `HARNESS_DIR` for use in all subsequent `dag-update` calls.
 
 ---
 
@@ -127,30 +135,55 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 
 ### Stage 0: Setup (Main Conversation)
 
-1. Invoke the `pipeline-setup` skill using the `Skill` tool, passing `TASK_CONTEXT`
-2. `cd` into the worktree
-
-Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `CONSTITUTION`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
-
-3. Update the dashboard session file with real values and rename the dashboard directory (see "Dashboard Bootstrap" above).
+1. `dag-update set-status setup running`
+2. Invoke the `pipeline-setup` skill using the `Skill` tool, passing `TASK_CONTEXT`
+3. `cd` into the worktree
+4. Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `CONSTITUTION`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
+5. `dag-update set-status setup done`
 
 ### Stage 1: Brainstorm (Main Conversation)
 
-1. Invoke the `brainstorm` skill using the `Skill` tool
-2. After design approval, invoke the `spec-generation` skill (still in main session — it's quick and needs the brainstorm context)
-3. Move/save spec output to `docs/spec/<SPEC_NAME>/spec.md`
-4. Store `SPEC_PATH`
+1. `dag-update set-status brainstorm running`
+2. Invoke the `brainstorm` skill using the `Skill` tool
+3. After design approval, invoke the `spec-generation` skill (still in main session — it's quick and needs the brainstorm context)
+4. Move/save spec output to `docs/spec/<SPEC_NAME>/spec.md`
+5. Store `SPEC_PATH`
+6. `dag-update set-status brainstorm done`
+7. Copy spec into dashboard reports and set artifact:
+   ```
+   cp docs/spec/<SPEC_NAME>/spec.md $HARNESS_DIR/reports/brainstorm-report.md
+   dag-update set-artifact brainstorm report reports/brainstorm-report.md
+   ```
 
 Then continue to Stage 2.
 
 ### Stage 2: Planner (Main Conversation)
 
-1. Invoke the `planning` skill using the `Skill` tool
-2. The planner explores the codebase deeply, asks the user implementation questions interactively, then designs phases
-3. After plan approval, plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
-4. Store `PLAN_DIR`
+1. `dag-update set-status planning running`
+2. Invoke the `planning` skill using the `Skill` tool
+3. The planner explores the codebase deeply, asks the user implementation questions interactively, then designs phases
+4. After plan approval, plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
+5. Store `PLAN_DIR`
+6. `dag-update set-status planning done`
+7. Copy plan and phase files into dashboard reports:
+   ```
+   cp docs/spec/<SPEC_NAME>/plan.md $HARNESS_DIR/reports/planning-report.md
+   for f in docs/spec/<SPEC_NAME>/phase-*.md; do
+     cp "$f" "$HARNESS_DIR/reports/$(basename "$f")"
+   done
+   dag-update set-artifact planning report reports/planning-report.md
+   dag-update set-artifact planning phases "$(ls docs/spec/<SPEC_NAME>/phase-*.md 2>/dev/null | while read f; do echo "reports/$(basename "$f")"; done | paste -sd, -)"
+   ```
 
 **Extract:** `PLAN_DIR`, phase graph (DOT from plan.md), phase count
+
+**Add phase nodes as children of coder:**
+```
+DU='bash $CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh'
+$DU add-node phase-1 'Phase 1: <label>' --parent coder
+$DU add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1
+# ... for each phase from the plan
+```
 
 Then continue to Stage 3 as sub-agents.
 
@@ -164,6 +197,11 @@ Dispatch based on phase and step dependency graphs. Two-level parallelism:
 
 For each phase, choose **one** dispatch strategy:
 
+Before dispatching any phase agents: `dag-update set-status coder running`
+Before each phase: `dag-update set-status <phase-node> running`
+After each phase returns: `dag-update set-status <phase-node> done` (or `failed`)
+After all phases complete: `dag-update set-status coder done`
+
 **A) Phase has no Steps section** → single agent for the whole phase:
 
 ```
@@ -171,6 +209,32 @@ Agent(prompt="
   [PREAMBLE]
   Invoke the tdd skill.
   Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase: <PHASE_N>
+
+  Dashboard updates (use these to register sub-tasks and report progress):
+    export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>'
+    DU='bash $CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh'
+    # Register sub-tasks as you discover them (phases are children of coder):
+    $DU add-node '$NODE_ID.task-1' '<label>' --parent '$NODE_ID'
+    $DU set-status '$NODE_ID.task-1' running
+    # When done with the phase, write a detailed report using this format:
+    $DU write-report '$NODE_ID' '# Phase N: <name>
+
+## Summary
+2-3 sentences on what was accomplished.
+
+## Files Changed
+- `path/to/file.ts` — created/modified (what changed)
+
+## Tests
+- X tests added, all passing
+- Coverage: X%
+
+## Key Decisions
+- Decision and reasoning
+
+## Issues Encountered
+- Issue and resolution (or "None")'
+
   Return: files created/modified, tests with pass/fail and REQ/EDGE coverage, phase completed or blocked.
 ")
 ```
@@ -192,7 +256,7 @@ Dispatch in waves: send all independent steps in parallel → wait for completio
 
 ### Stage 4: Quality Gate
 
-Single quality gate after all coding is complete:
+`dag-update set-status quality-gate running` before dispatching.
 
 ```
 Agent(prompt="
@@ -201,6 +265,24 @@ Agent(prompt="
   Baseline file: docs/spec/<SPEC_NAME>/baseline.json
   Plan dir: docs/spec/<SPEC_NAME>/
   Stage: post-tdd
+
+  When done, write a report using this format:
+    export HARNESS_DIR='<HARNESS_DIR>'
+    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report quality-gate '# Quality Gate
+
+## Verdict: PASS/BLOCKED/STAGNATION
+
+## Metrics Comparison
+| Metric | Baseline | Current | Status |
+|--------|----------|---------|--------|
+| Type check | 0 errors | X errors | PASS/FAIL |
+| Lint | X warnings | Y warnings | PASS/FAIL |
+| Tests | X passed | Y passed | PASS/FAIL |
+| Coverage | X% | Y% | PASS/FAIL |
+
+## Failures
+- Details of any failures (or "None")'
+
   Return: gate report path, verdict (PASS/BLOCKED/STAGNATION).
 ")
 ```
@@ -213,12 +295,25 @@ Agent(prompt="
 
 ### Stage 5: Sync Docs
 
+`dag-update set-status docs running` before dispatching.
+
 ```
 Agent(prompt="
   [PREAMBLE]
   Invoke the sync-docs skill.
   Spec dir: docs/spec/<SPEC_NAME>/
   Plan dir: docs/spec/<SPEC_NAME>/
+
+  When done, write a report using this format:
+    export HARNESS_DIR='<HARNESS_DIR>'
+    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report docs '# Sync Docs
+
+## Documents Updated
+- `path/to/doc.md` — what changed
+
+## Documents Created
+- `path/to/new-doc.md` — what it covers'
+
   Return: list of docs updated/created.
 ")
 ```
@@ -227,6 +322,8 @@ Agent(prompt="
 
 ### Stage 6: Capture Learnings
 
+`dag-update set-status learnings running` before dispatching.
+
 ```
 Agent(prompt="
   [PREAMBLE]
@@ -234,6 +331,20 @@ Agent(prompt="
   Focus on pipeline friction from this run — stalls, wrong assumptions, human interventions, retries.
   Spec dir: docs/spec/<SPEC_NAME>/
   If nothing went wrong, skip.
+
+  When done, write a report using this format:
+    export HARNESS_DIR='<HARNESS_DIR>'
+    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report learnings '# Learnings
+
+## Friction Points
+- What caused delays or confusion
+
+## Patterns Documented
+- `path/to/learning.md` — what it covers
+
+## Recommendations
+- Suggestions for future runs (or "None — clean run")'
+
   Return: doc path written (or 'none').
 ")
 ```
@@ -242,12 +353,28 @@ Agent(prompt="
 
 ### Stage 7: Commit & PR
 
+`dag-update set-status commit-pr running` before dispatching.
+
 ```
 Agent(prompt="
   [PREAMBLE]
   Invoke the git-commit skill to create commits.
   Then push: git push -u origin <BRANCH_NAME>
   Then create PR: gh pr create referencing task summary, spec, and plan.
+
+  When done, write a report using this format:
+    export HARNESS_DIR='<HARNESS_DIR>'
+    bash '$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh' write-report commit-pr '# Commit & PR
+
+## Commits
+- `abc1234` — commit message 1
+- `def5678` — commit message 2
+
+## Pull Request
+- URL: <PR_URL>
+- Title: <PR title>
+- Branch: <branch> → main'
+
   Return: commits list, PR URL.
 ")
 ```
@@ -280,6 +407,11 @@ After all stages complete, present a compact summary:
 **Issues:** <any retries, failures, stagnation, or "None">
 ```
 
+After presenting the summary, finalize the dashboard:
+```
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && bash \"$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh\" finalize done")
+```
+
 ---
 
 ## Error Handling
@@ -302,4 +434,4 @@ After all stages complete, present a compact summary:
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly
 - **Spec folder structure** — all artifacts for a task live in `docs/spec/<name>/` for traceability
-- **Dashboard is automatic** — hooks handle all dashboard updates. The only manual step is writing `/tmp/orchestrate-session.json` during Setup. If the dashboard fails, the pipeline continues unaffected.
+- **Dashboard is explicit** — the orchestrator calls `dag-update set-status` at each stage transition. Sub-agents call `dag-update add-node` and `dag-update write-report` for sub-task tracking. A `SessionEnd` hook provides safety-net finalization if the session terminates unexpectedly.
