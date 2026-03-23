@@ -23,6 +23,31 @@
 Ask clarifying questions before architectural changes
 Explain reasoning for non-obvious decisions
 
+## Project: web2md
+
+A Python CLI tool that fetches a web page and converts its main content to clean Markdown.
+
+### Architecture
+- `web2md/fetcher.py` -- `fetch(url) -> BeautifulSoup` via urllib with User-Agent, 30s timeout, encoding detection
+- `web2md/extractor.py` -- `extract(soup) -> Tag` scoring-based content extraction (strips nav/sidebar/footer)
+- `web2md/converter.py` -- `convert(soup, base_url) -> str` recursive tree walker with tag-handler map
+- `web2md/cli.py` -- `main(argv) -> int` argparse entry point wiring fetch -> extract -> convert -> output
+- `web2md/__main__.py` -- `python -m web2md` support
+
+### Commands
+- **Run:** `python -m web2md <url>` or `python -m web2md <url> -o output.md`
+- **Tests:** `pytest tests/`
+- **Type check:** `mypy web2md/`
+- **Lint:** `ruff check web2md/`
+- **Install dev:** `pip install -e ".[dev]"`
+
+### Dependencies
+- Runtime: beautifulsoup4, lxml
+- Dev: pytest, mypy, ruff, lxml-stubs
+
+### Test Coverage
+111 tests, 94% coverage. Tests use mocked urllib (no network access needed).
+
 ## Prior Learnings
 - Before implementing, check `docs/solutions/` for relevant gotchas and patterns
 - Search by tags/keywords related to the feature area: `Grep pattern="<keyword>" path=docs/solutions/`
