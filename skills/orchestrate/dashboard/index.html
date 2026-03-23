@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orchestrate Dashboard</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@1.1.4/dist/dagre.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Oswald:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1A1A1A;
+      color: #FFFFFF;
+      font-family: 'JetBrains Mono', monospace;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+      padding: 0 24px;
+      background: #212121;
+      flex-shrink: 0;
+      border-bottom: 1px solid #2D2D2D;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-logo {
+      color: #FF6B35;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .header-sep {
+      color: #3D3D3D;
+      font-size: 13px;
+    }
+
+    .header-task {
+      color: #FFFFFF;
+      font-size: 13px;
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #2D2D2D;
+      color: #999;
+    }
+
+    .badge-status {
+      color: #0D0D0D;
+    }
+    .badge-status.running { background: #FF6B35; }
+    .badge-status.done { background: #00D4AA; }
+    .badge-status.failed { background: #FF4444; }
+    .badge-status.interrupted { background: #FFAA00; }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ── DAG Canvas ── */
+    #dag-container {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #dag-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Nodes ── */
+    .node rect {
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .node rect:hover { opacity: 0.85; }
+
+    .node-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      fill: #FFFFFF;
+      pointer-events: none;
+    }
+
+    .node-time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      fill: #777;
+      pointer-events: none;
+    }
+
+    .node-expand {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      fill: #FF6B35;
+      cursor: pointer;
+    }
+
+    .node-status-dot {
+      pointer-events: none;
+    }
+
+    /* ── Edges ── */
+    .edge path {
+      fill: none;
+      stroke: #555;
+      stroke-width: 1.5;
+    }
+
+    .edge marker path {
+      fill: #555;
+    }
+
+    /* ── Pulse animation ── */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .node-running rect {
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    /* ── Legend ── */
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: #212121;
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 11px;
+      z-index: 10;
+    }
+    .legend-title {
+      color: #FF6B35;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Modal ── */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    #modal-overlay.visible {
+      display: flex;
+    }
+
+    #modal {
+      background: #212121;
+      border-radius: 16px;
+      width: min(900px, 90vw);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      height: 48px;
+      background: #2D2D2D;
+      flex-shrink: 0;
+    }
+
+    .modal-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-title-text {
+      font-family: 'Oswald', sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .modal-duration {
+      color: #777;
+      font-size: 11px;
+    }
+
+    .modal-close {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #3D3D3D;
+      border: none;
+      color: #FFF;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-close:hover { background: #555; }
+
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    /* ── Markdown rendering ── */
+    .modal-body h1 { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 700; margin: 0 0 12px; }
+    .modal-body h2 { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 600; color: #FF6B35; margin: 16px 0 8px; }
+    .modal-body h3 { font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 600; color: #FF6B35; margin: 12px 0 6px; }
+    .modal-body p { font-size: 13px; line-height: 1.6; margin: 0 0 12px; color: #DDD; }
+    .modal-body ul, .modal-body ol { padding-left: 20px; margin: 0 0 12px; }
+    .modal-body li { font-size: 13px; line-height: 1.6; color: #DDD; margin: 4px 0; }
+    .modal-body code { background: #2D2D2D; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #FF6B35; }
+    .modal-body pre { background: #2D2D2D; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 0 0 12px; }
+    .modal-body pre code { background: none; padding: 0; color: #DDD; }
+    .modal-body hr { border: none; border-top: 1px solid #3D3D3D; margin: 16px 0; }
+    .modal-body blockquote { border-left: 3px solid #FF6B35; padding-left: 12px; color: #999; margin: 0 0 12px; }
+    .modal-body table { width: 100%; border-collapse: collapse; margin: 0 0 12px; font-size: 13px; }
+    .modal-body th { background: #2D2D2D; padding: 8px; text-align: left; border: 1px solid #3D3D3D; }
+    .modal-body td { padding: 8px; border: 1px solid #3D3D3D; color: #DDD; }
+
+    .modal-meta { color: #777; font-size: 12px; }
+    .modal-meta dt { font-weight: 600; color: #999; margin-top: 8px; }
+    .modal-meta dd { margin-left: 0; margin-top: 2px; }
+  </style>
+</head>
+<body>
+
+  <header id="header">
+    <div class="header-left">
+      <span class="header-logo">// orchestrate</span>
+      <span class="header-sep">|</span>
+      <span class="header-task" id="header-task"></span>
+    </div>
+    <div class="header-right">
+      <div class="badge" id="badge-branch"></div>
+      <div class="badge" id="badge-timer"></div>
+      <div class="badge badge-status" id="badge-status"></div>
+    </div>
+  </header>
+
+  <div id="dag-container">
+    <svg id="dag-svg">
+      <defs>
+        <marker id="arrowhead" viewBox="0 0 10 10" refX="10" refY="5"
+                markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#555" />
+        </marker>
+      </defs>
+    </svg>
+
+    <div class="legend">
+      <div class="legend-title">// status</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#00D4AA"></div> done</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#FF6B35"></div> running</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3D3D3D; border: 1.5px solid #777"></div> pending</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#FF4444"></div> failed</div>
+    </div>
+  </div>
+
+  <div id="modal-overlay">
+    <div id="modal">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span class="modal-title-text" id="modal-title"></span>
+          <span class="modal-duration" id="modal-duration"></span>
+        </div>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <script type="application/json" id="dag-data">{}</script>
+  <script type="application/json" id="reports-data">{}</script>
+
+  <script>
+    // ── State ──
+    let dagData = null;
+    let expandedNodes = new Set();
+    let pollTimer = null;
+    let reportsCache = {};
+    let isStatic = false;
+
+    // ── Color map ──
+    const STATUS_COLORS = {
+      pending:     { border: '#3D3D3D', fill: '#212121' },
+      running:     { border: '#FF6B35', fill: '#212121' },
+      done:        { border: '#00D4AA', fill: '#212121' },
+      failed:      { border: '#FF4444', fill: '#212121' },
+      skipped:     { border: '#3D3D3D', fill: '#1A1A1A' },
+      interrupted: { border: '#FFAA00', fill: '#212121' },
+    };
+
+    const CHILD_FILL = '#2D2D2D';
+
+    // ── Duration formatting ──
+    function formatDuration(ms) {
+      const s = Math.floor(ms / 1000);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+    }
+
+    function nodeDuration(node) {
+      if (!node.startedAt) return '';
+      const start = new Date(node.startedAt).getTime();
+      const end = node.completedAt ? new Date(node.completedAt).getTime() : Date.now();
+      return formatDuration(end - start);
+    }
+
+    // ── Header ──
+    function renderHeader(meta) {
+      document.getElementById('header-task').textContent = meta.task || '';
+      document.getElementById('badge-branch').textContent = meta.branch || 'unknown';
+      var statusEl = document.getElementById('badge-status');
+      statusEl.textContent = (meta.outcome || 'running').toUpperCase();
+      statusEl.className = 'badge badge-status ' + (meta.outcome || 'running');
+
+      if (meta.startedAt) {
+        var start = new Date(meta.startedAt).getTime();
+        var updateTimer = function() {
+          var end = meta.completedAt ? new Date(meta.completedAt).getTime() : Date.now();
+          document.getElementById('badge-timer').textContent = formatDuration(end - start);
+        };
+        updateTimer();
+        if (!meta.completedAt) {
+          setInterval(updateTimer, 1000);
+        }
+      }
+    }
+
+    // ── Determine visible nodes ──
+    function getVisibleNodes(data) {
+      var allChildren = new Set();
+      Object.values(data.nodes).forEach(function(node) {
+        if (node.children) node.children.forEach(function(c) { allChildren.add(c); });
+      });
+
+      var visible = new Set();
+      Object.keys(data.nodes).forEach(function(id) {
+        if (!allChildren.has(id)) visible.add(id);
+      });
+
+      expandedNodes.forEach(function(parentId) {
+        var parent = data.nodes[parentId];
+        if (parent && parent.children) {
+          parent.children.forEach(function(c) {
+            if (data.nodes[c]) visible.add(c);
+          });
+        }
+      });
+
+      return visible;
+    }
+
+    // ── Get visible edges ──
+    function getVisibleEdges(data, visibleNodes) {
+      return data.edges.filter(function(e) { return visibleNodes.has(e[0]) && visibleNodes.has(e[1]); });
+    }
+
+    // ── Build dagre graph ──
+    function buildGraph(data) {
+      var g = new dagre.graphlib.Graph();
+      g.setGraph({ rankdir: 'TB', nodesep: 40, ranksep: 60, marginx: 40, marginy: 40 });
+      g.setDefaultEdgeLabel(function() { return {}; });
+
+      var visible = getVisibleNodes(data);
+      var allChildren = new Set();
+      Object.values(data.nodes).forEach(function(node) {
+        if (node.children) node.children.forEach(function(c) { allChildren.add(c); });
+      });
+
+      visible.forEach(function(id) {
+        var node = data.nodes[id];
+        var hasKids = node.children && node.children.length > 0;
+        var arrow = hasKids ? (expandedNodes.has(id) ? ' ▼' : ' ▶') : '';
+        var labelText = node.label + arrow;
+        var width = Math.max(160, labelText.length * 8.5 + 60);
+        var height = allChildren.has(id) ? 40 : 48;
+        g.setNode(id, { label: labelText, width: width, height: height });
+      });
+
+      var visibleEdges = getVisibleEdges(data, visible);
+      visibleEdges.forEach(function(e) { g.setEdge(e[0], e[1]); });
+
+      dagre.layout(g);
+      return { graph: g, visible: visible, visibleEdges: visibleEdges };
+    }
+
+    // ── Render DAG ──
+    function render(data) {
+      dagData = data;
+      var result = buildGraph(data);
+      var graph = result.graph;
+      var visible = result.visible;
+      var visibleEdges = result.visibleEdges;
+      var svg = d3.select('#dag-svg');
+      var container = svg.select('.dag-content');
+
+      if (container.empty()) {
+        container = svg.append('g').attr('class', 'dag-content');
+
+        var zoom = d3.zoom()
+          .scaleExtent([0.3, 3])
+          .on('zoom', function(e) { container.attr('transform', e.transform); });
+        svg.call(zoom);
+
+        var gInfo = graph.graph();
+        var svgEl = svg.node();
+        var w = svgEl.clientWidth;
+        var h = svgEl.clientHeight;
+        var scale = Math.min(w / (gInfo.width + 80), h / (gInfo.height + 80), 1);
+        var tx = (w - gInfo.width * scale) / 2;
+        var ty = (h - gInfo.height * scale) / 2;
+        svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+      }
+
+      // ── Edges ──
+      var edgeData = visibleEdges.map(function(e) {
+        var edge = graph.edge(e[0], e[1]);
+        return { from: e[0], to: e[1], points: edge.points };
+      });
+
+      var line = d3.line().x(function(d) { return d.x; }).y(function(d) { return d.y; }).curve(d3.curveBasis);
+
+      var edges = container.selectAll('.edge').data(edgeData, function(d) { return d.from + '->' + d.to; });
+      edges.exit().remove();
+      var edgesEnter = edges.enter().append('g').attr('class', 'edge');
+      edgesEnter.append('path');
+      var edgesMerge = edgesEnter.merge(edges);
+      edgesMerge.select('path')
+        .attr('d', function(d) { return line(d.points); })
+        .attr('marker-end', 'url(#arrowhead)');
+
+      // ── Nodes ──
+      var allChildren = new Set();
+      Object.values(data.nodes).forEach(function(node) {
+        if (node.children) node.children.forEach(function(c) { allChildren.add(c); });
+      });
+
+      var nodeData = [];
+      visible.forEach(function(id) {
+        var gNode = graph.node(id);
+        var dNode = data.nodes[id];
+        nodeData.push(Object.assign({ id: id, isChild: allChildren.has(id) }, gNode, dNode));
+      });
+
+      var nodes = container.selectAll('.node').data(nodeData, function(d) { return d.id; });
+      nodes.exit().remove();
+
+      var nodesEnter = nodes.enter().append('g');
+      nodesEnter.append('rect');
+      nodesEnter.append('circle').attr('class', 'node-status-dot');
+      nodesEnter.append('text').attr('class', 'node-label');
+      nodesEnter.append('text').attr('class', 'node-time');
+
+      var nodesMerge = nodesEnter.merge(nodes);
+
+      nodesMerge
+        .attr('class', function(d) { return 'node' + (d.status === 'running' ? ' node-running' : ''); })
+        .attr('transform', function(d) { return 'translate(' + (d.x - d.width/2) + ', ' + (d.y - d.height/2) + ')'; });
+
+      nodesMerge.select('rect')
+        .attr('width', function(d) { return d.width; })
+        .attr('height', function(d) { return d.height; })
+        .attr('rx', function(d) { return d.isChild ? 10 : 14; })
+        .attr('fill', function(d) { return d.isChild ? CHILD_FILL : (STATUS_COLORS[d.status] || STATUS_COLORS.pending).fill; })
+        .attr('stroke', function(d) { return (STATUS_COLORS[d.status] || STATUS_COLORS.pending).border; })
+        .attr('stroke-width', 2)
+        .on('click', function(e, d) { onNodeClick(d); });
+
+      nodesMerge.select('.node-status-dot')
+        .attr('cx', 20)
+        .attr('cy', function(d) { return d.height / 2; })
+        .attr('r', function(d) { return d.isChild ? 4 : 5; })
+        .attr('fill', function(d) {
+          var c = STATUS_COLORS[d.status] || STATUS_COLORS.pending;
+          return d.status === 'pending' ? 'transparent' : c.border;
+        })
+        .attr('stroke', function(d) {
+          var c = STATUS_COLORS[d.status] || STATUS_COLORS.pending;
+          return d.status === 'pending' ? c.border : 'none';
+        })
+        .attr('stroke-width', 1.5);
+
+      nodesMerge.select('.node-label')
+        .attr('x', 36)
+        .attr('y', function(d) { return d.height / 2 + 1; })
+        .attr('dominant-baseline', 'middle')
+        .attr('font-size', function(d) { return d.isChild ? '11px' : '12px'; })
+        .text(function(d) {
+          var hasKids = d.children && d.children.length > 0;
+          var arrow = hasKids ? (expandedNodes.has(d.id) ? ' ▼' : ' ▶') : '';
+          return d.label + arrow;
+        });
+
+      nodesMerge.select('.node-time')
+        .attr('x', function(d) { return d.width - 12; })
+        .attr('y', function(d) { return d.height / 2 + 1; })
+        .attr('dominant-baseline', 'middle')
+        .attr('text-anchor', 'end')
+        .text(function(d) { return nodeDuration(d); });
+    }
+
+    // ── Node click ──
+    function onNodeClick(d) {
+      var hasChildren = d.children && d.children.length > 0;
+
+      if (hasChildren) {
+        if (expandedNodes.has(d.id)) {
+          expandedNodes.delete(d.id);
+        } else {
+          expandedNodes.add(d.id);
+        }
+        render(dagData);
+        return;
+      }
+
+      if (d.status === 'done' || d.status === 'failed') {
+        openModal(d);
+      }
+    }
+
+    // ── Modal ──
+    function openModal(node) {
+      var overlay = document.getElementById('modal-overlay');
+      document.getElementById('modal-title').textContent = node.label;
+      document.getElementById('modal-duration').textContent = node.startedAt ? '// completed in ' + nodeDuration(node) : '';
+      var body = document.getElementById('modal-body');
+
+      var reportPath = node.artifacts && node.artifacts.report;
+
+      if (reportPath) {
+        var md = '';
+
+        if (isStatic && reportsCache[node.id]) {
+          md = reportsCache[node.id];
+          body.replaceChildren();
+          var sanitized = DOMPurify.sanitize(marked.parse(md));
+          var wrapper = document.createElement('div');
+          wrapper.innerHTML = sanitized;
+          body.appendChild(wrapper);
+          overlay.classList.add('visible');
+        } else if (isStatic) {
+          body.textContent = '(Report not available in static mode)';
+          overlay.classList.add('visible');
+        } else {
+          fetch(reportPath + '?t=' + Date.now())
+            .then(function(resp) { return resp.ok ? resp.text() : '*(Report file not found)*'; })
+            .then(function(text) {
+              body.replaceChildren();
+              var sanitized = DOMPurify.sanitize(marked.parse(text));
+              var wrapper = document.createElement('div');
+              wrapper.innerHTML = sanitized;
+              body.appendChild(wrapper);
+            })
+            .catch(function() {
+              body.textContent = '(Could not load report)';
+            });
+          overlay.classList.add('visible');
+        }
+      } else {
+        // Show node metadata using safe DOM methods
+        body.replaceChildren();
+        var dl = document.createElement('dl');
+        dl.className = 'modal-meta';
+
+        function addMeta(label, value) {
+          var dt = document.createElement('dt');
+          dt.textContent = label;
+          dl.appendChild(dt);
+          var dd = document.createElement('dd');
+          dd.textContent = value;
+          dl.appendChild(dd);
+        }
+
+        addMeta('Status', node.status);
+        if (node.startedAt) addMeta('Started', node.startedAt);
+        if (node.completedAt) addMeta('Completed', node.completedAt);
+        if (node.artifacts && node.artifacts.files) {
+          node.artifacts.files.forEach(function(f) { addMeta('File', f); });
+        }
+
+        body.appendChild(dl);
+        overlay.classList.add('visible');
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modal-overlay').classList.remove('visible');
+    }
+
+    document.getElementById('modal-close').addEventListener('click', closeModal);
+    document.getElementById('modal-overlay').addEventListener('click', function(e) {
+      if (e.target === e.currentTarget) closeModal();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // ── Polling ──
+    function poll() {
+      fetch('dag.json?t=' + Date.now())
+        .then(function(resp) { if (!resp.ok) throw new Error(); return resp.json(); })
+        .then(function(data) {
+          renderHeader(data.meta);
+          render(data);
+          if (data.meta.outcome !== 'running') {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+        })
+        .catch(function() { /* silently retry on next tick */ });
+    }
+
+    // ── Init ──
+    function init() {
+      var inlinedEl = document.getElementById('dag-data');
+      var inlinedData = null;
+
+      try {
+        inlinedData = JSON.parse(inlinedEl.textContent);
+      } catch(e) { /* empty or invalid */ }
+
+      if (inlinedData && inlinedData.meta && inlinedData.nodes && Object.keys(inlinedData.nodes).length > 0) {
+        isStatic = true;
+        try {
+          reportsCache = JSON.parse(document.getElementById('reports-data').textContent) || {};
+        } catch(e) { reportsCache = {}; }
+        renderHeader(inlinedData.meta);
+        render(inlinedData);
+      } else {
+        isStatic = false;
+        poll();
+        pollTimer = setInterval(poll, 2000);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
