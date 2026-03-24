@@ -56,7 +56,7 @@ CACHE_KEY=$(printf '%s\n%s' "$TOOL_NAME" "$CACHE_INPUT" | shasum -a 256 | cut -d
 CACHE_FILE="$CACHE_DIR/$CACHE_KEY"
 
 if [ -f "$CACHE_FILE" ]; then
-  CACHE_AGE=$(( $(date +%s) - $(stat -f%m "$CACHE_FILE" 2>/dev/null || echo 0) ))
+  CACHE_AGE=$(( $(date +%s) - $(stat -c%Y "$CACHE_FILE" 2>/dev/null || stat -f%m "$CACHE_FILE" 2>/dev/null || echo 0) ))
   if [ "$CACHE_AGE" -lt "$CACHE_TTL" ]; then
     CACHED_DECISION=$(cat "$CACHE_FILE")
     log "CACHE HIT ($CACHE_AGE s old): $CACHED_DECISION"

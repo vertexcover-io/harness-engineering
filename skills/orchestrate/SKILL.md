@@ -37,8 +37,8 @@ Before ANY Skill or Agent call, initialize the DAG dashboard. This starts the li
 2. Initialize the DAG and start the dashboard:
    ```
    Bash("
-     export HARNESS_DIR=$(bash \"$CLAUDE_SKILL_DIR/dashboard/dag-update.sh\" init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
-     DU='bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
+     export HARNESS_DIR=$(/usr/bin/env bash \"$CLAUDE_SKILL_DIR/dashboard/dag-update.sh\" init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
+     DU='/usr/bin/env bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
      $DU add-node setup 'Setup'
      $DU add-node brainstorm 'Brainstorm & Spec' --depends-on setup
      $DU add-node planning 'Planning' --depends-on brainstorm
@@ -179,7 +179,7 @@ Then continue to Stage 2.
 
 **Add phase nodes as children of coder:**
 ```
-DU='bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
+DU='/usr/bin/env bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
 $DU add-node phase-1 'Phase 1: <label>' --parent coder
 $DU add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1
 # ... for each phase from the plan
@@ -212,7 +212,7 @@ Agent(prompt="
 
   Dashboard updates (use these to register sub-tasks and report progress):
     export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>'
-    DU='bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
+    DU='/usr/bin/env bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
     # Register sub-tasks as you discover them (phases are children of coder):
     $DU add-node '$NODE_ID.task-1' '<label>' --parent '$NODE_ID'
     $DU set-status '$NODE_ID.task-1' running
@@ -268,7 +268,7 @@ Agent(prompt="
 
   When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report quality-gate '# Quality Gate
+    /usr/bin/env bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report quality-gate '# Quality Gate
 
 ## Verdict: PASS/BLOCKED/STAGNATION
 
@@ -306,7 +306,7 @@ Agent(prompt="
 
   When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report docs '# Sync Docs
+    /usr/bin/env bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report docs '# Sync Docs
 
 ## Documents Updated
 - `path/to/doc.md` — what changed
@@ -334,7 +334,7 @@ Agent(prompt="
 
   When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report learnings '# Learnings
+    /usr/bin/env bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report learnings '# Learnings
 
 ## Friction Points
 - What caused delays or confusion
@@ -364,7 +364,7 @@ Agent(prompt="
 
   When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report commit-pr '# Commit & PR
+    /usr/bin/env bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report commit-pr '# Commit & PR
 
 ## Commits
 - `abc1234` — commit message 1
@@ -409,7 +409,7 @@ After all stages complete, present a compact summary:
 
 After presenting the summary, finalize the dashboard:
 ```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && bash \"$CLAUDE_SKILL_DIR/dashboard/dag-update.sh\" finalize done")
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash \"$CLAUDE_SKILL_DIR/dashboard/dag-update.sh\" finalize done")
 ```
 
 ---

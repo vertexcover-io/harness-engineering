@@ -11,19 +11,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ── Prerequisite check ──
 check_prereqs() {
   command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required but not installed." >&2; exit 1; }
-  command -v flock >/dev/null 2>&1 || { echo "ERROR: flock is required but not installed." >&2; exit 1; }
 }
 
-# ── Atomic write with flock ──
+# ── Atomic write with portable locking ──
 atomic_write() {
   local dag_file="$1"
   local jq_filter="$2"
   shift 2
-  local lock_file="$(dirname "$dag_file")/dag.lock"
-  (
-    flock -x 200
-    jq "$jq_filter" "$@" "$dag_file" > "$dag_file.tmp" && mv "$dag_file.tmp" "$dag_file"
-  ) 200>"$lock_file"
+  local lock_dir="$(dirname "$dag_file")/dag.lock.d"
+
+  # mkdir is atomic on all POSIX systems — use it as a spinlock
+  local retries=0
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    retries=$((retries + 1))
+    if [[ $retries -gt 50 ]]; then
+      rm -rf "$lock_dir"
+      mkdir "$lock_dir" 2>/dev/null || true
+      break
+    fi
+    sleep 0.1
+  done
+
+  jq "$jq_filter" "$@" "$dag_file" > "$dag_file.tmp" && mv "$dag_file.tmp" "$dag_file"
+  rm -rf "$lock_dir"
 }
 
 # ── Commands ──
@@ -187,7 +197,7 @@ cmd_serve() {
   local port=""
   for i in 1 2 3 4 5 6; do
     sleep 0.5
-    port="$(grep -oP 'port \K[0-9]+' "$harness_dir/server.log" 2>/dev/null || true)"
+    port="$(sed -n 's/.*port \([0-9][0-9]*\).*/\1/p' "$harness_dir/server.log" 2>/dev/null | head -1 || true)"
     if [[ -n "$port" ]]; then
       break
     fi
@@ -195,7 +205,7 @@ cmd_serve() {
 
   # Fallback: read port from the process's listening socket
   if [[ -z "$port" ]]; then
-    port="$(ss -tlnp 2>/dev/null | grep "pid=$server_pid" | grep -oP ':(\d+)' | head -1 | tr -d ':' || true)"
+    port="$(lsof -iTCP -sTCP:LISTEN -nP -a -p "$server_pid" 2>/dev/null | awk 'NR>1{split($9,a,":"); print a[length(a)]; exit}' || ss -tlnp 2>/dev/null | grep "pid=$server_pid" | sed -n 's/.*:\([0-9]*\) .*/\1/p' | head -1 || true)"
   fi
 
   if [[ -n "$port" ]]; then

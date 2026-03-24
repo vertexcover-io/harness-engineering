@@ -122,8 +122,8 @@ probably two features and should be split.
 
 ### Step 6: Write the Plan Documents
 
-Create the folder and write all documents. Present plan.md to the user for approval
-before finalizing phase files.
+Create the folder and write all documents. Use the `AskUserQuestion` tool to present
+the plan summary and ask for approval — never embed approval questions in plain text output.
 
 ---
 
