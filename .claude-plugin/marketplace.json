@@ -1,0 +1,13 @@
+{
+  "name": "harness",
+  "owner": {
+    "name": "Vertex Cover"
+  },
+  "plugins": [
+    {
+      "name": "harness",
+      "source": "./",
+      "description": "Systematic software engineering pipeline — brainstorm, plan, TDD, quality gates, code review, and full orchestration from spec to PR."
+    }
+  ]
+}

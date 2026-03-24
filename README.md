@@ -81,17 +81,36 @@ Skills are reusable prompt modules that give Claude Code specialized capabilitie
 
 ## Installation
 
-This is a Claude Code plugin. It's not yet available in the marketplace, so install it locally:
+### Option 1: Install as a plugin marketplace (recommended)
+
+Register the repo as a local marketplace and install from it:
+
+```bash
+# Clone the repo
+git clone https://github.com/vertexcover-io/harness-engineering.git
+
+# Add as a local marketplace
+/plugin marketplace add ./
+
+# Install the plugin
+/plugin install harness
+```
+
+This persists across sessions — the plugin loads automatically on startup.
+
+### Option 2: Load with `--plugin-dir`
+
+For quick one-off usage without installing:
 
 ```bash
 # Clone the repo
 git clone https://github.com/vertexcover-io/harness-engineering.git
 
 # Run Claude Code with the plugin loaded from this directory
-claude --plugin-dir .
+claude --plugin-dir ./harness-engineering/agents/claude
 ```
 
-The `--plugin-dir .` flag tells Claude Code to load this directory as a plugin, making all skills available in your session.
+The `--plugin-dir` flag loads the directory as a plugin for the current session only.
 
 
 ## Inspiration
