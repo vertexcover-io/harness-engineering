@@ -1,14 +1,2 @@
 {
-  "hooks": {
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/bin/env bash \"$CLAUDE_PROJECT_DIR/skills/orchestrate/dashboard/dag-update.sh\" finalize interrupted 2>/dev/null || true"
-          }
-        ]
-      }
-    ]
-  }
 }

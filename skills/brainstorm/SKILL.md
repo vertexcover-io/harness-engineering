@@ -186,7 +186,9 @@ High-Level Design, Open Questions, Risks and Mitigations, and Assumptions.
 
 ### Phase 7: Design Approval and Transition
 
-The design must be explicitly approved before any implementation begins.
+The design must be explicitly approved before any implementation begins. Use the
+`AskUserQuestion` tool to ask for final approval — never embed the approval question
+in plain text output.
 
 After approval, offer to transition into implementation planning — breaking the design
 into concrete tasks. If a planning skill is available, invoke it with the design document
