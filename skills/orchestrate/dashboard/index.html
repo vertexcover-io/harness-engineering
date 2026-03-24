@@ -1019,7 +1019,8 @@
 
     // ── Modal ──
     var modalNode = null; // current node being shown
-    var modalPhases = []; // phase file paths for planning node
+    var modalPhases = []; // additional file paths for tabbed display
+    var modalTabsTitle = 'Related Documents'; // title for the tabs section
 
     function renderMarkdownToBody(body, md) {
       body.replaceChildren();
@@ -1044,13 +1045,13 @@
         .catch(function() { body.textContent = '(Could not load report)'; });
     }
 
-    function buildPhaseTabs(body, phases, activeIndex) {
+    function buildPhaseTabs(body, phases, activeIndex, tabTitle) {
       var tabsContainer = document.createElement('div');
       tabsContainer.className = 'phase-tabs';
 
       var title = document.createElement('div');
       title.className = 'phase-tabs-title';
-      title.textContent = 'Phase Details';
+      title.textContent = tabTitle || 'Related Documents';
       tabsContainer.appendChild(title);
 
       var row = document.createElement('div');
@@ -1078,10 +1079,10 @@
 
       fetchAndRender(body, reportPath, modalNode.id);
 
-      // Wait for render, then append phase tabs
+      // Wait for render, then append tabs
       setTimeout(function() {
         if (modalPhases.length > 0) {
-          buildPhaseTabs(body, modalPhases, -1);
+          buildPhaseTabs(body, modalPhases, -1, modalTabsTitle);
         }
       }, 100);
     }
@@ -1093,7 +1094,7 @@
       // Back button
       var back = document.createElement('button');
       back.className = 'modal-back';
-      back.textContent = '← Back to Plan';
+      back.textContent = '← Back to Report';
       back.addEventListener('click', showMainReport);
       body.appendChild(back);
 
@@ -1107,7 +1108,7 @@
 
       // Append tabs after content loads
       setTimeout(function() {
-        buildPhaseTabs(body, modalPhases, index);
+        buildPhaseTabs(body, modalPhases, index, modalTabsTitle);
       }, 100);
     }
 
@@ -1118,19 +1119,20 @@
       var body = document.getElementById('modal-body');
       modalNode = node;
 
-      // Check for phase files (planning node)
+      // Check for additional tabbed files (phases for planning, spec for brainstorm, etc.)
       var phasesStr = node.artifacts && node.artifacts.phases;
       modalPhases = phasesStr ? phasesStr.split(',').filter(function(p) { return p.trim(); }) : [];
+      modalTabsTitle = (node.artifacts && node.artifacts['tabs-title']) || 'Related Documents';
 
       var reportPath = node.artifacts && node.artifacts.report;
 
       if (reportPath) {
         fetchAndRender(body, reportPath, node.id);
 
-        // Append phase tabs after markdown renders
+        // Append tabs after markdown renders
         if (modalPhases.length > 0) {
           setTimeout(function() {
-            buildPhaseTabs(body, modalPhases, -1);
+            buildPhaseTabs(body, modalPhases, -1, modalTabsTitle);
           }, 100);
         }
 

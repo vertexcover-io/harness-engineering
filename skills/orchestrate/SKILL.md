@@ -149,10 +149,15 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 4. Move/save spec output to `docs/spec/<SPEC_NAME>/spec.md`
 5. Store `SPEC_PATH`
 6. `dag-update set-status brainstorm done`
-7. Copy spec into dashboard reports and set artifact:
+7. Copy design doc and spec into dashboard reports and set artifacts (only set artifact if copy succeeds):
    ```
-   cp docs/spec/<SPEC_NAME>/spec.md $HARNESS_DIR/reports/brainstorm-report.md
-   dag-update set-artifact brainstorm report reports/brainstorm-report.md
+   cp docs/plans/YYYY-MM-DD-<topic>-design.md $HARNESS_DIR/reports/design.md && \
+     dag-update set-artifact brainstorm report reports/design.md
+   cp docs/spec/<SPEC_NAME>/spec.md $HARNESS_DIR/reports/spec.md && \
+     dag-update set-artifact brainstorm phases reports/spec.md
+   # Only set tabs-title if both artifacts were linked
+   [ -f "$HARNESS_DIR/reports/design.md" ] && [ -f "$HARNESS_DIR/reports/spec.md" ] && \
+     dag-update set-artifact brainstorm tabs-title "Brainstorm Artifacts"
    ```
 
 Then continue to Stage 2.
@@ -160,29 +165,41 @@ Then continue to Stage 2.
 ### Stage 2: Planner (Main Conversation)
 
 1. `dag-update set-status planning running`
-2. Invoke the `planning` skill using the `Skill` tool
-3. The planner explores the codebase deeply, asks the user implementation questions interactively, then designs phases
-4. After plan approval, plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
-5. Store `PLAN_DIR`
-6. `dag-update set-status planning done`
-7. Copy plan and phase files into dashboard reports:
+2. Read the design doc (`docs/plans/YYYY-MM-DD-<topic>-design.md`) and spec (`docs/spec/<SPEC_NAME>/spec.md`) so the planner has full context from the brainstorm stage
+3. Invoke the `planning` skill using the `Skill` tool, referencing both files
+4. The planner explores the codebase deeply, asks the user implementation questions interactively, then designs phases
+5. After plan approval, plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
+6. Store `PLAN_DIR`
+7. `dag-update set-status planning done`
+8. Copy plan and phase files into dashboard reports (only set artifact if copy succeeds):
    ```
-   cp docs/spec/<SPEC_NAME>/plan.md $HARNESS_DIR/reports/planning-report.md
+   cp docs/spec/<SPEC_NAME>/plan.md $HARNESS_DIR/reports/planning-report.md && \
+     dag-update set-artifact planning report reports/planning-report.md
+   PHASE_REPORTS=""
    for f in docs/spec/<SPEC_NAME>/phase-*.md; do
-     cp "$f" "$HARNESS_DIR/reports/$(basename "$f")"
+     if cp "$f" "$HARNESS_DIR/reports/$(basename "$f")"; then
+       [ -n "$PHASE_REPORTS" ] && PHASE_REPORTS="$PHASE_REPORTS,"
+       PHASE_REPORTS="${PHASE_REPORTS}reports/$(basename "$f")"
+     fi
    done
-   dag-update set-artifact planning report reports/planning-report.md
-   dag-update set-artifact planning phases "$(ls docs/spec/<SPEC_NAME>/phase-*.md 2>/dev/null | while read f; do echo "reports/$(basename "$f")"; done | paste -sd, -)"
+   [ -n "$PHASE_REPORTS" ] && \
+     dag-update set-artifact planning phases "$PHASE_REPORTS" && \
+     dag-update set-artifact planning tabs-title "Phase Details"
    ```
 
 **Extract:** `PLAN_DIR`, phase graph (DOT from plan.md), phase count
 
-**Add phase nodes as children of coder:**
+**Add phase nodes as children of coder and link their report artifacts:**
 ```
 DU='/usr/bin/env bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
 $DU add-node phase-1 'Phase 1: <label>' --parent coder
 $DU add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1
 # ... for each phase from the plan
+
+# Link each phase node to its report file (only if the file exists)
+[ -f "$HARNESS_DIR/reports/phase-1.md" ] && $DU set-artifact phase-1 report reports/phase-1.md
+[ -f "$HARNESS_DIR/reports/phase-2.md" ] && $DU set-artifact phase-2 report reports/phase-2.md
+# ... for each phase
 ```
 
 Then continue to Stage 3 as sub-agents.

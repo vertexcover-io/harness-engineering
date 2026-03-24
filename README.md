@@ -2,14 +2,153 @@
 
 A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin providing a systematic software engineering pipeline — brainstorm, plan, TDD, quality gates, code review, and full orchestration from spec to PR.
 
-Install as a plugin (see [Installation](#installation)) or symlink into `~/.claude/` for global use.
+## Installation
+
+### Option 1: Plugin marketplace (recommended)
+
+```bash
+# Clone the repo
+git clone https://github.com/vertexcover-io/harness-engineering.git
+
+# Add as a local marketplace
+/plugin marketplace add ./
+
+# Install the plugin
+/plugin install harness
+```
+
+This persists across sessions — the plugin loads automatically on startup.
+
+### Option 2: Load with `--plugin-dir`
+
+For quick one-off usage without installing:
+
+```bash
+# Clone the repo
+git clone https://github.com/vertexcover-io/harness-engineering.git
+
+# Run Claude Code with the plugin loaded from this directory
+claude --plugin-dir ./harness-engineering/agents/claude
+```
+
+## Workflows
+
+### Orchestrate — Spec to PR in One Command
+
+The orchestrate skill runs a full development pipeline end-to-end. Give it a prompt or a spec file and it handles the rest.
+
+```
+/orchestrate "Add rate limiting to the API endpoints"
+```
+
+**Pipeline stages:**
+
+```
+Setup → Brainstorm → Planner → Coder → Quality Gate → Sync Docs → Learnings → Commit & PR
+```
+
+| Stage | What happens |
+|-------|-------------|
+| **Setup** | Creates an isolated git worktree, runs baseline metrics |
+| **Brainstorm** | Interactive design session — you approve the architecture before any code |
+| **Planner** | Generates phased implementation plan with dependency graph |
+| **Coder** | Dispatches parallel sub-agents running TDD (RED-GREEN-REFACTOR) per phase |
+| **Quality Gate** | Hard pass/fail verification — typecheck, lint, tests, coverage |
+| **Sync Docs** | Updates documentation to match the new code |
+| **Learnings** | Captures gotchas and patterns for future sessions |
+| **Commit & PR** | Creates conventional commits and opens a pull request |
+
+Stages 0–2 (Setup, Brainstorm, Planner) run interactively so you stay in control of design decisions. Stages 3–7 run as autonomous sub-agents.
+
+All artifacts land in `docs/spec/<name>/` — spec, plan, phase files, and quality reports.
+
+**Live DAG Dashboard**
+
+The pipeline launches a live dashboard that visualizes progress as a directed acyclic graph. Each node represents a stage or phase, color-coded by status (pending, running, done, failed). Click any node to see its report.
+
+<p align="center">
+  <img src="assets/dag-dashboard-overview.png" alt="DAG Dashboard — full pipeline view" width="700" />
+</p>
+
+Click any completed node to inspect its report:
+
+<p align="center">
+  <img src="assets/dag-report-brainstorm-spec.png" alt="Brainstorm & Spec report" width="400" />
+  <img src="assets/dag-report-planning-context.png" alt="Planning report — context and phase graph" width="400" />
+</p>
+
+After the pipeline completes, the dashboard is finalized into a self-contained HTML file you can share or archive.
+
+---
+
+### Tech Debt Finder — Code Health Audit
+
+Scans your codebase for technical debt and creates GitHub issues for what it finds.
+
+```
+/tech-debt-finder src/
+```
+
+Or scan the entire repo:
+
+```
+/tech-debt-finder full
+```
+
+**What it scans** — three parallel agents run simultaneously:
+
+| Scanner | Looks for |
+|---------|-----------|
+| **Dependency & Environment** | Known CVEs, outdated packages, unused dependencies, circular imports, pinning gaps |
+| **Structural & Complexity** | God modules, high cyclomatic complexity, deep nesting, layer violations, code duplication |
+| **Code Patterns** | Bare except, swallowed exceptions, `Any` overuse, blocking calls in async, mutable defaults, magic numbers, dead code |
+
+**Output:**
+
+1. A terminal report organized by severity (Critical → High → Medium → Low)
+2. GitHub issues — one parent issue linking sub-issues per category, each with code snippets and permalinks
+
+**Suppression:** Add patterns to `.claude/harness/tech-debt-ignore.md` to suppress known findings:
+
+```
+providers/fal.py:god-module       # suppress specific rule for a file
+utils.py:*                        # suppress all rules for a file
+*:magic-number                    # suppress a rule everywhere
+```
+
+---
+
+### Doc Quality Guard — Documentation Audit
+
+Checks your docs for accuracy against the actual code and flags AI-generated tone ("slop").
+
+```
+/doc-quality-guard docs/
+```
+
+Or scan all READMEs and docs:
+
+```
+/doc-quality-guard
+```
+
+**What it catches:**
+
+| Category | Examples |
+|----------|----------|
+| **Accuracy** | Wrong API signatures, removed features still documented, stale code examples, dead internal links, outdated install instructions |
+| **AI slop** | "Additionally", "leverage", "seamlessly", promotional language, filler phrases, em dash overuse, chatbot tone |
+
+Findings are classified by severity (critical → medium), then a fix spec is generated and handed off to `/orchestrate` for automated remediation.
 
 ## Structure
 
 ```
-claude/
+harness/
 ├── CLAUDE.md        # Global instructions for Claude Code
 ├── settings.json    # Permissions, hooks, and environment config
+├── hooks/
+│   └── hooks.json   # AI-powered permission reviewer and session hooks
 └── skills/          # Reusable skills that extend Claude's capabilities
     ├── brainstorm/
     ├── code-quality/
@@ -78,40 +217,6 @@ Skills are reusable prompt modules that give Claude Code specialized capabilitie
 | [tech-debt-finder](skills/tech-debt-finder/SKILL.md) | Comprehensive code quality assessment — finds tech debt, code smells, and areas needing cleanup before planning a refactor or sprint. |
 | [testing](skills/testing/SKILL.md) | Behavior-driven testing patterns and test-first methodology. Language-agnostic with framework-specific references. Tests verify *what* code does, not *how*. |
 | [using-git-worktrees](skills/using-git-worktrees/SKILL.md) | Creates isolated git worktrees with smart directory selection and safety verification for feature work. |
-
-## Installation
-
-### Option 1: Install as a plugin marketplace (recommended)
-
-Register the repo as a local marketplace and install from it:
-
-```bash
-# Clone the repo
-git clone https://github.com/vertexcover-io/harness-engineering.git
-
-# Add as a local marketplace
-/plugin marketplace add ./
-
-# Install the plugin
-/plugin install harness
-```
-
-This persists across sessions — the plugin loads automatically on startup.
-
-### Option 2: Load with `--plugin-dir`
-
-For quick one-off usage without installing:
-
-```bash
-# Clone the repo
-git clone https://github.com/vertexcover-io/harness-engineering.git
-
-# Run Claude Code with the plugin loaded from this directory
-claude --plugin-dir ./harness-engineering/agents/claude
-```
-
-The `--plugin-dir` flag loads the directory as a plugin for the current session only.
-
 
 ## Inspiration
 
