@@ -120,6 +120,11 @@ findings. A finding that turns out to be wrong on closer inspection wastes the a
 time and erodes trust in the review. Verify every potential finding against the actual
 code before including it.
 
+**Important:** After completing the generic defect analysis, explicitly walk through
+every item in the language-specific patterns list below for the languages in the diff.
+For each pattern, search the changed code for instances. This systematic check prevents
+you from overlooking patterns that are easy to miss when reading code top-to-bottom.
+
 #### Plan Compliance (only when plan is provided)
 
 - Does every goal in the plan have corresponding code changes?
@@ -153,11 +158,18 @@ Focus on bugs the author probably didn't intend and that tests may not catch.
 - **Removals:** When code is deleted, consider what it was doing before. A removal can
   be a defect if it deletes necessary handling (error recovery, edge case guards, etc.).
 
-**Python-specific patterns:**
+**Python-specific patterns** — for each pattern below, actively search the diff for
+instances. These are common sources of production bugs that are easy to overlook:
 
-- Mutable default arguments (`def f(items=[])`)
+- Mutable default arguments (`def f(items=[])`) — the default object is shared across
+  calls, so mutations accumulate silently.
 - Late binding closures in loops (lambda/comprehension capturing loop variable)
-- Bare `except Exception` swallowing `KeyboardInterrupt` / `SystemExit`
+- Overly broad `except` clauses — bare `except:` catches `BaseException` including
+  `KeyboardInterrupt` and `SystemExit` (making the process impossible to terminate cleanly).
+  `except Exception:` is less dangerous but still masks unrelated errors (`TypeError`,
+  `AttributeError`, etc.) when only specific exceptions were intended (`KeyError`,
+  `ValueError`). Flag every instance where the catch is broader than the expected failure
+  modes — the handler should name exactly the exceptions it intends to recover from.
 - `is` vs `==` for value comparison (especially with integers outside [-5, 256])
 - `datetime.now()` without timezone (naive datetimes)
 - `dict.get()` returning `None` silently when the caller expects a value
