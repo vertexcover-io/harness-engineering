@@ -70,6 +70,53 @@ Before ANY Skill or Agent call, initialize the DAG dashboard. This starts the li
 
 ---
 
+## Stage Skip Rules
+
+After resolving the input (TASK_CONTEXT), determine which stages to skip **before** starting execution. Stages not listed here are **never skippable** — they run unconditionally every time.
+
+### Skip Decision Logic
+
+```
+For each skippable stage:
+  1. If input EXPLICITLY says "skip <stage>" → skip unconditionally (trust the caller)
+  2. Else if a spec/context file is provided → read it and evaluate:
+     - Is the problem clearly defined with specific scope?
+     - Are the files/changes to make listed explicitly?
+     - Are acceptance criteria present?
+     → If ALL yes → skip (the stage would add no value)
+     → If ANY no → run the stage to fill the gaps
+  3. Else (bare prompt, no spec) → always run the stage
+```
+
+### Skippable Stages
+
+| Stage | Skip condition |
+|-------|---------------|
+| 1: Brainstorm + Spec | Explicit skip instruction from caller, OR agent evaluates input has complete context (clear problem definition, specific scope, acceptance criteria) |
+| 2: Planner | Explicit skip instruction from caller, OR agent evaluates task is straightforward enough (single-phase work, per-file instructions already provided) |
+| 5: Sync Docs | Explicit skip instruction from caller, OR the task itself is documentation fixes |
+
+### Mandatory Stages (never skip)
+
+| Stage | Why |
+|-------|-----|
+| 0: Setup | Worktree and baseline are always required |
+| 3: Coder | Core implementation — the whole point of the pipeline |
+| 4: Quality Gate | Hard verification gate — no exceptions |
+| 6: Capture Learnings | Always runs (agent skips internally if nothing to capture) |
+| 7: Commit & PR | Always runs to finalize work |
+
+### Handling Skipped Stages
+
+For each skipped stage:
+1. Set its DAG status to `skipped`: `dag-update set-status <node> skipped`
+2. Log: "Skipping Stage N (<name>) — <reason>"
+3. Proceed to the next stage in order
+
+**Even when stages are skipped, all mandatory stages MUST execute in order.** Skipping brainstorm does not skip setup. Skipping planning does not skip coder, quality gate, or commit.
+
+---
+
 ## Execution Rules
 
 ### Sub-Agent Prompt Preamble
