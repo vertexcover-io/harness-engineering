@@ -1,0 +1,76 @@
+{
+  "skill_name": "using-git-worktrees",
+  "evals": [
+    {
+      "id": 1,
+      "name": "new-feature-worktree-with-existing-directory",
+      "prompt": "I need to work on a new authentication feature. Set up an isolated worktree for it on a branch called feature/auth.",
+      "expected_output": "Worktree created in the existing worktree directory after verifying .gitignore, project dependencies installed, baseline tests run, and final location reported",
+      "files": [],
+      "expectations": [
+        "Announces at start that it is using the using-git-worktrees skill",
+        "Checks for existing .worktrees/ and worktrees/ directories before asking the user",
+        "If .worktrees/ directory exists, uses it over worktrees/",
+        "Verifies .gitignore contains the worktree directory pattern before creating the worktree",
+        "If worktree directory is not in .gitignore, adds it and commits the change before proceeding",
+        "Runs git worktree add with -b flag to create a new branch",
+        "Checks for .env* files in the source project root and asks user how to handle them (copy, symlink, or skip)",
+        "Auto-detects project type from lockfiles/config files and runs appropriate install command with frozen-lockfile or ci flags where available",
+        "Runs project tests to verify a clean baseline after setup",
+        "Reports final worktree path, test results, and readiness status"
+      ],
+      "anti_expectations": [
+        "Does not skip .gitignore verification for project-local worktree directories",
+        "Does not assume a worktree directory location without checking existing directories and CLAUDE.md first",
+        "Does not proceed past failing baseline tests without reporting failures and asking the user",
+        "Does not silently skip env file handling when .env* files exist in the source root"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "worktree-no-existing-directory-global-path",
+      "prompt": "Set up a worktree for a bugfix branch called fix/memory-leak. There's no worktrees directory in this project yet.",
+      "expected_output": "Checks for existing directories and CLAUDE.md preference, asks user to choose directory location, creates worktree in chosen location, runs setup and verification",
+      "files": [],
+      "expectations": [
+        "Announces at start that it is using the using-git-worktrees skill",
+        "Checks for .worktrees/ directory first, then worktrees/ directory",
+        "Checks CLAUDE.md for a worktree directory preference before asking the user",
+        "When no directory exists and no CLAUDE.md preference, presents the user with directory options including .worktrees/ (project-local, hidden) and ~/.config/superpowers/worktrees/<project>/ (global)",
+        "If user chooses global directory (~/.config/superpowers/worktrees), does NOT perform .gitignore verification",
+        "Detects project name using git rev-parse --show-toplevel and basename",
+        "Runs git worktree add with the correct path based on the chosen directory location",
+        "Auto-detects and runs the appropriate dependency install command"
+      ],
+      "anti_expectations": [
+        "Does not skip the CLAUDE.md check when no existing directory is found",
+        "Does not perform .gitignore verification for global (non-project-local) worktree directories",
+        "Does not hardcode setup commands without checking for project-specific lockfiles and config files"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "worktree-with-env-files-and-failing-tests",
+      "prompt": "Create a worktree for feature/dashboard. The project has .env and .env.local files and I want them symlinked.",
+      "expected_output": "Worktree created, env files symlinked from source root, dependencies installed, baseline test results reported with pass/fail status",
+      "files": [],
+      "expectations": [
+        "Announces at start that it is using the using-git-worktrees skill",
+        "Follows directory selection priority: checks existing directories, then CLAUDE.md, then asks user",
+        "Verifies .gitignore for project-local worktree directory",
+        "Detects .env* files in the source project root",
+        "Since user specified symlink preference, creates symlinks from source root env files to the worktree directory",
+        "Uses ln -s to create symlinks pointing back to the original .env* files",
+        "Runs appropriate dependency install command based on project type detection",
+        "Runs baseline tests after setup is complete",
+        "If baseline tests fail, reports the failures and asks whether to proceed or investigate rather than silently continuing"
+      ],
+      "anti_expectations": [
+        "Does not copy env files when user requested symlink",
+        "Does not skip baseline test verification",
+        "Does not proceed with failing tests without explicitly reporting and asking the user",
+        "Does not skip env file handling when .env* files exist"
+      ]
+    }
+  ]
+}

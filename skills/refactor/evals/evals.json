@@ -1,0 +1,93 @@
+{
+  "skill_name": "refactor",
+  "evals": [
+    {
+      "id": 1,
+      "name": "post-green-python-order-service",
+      "prompt": "Tests are passing for the order service I just wrote. Refactor skills/refactor/evals/files/eval1_order_service.py — it's the code from my last GREEN step. The tests are at skills/refactor/evals/files/eval1_test_order_service.py.",
+      "expected_output": "Structured refactoring assessment identifying deep nesting, PascalCase/camelCase naming violations in Python, magic values, mutable shared state, mixed pure/impure code, long parameter list, and test quality issues. Refactoring applied one step at a time with tests verified after each.",
+      "files": [
+        "skills/refactor/evals/files/eval1_order_service.py",
+        "skills/refactor/evals/files/eval1_test_order_service.py"
+      ],
+      "expectations": [
+        "Scope is limited to the files from the current GREEN step — does not scan the entire codebase",
+        "Commits working code before starting any refactoring changes (safety net)",
+        "Assessment identifies PascalCase function name ProcessOrder as a Python naming convention violation and renames to snake_case",
+        "Assessment identifies camelCase functions getOrdersByUser and calcTax as Python naming convention violations",
+        "Assessment identifies nesting depth >3 levels in ProcessOrder and recommends guard clauses or early returns",
+        "Assessment identifies magic values (0.85, 0.90, 0.95, 50, 5.99, 0.08) and recommends extracting named constants",
+        "Assessment identifies mutable shared state (_orders_cache module-level dict) as a critical issue",
+        "Assessment identifies that ProcessOrder mixes pure calculation with I/O (SMTP, HTTP) and recommends separating pure from impure",
+        "Assessment identifies >3 parameters on ProcessOrder and recommends a parameter object",
+        "Assessment classifies findings by priority (Critical/High/Nice/Skip)",
+        "Tests remain green after each refactoring step",
+        "Each refactoring step is committed separately from feature work",
+        "Test code is assessed alongside production code — identifies tests asserting on mock calls (mock_smtp.SMTP.assert_called_once) instead of outcomes"
+      ],
+      "anti_expectations": [
+        "Does not add new behavior or new public APIs during refactoring",
+        "Does not apply multiple refactoring techniques in a single step (e.g., rename AND extract AND move at once)",
+        "Does not skip running tests between refactoring steps",
+        "Does not refactor without committing working code first"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "explicit-request-inconsistent-peer-modules",
+      "prompt": "Refactor the tools in our agent — they're a mess with different patterns. The files are at skills/refactor/evals/files/eval2_search_tool.ts, skills/refactor/evals/files/eval2_calculator_tool.ts, and skills/refactor/evals/files/eval2_weather_tool.ts.",
+      "expected_output": "Assessment identifying inconsistent peer modules: class vs factory function vs default export, different method names (run vs execute vs bare function), different return types (typed object vs string vs union with null), inconsistent config patterns. Recommends defining a shared Tool interface and converging all three.",
+      "files": [
+        "skills/refactor/evals/files/eval2_search_tool.ts",
+        "skills/refactor/evals/files/eval2_calculator_tool.ts",
+        "skills/refactor/evals/files/eval2_weather_tool.ts"
+      ],
+      "expectations": [
+        "Asks the user to confirm or clarify scope before starting (explicit request mode)",
+        "Commits working code before starting any refactoring changes",
+        "Assessment identifies inconsistent interface shapes: SearchTool uses run(), calculator uses execute(), weather is a bare function",
+        "Assessment identifies inconsistent module patterns: class-based (SearchTool) vs factory function (calculator) vs default export function (weather)",
+        "Assessment identifies inconsistent return types across peer tools (typed object vs string vs WeatherResult|null)",
+        "Assessment identifies inconsistent config/dependency injection: constructor params vs config object vs function params",
+        "Assessment identifies async inconsistency: SearchTool.run is async, calculator.execute is sync, weatherTool is async",
+        "Recommends defining a shared Tool interface or type that all peer modules must satisfy",
+        "Assessment identifies that description accessor is inconsistent: getDescription() vs about property vs getWeatherToolDescription()",
+        "Produces structured assessment output with Scope, Findings, Recommended Actions, and Decision sections"
+      ],
+      "anti_expectations": [
+        "Does not start refactoring 'everything' without defined scope",
+        "Does not add new features or behavior to the tools while refactoring",
+        "Does not apply all changes in a single large restructuring step"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "post-green-report-generator-pure-impure",
+      "prompt": "All tests pass for the report generator. Time to refactor. The production code is at skills/refactor/evals/files/eval3_report_generator.py and the tests at skills/refactor/evals/files/eval3_test_report_generator.py.",
+      "expected_output": "Assessment identifying generate_report as a god function mixing computation with file I/O, imperative loops replaceable with comprehensions/functional patterns, mutable accumulator patterns, and test code that lacks factory functions. Refactoring separates pure from impure, extracts functions, and applies functional patterns one step at a time.",
+      "files": [
+        "skills/refactor/evals/files/eval3_report_generator.py",
+        "skills/refactor/evals/files/eval3_test_report_generator.py"
+      ],
+      "expectations": [
+        "Scope is limited to the files from the current GREEN step",
+        "Commits working code before starting any refactoring changes",
+        "Assessment identifies generate_report as a god function doing filtering, aggregation, formatting, and file I/O — recommends splitting by responsibility",
+        "Assessment identifies imperative loops with mutable accumulators (filtered.append, manual totals dict building) and recommends list comprehensions or functional patterns",
+        "Assessment identifies that pure computation (filtering, totaling, formatting) is mixed with I/O (file writing) and recommends separating pure from impure",
+        "Assessment identifies grand_total variable used outside the if-block where it is defined — potential UnboundLocalError when include_summary=False",
+        "Assessment identifies load_data_from_csv as a candidate for simplification with csv module",
+        "Each refactoring step is one concept — rename OR extract OR move, not multiple at once",
+        "Tests remain green after each refactoring step",
+        "Refactoring commits use 'refactor:' prefix and are separate from feature commits",
+        "Test code is assessed — identifies lack of factory functions for test data (hardcoded dicts duplicated across tests)"
+      ],
+      "anti_expectations": [
+        "Does not write new tests during the refactoring phase (that belongs in the next RED phase)",
+        "Does not add speculative code or 'just in case' features",
+        "Does not skip the commit-before-refactoring safety net step",
+        "Does not introduce new public APIs that did not exist before"
+      ]
+    }
+  ]
+}

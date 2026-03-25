@@ -1,0 +1,72 @@
+{
+  "skill_name": "coverage-guard",
+  "evals": [
+    {
+      "id": 1,
+      "name": "coverage-passing-threshold",
+      "prompt": "Check the test coverage for tarash-gateway. I think we should be above 90% now after the recent test additions.",
+      "expected_output": "Coverage report showing PASS status with a summary table and least covered files listed",
+      "files": [],
+      "expectations": [
+        "Invokes the testing skill before running any coverage commands or analysis",
+        "Runs the exact pytest command: uv run pytest packages/tarash-gateway/tests/unit --cov=tarash.tarash_gateway --cov-report=json --cov-report=term-missing -q",
+        "Reads and parses coverage.json from the repo root after pytest completes",
+        "Extracts totals.percent_covered from the coverage JSON",
+        "Prints a Coverage Report with Status set to PASS when coverage meets or exceeds the threshold",
+        "Output includes a summary table with Current coverage, Threshold, and Status fields",
+        "Output includes a Least Covered Files section listing files with their coverage percentages and missing line counts",
+        "Does not proceed to gap analysis or spec generation when coverage passes"
+      ],
+      "anti_expectations": [
+        "Does not generate a coverage gap spec when coverage meets the threshold",
+        "Does not invoke the orchestrate skill when coverage is passing",
+        "Does not write tests directly -- coverage-guard only analyzes and delegates",
+        "Does not run e2e or integration tests -- only unit tests"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "coverage-below-threshold-generates-spec",
+      "prompt": "Run coverage check on tarash-gateway. We added some new modules recently and I suspect coverage has dropped.",
+      "expected_output": "Coverage report showing FAIL, followed by a detailed coverage gap spec written to dev-docs/specs/ and orchestrate invoked with the spec",
+      "files": [],
+      "expectations": [
+        "Invokes the testing skill before any coverage analysis or spec generation",
+        "Runs the exact pytest command with --cov-report=json and --cov-report=term-missing flags",
+        "Parses coverage.json and extracts per-file breakdown including missing_lines and missing_branches",
+        "Identifies all files below the 90% threshold and ranks them by missing lines descending",
+        "Reads source files of uncovered modules to understand what the uncovered code does",
+        "Writes a spec file to dev-docs/specs/YYYY-MM-DD-coverage-gap-spec.md with the correct date",
+        "Spec contains per-file analysis with uncovered functions, uncovered branches, and tests to write",
+        "Spec includes acceptance criteria requiring overall coverage meets or exceeds threshold and all new tests pass",
+        "Invokes /orchestrate with the path to the generated spec file"
+      ],
+      "anti_expectations": [
+        "Does not write test code directly -- delegates to orchestrate via the spec",
+        "Does not skip reading source files before generating the spec (no mechanical line-by-line test suggestions)",
+        "Does not modify the coverage threshold value",
+        "Does not run e2e tests -- scope is unit tests only"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "pytest-failure-stops-execution",
+      "prompt": "Check coverage for tarash-gateway. I'm not sure if the tests are even passing right now after the refactor.",
+      "expected_output": "Report of pytest failure with error details, and no spec generated",
+      "files": [],
+      "expectations": [
+        "Invokes the testing skill before running pytest",
+        "Runs the pytest coverage command and detects non-zero exit code",
+        "Reports the pytest error to the user with enough detail to diagnose the issue",
+        "Stops execution after detecting pytest failure -- does not continue to parsing or spec generation",
+        "Does not attempt to read or parse coverage.json when pytest has failed"
+      ],
+      "anti_expectations": [
+        "Does not generate a coverage gap spec when pytest fails to run",
+        "Does not invoke the orchestrate skill when pytest has failed",
+        "Does not silently ignore pytest errors and proceed with stale or missing coverage data",
+        "Does not attempt to fix the failing tests itself"
+      ]
+    }
+  ]
+}

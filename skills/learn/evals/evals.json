@@ -1,0 +1,71 @@
+{
+  "skill_name": "learn",
+  "evals": [
+    {
+      "id": 1,
+      "name": "capture-debugging-gotcha",
+      "prompt": "That was tricky — we just spent 20 minutes figuring out that the PostgreSQL connection pool was exhausting because we forgot to close cursors in the async context manager. The fix was adding `async with` instead of manual `cursor()` calls in `src/db/queries.py`. Let's capture this learning.",
+      "expected_output": "A markdown doc in docs/solutions/gotchas/ capturing the PostgreSQL cursor leak issue with frontmatter, Problem, Insight, Solution, and Prevention sections",
+      "files": [],
+      "expectations": [
+        "Spawns a Task subagent (haiku) to extract the learning from conversation context before writing any files",
+        "The subagent prompt asks for TITLE, CATEGORY, WHAT HAPPENED, WHY IT MATTERS, THE INSIGHT, CODE EXAMPLES, PREVENTION/REUSE, TAGS, RELATED FILES, and COMPONENT",
+        "Searches docs/ directory with Grep for existing related docs before creating a new file",
+        "Creates the file under docs/solutions/gotchas/ matching the gotchas category directory mapping",
+        "Filename follows the slugified-title-YYYYMMDD.md pattern",
+        "Written doc includes YAML frontmatter with title, date, category, tags, component, severity, and status fields",
+        "Written doc contains Problem, Insight, and Solution sections with concrete details from the conversation",
+        "Presents final output in the format: Done — docs/solutions/gotchas/<filename>.md followed by a summary and numbered next steps"
+      ],
+      "anti_expectations": [
+        "The subagent does not write any files — only the main conversation writes files",
+        "Does not use a generic title like 'Fixed a bug' or 'Database issue'",
+        "Does not include filler phrases like 'It's important to note that' or 'This approach ensures'"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "capture-critical-architecture-decision",
+      "prompt": "Document this — we decided to use event sourcing instead of CRUD for the audit log system because we need full replay capability and the write volume is 50x reads. This is a critical architectural decision that affects the entire harness pipeline. /learn architecture decision on event sourcing for audit logs",
+      "expected_output": "A markdown doc in docs/solutions/architecture/ with high/critical severity, and a one-liner appended to CLAUDE.md under Prior Learnings",
+      "files": [],
+      "expectations": [
+        "Spawns a Task subagent (haiku) to extract the learning before writing files",
+        "Searches docs/ for existing related documentation on similar topics",
+        "Creates the file under docs/solutions/architecture/ matching the architecture category",
+        "Written doc includes YAML frontmatter with severity set to high or critical",
+        "Written doc emphasizes the Insight section with trade-off analysis as recommended for architecture docs",
+        "Appends a one-liner to the Critical gotchas list in CLAUDE.md because severity is high or critical",
+        "The CLAUDE.md entry follows the format: - `<title>` — see `docs/solutions/architecture/<filename>.md`",
+        "Runs mkdir -p docs/solutions/architecture/ before writing the file"
+      ],
+      "anti_expectations": [
+        "Does not skip the CLAUDE.md update for high/critical severity learnings",
+        "Does not have the subagent write files directly",
+        "Does not produce a doc where the Insight section just restates the Solution"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "capture-design-pattern-with-existing-docs",
+      "prompt": "Let's compound this — we just implemented a retry-with-backoff pattern for all external API calls using a decorator. The pattern uses exponential backoff with jitter, maxing at 3 retries. We applied it to the OpenAI, Anthropic, and Stripe integrations in src/integrations/. Capture this as a reusable design pattern.",
+      "expected_output": "A markdown doc in docs/solutions/design-patterns/ with code examples showing the decorator pattern, cross-referenced with any existing related docs",
+      "files": [],
+      "expectations": [
+        "Spawns a Task subagent (haiku) to extract the learning from conversation context",
+        "Searches docs/ for existing docs related to retry, backoff, or API integration patterns",
+        "Makes an explicit decision about whether to create new doc, update existing doc, or cross-reference based on search results",
+        "Creates the file under docs/solutions/design-patterns/ matching the design-patterns category",
+        "Written doc includes code examples with file paths as recommended for design pattern docs",
+        "Written doc includes a Prevention/Reuse section with concrete checklist items, not vague advice",
+        "Tags in frontmatter are lowercase hyphenated keywords relevant to the pattern for searchability",
+        "Presents the Done message with a 2-sentence summary and numbered next steps (View, Cross-reference, Continue)"
+      ],
+      "anti_expectations": [
+        "Does not skip searching docs/ for existing related documentation",
+        "Does not write Prevention section with vague advice like 'be careful' instead of concrete checks",
+        "Does not produce code examples without file paths"
+      ]
+    }
+  ]
+}

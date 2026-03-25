@@ -1,0 +1,94 @@
+{
+  "skill_name": "tech-debt-finder",
+  "evals": [
+    {
+      "id": 1,
+      "name": "python-api-code-smells-and-patterns",
+      "prompt": "Find tech debt in skills/tech-debt-finder/evals/files/eval1_api_service.py",
+      "expected_output": "A prioritized tech debt report identifying bare except, mutable default arguments, blocking calls in async, swallowed exceptions, global mutable state, deep nesting, magic numbers, and dead code. Report printed in severity-grouped table format with a summary and hotspots section. GitHub issues created.",
+      "files": [
+        "skills/tech-debt-finder/evals/files/eval1_api_service.py"
+      ],
+      "expectations": [
+        "Dispatches 3 parallel agents (Dependency/Environment, Structural/Complexity, Code Pattern scanners)",
+        "Identifies the bare except on the get_user function as Critical severity",
+        "Identifies mutable default argument def get_user(user_id, default_roles=[]) as High severity code-smell",
+        "Identifies mutable default argument def validate_email(email, allowed_domains=[]) as High severity code-smell",
+        "Identifies blocking time.sleep and requests calls inside async def send_notification as High severity async findings",
+        "Identifies swallowed exception (except Exception as e: pass) in send_notification as High severity error-handling",
+        "Identifies global mutable state (_user_cache, _rate_limits dicts) as Medium severity code-smell",
+        "Identifies magic number 8473 in REQUEST_TIMEOUT as Medium severity code-smell",
+        "Identifies deep nesting in generate_report function (5+ levels) as Medium severity",
+        "Identifies commented-out legacy_auth_handler as Low severity dead code",
+        "Report output follows the specified format: severity-grouped tables with File, Line, Finding, Category columns",
+        "Report includes a Summary table broken down by category and severity",
+        "Report includes a Hotspots section showing files with 3+ findings",
+        "Creates GitHub sub-issues per category and a parent issue linking them"
+      ],
+      "anti_expectations": [
+        "Does not modify any source files in the scanned scope",
+        "Does not produce false positives on correct code patterns like export_csv or validate_email logic",
+        "Does not skip the GitHub issue creation step",
+        "Does not omit code snippets from GitHub issue bodies"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "business-logic-leakage-and-architecture",
+      "prompt": "Scan skills/tech-debt-finder/evals/files/ for tech debt — focus on the handler and model files: eval2_handlers.py and eval2_models.py",
+      "expected_output": "Report identifying business logic leakage in handlers (ORM calls, validation, payment processing, email sending directly in handler layer), global mutable state (ACTIVE_SESSIONS), and Any overuse. Severity-grouped tables and GitHub issues created.",
+      "files": [
+        "skills/tech-debt-finder/evals/files/eval2_handlers.py",
+        "skills/tech-debt-finder/evals/files/eval2_models.py"
+      ],
+      "expectations": [
+        "Identifies business logic leakage: ORM calls (Order.create, User.query.get, order.save) directly in OrderHandler as High severity architecture finding",
+        "Identifies business logic leakage: payment processing (charge_card) called directly in create_order handler",
+        "Identifies business logic leakage: email sending (send_email) called directly in create_order handler",
+        "Identifies business logic leakage: validation logic (email/phone validation) in UserHandler.update_profile",
+        "Identifies global mutable state ACTIVE_SESSIONS dict as Medium severity code-smell",
+        "Identifies generic catch (except Exception as e) without re-raise in create_order as Medium or High severity error-handling",
+        "Deduplicates findings if same file:line appears in multiple categories, keeping highest severity",
+        "Sorts findings within each severity group by file path then line number",
+        "Each finding includes category, severity, file, and line fields",
+        "Every finding in GitHub issues includes an embedded code snippet with line numbers",
+        "Creates run-specific label tech-debt:{YYYY-MM-DD} for issue grouping"
+      ],
+      "anti_expectations": [
+        "Does not modify any source files",
+        "Does not flag the model file's dataclass patterns or query class stubs as debt",
+        "Does not skip creating the parent GitHub issue that links all sub-issues"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "async-blocking-and-dependency-scan",
+      "prompt": "Run a full tech debt audit on skills/tech-debt-finder/evals/files/ — I want to see the async worker issues and dependency problems",
+      "expected_output": "Report covering eval3_async_worker.py async violations (blocking requests/time.sleep in async defs, bare except, deep nesting, global mutable state, dead code) and eval3_pyproject.toml dependency issues (no upper bounds on versions). All three scanners produce findings. GitHub issues created with sub-issues per category.",
+      "files": [
+        "skills/tech-debt-finder/evals/files/eval3_async_worker.py",
+        "skills/tech-debt-finder/evals/files/eval3_pyproject.toml"
+      ],
+      "expectations": [
+        "Agent A (Dependency scanner) identifies pinning gaps — dependencies with no upper bound (e.g., requests>=2.28 with no <3)",
+        "Agent B (Structural scanner) identifies deep nesting in generate_async_report (6 levels of if-statements) as Medium severity",
+        "Agent C (Code Pattern scanner) identifies bare except in process_task_queue as Critical severity",
+        "Identifies blocking requests.post/get calls inside async functions (send_bulk_emails, generate_async_report, sync_external_data) as High severity async findings",
+        "Identifies blocking time.sleep calls inside async functions as High severity async findings",
+        "Identifies global mutable state (TASK_QUEUE, RESULTS) as Medium or High severity code-smell",
+        "Identifies commented-out old_worker_loop as Low severity dead code",
+        "Identifies swallowed exception in process_task_queue bare except (RESULTS assignment with no logging/re-raise) as Critical or High",
+        "Report includes file count of scanned files in the header",
+        "Report prints findings in severity order: Critical, High, Medium, Low",
+        "Creates GitHub labels 'tech-debt' and run-specific 'tech-debt:{YYYY-MM-DD}' before creating issues",
+        "Parent GitHub issue contains a task list referencing all sub-issue numbers"
+      ],
+      "anti_expectations": [
+        "Does not modify any source files in the scanned directory",
+        "Does not skip any of the 3 parallel scanner agents",
+        "Does not create issues without code snippets embedded in the body",
+        "Does not report findings from excluded directories (node_modules, .venv, __pycache__)"
+      ]
+    }
+  ]
+}

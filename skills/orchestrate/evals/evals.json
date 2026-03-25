@@ -1,0 +1,72 @@
+{
+  "skill_name": "orchestrate",
+  "evals": [
+    {
+      "id": 1,
+      "name": "full-pipeline-inline-prompt",
+      "prompt": "Add a configurable rate limiter to the /api/upload and /api/download endpoints with per-user limits stored in Redis.",
+      "expected_output": "All 8 pipeline stages executed in order, spec and plan created in docs/spec/, implementation with tests, quality gate passed, PR created",
+      "files": [],
+      "expectations": [
+        "Announces 'Using the orchestrate skill to run the full development pipeline' at the start",
+        "DAG dashboard is initialized before any Skill or Agent call, with spec name derived from the prompt",
+        "Stage 0 (Setup) runs in main conversation using the pipeline-setup skill via Skill tool and stores WORKTREE_PATH, BRANCH_NAME, CONSTITUTION, SPEC_NAME",
+        "Stage 1 (Brainstorm) runs in main conversation using the brainstorm and spec-generation skills via Skill tool, producing docs/spec/<name>/spec.md",
+        "Stage 2 (Planner) runs in main conversation using the planning skill via Skill tool, producing docs/spec/<name>/plan.md and phase-*.md files",
+        "Stage 3 (Coder) dispatches phases as sub-agents via Agent tool, not in the main conversation",
+        "Every sub-agent prompt includes the preamble with WORKTREE_PATH and CONSTITUTION",
+        "dag-update set-status is called for each stage transition (running/done/failed/skipped)"
+      ],
+      "anti_expectations": [
+        "Does not dispatch Stages 0, 1, or 2 as sub-agents via Agent tool",
+        "Does not proceed to Stage 5 (Sync Docs) if Quality Gate returns BLOCKED or STAGNATION",
+        "Does not skip the Quality Gate stage under any circumstances",
+        "Does not skip Stage 7 (Commit & PR) under any circumstances"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "spec-file-input-with-skippable-stages",
+      "prompt": "Run the full pipeline using the spec at docs/spec/user-auth/spec.md — it already has a complete problem definition, acceptance criteria, and file-level change instructions. Skip brainstorm.",
+      "expected_output": "Brainstorm stage skipped with reason logged, planner evaluates whether to skip based on spec completeness, mandatory stages all execute, DAG nodes for skipped stages set to skipped status",
+      "files": [],
+      "expectations": [
+        "Detects the argument as a file path by checking if the file exists using Bash",
+        "Reads the spec file contents and stores as TASK_CONTEXT",
+        "Skips Stage 1 (Brainstorm) because the caller explicitly says 'skip brainstorm', and sets DAG status to skipped",
+        "Logs a message explaining why Stage 1 was skipped with the reason",
+        "Stage 0 (Setup) still executes even though brainstorm is skipped — mandatory stages are never skipped",
+        "Stage 4 (Quality Gate) executes unconditionally as a mandatory stage",
+        "Stage 3 (Coder) executes unconditionally as a mandatory stage",
+        "A compact pipeline summary table is presented after all stages complete"
+      ],
+      "anti_expectations": [
+        "Does not skip Stage 0 (Setup) even if other stages are skipped",
+        "Does not skip Stage 3 (Coder), Stage 4 (Quality Gate), Stage 6 (Learnings), or Stage 7 (Commit & PR)",
+        "Does not proceed past a BLOCKED quality gate verdict to Stage 5 or beyond"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "parallel-phase-dispatch-and-error-halt",
+      "prompt": "Refactor the payment processing module to support multiple payment providers (Stripe, PayPal, Square) with a common interface and provider-specific adapters.",
+      "expected_output": "Multi-phase plan generated, independent phases dispatched in parallel via multiple Agent calls in a single message, pipeline halts if any sub-agent fails",
+      "files": [],
+      "expectations": [
+        "After Stage 2 (Planner), reads the phase graph (DOT digraph) from plan.md to determine phase dependencies",
+        "Dispatches ready phases (no incomplete predecessors) in parallel by sending multiple Agent tool calls in a single message",
+        "Phase nodes are added as children of the coder node in the DAG dashboard after planning completes",
+        "Each phase sub-agent prompt includes the spec path, plan path, and phase-specific instructions",
+        "Each coder sub-agent is instructed to invoke the tdd skill",
+        "After all phases complete, dag-update set-status coder is set to done",
+        "Pipeline summary includes phase count, parallel count, files changed, tests passing, and PR URL",
+        "Dashboard is finalized with dag-update finalize done after the summary"
+      ],
+      "anti_expectations": [
+        "Does not dispatch dependent phases before their predecessors complete",
+        "Does not continue the pipeline if any sub-agent fails or returns an error",
+        "Does not retry if quality gate returns STAGNATION — stops entirely and reports manual intervention is needed"
+      ]
+    }
+  ]
+}

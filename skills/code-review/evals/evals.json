@@ -1,0 +1,81 @@
+{
+  "skill_name": "code-review",
+  "evals": [
+    {
+      "id": 1,
+      "name": "python-api-no-plan",
+      "prompt": "Review this Python API code for bugs. The diff is at skills/code-review/evals/files/eval1.diff and the full source is at skills/code-review/evals/files/eval1_api.py.",
+      "expected_output": "A REVIEW.md identifying mutable default argument in validate_email, bare except in delete_user, thread-safety issues on _users dict (lock imported but never used), naive datetime.now() calls, and get_user returning None without caller warning. Verdict should be REQUEST CHANGES due to critical defects.",
+      "files": [
+        "skills/code-review/evals/files/eval1.diff",
+        "skills/code-review/evals/files/eval1_api.py"
+      ],
+      "expectations": [
+        "Review identifies mutable default argument bug in validate_email (allowed_domains=[])",
+        "Review identifies bare except clause in delete_user as overly broad (catches BaseException including KeyboardInterrupt/SystemExit)",
+        "Review identifies thread-safety issue: _lock is imported but never used, while _users dict is mutated from multiple functions without synchronization",
+        "Review identifies datetime.now() without timezone producing naive datetimes",
+        "Review identifies get_user returning None silently when caller may expect a dict",
+        "Every defect finding includes a file:line reference",
+        "Every defect finding includes a confidence tag ([confirmed], [likely], or [possible])",
+        "Every defect explains why it is a problem, not just what it is",
+        "Review includes a Change Summary section inferring the intent of the code",
+        "Review includes a Verdict (REQUEST CHANGES, APPROVE WITH SUGGESTIONS, or APPROVE)",
+        "Empty severity sections say 'None identified.' rather than being omitted"
+      ],
+      "anti_expectations": [
+        "Does not flag style issues, formatting, naming conventions, or missing docstrings",
+        "Does not produce false positives on correct code patterns",
+        "Does not suggest running tests or linting",
+        "Does not include [possible] confidence findings unless in high blast radius areas or defect section would otherwise be empty"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "typescript-with-plan",
+      "prompt": "Review this TypeScript task manager against its plan. Plan is at skills/code-review/evals/files/eval2_plan.md, diff at skills/code-review/evals/files/eval2.diff, and full source at skills/code-review/evals/files/eval2_task_manager.ts.",
+      "expected_output": "A REVIEW.md with plan compliance section showing: runTask fails to await handler (acceptance criterion #2 violated), runAllPending uses forEach with async instead of Promise.all (criterion #3), parseTaskConfig has no input validation (criterion #4), == used instead of === (criterion #5), findTask return type mismatch (criterion #6). Also flags prototype pollution in mergeTaskMetadata via Object.assign with user input. Verdict should be REQUEST CHANGES.",
+      "files": [
+        "skills/code-review/evals/files/eval2.diff",
+        "skills/code-review/evals/files/eval2_task_manager.ts",
+        "skills/code-review/evals/files/eval2_plan.md"
+      ],
+      "expectations": [
+        "Review includes a Plan Summary section summarizing the plan's intent",
+        "Review includes a Plan Compliance section with Implemented, Missing or Incomplete, and Deviations subsections",
+        "Review identifies missing await on handler() call in runTask (async function result assigned without await)",
+        "Review identifies forEach with async callback in runAllPending does not actually await tasks — plan requires Promise.all or equivalent",
+        "Review identifies JSON.parse on untrusted input without validation in parseTaskConfig (plan criterion #4)",
+        "Review identifies == used instead of === for status comparisons in runAllPending and deleteCompletedTasks (plan criterion #5)",
+        "Review identifies findTask return type mismatch: function declares return type Task but can return undefined (plan criterion #6)",
+        "Review identifies prototype pollution risk in mergeTaskMetadata via Object.assign with user-controlled input",
+        "Every defect finding includes a file:line reference and confidence tag",
+        "Verdict is REQUEST CHANGES due to critical plan compliance failures"
+      ],
+      "anti_expectations": [
+        "Does not flag style issues, formatting, or naming conventions",
+        "Does not critique the plan's architecture — only checks code against the plan",
+        "Does not suggest running tests"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "empty-diff-stops-early",
+      "prompt": "Review my latest changes. I've been working on the auth module.",
+      "expected_output": "Skill detects an empty diff (no staged or unstaged changes in working tree) and informs the user there are no changes to review. Does NOT write a REVIEW.md file.",
+      "files": [],
+      "expectations": [
+        "Collects the diff using git diff HEAD (or equivalent) to check for changes",
+        "Detects that the diff is empty (no changes to review)",
+        "Informs the user there are no changes to review",
+        "Does NOT write a REVIEW.md file",
+        "Does NOT fabricate findings or produce a review of non-existent changes"
+      ],
+      "anti_expectations": [
+        "Does not write a REVIEW.md file when there is no diff",
+        "Does not hallucinate code changes or findings",
+        "Does not proceed with the full review workflow when the diff is empty"
+      ]
+    }
+  ]
+}

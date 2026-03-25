@@ -1,0 +1,113 @@
+diff --git a/api.py b/api.py
+new file mode 100644
+index 0000000..a1b2c3d
+--- /dev/null
++++ b/api.py
+@@ -0,0 +1,101 @@
++"""User management API with caching and validation."""
++import threading
++from datetime import datetime
++from typing import Optional
++
++
++_users: dict[str, dict] = {}
++_lock = threading.Lock()
++
++
++def validate_email(email: str, allowed_domains: list[str] = []) -> bool:
++    """Validate email format and optionally check against allowed domains."""
++    if not email or "@" not in email:
++        return False
++
++    local, domain = email.rsplit("@", 1)
++    if not local or not domain:
++        return False
++
++    if allowed_domains and domain not in allowed_domains:
++        return False
++
++    return True
++
++
++def create_user(
++    username: str,
++    email: str,
++    role: str = "viewer",
++    metadata: Optional[dict] = None,
++) -> dict:
++    """Create a new user and store in the registry."""
++    if not validate_email(email):
++        raise ValueError(f"Invalid email: {email}")
++
++    user = {
++        "username": username,
++        "email": email,
++        "role": role,
++        "metadata": metadata or {},
++        "created_at": datetime.now(),
++        "last_login": None,
++    }
++
++    _users[username] = user
++    return user
++
++
++def get_user(username: str) -> dict:
++    """Retrieve a user by username."""
++    return _users.get(username)
++
++
++def update_user_role(username: str, new_role: str) -> dict:
++    """Update a user's role."""
++    valid_roles = {"admin", "editor", "viewer"}
++    if new_role not in valid_roles:
++        raise ValueError(f"Invalid role: {new_role}")
++
++    user = _users[username]
++    user["role"] = new_role
++    user["updated_at"] = datetime.now()
++    return user
++
++
++def delete_user(username: str) -> bool:
++    """Delete a user from the registry."""
++    try:
++        del _users[username]
++        return True
++    except:
++        return False
++
++
++def bulk_import_users(user_list: list[dict]) -> dict:
++    """Import multiple users, returning success/failure counts."""
++    results = {"success": 0, "failed": 0, "errors": []}
++
++    for user_data in user_list:
++        try:
++            create_user(
++                username=user_data["username"],
++                email=user_data["email"],
++                role=user_data.get("role", "viewer"),
++                metadata=user_data.get("metadata"),
++            )
++            results["success"] += 1
++        except Exception as e:
++            results["failed"] += 1
++            results["errors"].append(str(e))
++
++    return results
++
++
++def find_users_by_role(role: str) -> list[dict]:
++    """Find all users with a given role."""
++    return [u for u in _users.values() if u["role"] == role]
++
++
++def record_login(username: str) -> None:
++    """Record a login timestamp for the user."""
++    user = _users.get(username)
++    if user:
++        user["last_login"] = datetime.now()
++        if "login_count" not in user:
++            user["login_count"] = 0
++        user["login_count"] += 1

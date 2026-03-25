@@ -1,0 +1,85 @@
+{
+  "skill_name": "spec-generation",
+  "evals": [
+    {
+      "id": 1,
+      "name": "rate-limiting-design-to-spec",
+      "prompt": "Generate a SPEC from this approved design doc: skills/spec-generation/evals/files/eval1_design_doc.md. The feature is rate limiting for our public API.",
+      "expected_output": "A SPEC.md with EARS-formatted requirements covering token bucket behavior, Redis failover, tier configuration, and monitoring. Includes edge cases for empty buckets, Redis unavailability, and missing API keys. Verification matrix maps every REQ and EDGE ID to test types. Out of Scope section present.",
+      "files": [
+        "skills/spec-generation/evals/files/eval1_design_doc.md"
+      ],
+      "expectations": [
+        "Output file is named SPEC.md and placed under docs/plans/<feature-name>/",
+        "SPEC contains a Requirements table with columns: ID, Type, Requirement, Acceptance Criterion, Priority",
+        "Every requirement uses EARS format (starts with 'The system shall', 'When [event], the system shall', 'While [state], the system shall', or 'If [condition], then the system shall')",
+        "No requirement combines multiple behaviors with 'and' or 'also' — each requirement covers one behavior",
+        "Acceptance criteria use measurable terms (specific numbers, status codes, durations) not ambiguous words like 'quickly', 'appropriate', or 'efficient'",
+        "Requirements cover Redis unavailability as an unwanted-behavior type requirement with fail-open semantics",
+        "Edge Cases table includes entries for empty token bucket, missing API key, Redis failover, and configuration change propagation",
+        "Every EDGE ID links to a valid REQ ID in the 'Derived From' column",
+        "Verification matrix includes every REQ and EDGE ID with at least one test type marked",
+        "Out of Scope section is non-empty and explicitly lists what the feature does not cover"
+      ],
+      "anti_expectations": [
+        "Does not include implementation details in requirements (no mentions of specific data structures, class names, or code patterns like 'use a HashMap' or 'implement TokenBucket class')",
+        "Does not use ambiguous words in requirements or acceptance criteria ('appropriate', 'fast', 'user-friendly', 'robust', 'efficient')",
+        "Does not leave any REQ or EDGE ID uncovered in the verification matrix",
+        "Does not skip the Out of Scope section or leave it empty"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "webhook-retry-design-to-spec",
+      "prompt": "Create a testable SPEC from the approved webhook retry system design doc at skills/spec-generation/evals/files/eval2_design_doc.md",
+      "expected_output": "A SPEC.md with EARS-formatted requirements covering retry backoff schedule, HTTP status code handling, circuit breaker behavior, delivery semantics, and customer dashboard. Edge cases for 429 with Retry-After, consecutive failures triggering circuit breaker, and payload size limits. Complete verification matrix.",
+      "files": [
+        "skills/spec-generation/evals/files/eval2_design_doc.md"
+      ],
+      "expectations": [
+        "Output file is named SPEC.md and written to docs/plans/<feature-name>/",
+        "Requirements use EARS format with correct type classification (event-driven for 'when delivery fails', unwanted-behavior for error handling, state-driven for circuit breaker open state)",
+        "Requirements cover at-least-once delivery semantics and idempotency expectation",
+        "Requirements cover the circuit breaker behavior: opening after 10 consecutive failures, probe delivery every 5 minutes, and closing on probe success",
+        "HTTP response code handling is specified per status range (2xx success, 3xx not followed, 4xx permanent failure except 429, 429 with Retry-After, 5xx retry)",
+        "Each requirement has exactly one behavior — no compound requirements using 'and' or 'also'",
+        "Edge Cases table covers: HTTP 429 with Retry-After header, payload exceeding 256KB, endpoint returning 4xx after previous successes, circuit breaker probe succeeding",
+        "Verification matrix covers every REQ ID and EDGE ID with at least one test type checked",
+        "Priority assignments distinguish between Must (core retry logic) and Should/Could (dashboard, notifications)"
+      ],
+      "anti_expectations": [
+        "Does not include implementation details like queue technology, specific database schemas, or Lambda function names in requirements",
+        "Does not use untestable acceptance criteria like 'the system works correctly' or 'handles errors appropriately'",
+        "Does not omit edge cases — every requirement has at least one edge case considered",
+        "Does not leave the Out of Scope section empty"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "file-upload-scanning-design-to-spec",
+      "prompt": "I have an approved design doc for file uploads with virus scanning at skills/spec-generation/evals/files/eval3_design_doc.md. Turn it into a proper SPEC with testable requirements.",
+      "expected_output": "A SPEC.md with EARS-formatted requirements covering the upload flow, file validation (extension, content type, magic bytes), virus scanning lifecycle, status transitions, and access control. Edge cases for scan timeout, extension spoofing, and size mismatch. Verification matrix with full coverage.",
+      "files": [
+        "skills/spec-generation/evals/files/eval3_design_doc.md"
+      ],
+      "expectations": [
+        "Output SPEC.md is written to docs/plans/<feature-name>/ directory",
+        "Announces at start with the required message: 'Using the spec-generation skill to create a testable SPEC from the design doc'",
+        "Requirements table uses REQ-001 through REQ-N sequential IDs with EARS format",
+        "File status lifecycle transitions (pending_upload -> uploading -> pending_scan -> scanning -> clean/infected/scan_timeout/rejected) are captured as separate requirements, not combined",
+        "Unwanted-behavior requirements cover scan timeout, infected file detection, extension spoofing via magic bytes mismatch, and file size mismatch",
+        "Acceptance criteria include specific measurable values from the design doc (25MB limit, 60 second scan timeout, 15 minute download URL expiry, 10 minute upload URL expiry)",
+        "Edge Cases table includes scenarios for: scan timeout at exactly 60 seconds, magic bytes not matching declared content type, file exceeding 25MB, more than 5 files per ticket, total exceeding 100MB per ticket",
+        "Every EDGE ID references a valid parent REQ ID",
+        "Verification matrix has at least one test type marked for every REQ and EDGE ID",
+        "SPEC includes Source field referencing the input design doc path and a Generated date"
+      ],
+      "anti_expectations": [
+        "Does not put implementation details in requirements (no mention of S3, Lambda, ClamAV, AES-256 as requirements — these are implementation choices, not behaviors)",
+        "Does not combine multiple behaviors into a single requirement",
+        "Does not use ambiguous acceptance criteria without measurable values",
+        "Does not skip the verification matrix or leave any ID uncovered"
+      ]
+    }
+  ]
+}
