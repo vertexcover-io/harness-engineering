@@ -2,3 +2,5 @@ dot-not-commit
 .worktrees/
 .harness/
 docs/
+orchestrate-workspace
+code-review-workspace

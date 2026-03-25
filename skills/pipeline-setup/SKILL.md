@@ -41,7 +41,7 @@ Store: `WORKTREE_PATH`, `BRANCH_NAME`
 ### 3. Auto-Detect Project Tooling
 
 Detect available tooling by checking (in order):
-1. `CLAUDE.md` for any documented tooling commands
+1. `CLAUDE.md` for any documented tooling commands — **this takes priority over defaults**
 2. `package.json` → Node.js project (npm/pnpm/yarn)
 3. `pyproject.toml` / `setup.py` → Python project
 4. `go.mod` → Go project
