@@ -5,7 +5,7 @@ description: >
   "stale docs", or wants to verify documentation accuracy and tone against the
   actual codebase.
 argument-hint: "[path/to/docs or blank for full scan]"
-allowed-tools: Bash, Read, Glob, Grep, Agent
+allowed-tools: Bash, Read, Glob, Grep, Agent, AskUserQuestion
 ---
 
 ## Project-Specific Guidelines
@@ -207,14 +207,39 @@ Fix {N} documentation issues found by doc-quality-guard audit.
 - [ ] Code examples verified to match current source
 ```
 
-### Step 6: Invoke Orchestrate
+### Step 6: Approval Gate
+
+Use `AskUserQuestion` to present a summary and ask for approval before proceeding:
+
+```
+Found {critical} critical, {high} high, {medium} medium, {low} low issues across {file_count} files.
+
+Fix spec written to: dev-docs/superpowers/specs/YYYY-MM-DD-doc-quality-fixes-spec.md
+
+Options:
+1. Proceed — run /orchestrate to fix these issues automatically
+2. Review — stop here so you can review/edit the spec first (run /orchestrate <spec-path> manually when ready)
+3. Cancel — stop, no fixes needed
+```
+
+- If user approves (option 1) → continue to Step 7
+- If user wants to review (option 2) → enter **review loop** (see below)
+- If user cancels (option 3) → **stop**
+
+**Review Loop (option 2):**
+1. Wait for the user's feedback/edits to the spec
+2. Apply the requested changes to the spec file
+3. Use `AskUserQuestion` again: "Updated the spec. Ready to proceed with /orchestrate, or more changes?"
+4. Repeat until the user approves → then continue to Step 7
+
+### Step 7: Invoke Orchestrate
 
 Hand off to `/orchestrate` with:
 
 ```
 Run the spec at dev-docs/superpowers/specs/YYYY-MM-DD-doc-quality-fixes-spec.md
 
-IMPORTANT: Skip brainstorm and QA stages — all context, file locations, and fix instructions are already in the spec. Go directly to planning.
+IMPORTANT: Skip brainstorm, planning, and sync-docs stages — all context, file locations, and per-file fix instructions are already in the spec. This is a doc-fix task so sync-docs is redundant.
 ```
 
 ---
