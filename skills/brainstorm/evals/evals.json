@@ -1,0 +1,70 @@
+{
+  "skill_name": "brainstorm",
+  "evals": [
+    {
+      "id": 1,
+      "name": "new-feature-brainstorm",
+      "prompt": "Brainstorm adding real-time collaboration to our document editor. Multiple users should be able to edit the same document simultaneously, like Google Docs.",
+      "expected_output": "A structured exploration through all phases ending with a design document saved to docs/plans/, with explicit user approval gates at each stage",
+      "files": [],
+      "expectations": [
+        "Uses the AskUserQuestion tool for all questions rather than embedding questions in plain text output",
+        "Begins with Phase 1 context gathering by reviewing relevant codebase files and asking 2-3 initial questions about current state",
+        "Phase 2 explores non-functional requirements including performance, scalability, reliability, and security",
+        "Phase 2 actively hunts for edge cases such as concurrent edits, network failures, and conflict resolution",
+        "Phase 4 presents 2-3 distinct architectural approaches with trade-offs, risks, and a recommendation",
+        "Phase 5 performs explicit gap analysis checking for blind spots, open questions, and unvalidated assumptions",
+        "Phase 6 produces a design document saved to docs/plans/YYYY-MM-DD-<topic>-design.md",
+        "Phase 6 presents the design section by section using AskUserQuestion for approval on each section"
+      ],
+      "anti_expectations": [
+        "Does not write any implementation code, scaffolding, or pseudocode during the brainstorming session",
+        "Does not skip directly to proposing a solution without first exploring the problem space in Phases 1-2",
+        "Does not embed questions in plain text output instead of using the AskUserQuestion tool",
+        "Does not proceed to implementation before receiving explicit user approval of the design"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "minor-change-depth-scaling",
+      "prompt": "Think through adding a dark mode toggle to our settings page. We already have a theme context provider, just need the UI toggle and to persist the preference.",
+      "expected_output": "A scaled-down brainstorm appropriate for a minor change: brief context gathering, quick risk check, short design summary rather than exhaustive multi-phase exploration",
+      "files": [],
+      "expectations": [
+        "Scales depth appropriately to a minor change rather than running full-depth exploration on all phases",
+        "Still performs some form of context gathering even though the problem seems simple",
+        "Uses the AskUserQuestion tool for questions rather than embedding them in plain text",
+        "Considers at least one non-functional concern (e.g., persistence mechanism, accessibility, SSR compatibility)",
+        "Identifies edge cases even for this minor feature (e.g., system preference changes, stored preference conflicts)",
+        "Produces a design document even if brief, saved to docs/plans/"
+      ],
+      "anti_expectations": [
+        "Does not skip brainstorming entirely just because the problem seems simple",
+        "Does not jump straight to writing implementation code or providing code snippets",
+        "Does not produce an exhaustive multi-page design document disproportionate to the problem size"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "code-level-refactoring-brainstorm",
+      "prompt": "Help me think through refactoring our payment processing module. It's a 2000-line file handling Stripe, PayPal, and bank transfers all in one class. Error handling is inconsistent and adding new payment methods is painful.",
+      "expected_output": "Exploration that reads and analyzes existing code as part of context gathering, identifies architectural challenges around boundaries and interfaces, and produces a design focused on structural changes without prescribing specific code",
+      "files": [],
+      "expectations": [
+        "Reads and analyzes existing code files during Phase 1 context gathering since the problem is code-level",
+        "Uses AskUserQuestion tool for all interactive questions",
+        "Explores the problem from multiple perspectives including the developer maintaining it, the system under load, and failure/recovery modes",
+        "Phase 3 identifies architectural challenges around component boundaries, interfaces, and contracts between payment providers",
+        "Phase 4 presents 2-3 distinct refactoring approaches with trade-offs (e.g., strategy pattern vs. microservices vs. plugin architecture)",
+        "Design stays at the architectural level describing what changes structurally rather than prescribing specific code changes",
+        "Phase 7 asks for explicit design approval using AskUserQuestion before any implementation begins"
+      ],
+      "anti_expectations": [
+        "Does not start refactoring or writing code during the brainstorming session",
+        "Does not produce pseudocode or code-level implementation details in the design document",
+        "Does not analyze only the happy path while ignoring error handling and failure modes",
+        "Does not treat edge cases like partial payment failures or provider outages as afterthoughts"
+      ]
+    }
+  ]
+}

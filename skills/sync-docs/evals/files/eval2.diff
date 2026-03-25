@@ -1,0 +1,45 @@
+diff --git a/src/main.py b/src/main.py
+index a1b2c3d..e4f5g6h 100644
+--- a/src/main.py
++++ b/src/main.py
+@@ -2,12 +2,18 @@ from fastapi import FastAPI
+ from src.api.users import router as users_router
+ from src.api.auth import router as auth_router
++from src.api.webhooks import router as webhooks_router
++from src.api.health import router as health_router
++from src.middleware.rate_limit import RateLimitMiddleware
++from src.middleware.correlation_id import CorrelationIdMiddleware
+
+-app = FastAPI(title="MyAPI", version="1.0.0")
++app = FastAPI(title="MyAPI", version="2.0.0")
+
+-app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
+-app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
++app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
++app.add_middleware(CorrelationIdMiddleware)
++
++app.include_router(users_router, prefix="/api/v2/users", tags=["users"])
++app.include_router(auth_router, prefix="/api/v2/auth", tags=["auth"])
++app.include_router(webhooks_router, prefix="/api/v2/webhooks", tags=["webhooks"])
++app.include_router(health_router, prefix="/health", tags=["health"])
+diff --git a/src/api/webhooks.py b/src/api/webhooks.py
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/src/api/webhooks.py
+@@ -0,0 +1,50 @@
++from fastapi import APIRouter, Depends, HTTPException
++from pydantic import BaseModel, HttpUrl
++from src.services.webhook_service import WebhookService
++from src.auth.deps import get_current_user
++...
+diff --git a/.env.example b/.env.example
+index 2345678..3456789 100644
+--- a/.env.example
++++ b/.env.example
+@@ -2,3 +2,6 @@ DATABASE_URL=postgresql://localhost:5432/myapi
+ REDIS_URL=redis://localhost:6379
+ JWT_SECRET=change-me
++RATE_LIMIT_RPM=60
++WEBHOOK_SIGNING_KEY=change-me
++CORS_ALLOWED_ORIGINS=http://localhost:3000

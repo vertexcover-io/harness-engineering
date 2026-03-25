@@ -1,0 +1,88 @@
+{
+  "skill_name": "sync-docs",
+  "evals": [
+    {
+      "id": 1,
+      "name": "new-cli-commands-missing-from-readme",
+      "prompt": "I just added two new CLI commands (rollback and logs) plus new deploy options (--timeout and --rollback-on-failure) and two new env vars (MYAPP_WEBHOOK_URL and MYAPP_MAX_RETRIES). The README only documents the old deploy and status commands. Sync the docs. The diff is at skills/sync-docs/evals/files/eval1.diff, the current README is at skills/sync-docs/evals/files/eval1_readme.md, the CLI entry point is at skills/sync-docs/evals/files/eval1_cli.ts, and the deploy handler is at skills/sync-docs/evals/files/eval1_deploy.ts.",
+      "expected_output": "Updated README with rollback and logs command sections, new deploy options documented, new env vars added to configuration table, architecture section left intact",
+      "files": [
+        "skills/sync-docs/evals/files/eval1.diff",
+        "skills/sync-docs/evals/files/eval1_readme.md",
+        "skills/sync-docs/evals/files/eval1_cli.ts",
+        "skills/sync-docs/evals/files/eval1_deploy.ts"
+      ],
+      "expectations": [
+        "Announces 'Syncing documentation with code changes' at the start",
+        "Uses git diff or reads the provided diff to identify what changed",
+        "Adds a section for the new 'rollback' command with its options (--version, --force) to the README",
+        "Adds a section for the new 'logs' command with its options (--follow, --since) to the README",
+        "Documents the new --timeout and --rollback-on-failure options under the deploy command",
+        "Adds MYAPP_WEBHOOK_URL and MYAPP_MAX_RETRIES to the environment variables table",
+        "Uses Edit tool rather than Write tool to update the existing README",
+        "Outputs a summary listing which files were updated and what changed"
+      ],
+      "anti_expectations": [
+        "Does not delete or rewrite the existing deploy/status command documentation",
+        "Does not touch the Architecture section since it was not affected by the changes",
+        "Does not create new documentation files when the README update is sufficient",
+        "Does not add boilerplate or filler content beyond what the code changes require"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "stale-claude-md-after-api-v2-migration",
+      "prompt": "We migrated our FastAPI app from v1 to v2 API routes, added a new webhooks module, added middleware (rate limiting and correlation IDs), added new env vars (RATE_LIMIT_RPM, WEBHOOK_SIGNING_KEY, CORS_ALLOWED_ORIGINS), and bumped to version 2.0.0. The CLAUDE.md is outdated — it doesn't mention webhooks, middleware, or the new env vars, and it still references the old architecture. Sync the docs. The diff is at skills/sync-docs/evals/files/eval2.diff, the CLAUDE.md is at skills/sync-docs/evals/files/eval2_claude_md.md, the main app is at skills/sync-docs/evals/files/eval2_main.py, and the new webhooks router is at skills/sync-docs/evals/files/eval2_webhooks.py.",
+      "expected_output": "Updated CLAUDE.md with new env vars, webhooks module reference in architecture, middleware mention, corrected API version references",
+      "files": [
+        "skills/sync-docs/evals/files/eval2.diff",
+        "skills/sync-docs/evals/files/eval2_claude_md.md",
+        "skills/sync-docs/evals/files/eval2_main.py",
+        "skills/sync-docs/evals/files/eval2_webhooks.py"
+      ],
+      "expectations": [
+        "Announces 'Syncing documentation with code changes' at the start",
+        "Uses Glob and/or Grep to scan existing documentation for references to changed code",
+        "Adds RATE_LIMIT_RPM, WEBHOOK_SIGNING_KEY, and CORS_ALLOWED_ORIGINS to the environment variables table",
+        "Updates the Architecture section to mention the webhooks module (src/api/webhooks.py)",
+        "Documents the new middleware layer (rate limiting, correlation IDs) in the CLAUDE.md",
+        "Uses Edit tool to update the existing CLAUDE.md rather than rewriting with Write",
+        "Structures updated content for dual audience — uses explicit file paths and consistent headings",
+        "Outputs a summary listing which docs were updated and what changed"
+      ],
+      "anti_expectations": [
+        "Does not document internal implementation details of the webhook service or middleware",
+        "Does not add redundant comments that merely restate what the code does",
+        "Does not create separate new documentation files when updating CLAUDE.md suffices",
+        "Does not remove or rewrite existing sections that are still accurate (e.g., Development commands, Key Patterns)"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "component-library-new-exports-stale-readme",
+      "prompt": "We added three new components to our React UI library (Tooltip, Toast, Select), added a 'danger' variant and 'xs' size to Button, added loading/tooltip/icon props to Button, added a 'system' theme option, and exported everything from the index. The README only documents Button, TextInput, and Modal with the old props. Sync the docs. The diff is at skills/sync-docs/evals/files/eval3.diff, the README is at skills/sync-docs/evals/files/eval3_readme.md, the updated Button is at skills/sync-docs/evals/files/eval3_button.tsx, and the index is at skills/sync-docs/evals/files/eval3_index.ts.",
+      "expected_output": "Updated README with new Button props documented, new components mentioned, theme option updated to include system, no unnecessary new files created",
+      "files": [
+        "skills/sync-docs/evals/files/eval3.diff",
+        "skills/sync-docs/evals/files/eval3_readme.md",
+        "skills/sync-docs/evals/files/eval3_button.tsx",
+        "skills/sync-docs/evals/files/eval3_index.ts"
+      ],
+      "expectations": [
+        "Announces 'Syncing documentation with code changes' at the start",
+        "Categorizes the changes — identifies new public APIs (Tooltip, Toast, Select), modified APIs (Button props/variants), and configuration changes (new theme option)",
+        "Updates the Button props list to include the new 'danger' variant, 'xs' size, 'loading', 'tooltip', and 'icon' props",
+        "Adds documentation sections for the new Tooltip, Toast, and Select components",
+        "Updates the Theming section to include the 'system' theme option",
+        "Checks existing docs for references to the old Button API that would be contradicted by the changes",
+        "Uses Edit tool to update the existing README rather than rewriting with Write"
+      ],
+      "anti_expectations": [
+        "Does not document private/internal implementation details like CSS module classes or clsx usage",
+        "Does not touch the TextInput or Modal sections since they were not changed",
+        "Does not create separate per-component documentation files when updating the README suffices",
+        "Does not add promotional or filler language to the component descriptions"
+      ]
+    }
+  ]
+}

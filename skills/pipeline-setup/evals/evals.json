@@ -1,0 +1,77 @@
+{
+  "skill_name": "pipeline-setup",
+  "evals": [
+    {
+      "id": 1,
+      "name": "node-project-full-setup",
+      "prompt": "Set up the pipeline for this task: Add a rate limiter middleware to the Express API that limits each IP to 100 requests per 15-minute window.",
+      "expected_output": "Worktree created, constitution loaded, Node.js tooling detected from package.json, baseline metrics recorded in docs/spec/add-rate-limiter-middleware/baseline.json, all environment variables returned",
+      "files": [],
+      "expectations": [
+        "Invokes the using-git-worktrees skill via the Skill tool to create a worktree",
+        "Stores and reports WORKTREE_PATH as an absolute path",
+        "Stores and reports BRANCH_NAME for the worktree branch",
+        "Reads agents/claude/skills/constitution/SKILL.md from the main repository, not the worktree",
+        "Extracts constitution content after the YAML frontmatter (after the second ---)",
+        "Checks CLAUDE.md for documented tooling commands before falling back to defaults",
+        "Detects Node.js project tooling from package.json",
+        "Runs baseline type checker, linter, test suite, and coverage commands",
+        "Records null for any metric tool that is not detected rather than failing",
+        "Creates docs/spec/<SPEC_NAME>/ directory with a slugified spec name derived from the task",
+        "Writes baseline.json with type_check, lint, test, coverage, and timestamp keys",
+        "Returns all six output variables: WORKTREE_PATH, BRANCH_NAME, CONSTITUTION, SPEC_NAME, SPEC_DIR, BASELINE_PATH"
+      ],
+      "anti_expectations": [
+        "Does not skip creating a git worktree and work directly on the main branch",
+        "Does not read the constitution from the worktree instead of the main repository",
+        "Does not fail or abort when a tooling command (typecheck, lint, test) is not available",
+        "Does not hardcode tooling commands without checking CLAUDE.md first"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "python-project-baseline-metrics",
+      "prompt": "Set up the pipeline environment for: Refactor the database connection pool to support async connections with configurable pool size.",
+      "expected_output": "Worktree created, Python tooling detected from pyproject.toml, baseline metrics captured including mypy/ruff/pytest results, spec directory created at docs/spec/refactor-db-connection-pool/",
+      "files": [],
+      "expectations": [
+        "Invokes the using-git-worktrees skill to create an isolated worktree",
+        "Changes directory into the worktree after creation",
+        "Detects Python project by checking for pyproject.toml or setup.py",
+        "Runs mypy or equivalent type checker and records exit code and error count",
+        "Runs ruff or equivalent linter and records exit code and warning count",
+        "Runs pytest or equivalent test runner and records passed, failed, and skipped counts",
+        "Captures coverage percentage from test runner output",
+        "Derives a slugified SPEC_NAME from the task description (e.g., refactor-db-connection-pool)",
+        "Writes baseline.json with a timestamp field in ISO format"
+      ],
+      "anti_expectations": [
+        "Does not assume Node.js tooling when pyproject.toml or setup.py is present",
+        "Does not skip baseline metric collection for any detected tool",
+        "Does not create the spec directory before the worktree is set up"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "missing-tooling-graceful-handling",
+      "prompt": "Set up pipeline for: Add a webhook endpoint that validates GitHub signatures and forwards events to our internal queue.",
+      "expected_output": "Worktree created, tooling auto-detected with nulls for missing tools, baseline.json written with null entries where tools are unavailable, all output variables populated",
+      "files": [],
+      "expectations": [
+        "Announces 'Setting up pipeline environment.' at the start",
+        "Invokes using-git-worktrees skill before any other operations",
+        "Checks tooling detection in the documented priority order: CLAUDE.md first, then package.json, pyproject.toml, go.mod, Cargo.toml",
+        "Records null for type_check, lint, test, or coverage keys when the corresponding tool is not detected",
+        "Does not fail or exit early when one or more baseline metric commands are missing",
+        "Creates the docs/spec/ directory structure even when some tooling is unavailable",
+        "Baseline.json contains all required keys (type_check, lint, test, coverage, timestamp) regardless of which tools were detected",
+        "Returns SPEC_DIR as the path to docs/spec/<SPEC_NAME>/"
+      ],
+      "anti_expectations": [
+        "Does not abort the pipeline when a tool is missing or a metric command returns an error",
+        "Does not omit keys from baseline.json for undetected tools instead of recording null",
+        "Does not skip loading the constitution when tooling detection fails"
+      ]
+    }
+  ]
+}
