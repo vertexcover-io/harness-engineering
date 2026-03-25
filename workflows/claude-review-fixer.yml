@@ -1,0 +1,62 @@
+name: Claude Review Fixer
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: claude-review-fixer-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  fix-review:
+    if: |
+      contains(github.event.review.body, '@claude') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Fetch review comments
+        id: comments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/${{ github.event.review.id }}/comments \
+            --jq '[.[] | {path: .path, line: .line, body: .body, diff_hunk: .diff_hunk, id: .id}]' > review_comments.json
+          echo "data<<COMMENTS_EOF" >> "$GITHUB_OUTPUT"
+          cat review_comments.json >> "$GITHUB_OUTPUT"
+          echo "COMMENTS_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude Review Fixer
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: 'https://github.com/vertexcover-io/harness.git'
+          plugins: 'harness@main'
+          prompt: |
+            You are fixing code review feedback on PR #${{ github.event.pull_request.number }}.
+
+            Reviewer: ${{ github.event.review.user.login }}
+            Review body: ${{ github.event.review.body }}
+
+            Review comments (file-level):
+            ${{ steps.comments.outputs.data }}
+
+            Run /review-fixer with the above context.
+          show_full_output: true
+          claude_args: |
+            --model opus
+            --effort high
+            --max-turns 30
