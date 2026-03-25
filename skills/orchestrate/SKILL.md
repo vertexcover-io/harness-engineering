@@ -6,7 +6,8 @@ description: >
   TDD + stagnation detection), quality gate, sync-docs, capture learnings, and commit/PR. Artifacts stored in
   docs/spec/<name>/. Use when the user says orchestrate, run the pipeline, full workflow,
   or wants end-to-end development from spec to PR.
-argument-hint: "<prompt or path/to/spec.md>"
+  Supports --auto mode for CI/CD pipelines — bypasses interactive approval gates while still producing all artifacts.
+argument-hint: "<prompt or path/to/spec.md> [--auto]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
 ---
 
@@ -28,6 +29,19 @@ The argument is either an **inline prompt** or a **spec file path**.
 3. If not a file → treat the argument as an inline task prompt
 
 Store the resolved input as `TASK_CONTEXT` — this is passed to every stage.
+
+### Auto Mode Detection
+
+Check if the argument contains `--auto`:
+1. If `--auto` is present, set `AUTO_MODE=true` and strip `--auto` from the argument
+2. In auto mode:
+   - All interactive approval gates are bypassed — Claude answers its own questions and auto-approves designs and plans
+   - **Stage 0 (Setup):** Skip worktree creation — assume the current working directory is already the correct checkout (e.g., GitHub Actions has already checked out the PR branch). Still run baseline metrics and create the spec directory.
+   - **DAG Dashboard:** Skip `dag-update serve` — no live dashboard needed in CI. Still track node status for reporting if `HARNESS_DIR` is available, otherwise skip all `dag-update` calls.
+   - **Stage 7 (Commit & PR):** Skip PR creation — only commit and push. The caller (e.g., review-fixer skill) handles PR interaction.
+3. All artifacts (design docs, specs, plans) are still produced for auditability
+
+Auto mode is designed for CI/CD pipelines and automated workflows where no human is available for interactive approval.
 
 ### DAG Dashboard Bootstrap (MUST be the very first action)
 
@@ -141,6 +155,13 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 4. Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `CONSTITUTION`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
 5. `dag-update set-status setup done`
 
+**Auto mode (Stage 0):** When `AUTO_MODE=true`:
+- Skip worktree creation — use the current working directory as `WORKTREE_PATH`
+- Skip `dag-update` calls (no dashboard in CI)
+- Still run baseline metrics capture if tooling is available
+- Still create the spec directory: `docs/spec/<SPEC_NAME>/`
+- Set `BRANCH_NAME` from `git branch --show-current`
+
 ### Stage 1: Brainstorm (Main Conversation)
 
 1. `dag-update set-status brainstorm running`
@@ -161,6 +182,17 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
    ```
 
 Then continue to Stage 2.
+
+**Auto mode (Stage 1):** When `AUTO_MODE=true`:
+- Skip the interactive brainstorm skill
+- Instead, Claude generates the design directly from `TASK_CONTEXT`:
+  1. Analyze the task context to understand what needs to be built
+  2. Write a concise design doc covering: problem, approach, components, data flow
+  3. Save to the design doc path — same location as interactive mode
+  4. Auto-approve (no user gate)
+  5. Proceed to spec generation as normal
+- Still invoke `spec-generation` skill to produce `spec.md`
+- Skip `dag-update` calls
 
 ### Stage 2: Planner (Main Conversation)
 
@@ -203,6 +235,13 @@ $DU add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1
 ```
 
 Then continue to Stage 3 as sub-agents.
+
+**Auto mode (Stage 2):** When `AUTO_MODE=true`:
+- Invoke the `planning` skill as normal, but the skill runs without asking the user questions
+- Claude makes all implementation decisions autonomously
+- Auto-approve the plan (no user gate)
+- All plan artifacts (plan.md, phase-*.md) are still produced
+- Skip `dag-update` calls
 
 ### Stage 3: Coder
 
@@ -397,6 +436,12 @@ Agent(prompt="
 ```
 
 **Extract from result:** commits, `PR_URL`
+
+**Auto mode (Stage 7):** When `AUTO_MODE=true`:
+- Invoke `git-commit` skill as normal to create commits
+- Push to current branch: `git push`
+- **Skip PR creation** — the PR already exists (caller is responsible for PR interaction)
+- Return: commits list only (no PR URL)
 
 ---
 
