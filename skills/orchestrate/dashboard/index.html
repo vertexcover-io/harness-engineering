@@ -83,6 +83,7 @@
       color: #0D0D0D;
     }
     .badge-status.running { background: #FF6B35; }
+    .badge-status.waiting { background: #A855F7; }
     .badge-status.done { background: #00D4AA; }
     .badge-status.failed { background: #FF4444; }
     .badge-status.interrupted { background: #FFAA00; }
@@ -157,6 +158,9 @@
     }
     .node-running rect {
       animation: pulse 2s ease-in-out infinite;
+    }
+    .node-waiting rect {
+      animation: pulse 3s ease-in-out infinite;
     }
 
     /* ── Legend ── */
@@ -361,6 +365,7 @@
       <div class="legend-title">// status</div>
       <div class="legend-item"><div class="legend-dot" style="background:#00D4AA"></div> done</div>
       <div class="legend-item"><div class="legend-dot" style="background:#FF6B35"></div> running</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#A855F7"></div> waiting</div>
       <div class="legend-item"><div class="legend-dot" style="background:#3D3D3D; border: 1.5px solid #777"></div> pending</div>
       <div class="legend-item"><div class="legend-dot" style="background:#FF4444"></div> failed</div>
     </div>
@@ -394,6 +399,7 @@
     const STATUS_COLORS = {
       pending:     { border: '#3D3D3D', fill: '#212121' },
       running:     { border: '#FF6B35', fill: '#212121' },
+      waiting:     { border: '#A855F7', fill: '#212121' },
       done:        { border: '#00D4AA', fill: '#212121' },
       failed:      { border: '#FF4444', fill: '#212121' },
       skipped:     { border: '#3D3D3D', fill: '#1A1A1A' },
@@ -748,7 +754,7 @@
       var arrow = hasKids ? (expandedNodes.has(d.id) ? ' ▼' : ' ▶') : '';
 
       var nodeG = container.append('g')
-        .attr('class', 'node' + (d.status === 'running' ? ' node-running' : ''))
+        .attr('class', 'node' + (d.status === 'running' ? ' node-running' : '') + (d.status === 'waiting' ? ' node-waiting' : ''))
         .attr('transform', 'translate(' + (d.x - d.width/2) + ',' + (d.y - d.height/2) + ')');
 
       // Main rect — click toggles expand (if has kids) or opens modal (if leaf)
