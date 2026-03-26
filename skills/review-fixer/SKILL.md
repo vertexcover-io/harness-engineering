@@ -22,18 +22,28 @@ Reads review comments from a PR, triages each as a direct fix or orchestration t
 
 Extract from the prompt context:
 - **PR number** — find `PR #<number>` in the prompt
+- **Repository** — find `Repository: <owner/repo>` in the prompt
 - **Reviewer** — find `Reviewer: <login>` in the prompt
 - **Review body** — text after `Review body:` until the next section
-- **Review comments** — JSON array after `Review comments (file-level):`, each with:
-  - `path` — file path
-  - `line` — line number
-  - `body` — reviewer's comment text
-  - `diff_hunk` — surrounding code context
-  - `id` — comment ID for replying
 
-Store these as `PR_NUMBER`, `REVIEWER`, `REVIEW_BODY`, `COMMENTS_JSON`.
+Store these as `PR_NUMBER`, `REPOSITORY`, `REVIEWER`, `REVIEW_BODY`.
 
-If no review comments JSON is found, treat the review body as the sole instruction.
+### Fetch Review Comments
+
+Fetch file-level review comments from the GitHub API:
+```bash
+gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments" \
+  --jq '[.[] | {id: .id, path: .path, line: (.line // .original_line), body: .body, diff_hunk: .diff_hunk}]'
+```
+
+Store the result as `COMMENTS_JSON`. Each entry has:
+- `path` — file path
+- `line` — line number
+- `body` — reviewer's comment text
+- `diff_hunk` — surrounding code context
+- `id` — comment ID for replying
+
+If the API call fails or returns an empty array, treat the review body as the sole instruction.
 
 ---
 

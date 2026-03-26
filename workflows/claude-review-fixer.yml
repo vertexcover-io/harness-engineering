@@ -34,15 +34,23 @@ jobs:
         with:
           base_branch: master
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.HARNESS_PAT }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           plugin_marketplaces: 'https://github.com/vertexcover-io/harness-engineering.git'
           plugins: 'harness@main'
           prompt: |
-            You have the harness plugin installed with skills for software engineering workflows.
-            When asked to fix review comments or address PR feedback, use /review-fixer.
-            Follow the instructions in the @claude-harness comment on this PR.
+            Use /review-fixer to address the review feedback below.
+
+            PR #${{ github.event.issue.number || github.event.pull_request.number }}
+            Repository: ${{ github.repository }}
+            Reviewer: ${{ github.event.comment.user.login }}
+
+            Review body:
+            ${{ github.event.comment.body }}
+
+            Fetch the file-level review comments yourself using:
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number || github.event.pull_request.number }}/comments
           show_full_output: true
           claude_args: |
             --model opus
             --effort high
-            --max-turns 30
+            --permission-mode bypassPermissions
