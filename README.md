@@ -148,7 +148,7 @@ harness/
 ├── CLAUDE.md        # Global instructions for Claude Code
 ├── settings.json    # Permissions, hooks, and environment config
 ├── hooks/
-│   └── hooks.json   # AI-powered permission reviewer and session hooks
+│   └── hooks.json   # Session hooks for dashboard management (ask-user, DAG updates)
 └── skills/          # Reusable skills that extend Claude's capabilities
     ├── brainstorm/
     ├── code-quality/
@@ -163,6 +163,8 @@ harness/
     ├── planning/
     ├── quality-gate/
     ├── refactor/
+    ├── review-fixer/
+    ├── skill-eval-generator/
     ├── spec-generation/
     ├── sync-docs/
     ├── tdd/
@@ -184,9 +186,9 @@ The global `CLAUDE.md` file provides instructions that Claude Code follows acros
 
 Configures Claude Code's runtime behavior:
 
-- **Permissions** — Pre-approved read-only tools (git, grep, find, jq, etc.) and blocked dangerous commands (sudo, `git push`)
+- **Permissions** — Pre-approved read-only tools (git, grep, find, jq, etc.) and denied dangerous commands (sudo, `git push` is not in the allow list)
 - **Deny rules** — Prevents reading dotfiles, `~/Library`, `/etc`, and other sensitive paths
-- **Hooks** — AI-powered permission reviewer for grey-area tool calls (not matched by allow/deny rules). Handles .env protection, blanket git add safety, and general security review. Caches decisions for 1 hour to avoid redundant model calls
+- **Hooks** — Session lifecycle hooks for the orchestrate dashboard. Tracks AskUserQuestion events (PreToolUse/PostToolUse) and finalizes the DAG on SessionEnd
 - **Status line** — Uses [ccstatusline](https://www.npmjs.com/package/ccstatusline)
 - **Plugins** — skill-creator enabled
 
@@ -209,6 +211,8 @@ Skills are reusable prompt modules that give Claude Code specialized capabilitie
 | [planning](skills/planning/SKILL.md) | Implementation planning for features, design documents, and multi-step tasks. Bridges brainstorming and execution with structured plan documents. |
 | [quality-gate](skills/quality-gate/SKILL.md) | Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output. Runs after TDD, refactor, and before PR. |
 | [refactor](skills/refactor/SKILL.md) | Refactoring assessment and patterns. Used after tests pass (GREEN phase) or when explicitly asked. Guides what to look for and which techniques to apply. |
+| [review-fixer](skills/review-fixer/SKILL.md) | Automated PR review fixer. Reads human code review comments, classifies each as a direct fix or orchestration task, applies fixes, runs quality gate, commits, pushes, and comments back on the PR. |
+| [skill-eval-generator](skills/skill-eval-generator/SKILL.md) | Generates eval test suites (evals.json + fixture files) for any skill by analyzing its SKILL.md. Produces test cases with realistic prompts, verifiable expectations, and anti-expectations. |
 | [spec-generation](skills/spec-generation/SKILL.md) | Transforms an approved design doc into a structured SPEC with testable acceptance criteria using EARS format. Bridges brainstorm and planning. |
 | [sync-docs](skills/sync-docs/SKILL.md) | Synchronizes documentation with code changes. Scans for stale, missing, or contradictory docs, then updates them to reflect the actual implementation. |
 | [tdd](skills/tdd/SKILL.md) | Test-Driven Development workflow (RED-GREEN-REFACTOR). Loaded before writing any production code in TDD-configured projects. |
