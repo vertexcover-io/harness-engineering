@@ -5,25 +5,22 @@
       "id": 1,
       "name": "node-project-full-setup",
       "prompt": "Set up the pipeline for this task: Add a rate limiter middleware to the Express API that limits each IP to 100 requests per 15-minute window.",
-      "expected_output": "Worktree created, constitution loaded, Node.js tooling detected from package.json, baseline metrics recorded in docs/spec/add-rate-limiter-middleware/baseline.json, all environment variables returned",
+      "expected_output": "Worktree created, Node.js tooling detected from package.json, baseline metrics recorded in docs/spec/add-rate-limiter-middleware/baseline.json, all environment variables returned",
       "files": [],
       "expectations": [
         "Invokes the using-git-worktrees skill via the Skill tool to create a worktree",
         "Stores and reports WORKTREE_PATH as an absolute path",
         "Stores and reports BRANCH_NAME for the worktree branch",
-        "Reads agents/claude/skills/constitution/SKILL.md from the main repository, not the worktree",
-        "Extracts constitution content after the YAML frontmatter (after the second ---)",
         "Checks CLAUDE.md for documented tooling commands before falling back to defaults",
         "Detects Node.js project tooling from package.json",
         "Runs baseline type checker, linter, test suite, and coverage commands",
         "Records null for any metric tool that is not detected rather than failing",
         "Creates docs/spec/<SPEC_NAME>/ directory with a slugified spec name derived from the task",
         "Writes baseline.json with type_check, lint, test, coverage, and timestamp keys",
-        "Returns all six output variables: WORKTREE_PATH, BRANCH_NAME, CONSTITUTION, SPEC_NAME, SPEC_DIR, BASELINE_PATH"
+        "Returns all five output variables: WORKTREE_PATH, BRANCH_NAME, SPEC_NAME, SPEC_DIR, BASELINE_PATH"
       ],
       "anti_expectations": [
         "Does not skip creating a git worktree and work directly on the main branch",
-        "Does not read the constitution from the worktree instead of the main repository",
         "Does not fail or abort when a tooling command (typecheck, lint, test) is not available",
         "Does not hardcode tooling commands without checking CLAUDE.md first"
       ]
@@ -70,7 +67,7 @@
       "anti_expectations": [
         "Does not abort the pipeline when a tool is missing or a metric command returns an error",
         "Does not omit keys from baseline.json for undetected tools instead of recording null",
-        "Does not skip loading the constitution when tooling detection fails"
+        "Does not skip tooling detection when some tools are missing"
       ]
     }
   ]

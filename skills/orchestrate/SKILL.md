@@ -140,9 +140,6 @@ Every sub-agent prompt MUST start with this preamble (referred to as `[PREAMBLE]
 ```
 You are working in the worktree at <WORKTREE_PATH>.
 Your working directory is <WORKTREE_PATH>.
-
-## Constitution
-<CONSTITUTION>
 ```
 
 ### Stages 0-2 Run in Main Conversation
@@ -199,7 +196,7 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 1. `dag-update set-status setup running`
 2. Invoke the `pipeline-setup` skill using the `Skill` tool, passing `TASK_CONTEXT`
 3. `cd` into the worktree
-4. Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `CONSTITUTION`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
+4. Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
 5. `dag-update set-status setup done`
 
 **Auto mode (Stage 0):** When `AUTO_MODE=true`:
@@ -537,7 +534,6 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash \"$CLAUDE_SKILL_DI
 ## Key Principles
 
 - **Each stage is isolated** — sub-agents don't share context, so pass all necessary information in the prompt
-- **Constitution is universal** — every sub-agent gets the same rules via `[PREAMBLE]`, no exceptions
 - **Extract artifacts** — after each sub-agent returns, extract file paths and key info to pass forward
 - **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level
