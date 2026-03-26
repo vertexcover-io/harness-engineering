@@ -194,7 +194,7 @@ Configures Claude Code's runtime behavior:
 
 ## Skills
 
-Skills are reusable prompt modules that give Claude Code specialized capabilities. They trigger automatically based on context or can be invoked explicitly.
+Skills are reusable prompt modules that give Claude Code specialized capabilities. They trigger automatically based on context or can be invoked explicitly. See **[SKILLS.md](SKILLS.md)** for workflow guides and how skills connect.
 
 | Skill | Description |
 |-------|-------------|
