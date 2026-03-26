@@ -28,12 +28,26 @@ case "$ACTION" in
     NODE_ID="$(jq -r '[.nodes | to_entries[] | select(.value.status == "running")] | last | .key // empty' "$DAG_FILE")"
     if [[ -n "$NODE_ID" ]]; then
       $DU set-status "$NODE_ID" waiting
-      # Desktop notification
+      # Desktop notification + focus terminal
       LABEL="$(jq -r ".nodes[\"$NODE_ID\"].label // \"$NODE_ID\"" "$DAG_FILE")"
       if command -v notify-send >/dev/null 2>&1; then
         notify-send -u normal -i dialog-question "Pipeline: Input Required" "$LABEL is waiting for your response" 2>/dev/null || true
+        # Focus the terminal window on Linux
+        if command -v xdotool >/dev/null 2>&1; then
+          # Find the terminal window by walking up from our parent process
+          TERM_PID="$(ps -o ppid= -p $PPID 2>/dev/null | tr -d ' ')" || true
+          if [[ -n "$TERM_PID" ]]; then
+            TERM_WID="$(xdotool search --pid "$TERM_PID" 2>/dev/null | head -1)" || true
+            [[ -n "$TERM_WID" ]] && xdotool windowactivate "$TERM_WID" 2>/dev/null || true
+          fi
+        fi
       elif command -v osascript >/dev/null 2>&1; then
-        osascript -e "display notification \"$LABEL is waiting for your response\" with title \"Pipeline: Input Required\"" 2>/dev/null || true
+        # On macOS: detect terminal app and activate it
+        TERM_APP="${TERM_PROGRAM:-Terminal}"
+        osascript -e "
+          display notification \"$LABEL is waiting for your response\" with title \"Pipeline: Input Required\"
+          tell application \"$TERM_APP\" to activate
+        " 2>/dev/null || true
       fi
     fi
     ;;
