@@ -1,5 +1,27 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/env bash \"${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/ask-user-hook.sh\" pre 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/env bash \"${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/ask-user-hook.sh\" post 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [

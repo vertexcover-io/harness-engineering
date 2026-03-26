@@ -78,6 +78,11 @@ cmd_init() {
 }
 ENDJSON
 
+  # Write absolute path to a well-known location so hooks can find it regardless of cwd
+  local abs_harness_dir
+  abs_harness_dir="$(cd "$harness_dir" && pwd)"
+  echo "$abs_harness_dir" > /tmp/.claude-harness-active
+
   echo "$harness_dir"
 }
 
@@ -149,7 +154,7 @@ cmd_set_status() {
   local jq_filter='.nodes[$id].status = $status'
 
   case "$status" in
-    running)
+    running|waiting)
       jq_filter="$jq_filter | .nodes[\$id].startedAt = \$now"
       ;;
     done|failed|interrupted|skipped)
@@ -316,6 +321,9 @@ PYEOF
     kill "$(cat "$HARNESS_DIR/server.pid")" 2>/dev/null || true
     rm -f "$HARNESS_DIR/server.pid" "$HARNESS_DIR/server.port"
   fi
+
+  # Clean up breadcrumb
+  rm -f /tmp/.claude-harness-active
 }
 
 # ── Dispatch ──

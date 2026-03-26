@@ -1,7 +1,7 @@
 ---
 name: brainstorm
 description: >
-  Structured brainstorming and design gate for deep problem understanding before implementation.
+  Structured brainstorming and design exploration for deep problem understanding before implementation.
   Use this skill whenever the user says "brainstorm", "think through", "explore this problem",
   "let's think about", "what are the angles", "help me understand", "design this", or wants to
   deeply analyze a problem, feature, architecture decision, or technical challenge before writing
@@ -11,13 +11,13 @@ description: >
   and producing an approved architectural design, not writing code.
 ---
 
-# Brainstorm: Deep Problem Understanding and Design Gate
+# Brainstorm: Deep Problem Understanding and Design
 
 This skill has two jobs that work together:
 
 1. **Deep problem understanding** — explore the problem from every angle, surface hidden
    assumptions, identify what hasn't been considered, and build genuine comprehension.
-2. **Design gate** — produce an approved architectural design before any implementation
+2. **Design synthesis** — produce an architectural design before implementation
    begins. The design stays at the conceptual and architectural level, never descending
    into code-level detail.
 
@@ -25,8 +25,8 @@ Understanding feeds design, and designing reveals gaps in understanding. But the
 is weighted toward understanding. A thorough exploration naturally produces a good design;
 a rushed design without understanding produces rework.
 
-**Hard gate:** No code, scaffolding, or implementation occurs until the design receives
-explicit user approval. This applies regardless of how "simple" the problem appears.
+**Note:** No code, scaffolding, or implementation occurs during brainstorming — this skill
+produces a design document, then flows directly into the next pipeline stage.
 
 ## Depth Scaling
 
@@ -176,23 +176,12 @@ Before producing the design, explicitly check for thinking gaps:
 Produce the design document. Read `references/design-template.md` for the full template.
 Save to `docs/plans/YYYY-MM-DD-<topic>-design.md`.
 
-Present the design to the user **section by section**, using the `AskUserQuestion` tool
-to get explicit approval on each section before moving on. This catches misunderstandings
-early and ensures the user actively confirms each part of the design.
-
 The document covers: Problem Statement, Context, Requirements (functional, non-functional,
 edge cases), Key Insights, Architectural Challenges, Approaches Considered, Chosen Approach,
 High-Level Design, Open Questions, Risks and Mitigations, and Assumptions.
 
-### Phase 7: Design Approval and Transition
-
-The design must be explicitly approved before any implementation begins. Use the
-`AskUserQuestion` tool to ask for final approval — never embed the approval question
-in plain text output.
-
-After approval, offer to transition into implementation planning — breaking the design
-into concrete tasks. If a planning skill is available, invoke it with the design document
-as context.
+Save the design document and proceed directly to the next stage (spec generation or
+implementation planning). No approval gate — the design flows through.
 
 ## Handling Code-Level Problems
 

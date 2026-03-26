@@ -17,43 +17,47 @@ Runs a full development pipeline in 8 stages. Brainstorm and Planner run interac
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
+**CRITICAL: Do NOT explore the codebase, read project files, or fetch URLs before completing the Initialization steps below. The very first actions are: detect input, check for auto mode, then start the dashboard. No exceptions.**
+
+**CRITICAL: Do NOT stop, pause, or present a summary until ALL pipeline stages (0-7) have completed or a stage has explicitly failed/blocked. Each stage flows directly into the next. The only permitted pause is the plan approval gate after Stage 2.**
+
 ---
 
-## Input Detection
+## Initialization (do these first, in order, before anything else)
+
+### Step 1: Input Detection
 
 The argument is either an **inline prompt** or a **spec file path**.
 
-**Detection logic:**
-1. Check if the argument is a path to an existing file (use `Bash` to test with `[ -f "<arg>" ]`)
-2. If file exists → read its contents as the task spec
-3. If not a file → treat the argument as an inline task prompt
+1. Check if the argument contains `--auto`. If present, set `AUTO_MODE=true` and strip `--auto` from the argument.
+2. Check if the remaining argument is a path to an existing file (use `Bash` to test with `[ -f "<arg>" ]`)
+3. If file exists → read its contents as the task spec
+4. If not a file → treat the argument as an inline task prompt
+5. Store the resolved input as `TASK_CONTEXT` — this is passed to every stage.
 
-Store the resolved input as `TASK_CONTEXT` — this is passed to every stage.
+When `AUTO_MODE=true`:
+- **Skip all AskUserQuestion calls** — Claude decides autonomously, auto-approves designs and plans
+- **Skip worktree creation** — use current working directory (e.g., GitHub Actions already checked out the PR branch)
+- **Skip all `dag-update` calls** — no live dashboard in CI
+- **Skip PR creation in Stage 7** — only commit and push; caller handles PR interaction
+- **All artifacts still produced** (design docs, specs, plans) for auditability
 
-### Auto Mode Detection
+### Step 2: DAG Dashboard Bootstrap
 
-Check if the argument contains `--auto`:
-1. If `--auto` is present, set `AUTO_MODE=true` and strip `--auto` from the argument
-2. In auto mode:
-   - All interactive approval gates are bypassed — Claude answers its own questions and auto-approves designs and plans
-   - **Stage 0 (Setup):** Skip worktree creation — assume the current working directory is already the correct checkout (e.g., GitHub Actions has already checked out the PR branch). Still run baseline metrics and create the spec directory.
-   - **DAG Dashboard:** Skip `dag-update serve` — no live dashboard needed in CI. Still track node status for reporting if `HARNESS_DIR` is available, otherwise skip all `dag-update` calls.
-   - **Stage 7 (Commit & PR):** Skip PR creation — only commit and push. The caller (e.g., review-fixer skill) handles PR interaction.
-3. All artifacts (design docs, specs, plans) are still produced for auditability
+The dashboard script path is: !`echo "${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/dag-update.sh"`
+Store the path above as `DAG_SCRIPT`. All Bash calls below use this resolved path.
 
-Auto mode is designed for CI/CD pipelines and automated workflows where no human is available for interactive approval.
-
-### DAG Dashboard Bootstrap (MUST be the very first action)
-
-Before ANY Skill or Agent call, initialize the DAG dashboard. This starts the live visualization.
+Start the dashboard immediately. Do NOT read files, explore the codebase, or invoke any Skill or Agent before this.
 
 1. Generate a spec name from the task prompt: lowercase, replace spaces with hyphens, truncate to 30 chars. Example: `"Add user auth system"` → `"add-user-auth-system"`
 2. Initialize the DAG and start the dashboard:
    ```
    Bash("
-     export HARNESS_DIR=$(/usr/bin/env bash \"$CLAUDE_SKILL_DIR/dashboard/dag-update.sh\" init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
-     DU='/usr/bin/env bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
+     export HARNESS_DIR=$(/usr/bin/env bash '<DAG_SCRIPT>' init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
+     DU='/usr/bin/env bash <DAG_SCRIPT>'
      $DU add-node setup 'Setup'
+     $DU add-node worktree 'Create Worktree' --parent setup
+     $DU add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
      $DU add-node brainstorm 'Brainstorm & Spec' --depends-on setup
      $DU add-node planning 'Planning' --depends-on brainstorm
      $DU add-node coder 'Coder' --depends-on planning
@@ -66,6 +70,11 @@ Before ANY Skill or Agent call, initialize the DAG dashboard. This starts the li
    ```
    Note: Phase nodes are added as children of `coder` after planning (Stage 2) when phases are known.
 3. Store `HARNESS_DIR` for use in all subsequent `dag-update` calls.
+
+**IMPORTANT: Shell state does not persist between Bash tool calls.** Every `Bash(...)` call that uses `dag-update` must re-export `HARNESS_DIR` and re-define `DU` with the resolved `DAG_SCRIPT` path. Use this pattern for ALL dag-update calls throughout the pipeline:
+```
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU <command> <args>")
+```
 
 ---
 
@@ -123,7 +132,7 @@ For each skippable stage:
 ### Handling Skipped Stages
 
 For each skipped stage:
-1. Set its DAG status to `skipped`: `dag-update set-status <node> skipped`
+1. Set its DAG status to `skipped` (using the full `export HARNESS_DIR=... && DU=...` preamble pattern)
 2. Log: "Skipping Stage N (<name>) — <reason>"
 3. Proceed to the next stage in order
 
@@ -132,6 +141,14 @@ For each skipped stage:
 ---
 
 ## Execution Rules
+
+### HARD RULE: Questions and Approvals
+
+**Every question to the user MUST use the `AskUserQuestion` tool — never output questions as plain text.** In auto mode, skip all `AskUserQuestion` calls entirely.
+
+**Single approval gate:** The only approval gate in the pipeline is after Stage 2 (Planner). Present the plan and wait for user approval before proceeding to Stage 3. All other stages flow without approval gates.
+
+**Waiting status:** A PreToolUse/PostToolUse hook automatically sets the current running node to `waiting` (purple) before any `AskUserQuestion` call, and back to `running` after the user responds. No manual dag-update calls needed for this.
 
 ### Sub-Agent Prompt Preamble
 
@@ -147,8 +164,8 @@ Your working directory is <WORKTREE_PATH>.
 Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the main conversation — NOT as sub-agents.
 
 - **Stage 0** runs in main so we can `cd` into the worktree and set the working directory for everything that follows.
-- **Stage 1** runs in main because brainstorm requires interactive dialogue with the user.
-- **Stage 2** runs in main because the planner explores the codebase and asks the user implementation questions interactively.
+- **Stage 1** runs in main because brainstorm needs conversation context and flows into spec generation.
+- **Stage 2** runs in main because the planner explores the codebase interactively and holds the only approval gate.
 
 Invoke their respective skills directly using the `Skill` tool. All other stages (3-7) run as sub-agents via the `Agent` tool.
 
@@ -193,99 +210,98 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 
 ### Stage 0: Setup (Main Conversation)
 
-1. `dag-update set-status setup running`
-2. Invoke the `pipeline-setup` skill using the `Skill` tool, passing `TASK_CONTEXT`
-3. `cd` into the worktree
-4. Store from result: `WORKTREE_PATH`, `BRANCH_NAME`, `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
-5. `dag-update set-status setup done`
+**Worktree sub-step:**
+1. Run this Bash command FIRST, before invoking any skill:
+   ```
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status setup running && $DU set-status worktree running")
+   ```
+2. Invoke the `using-git-worktrees` skill using the `Skill` tool to create the worktree
+3. `cd` into the worktree. Store: `WORKTREE_PATH`, `BRANCH_NAME`
+4. Run immediately after worktree is ready:
+   ```
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU write-report worktree '# Worktree\n- **Path:** <WORKTREE_PATH>\n- **Branch:** <BRANCH_NAME>' && $DU set-status worktree done")
+   ```
 
-**Auto mode (Stage 0):** When `AUTO_MODE=true`:
-- Skip worktree creation — use the current working directory as `WORKTREE_PATH`
-- Skip `dag-update` calls (no dashboard in CI)
-- Still run baseline metrics capture if tooling is available
-- Still create the spec directory: `docs/spec/<SPEC_NAME>/`
-- Set `BRANCH_NAME` from `git branch --show-current`
+**Baseline sub-step:**
+5. Run before starting baseline work:
+   ```
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status baseline running")
+   ```
+6. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`). Create `docs/spec/<SPEC_NAME>/` directory.
+7. Auto-detect project tooling: check `CLAUDE.md` first, then `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`
+8. Run baseline metrics (typecheck, lint, test, coverage) and write results to `docs/spec/<SPEC_NAME>/baseline.json`
+9. Store: `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
+10. Run after baseline completes:
+    ```
+    Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU write-report baseline '# Baseline Metrics\n- **Spec:** <SPEC_NAME> → <SPEC_DIR>\n- **Baseline:** <BASELINE_PATH>' && $DU set-status baseline done && $DU set-status setup done")
+    ```
 
 ### Stage 1: Brainstorm (Main Conversation)
 
-1. `dag-update set-status brainstorm running`
-2. Invoke the `brainstorm` skill using the `Skill` tool
-3. After design approval, invoke the `spec-generation` skill (still in main session — it's quick and needs the brainstorm context)
+1. ```
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status brainstorm running")
+   ```
+2. Invoke the `brainstorm` skill using the `Skill` tool — no approval gate here, design flows straight through
+3. Invoke the `spec-generation` skill (still in main session — it's quick and needs the brainstorm context)
 4. Move/save spec output to `docs/spec/<SPEC_NAME>/spec.md`
 5. Store `SPEC_PATH`
-6. `dag-update set-status brainstorm done`
-7. Copy design doc and spec into dashboard reports and set artifacts (only set artifact if copy succeeds):
+6. Copy design doc and spec into dashboard reports, set artifacts, and mark done:
    ```
-   cp docs/plans/YYYY-MM-DD-<topic>-design.md $HARNESS_DIR/reports/design.md && \
-     dag-update set-artifact brainstorm report reports/design.md
-   cp docs/spec/<SPEC_NAME>/spec.md $HARNESS_DIR/reports/spec.md && \
-     dag-update set-artifact brainstorm phases reports/spec.md
-   # Only set tabs-title if both artifacts were linked
-   [ -f "$HARNESS_DIR/reports/design.md" ] && [ -f "$HARNESS_DIR/reports/spec.md" ] && \
-     dag-update set-artifact brainstorm tabs-title "Brainstorm Artifacts"
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && \
+     cp docs/plans/YYYY-MM-DD-<topic>-design.md $HARNESS_DIR/reports/design.md && \
+     $DU set-artifact brainstorm report reports/design.md; \
+     cp docs/spec/<SPEC_NAME>/spec.md $HARNESS_DIR/reports/spec.md && \
+     $DU set-artifact brainstorm phases reports/spec.md; \
+     [ -f \"$HARNESS_DIR/reports/design.md\" ] && [ -f \"$HARNESS_DIR/reports/spec.md\" ] && \
+     $DU set-artifact brainstorm tabs-title 'Brainstorm Artifacts'; \
+     $DU set-status brainstorm done")
    ```
 
 Then continue to Stage 2.
 
-**Auto mode (Stage 1):** When `AUTO_MODE=true`:
-- Skip the interactive brainstorm skill
-- Instead, Claude generates the design directly from `TASK_CONTEXT`:
-  1. Analyze the task context to understand what needs to be built
-  2. Write a concise design doc covering: problem, approach, components, data flow
-  3. Save to the design doc path — same location as interactive mode
-  4. Auto-approve (no user gate)
-  5. Proceed to spec generation as normal
-- Still invoke `spec-generation` skill to produce `spec.md`
-- Skip `dag-update` calls
-
 ### Stage 2: Planner (Main Conversation)
 
-1. `dag-update set-status planning running`
+1. ```
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status planning running")
+   ```
 2. Read the design doc (`docs/plans/YYYY-MM-DD-<topic>-design.md`) and spec (`docs/spec/<SPEC_NAME>/spec.md`) so the planner has full context from the brainstorm stage
 3. Invoke the `planning` skill using the `Skill` tool, referencing both files
 4. The planner explores the codebase deeply, asks the user implementation questions interactively, then designs phases
-5. After plan approval, plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
-6. Store `PLAN_DIR`
-7. `dag-update set-status planning done`
-8. Copy plan and phase files into dashboard reports (only set artifact if copy succeeds):
+5. **APPROVAL GATE:** Use `AskUserQuestion` to present the plan summary and wait for user approval. The `waiting` status is set automatically by the PreToolUse hook — no manual dag-update needed.
+6. Plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
+7. Store `PLAN_DIR`
+8. Copy plan and phase files into dashboard reports, add phase nodes, and mark done:
    ```
-   cp docs/spec/<SPEC_NAME>/plan.md $HARNESS_DIR/reports/planning-report.md && \
-     dag-update set-artifact planning report reports/planning-report.md
-   PHASE_REPORTS=""
-   for f in docs/spec/<SPEC_NAME>/phase-*.md; do
-     if cp "$f" "$HARNESS_DIR/reports/$(basename "$f")"; then
-       [ -n "$PHASE_REPORTS" ] && PHASE_REPORTS="$PHASE_REPORTS,"
-       PHASE_REPORTS="${PHASE_REPORTS}reports/$(basename "$f")"
-     fi
-   done
-   [ -n "$PHASE_REPORTS" ] && \
-     dag-update set-artifact planning phases "$PHASE_REPORTS" && \
-     dag-update set-artifact planning tabs-title "Phase Details"
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && \
+     cp docs/spec/<SPEC_NAME>/plan.md $HARNESS_DIR/reports/planning-report.md && \
+     $DU set-artifact planning report reports/planning-report.md; \
+     PHASE_REPORTS=''; \
+     for f in docs/spec/<SPEC_NAME>/phase-*.md; do \
+       if cp \"\$f\" \"$HARNESS_DIR/reports/\$(basename \"\$f\")\"; then \
+         [ -n \"\$PHASE_REPORTS\" ] && PHASE_REPORTS=\"\$PHASE_REPORTS,\"; \
+         PHASE_REPORTS=\"\${PHASE_REPORTS}reports/\$(basename \"\$f\")\"; \
+       fi; \
+     done; \
+     [ -n \"\$PHASE_REPORTS\" ] && \
+       $DU set-artifact planning phases \"\$PHASE_REPORTS\" && \
+       $DU set-artifact planning tabs-title 'Phase Details'; \
+     $DU set-status planning done")
    ```
 
 **Extract:** `PLAN_DIR`, phase graph (DOT from plan.md), phase count
 
 **Add phase nodes as children of coder and link their report artifacts:**
 ```
-DU='/usr/bin/env bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
-$DU add-node phase-1 'Phase 1: <label>' --parent coder
-$DU add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1
-# ... for each phase from the plan
-
-# Link each phase node to its report file (only if the file exists)
-[ -f "$HARNESS_DIR/reports/phase-1.md" ] && $DU set-artifact phase-1 report reports/phase-1.md
-[ -f "$HARNESS_DIR/reports/phase-2.md" ] && $DU set-artifact phase-2 report reports/phase-2.md
-# ... for each phase
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && \
+  $DU add-node phase-1 'Phase 1: <label>' --parent coder && \
+  $DU add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1 && \
+  # ... for each phase from the plan
+  [ -f \"$HARNESS_DIR/reports/phase-1.md\" ] && $DU set-artifact phase-1 report reports/phase-1.md; \
+  [ -f \"$HARNESS_DIR/reports/phase-2.md\" ] && $DU set-artifact phase-2 report reports/phase-2.md")
+  # ... for each phase
 ```
 
 Then continue to Stage 3 as sub-agents.
-
-**Auto mode (Stage 2):** When `AUTO_MODE=true`:
-- Invoke the `planning` skill as normal, but the skill runs without asking the user questions
-- Claude makes all implementation decisions autonomously
-- Auto-approve the plan (no user gate)
-- All plan artifacts (plan.md, phase-*.md) are still produced
-- Skip `dag-update` calls
 
 ### Stage 3: Coder
 
@@ -297,10 +313,13 @@ Dispatch based on phase and step dependency graphs. Two-level parallelism:
 
 For each phase, choose **one** dispatch strategy:
 
-Before dispatching any phase agents: `dag-update set-status coder running`
-Before each phase: `dag-update set-status <phase-node> running`
-After each phase returns: `dag-update set-status <phase-node> done` (or `failed`)
-After all phases complete: `dag-update set-status coder done`
+Before dispatching any phase agents:
+```
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status coder running")
+```
+Before each phase: `$DU set-status <phase-node> running` (include full `export HARNESS_DIR=... && DU=...` preamble)
+After each phase returns: `$DU set-status <phase-node> done` (or `failed`) (include full preamble)
+After all phases complete: `$DU set-status coder done` (include full preamble)
 
 **A) Phase has no Steps section** → single agent for the whole phase:
 
@@ -312,7 +331,7 @@ Agent(prompt="
 
   Dashboard updates (use these to register sub-tasks and report progress):
     export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>'
-    DU='/usr/bin/env bash $CLAUDE_SKILL_DIR/dashboard/dag-update.sh'
+    DU='/usr/bin/env bash <DAG_SCRIPT>'
     # Register sub-tasks as you discover them (phases are children of coder):
     $DU add-node '$NODE_ID.task-1' '<label>' --parent '$NODE_ID'
     $DU set-status '$NODE_ID.task-1' running
@@ -356,7 +375,7 @@ Dispatch in waves: send all independent steps in parallel → wait for completio
 
 ### Stage 4: Quality Gate
 
-`dag-update set-status quality-gate running` before dispatching.
+Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status quality-gate running")`
 
 ```
 Agent(prompt="
@@ -368,7 +387,7 @@ Agent(prompt="
 
   When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report quality-gate '# Quality Gate
+    /usr/bin/env bash '<DAG_SCRIPT>' write-report quality-gate '# Quality Gate
 
 ## Verdict: PASS/BLOCKED/STAGNATION
 
@@ -395,7 +414,7 @@ Agent(prompt="
 
 ### Stage 5: Sync Docs
 
-`dag-update set-status docs running` before dispatching.
+Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status docs running")`
 
 ```
 Agent(prompt="
@@ -406,7 +425,7 @@ Agent(prompt="
 
   When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report docs '# Sync Docs
+    /usr/bin/env bash '<DAG_SCRIPT>' write-report docs '# Sync Docs
 
 ## Documents Updated
 - `path/to/doc.md` — what changed
@@ -422,7 +441,7 @@ Agent(prompt="
 
 ### Stage 6: Capture Learnings
 
-`dag-update set-status learnings running` before dispatching.
+Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status learnings running")`
 
 ```
 Agent(prompt="
@@ -434,7 +453,7 @@ Agent(prompt="
 
   When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report learnings '# Learnings
+    /usr/bin/env bash '<DAG_SCRIPT>' write-report learnings '# Learnings
 
 ## Friction Points
 - What caused delays or confusion
@@ -453,7 +472,7 @@ Agent(prompt="
 
 ### Stage 7: Commit & PR
 
-`dag-update set-status commit-pr running` before dispatching.
+Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status commit-pr running")`
 
 ```
 Agent(prompt="
@@ -464,7 +483,7 @@ Agent(prompt="
 
   When done, write a report using this format:
     export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '$CLAUDE_SKILL_DIR/dashboard/dag-update.sh' write-report commit-pr '# Commit & PR
+    /usr/bin/env bash '<DAG_SCRIPT>' write-report commit-pr '# Commit & PR
 
 ## Commits
 - `abc1234` — commit message 1
@@ -480,12 +499,6 @@ Agent(prompt="
 ```
 
 **Extract from result:** commits, `PR_URL`
-
-**Auto mode (Stage 7):** When `AUTO_MODE=true`:
-- Invoke `git-commit` skill as normal to create commits
-- Push to current branch: `git push`
-- **Skip PR creation** — the PR already exists (caller is responsible for PR interaction)
-- Return: commits list only (no PR URL)
 
 ---
 
@@ -515,7 +528,7 @@ After all stages complete, present a compact summary:
 
 After presenting the summary, finalize the dashboard:
 ```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash \"$CLAUDE_SKILL_DIR/dashboard/dag-update.sh\" finalize done")
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash \"<DAG_SCRIPT>\" finalize done")
 ```
 
 ---
