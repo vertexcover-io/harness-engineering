@@ -46,7 +46,7 @@ cmd_init() {
 
   check_prereqs
 
-  local harness_dir=".harness/$spec_name"
+  local harness_dir="$(pwd)/.harness/$spec_name"
 
   # Crash recovery: if a previous run exists with a stale server, finalize it first
   if [[ -f "$harness_dir/server.pid" ]]; then
@@ -78,10 +78,8 @@ cmd_init() {
 }
 ENDJSON
 
-  # Write absolute path to a well-known location so hooks can find it regardless of cwd
-  local abs_harness_dir
-  abs_harness_dir="$(cd "$harness_dir" && pwd)"
-  echo "$abs_harness_dir" > /tmp/.claude-harness-active
+  # Write path to a well-known location so hooks can find it regardless of cwd
+  echo "$harness_dir" > /tmp/.claude-harness-active
 
   echo "$harness_dir"
 }
