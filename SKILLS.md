@@ -1,169 +1,126 @@
 # Skills Guide
 
-This document explains how the 21 skills in the harness plugin work together. For installation and setup, see [README.md](README.md).
+This plugin gives Claude Code a set of development workflows called **skills**. You invoke them with slash commands like `/tdd` or `/orchestrate`. Some skills run automatically in the background when you're writing code — you never need to call them.
 
-## The Big Picture
+For installation and setup, see [README.md](README.md).
 
-The plugin's skills form a development pipeline orchestrated by a single entry point. Most skills run as stages in this pipeline. A few are standalone utilities.
+## Quick Start
 
-```mermaid
-graph LR
-    subgraph orchestrate["orchestrate (full pipeline)"]
-        direction LR
-        setup["setup\n(worktree + baseline)"]
-        brainstorm["brainstorm\n+ spec-generation"]
-        planning["planning\n(approval gate)"]
-        coder["tdd + refactor\n(parallel phases)"]
-        gate["quality-gate"]
-        docs["sync-docs"]
-        learn["learn"]
-        commit["git-commit\n+ PR"]
+Tell Claude what you want to build. For the full pipeline:
 
-        setup --> brainstorm --> planning --> coder --> gate --> docs --> learn --> commit
-    end
-
-    subgraph always["always-on"]
-        cq["code-quality"]
-        testing["testing"]
-    end
-
-    subgraph standalone["standalone tools"]
-        tdf["tech-debt-finder"]
-        cg["coverage-guard"]
-        dqg["doc-quality-guard"]
-        cr["code-review"]
-        rf["review-fixer"]
-        fs["find-skills"]
-    end
-
-    cq -.->|enforced during| coder
-    testing -.->|patterns for| coder
+```
+/orchestrate "Add rate limiting to the API"
 ```
 
-## Workflows
+This handles everything — design, planning, coding with tests, quality checks, docs, and a PR.
 
-### Building a Feature
+For smaller tasks, use individual skills like `/tdd`, `/code-review`, or `/git-commit`.
 
-Run `/orchestrate <prompt>` or `/orchestrate <spec-file>`. This triggers the full 8-stage pipeline:
+## Recipes
 
-```mermaid
-graph TD
-    O["/orchestrate 'Add user auth'"] --> S0
-    S0["Stage 0: Setup"] -->|"creates worktree + baseline"| S1
-    S1["Stage 1: Brainstorm"] -->|"produces design doc + spec"| S2
-    S2["Stage 2: Planning"] -->|"approval gate"| S3
-    S3["Stage 3: Coder"] -->|"TDD in parallel phases"| S4
-    S4["Stage 4: Quality Gate"] -->|"PASS/BLOCKED"| S5
-    S5["Stage 5: Sync Docs"] --> S6
-    S6["Stage 6: Capture Learnings"] --> S7
-    S7["Stage 7: Commit & PR"]
-```
+### I want to build a feature
 
-**What happens at each stage:**
+Run `/orchestrate` with a prompt or spec file. It runs the full pipeline:
 
-| Stage | Skill(s) | What it does |
-|-------|----------|-------------|
-| 0. Setup | `pipeline-setup` + `using-git-worktrees` | Creates an isolated git worktree, installs dependencies, runs baseline metrics (typecheck, lint, test, coverage) |
-| 1. Brainstorm | `brainstorm` → `spec-generation` | Explores the problem space interactively, produces a design doc, then converts it to a testable spec with EARS acceptance criteria |
-| 2. Planning | `planning` | Reads the spec, explores the codebase, breaks work into phases and steps with a dependency graph. **Only approval gate in the pipeline** — you review the plan before coding starts |
-| 3. Coder | `tdd` + `refactor` | Implements each phase using RED-GREEN-REFACTOR. Independent phases run in parallel as sub-agents. `code-quality` and `testing` patterns are enforced automatically |
-| 4. Quality Gate | `quality-gate` | Runs typecheck, lint, tests, coverage. Compares against baseline. Verdict is PASS (continue), BLOCKED (stop), or STAGNATION (stop, don't retry) |
-| 5. Sync Docs | `sync-docs` | Scans for stale or missing docs, updates them to match the new code |
-| 6. Learnings | `learn` | Captures gotchas, patterns, and friction points from the run into `docs/solutions/` |
-| 7. Commit & PR | `git-commit` | Groups changes into logical commits with conventional messages, pushes, creates a PR |
+1. **Brainstorms** the problem with you and produces a design doc
+2. **Plans** the implementation — breaks work into phases (you approve before coding starts)
+3. **Codes** each phase using TDD with parallel sub-agents
+4. **Runs quality checks** — typecheck, lint, tests, coverage
+5. **Updates docs** to match the new code
+6. **Captures learnings** from the run
+7. **Commits and creates a PR**
 
 All artifacts are saved to `docs/spec/<name>/` for traceability.
 
-### Quick Bug Fix
+You can also run stages individually if you prefer more control:
+`/brainstorm` → `/planning` → `/tdd` → `/quality-gate` → `/git-commit`
 
-For small fixes, you don't need the full pipeline. Use individual skills:
+---
 
-```mermaid
-graph LR
-    T["/tdd"] --> QG["/quality-gate"]
-    QG -->|PASS| GC["/git-commit"]
-```
+### I want to fix a bug
 
-1. **`/tdd`** — Write a failing test that reproduces the bug, then fix it. The RED-GREEN-REFACTOR cycle ensures the fix is verified.
-2. Run typecheck/lint/tests yourself, or invoke the quality gate.
-3. **`/git-commit`** — Stage and commit with a conventional message.
+You don't need the full pipeline. Three skills:
 
-You can also run `/orchestrate` for bug fixes — it will scale down. Pass a spec file or prompt describing the bug, and stages like brainstorm and planning can be skipped if the fix is straightforward.
+1. **`/tdd`** — Write a failing test that reproduces the bug, then fix it with the RED-GREEN-REFACTOR cycle
+2. **`/quality-gate`** — Verify typecheck, lint, and tests all pass (or run them yourself)
+3. **`/git-commit`** — Stage and commit with a conventional message
 
-### Code Quality Audit
+---
 
-Three standalone guard skills scan your codebase for different problems:
+### I want to review a PR
 
-```mermaid
-graph LR
-    subgraph audits["run independently"]
-        TDF["/tech-debt-finder"]
-        CG["/coverage-guard"]
-        DQG["/doc-quality-guard"]
-    end
+**Manual review:** Run `/code-review`. It reads the diff, checks against a plan or design doc if provided, and produces a `REVIEW.md` with a verdict: APPROVE, APPROVE WITH SUGGESTIONS, or REQUEST CHANGES.
 
-    TDF -->|creates| GHI["GitHub issues"]
-    CG -->|if below threshold| ORC["/orchestrate (generate missing tests)"]
-    DQG -->|if issues found| ORC2["/orchestrate (fix docs)"]
-```
+**Automated (CI):** The `review-fixer` skill runs in GitHub Actions. When a human leaves review comments on a PR, it classifies each comment, applies fixes, runs the quality gate, commits, and replies inline on the PR.
 
-| Skill | What it finds | What it produces |
-|-------|--------------|-----------------|
-| `tech-debt-finder` | Code smells, dependency issues, structural problems | Terminal report + GitHub parent issue with category sub-issues |
-| `coverage-guard` | Test coverage gaps below threshold (default 90%) | If below threshold: generates a spec and invokes `/orchestrate` to write missing tests |
-| `doc-quality-guard` | Stale docs, wrong API signatures, AI slop in writing | Fix spec → approval gate → invokes `/orchestrate` to fix docs |
+---
 
-### Reviewing a PR
+### I want to audit code quality
 
-Two skills handle code review from different angles:
+Three standalone tools — run any of them independently:
 
-| Skill | When to use | How it works |
-|-------|------------|-------------|
-| `/code-review` | Manual review of a PR or working tree | Reads the diff, checks against a plan/design doc if provided. Produces `REVIEW.md` with verdicts: APPROVE, APPROVE WITH SUGGESTIONS, or REQUEST CHANGES |
-| `review-fixer` | Automated — runs in GitHub Actions | Triggered when a human leaves review comments on a PR. Classifies each comment as a direct fix or orchestration task, applies fixes, runs quality gate, commits, and comments back |
+| Command | What it finds | What it produces |
+|---------|--------------|-----------------|
+| `/tech-debt-finder` | Code smells, dependency issues, structural problems | Terminal report + GitHub issues |
+| `/coverage-guard` | Test coverage below threshold (default 90%) | Auto-generates missing tests via `/orchestrate` if below threshold |
+| `/doc-quality-guard` | Stale docs, wrong API signatures, AI slop | Fix spec → runs `/orchestrate` to fix docs |
+
+---
+
+### I want to commit my changes
+
+Run `/git-commit`. It does more than `git commit`:
+
+- Analyzes your dirty working tree
+- Groups related changes into logical commits (using hunk-level staging)
+- Writes conventional commit messages with proper prefixes (`feat`, `fix`, `refactor`, etc.)
+
+---
+
+### I want to refactor code
+
+Use `/tdd`. Refactoring is built into the TDD cycle:
+
+1. Write tests around the existing behavior you want to preserve
+2. Make sure they pass (GREEN)
+3. The `refactor` skill kicks in automatically — assesses extraction, simplification, and naming improvements
+4. Tests keep you safe throughout
+
+You don't invoke `/refactor` directly — it runs as part of the TDD workflow.
 
 ## Always-On Skills
 
-These skills activate automatically during implementation. You don't invoke them directly — they enforce patterns whenever code is being written.
+Some skills run automatically when you're writing code — through `/tdd`, `/orchestrate`, or directly. You never invoke them:
 
-| Skill | What it enforces |
-|-------|-----------------|
-| `code-quality` | Strict types (no `any`/`Any`), immutability (`readonly`), pure functions, Result types for errors, early returns over nested conditionals |
-| `testing` | Behavior-driven test patterns, proper factories, minimal mocking, tests verify *what* not *how* |
-| `refactor` | Runs automatically after tests pass (GREEN phase) in TDD. Assesses code for extraction, simplification, and naming improvements |
+- **code-quality** — Enforces strict types (no `any`), immutability (`readonly`), pure functions, Result types for errors, early returns over nested conditionals
+- **testing** — Enforces behavior-driven test patterns, proper factories, minimal mocking — tests verify *what* not *how*
+- **refactor** — Kicks in after tests pass (GREEN phase) to assess code for extraction, simplification, and naming improvements
 
-## Discovering New Skills
+## Extending with New Skills
 
-The `find-skills` skill searches the open skills ecosystem:
+Want a skill that doesn't exist yet? Search the ecosystem:
 
 ```
 /find-skills "how do I do X"
 ```
 
-Uses `npx skills find <query>` to search, and `npx skills add <owner/repo@skill>` to install.
+## Skill Reference
 
-## Quick Reference
+**Slash commands you invoke:**
 
-| Skill | Invoke with | What it does | Auto/Manual |
-|-------|------------|-------------|-------------|
-| [brainstorm](skills/brainstorm/SKILL.md) | `/brainstorm` | Deep problem exploration, produces design doc | Manual |
-| [code-quality](skills/code-quality/SKILL.md) | — | Strict types, functional patterns, immutability | Auto |
-| [code-review](skills/code-review/SKILL.md) | `/code-review` | Deep code review against plan/design | Manual |
-| [coverage-guard](skills/coverage-guard/SKILL.md) | `/coverage-guard` | Enforces minimum test coverage threshold | Manual |
-| [doc-quality-guard](skills/doc-quality-guard/SKILL.md) | `/doc-quality-guard` | Audits docs for accuracy and AI slop | Manual |
-| [find-skills](skills/find-skills/SKILL.md) | `/find-skills` | Discovers skills from the ecosystem | Manual |
-| [git-commit](skills/git-commit/SKILL.md) | `/git-commit` | Logical commits with conventional messages | Manual |
-| [learn](skills/learn/SKILL.md) | `/learn` | Captures gotchas and patterns to docs | Manual |
-| [orchestrate](skills/orchestrate/SKILL.md) | `/orchestrate` | Full pipeline: brainstorm → plan → code → PR | Manual |
-| [pipeline-setup](skills/pipeline-setup/SKILL.md) | — | Worktree + baseline (orchestrate Stage 0) | Auto |
-| [planning](skills/planning/SKILL.md) | `/planning` | Breaks work into phases with dependency graph | Manual |
-| [quality-gate](skills/quality-gate/SKILL.md) | — | Hard pass/fail verification gate | Auto |
-| [refactor](skills/refactor/SKILL.md) | `/refactor` | Post-GREEN refactoring assessment | Auto |
-| [review-fixer](skills/review-fixer/SKILL.md) | — | Fixes PR review comments via GitHub Actions | Auto |
-| [skill-eval-generator](skills/skill-eval-generator/SKILL.md) | `/skill-eval-generator` | Generates test suites for skills | Manual |
-| [spec-generation](skills/spec-generation/SKILL.md) | — | Design doc → testable SPEC with EARS criteria | Auto |
-| [sync-docs](skills/sync-docs/SKILL.md) | — | Updates docs to match code changes | Auto |
-| [tdd](skills/tdd/SKILL.md) | `/tdd` | RED-GREEN-REFACTOR development cycle | Manual |
-| [tech-debt-finder](skills/tech-debt-finder/SKILL.md) | `/tech-debt-finder` | Finds code smells, creates GitHub issues | Manual |
-| [testing](skills/testing/SKILL.md) | — | Behavior-driven testing patterns | Auto |
-| [using-git-worktrees](skills/using-git-worktrees/SKILL.md) | `/using-git-worktrees` | Creates isolated worktrees for feature work | Manual |
+| Command | What it does |
+|---------|-------------|
+| `/orchestrate` | Full pipeline: design → plan → code → PR |
+| `/brainstorm` | Deep problem exploration, produces design doc |
+| `/planning` | Breaks work into phases with dependency graph |
+| `/tdd` | RED-GREEN-REFACTOR development cycle |
+| `/code-review` | Reviews a PR, produces verdict in REVIEW.md |
+| `/git-commit` | Groups changes into logical conventional commits |
+| `/tech-debt-finder` | Finds code smells, creates GitHub issues |
+| `/coverage-guard` | Enforces minimum test coverage |
+| `/doc-quality-guard` | Audits docs for accuracy and staleness |
+| `/find-skills` | Discovers new skills from the ecosystem |
+| `/skill-eval-generator` | Generates test suites for skills |
+
+**Run automatically (no command needed):**
+`code-quality` · `testing` · `refactor` · `quality-gate` · `pipeline-setup` · `spec-generation` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
