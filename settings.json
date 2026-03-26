@@ -71,19 +71,6 @@
       "Bash(history:*)"
     ]
   },
-  "hooks": {
-    "PermissionRequest": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/vertexcover/Projects/dotfiles/claude/permission-reviewer.sh"
-          }
-        ]
-      }
-    ]
-  },
   "statusLine": {
     "type": "command",
     "command": "npx -y ccstatusline@latest",
