@@ -10,11 +10,11 @@
       "expectations": [
         "Announces 'Using the orchestrate skill to run the full development pipeline' at the start",
         "DAG dashboard is initialized before any Skill or Agent call, with spec name derived from the prompt",
-        "Stage 0 (Setup) runs in main conversation using the pipeline-setup skill via Skill tool and stores WORKTREE_PATH, BRANCH_NAME, CONSTITUTION, SPEC_NAME",
+        "Stage 0 (Setup) runs in main conversation using the pipeline-setup skill via Skill tool and stores WORKTREE_PATH, BRANCH_NAME, SPEC_NAME",
         "Stage 1 (Brainstorm) runs in main conversation using the brainstorm and spec-generation skills via Skill tool, producing docs/spec/<name>/spec.md",
         "Stage 2 (Planner) runs in main conversation using the planning skill via Skill tool, producing docs/spec/<name>/plan.md and phase-*.md files",
         "Stage 3 (Coder) dispatches phases as sub-agents via Agent tool, not in the main conversation",
-        "Every sub-agent prompt includes the preamble with WORKTREE_PATH and CONSTITUTION",
+        "Every sub-agent prompt includes the preamble with WORKTREE_PATH",
         "dag-update set-status is called for each stage transition (running/done/failed/skipped)"
       ],
       "anti_expectations": [

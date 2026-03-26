@@ -1,7 +1,7 @@
 ---
 name: pipeline-setup
 description: >
-  Sets up the development pipeline environment. Creates a git worktree, loads the constitution,
+  Sets up the development pipeline environment. Creates a git worktree,
   auto-detects project tooling, runs baseline metrics (typecheck, lint, test, coverage),
   derives a spec name, and creates the spec artifact directory. Returns all environment
   variables needed by downstream pipeline stages.
@@ -32,13 +32,7 @@ Invoke the `using-git-worktrees` skill using the `Skill` tool. Then `cd` into th
 
 Store: `WORKTREE_PATH`, `BRANCH_NAME`
 
-### 2. Load Constitution
-
-1. Read `agents/claude/skills/constitution/SKILL.md` from the **main repository** (not the worktree)
-2. Extract the content after the frontmatter (everything after the second `---`)
-3. Store as `CONSTITUTION`
-
-### 3. Auto-Detect Project Tooling
+### 2. Auto-Detect Project Tooling
 
 Detect available tooling by checking (in order):
 1. `CLAUDE.md` for any documented tooling commands — **this takes priority over defaults**
@@ -47,7 +41,7 @@ Detect available tooling by checking (in order):
 4. `go.mod` → Go project
 5. `Cargo.toml` → Rust project
 
-### 4. Run Baseline Metrics
+### 3. Run Baseline Metrics
 
 Run each detected tool and record results:
 - **Type checker** (tsc, mypy, etc.)
@@ -57,7 +51,7 @@ Run each detected tool and record results:
 
 If a tool is not detected, record `null` for that key — do not fail on missing tooling.
 
-### 5. Create Spec Directory
+### 4. Create Spec Directory
 
 1. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`)
 2. Create `docs/spec/<SPEC_NAME>/` directory
@@ -85,7 +79,6 @@ After completion, the following variables are available for downstream stages:
 |----------|-------------|
 | `WORKTREE_PATH` | Absolute path to the git worktree |
 | `BRANCH_NAME` | Name of the worktree branch |
-| `CONSTITUTION` | Constitution content for sub-agent preambles |
 | `SPEC_NAME` | Slugified task name |
 | `SPEC_DIR` | Path to `docs/spec/<SPEC_NAME>/` |
 | `BASELINE_PATH` | Path to `baseline.json` |
