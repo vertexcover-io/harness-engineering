@@ -1,26 +1,30 @@
-# Harness — Claude Code Plugin
+<h1 align="center">Harness</h1>
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that turns Claude into a systematic software engineering pipeline — from spec to PR, with quality gates at every step.
+<p align="center">
+  <strong>Engineering discipline for AI-assisted development</strong><br>
+  A Claude Code plugin that adds the engineering your AI skips — design docs before code, tests before implementation, quality gates before merging
+</p>
 
-## Why Harness?
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/vertexcover-io/harness-engineering/stargazers"><img src="https://img.shields.io/github/stars/vertexcover-io/harness-engineering?style=flat" alt="GitHub stars"></a>
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-Plugin-blueviolet" alt="Claude Code Plugin"></a>
+</p>
 
-Most Claude Code setups are collections of prompts and preferences. They shape how Claude responds, but they don't shape how it *works*.
+<p align="center">
+  <a href="#installation"><b>Installation</b></a> &nbsp;·&nbsp;
+  <a href="#the-pipeline">The Pipeline</a> &nbsp;·&nbsp;
+  <a href="#recipes">Recipes</a> &nbsp;·&nbsp;
+  <a href="#skill-reference">Skill Reference</a>
+</p>
 
-Harness is different. It's a **pipeline-first** plugin — every code change flows through a structured engineering workflow:
+AI coding tools are fast. They're also reckless — no tests, no design, no verification. Code appears in seconds and breaks in production minutes later. Harness fixes this with a full pipeline where every stage has clear inputs, outputs, and pass/fail criteria:
 
 ```
 Brainstorm → Plan → TDD → Quality Gate → Docs → PR
 ```
 
-Each stage has clear inputs, outputs, and pass/fail criteria. The brainstorm produces a design doc. The planner breaks it into phases. The coder writes tests before implementation. The quality gate blocks the PR if typecheck, lint, or tests fail. Nothing ships without verification.
-
-This means:
-- **No vibe coding** — every feature starts with problem exploration and architectural design
-- **No skipped tests** — TDD is the default, not an afterthought
-- **No silent failures** — quality gates enforce hard thresholds before anything merges
-- **No manual busywork** — the pipeline handles commits, docs, and PRs automatically
-
-You can run the full pipeline end-to-end, or pick individual skills for smaller tasks. The pipeline is the default, not the only option.
+Run the full pipeline end-to-end, or pick individual skills for smaller tasks.
 
 ## Installation
 
@@ -44,10 +48,6 @@ This persists across sessions — the plugin loads automatically on startup.
 For quick one-off usage without installing:
 
 ```bash
-# Clone the repo                                                                                                                            
-git clone https://github.com/vertexcover-io/harness-engineering.git
-
-# Run Claude Code with the plugin loaded from this directory           
 claude --plugin-dir <path-to-harness>
 ```
 
@@ -213,6 +213,30 @@ Use `/refactor`. It assesses your code for improvement opportunities:
 2. Applies refactoring patterns (extract method, inline temp, replace conditional with polymorphism, etc.)
 3. Verifies tests still pass after each change
 
+---
+
+### I want to test a skill
+
+Two tools work together: `/skill-eval-generator` creates the test suite, and `skill-creator eval` (from the [skill-creator](https://www.npmjs.com/package/skill-creator) plugin) runs it.
+
+**Generate evals:**
+
+```
+/skill-eval-generator skills/tdd/SKILL.md
+```
+
+This reads the SKILL.md, extracts behavioral rules (MUST, NEVER, ALWAYS clauses), and produces `evals/evals.json` with realistic prompts, verifiable expectations, and anti-expectations. Fixture files are generated when the skill operates on input files (e.g., code-review needs source code with planted bugs).
+
+**Run evals:**
+
+```
+/skill-creator eval skills/tdd/SKILL.md
+```
+
+This executes each eval case against the skill, checks expectations and anti-expectations, and reports pass/fail per case.
+
+**Typical workflow:** generate evals → run them → iterate on the SKILL.md until evals pass → ship the skill.
+
 ## Always-On Skills
 
 Some skills run automatically when you're writing code — through `/tdd`, `/orchestrate`, or directly. You never invoke them:
@@ -236,7 +260,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/tech-debt-finder` | Finds code smells, creates GitHub issues |
 | `/coverage-guard` | Enforces minimum test coverage |
 | `/doc-quality-guard` | Audits docs for accuracy and staleness |
-| `/skill-eval-generator` | Generates test suites for skills |
+| `/skill-eval-generator` | Generates eval test suites for skills (pairs with `skill-creator eval`) |
 
 **Run automatically (no command needed):**
 `code-quality` · `testing` · `refactor` · `quality-gate` · `pipeline-setup` · `spec-generation` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
