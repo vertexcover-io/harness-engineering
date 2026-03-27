@@ -1,6 +1,26 @@
 # Harness — Claude Code Plugin
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin providing a systematic software engineering pipeline — brainstorm, plan, TDD, quality gates, code review, and full orchestration from spec to PR.
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that turns Claude into a systematic software engineering pipeline — from spec to PR, with quality gates at every step.
+
+## Why Harness?
+
+Most Claude Code setups are collections of prompts and preferences. They shape how Claude responds, but they don't shape how it *works*.
+
+Harness is different. It's a **pipeline-first** plugin — every code change flows through a structured engineering workflow:
+
+```
+Brainstorm → Plan → TDD → Quality Gate → Docs → PR
+```
+
+Each stage has clear inputs, outputs, and pass/fail criteria. The brainstorm produces a design doc. The planner breaks it into phases. The coder writes tests before implementation. The quality gate blocks the PR if typecheck, lint, or tests fail. Nothing ships without verification.
+
+This means:
+- **No vibe coding** — every feature starts with problem exploration and architectural design
+- **No skipped tests** — TDD is the default, not an afterthought
+- **No silent failures** — quality gates enforce hard thresholds before anything merges
+- **No manual busywork** — the pipeline handles commits, docs, and PRs automatically
+
+You can run the full pipeline end-to-end, or pick individual skills for smaller tasks. The pipeline is the default, not the only option.
 
 ## Installation
 
@@ -24,22 +44,28 @@ This persists across sessions — the plugin loads automatically on startup.
 For quick one-off usage without installing:
 
 ```bash
-# Clone the repo
+# Clone the repo                                                                                                                            
 git clone https://github.com/vertexcover-io/harness-engineering.git
 
-# Run Claude Code with the plugin loaded from this directory
-claude --plugin-dir ./harness-engineering/agents/claude
+# Run Claude Code with the plugin loaded from this directory           
+claude --plugin-dir <path-to-harness>
 ```
 
-## Workflows
+## Quick Start
 
-### Orchestrate — Spec to PR in One Command
+Tell Claude what you want to build. For the full pipeline:
+
+```
+/orchestrate "Add rate limiting to the API"
+```
+
+This handles everything — design, planning, coding with tests, quality checks, docs, and a PR.
+
+For smaller tasks, use individual skills like `/tdd`, `/code-review`, or `/git-commit`.
+
+## The Pipeline
 
 The orchestrate skill runs a full development pipeline end-to-end. Give it a prompt or a spec file and it handles the rest.
-
-```
-/orchestrate "Add rate limiting to the API endpoints"
-```
 
 **Pipeline stages:**
 
@@ -79,23 +105,57 @@ Click any completed node to inspect its report:
 
 After the pipeline completes, the dashboard is finalized into a self-contained HTML file you can share or archive.
 
+You can also run stages individually if you prefer more control:
+`/brainstorm` → `/planning` → `/tdd` → `/quality-gate` → `/git-commit`
+
+## Recipes
+
+### I want to build a feature
+
+Run `/orchestrate` with a prompt or spec file. It runs the full pipeline:
+
+1. **Brainstorms** the problem with you and produces a design doc
+2. **Plans** the implementation — breaks work into phases (you approve before coding starts)
+3. **Codes** each phase using TDD with parallel sub-agents
+4. **Runs quality checks** — typecheck, lint, tests, coverage
+5. **Updates docs** to match the new code
+6. **Captures learnings** from the run
+7. **Commits and creates a PR**
+
+All artifacts are saved to `docs/spec/<name>/` for traceability.
+
 ---
 
-### Tech Debt Finder — Code Health Audit
+### I want to fix a bug
 
-Scans your codebase for technical debt and creates GitHub issues for what it finds.
+Run `/orchestrate` with a description of the bug. It writes a failing test to reproduce the issue, fixes it, verifies everything passes, and commits the result.
+
+---
+
+### I want to review a PR
+
+Run `/code-review`. It reads the diff, checks against a plan or design doc if provided, and produces a `REVIEW.md` with a verdict: APPROVE, APPROVE WITH SUGGESTIONS, or REQUEST CHANGES.
+
+---
+
+### I want to auto-fix PR review comments
+
+The `review-fixer` skill runs in GitHub Actions. When a human leaves review comments on a PR, it classifies each comment, applies fixes, runs the quality gate, commits, and replies inline on the PR.
+
+---
+
+### I want to audit code quality
+
+Three standalone tools — run any of them independently:
+
+**Tech Debt Finder** — scans your codebase for technical debt and creates GitHub issues:
 
 ```
 /tech-debt-finder src/
+/tech-debt-finder full    # scan entire repo
 ```
 
-Or scan the entire repo:
-
-```
-/tech-debt-finder full
-```
-
-**What it scans** — three parallel agents run simultaneously:
+Three parallel agents scan simultaneously:
 
 | Scanner | Looks for |
 |---------|-----------|
@@ -103,12 +163,9 @@ Or scan the entire repo:
 | **Structural & Complexity** | God modules, high cyclomatic complexity, deep nesting, layer violations, code duplication |
 | **Code Patterns** | Bare except, swallowed exceptions, `Any` overuse, blocking calls in async, mutable defaults, magic numbers, dead code |
 
-**Output:**
+Output: terminal report by severity + GitHub issues with code snippets and permalinks.
 
-1. A terminal report organized by severity (Critical → High → Medium → Low)
-2. GitHub issues — one parent issue linking sub-issues per category, each with code snippets and permalinks
-
-**Suppression:** Add patterns to `.claude/harness/tech-debt-ignore.md` to suppress known findings:
+Suppress known findings in `.claude/harness/tech-debt-ignore.md`:
 
 ```
 providers/fal.py:god-module       # suppress specific rule for a file
@@ -116,30 +173,73 @@ utils.py:*                        # suppress all rules for a file
 *:magic-number                    # suppress a rule everywhere
 ```
 
----
+**Coverage Guard** — enforces minimum test coverage (default 90%). Auto-generates missing tests via `/orchestrate` if below threshold.
 
-### Doc Quality Guard — Documentation Audit
+```
+/coverage-guard
+```
 
-Checks your docs for accuracy against the actual code and flags AI-generated tone ("slop").
+**Doc Quality Guard** — checks docs for accuracy against the actual code and flags AI-generated tone:
 
 ```
 /doc-quality-guard docs/
+/doc-quality-guard          # scan all READMEs and docs
 ```
-
-Or scan all READMEs and docs:
-
-```
-/doc-quality-guard
-```
-
-**What it catches:**
 
 | Category | Examples |
 |----------|----------|
 | **Accuracy** | Wrong API signatures, removed features still documented, stale code examples, dead internal links, outdated install instructions |
 | **AI slop** | "Additionally", "leverage", "seamlessly", promotional language, filler phrases, em dash overuse, chatbot tone |
 
-Findings are classified by severity (critical → medium), then a fix spec is generated and handed off to `/orchestrate` for automated remediation.
+Findings are classified by severity, then a fix spec is generated and handed off to `/orchestrate` for automated remediation.
+
+---
+
+### I want to commit my changes
+
+Run `/git-commit`. It does more than `git commit`:
+
+- Analyzes your dirty working tree
+- Groups related changes into logical commits (using hunk-level staging)
+- Writes conventional commit messages with proper prefixes (`feat`, `fix`, `refactor`, etc.)
+
+---
+
+### I want to refactor code
+
+Use `/refactor`. It assesses your code for improvement opportunities:
+
+1. Identifies extraction, simplification, and naming improvements
+2. Applies refactoring patterns (extract method, inline temp, replace conditional with polymorphism, etc.)
+3. Verifies tests still pass after each change
+
+## Always-On Skills
+
+Some skills run automatically when you're writing code — through `/tdd`, `/orchestrate`, or directly. You never invoke them:
+
+- **code-quality** — Enforces strict types (no `any`), immutability (`readonly`), pure functions, Result types for errors, early returns over nested conditionals
+- **testing** — Enforces behavior-driven test patterns, proper factories, minimal mocking — tests verify *what* not *how*
+- **refactor** — Kicks in after tests pass (GREEN phase) to assess code for extraction, simplification, and naming improvements
+
+## Skill Reference
+
+**Slash commands you invoke:**
+
+| Command | What it does |
+|---------|-------------|
+| `/orchestrate` | Full pipeline: design → plan → code → PR |
+| `/brainstorm` | Deep problem exploration, produces design doc |
+| `/planning` | Breaks work into phases with dependency graph |
+| `/tdd` | RED-GREEN-REFACTOR development cycle |
+| `/code-review` | Reviews a PR, produces verdict in REVIEW.md |
+| `/git-commit` | Groups changes into logical conventional commits |
+| `/tech-debt-finder` | Finds code smells, creates GitHub issues |
+| `/coverage-guard` | Enforces minimum test coverage |
+| `/doc-quality-guard` | Audits docs for accuracy and staleness |
+| `/skill-eval-generator` | Generates test suites for skills |
+
+**Run automatically (no command needed):**
+`code-quality` · `testing` · `refactor` · `quality-gate` · `pipeline-setup` · `spec-generation` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
 
 ## Structure
 
@@ -155,7 +255,6 @@ harness/
     ├── code-review/
     ├── coverage-guard/
     ├── doc-quality-guard/
-    ├── find-skills/
     ├── git-commit/
     ├── learn/
     ├── orchestrate/
@@ -173,52 +272,18 @@ harness/
     └── using-git-worktrees/
 ```
 
-## CLAUDE.md
+## Configuration
 
-The global `CLAUDE.md` file provides instructions that Claude Code follows across every project. It covers:
+**CLAUDE.md** — Global instructions Claude Code follows across every project:
+- TDD-first approach, strict TypeScript, Python type hints, functional style
+- Explore before implementing, plan before coding, re-plan when stuck
+- Small focused functions, early returns over nested conditionals
 
-- **Preferences** — TDD-first approach, strict TypeScript, Python type hints, functional style, no over-engineering
-- **Workflow** — Explore before implementing, plan before coding, re-plan when stuck, verify with typecheck/tests/lint
-- **Style** — Small focused functions, early returns over nested conditionals
-- **Communication** — Ask before architectural changes, explain non-obvious decisions
-
-## settings.json
-
-Configures Claude Code's runtime behavior:
-
-- **Permissions** — Pre-approved read-only tools (git, grep, find, jq, etc.) and denied dangerous commands (sudo, `git push` is not in the allow list)
-- **Deny rules** — Prevents reading dotfiles, `~/Library`, `/etc`, and other sensitive paths
-- **Hooks** — Session lifecycle hooks for the orchestrate dashboard. Tracks AskUserQuestion events (PreToolUse/PostToolUse) and finalizes the DAG on SessionEnd
-- **Status line** — Uses [ccstatusline](https://www.npmjs.com/package/ccstatusline)
-- **Plugins** — skill-creator enabled
-
-## Skills
-
-Skills are reusable prompt modules that give Claude Code specialized capabilities. They trigger automatically based on context or can be invoked explicitly. See **[SKILLS.md](SKILLS.md)** for workflow guides and how skills connect.
-
-| Skill | Description |
-|-------|-------------|
-| [brainstorm](skills/brainstorm/SKILL.md) | Structured brainstorming and design gate for deep problem understanding before implementation. Produces an approved architectural design before any code is written. |
-| [code-quality](skills/code-quality/SKILL.md) | High-quality code patterns with strict types, functional programming, and immutability. Loads automatically for all implementation tasks. |
-| [code-review](skills/code-review/SKILL.md) | Deep code review that hunts for subtle bugs and verifies changes against a plan/design document. Invoked explicitly with `/code-review`. |
-| [coverage-guard](skills/coverage-guard/SKILL.md) | Enforces minimum test coverage thresholds. Generates a test gap spec and invokes orchestrate to implement missing tests when coverage falls below the required minimum. |
-| [doc-quality-guard](skills/doc-quality-guard/SKILL.md) | Audits documentation accuracy and tone against the actual codebase. Detects stale, missing, or contradictory docs. |
-| [find-skills](skills/find-skills/SKILL.md) | Discovers and installs agent skills from the open skills ecosystem using the Skills CLI (`npx skills`). |
-| [git-commit](skills/git-commit/SKILL.md) | Analyzes dirty working trees, groups related changes into logical commits using hunk-level staging, and writes conventional commit messages (feat, fix, refactor, etc.). |
-| [learn](skills/learn/SKILL.md) | Captures and persists development learnings into `CLAUDE.md` and `docs/learnings/`. Guardian of institutional knowledge — ensures insights survive beyond the current session. |
-| [orchestrate](skills/orchestrate/SKILL.md) | Multi-agent pipeline orchestrator. Runs end-to-end: brainstorm, plan, TDD coding, quality gate, sync-docs, learnings, and commit/PR. |
-| [pipeline-setup](skills/pipeline-setup/SKILL.md) | Sets up the development pipeline environment — git worktree, tooling auto-detection, baseline metrics, and spec artifact directory. |
-| [planning](skills/planning/SKILL.md) | Implementation planning for features, design documents, and multi-step tasks. Bridges brainstorming and execution with structured plan documents. |
-| [quality-gate](skills/quality-gate/SKILL.md) | Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output. Runs after TDD, refactor, and before PR. |
-| [refactor](skills/refactor/SKILL.md) | Refactoring assessment and patterns. Used after tests pass (GREEN phase) or when explicitly asked. Guides what to look for and which techniques to apply. |
-| [review-fixer](skills/review-fixer/SKILL.md) | Automated PR review fixer. Reads human code review comments, classifies each as a direct fix or orchestration task, applies fixes, runs quality gate, commits, pushes, and comments back on the PR. |
-| [skill-eval-generator](skills/skill-eval-generator/SKILL.md) | Generates eval test suites (evals.json + fixture files) for any skill by analyzing its SKILL.md. Produces test cases with realistic prompts, verifiable expectations, and anti-expectations. |
-| [spec-generation](skills/spec-generation/SKILL.md) | Transforms an approved design doc into a structured SPEC with testable acceptance criteria using EARS format. Bridges brainstorm and planning. |
-| [sync-docs](skills/sync-docs/SKILL.md) | Synchronizes documentation with code changes. Scans for stale, missing, or contradictory docs, then updates them to reflect the actual implementation. |
-| [tdd](skills/tdd/SKILL.md) | Test-Driven Development workflow (RED-GREEN-REFACTOR). Loaded before writing any production code in TDD-configured projects. |
-| [tech-debt-finder](skills/tech-debt-finder/SKILL.md) | Comprehensive code quality assessment — finds tech debt, code smells, and areas needing cleanup before planning a refactor or sprint. |
-| [testing](skills/testing/SKILL.md) | Behavior-driven testing patterns and test-first methodology. Language-agnostic with framework-specific references. Tests verify *what* code does, not *how*. |
-| [using-git-worktrees](skills/using-git-worktrees/SKILL.md) | Creates isolated git worktrees with smart directory selection and safety verification for feature work. |
+**settings.json** — Runtime behavior:
+- Pre-approved read-only tools (git, grep, find, jq) and denied dangerous commands
+- Deny rules for dotfiles, `~/Library`, `/etc`, and other sensitive paths
+- Session lifecycle hooks for the orchestrate dashboard
+- [ccstatusline](https://www.npmjs.com/package/ccstatusline) integration
 
 ## Inspiration
 
