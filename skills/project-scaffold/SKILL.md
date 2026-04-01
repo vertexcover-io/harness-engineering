@@ -1,22 +1,22 @@
 ---
-name: monorepo-scaffold
+name: project-scaffold
 description: >
-  Scaffold a full TypeScript monorepo from a tech stack spec document. Creates Turborepo workspace,
+  Scaffold a full TypeScript project from a tech stack spec document. Creates Turborepo workspace,
   all packages with starter code, Podman Compose for local infra (PostgreSQL, Redis, etc.),
   and verifies the setup builds and runs. Use this skill whenever the user wants to set up a new
-  TypeScript monorepo, scaffold a project from a spec, bootstrap a multi-package TS project,
-  or says "set up the project", "create the monorepo", "scaffold", "bootstrap", "init the repo".
+  TypeScript project, scaffold a project from a spec, bootstrap a multi-package TS project,
+  or says "set up the project", "create the project", "scaffold", "bootstrap", "init the repo".
   Also triggers when the user has a tech stack design doc and wants to turn it into a working project.
 argument-hint: "<path/to/spec.md> [--dir <path>]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
 user-invocable: true
 ---
 
-# Monorepo Scaffold
+# Project Scaffold
 
-Reads a tech stack spec document and scaffolds a complete, buildable TypeScript monorepo with all packages, configs, starter code, and local development infrastructure.
+Reads a tech stack spec document and scaffolds a complete, buildable TypeScript project with all packages, configs, starter code, and local development infrastructure.
 
-**Announce at start:** "Using the monorepo-scaffold skill to set up your project."
+**Announce at start:** "Using the project-scaffold skill to set up your project."
 
 ---
 
