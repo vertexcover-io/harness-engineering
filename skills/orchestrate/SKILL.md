@@ -3,7 +3,8 @@ name: orchestrate
 description: >
   Multi-agent pipeline orchestrator. Takes a prompt or spec file and runs:
   brainstorm (interactive), planner (interactive), coder (sub-agent with
-  TDD + stagnation detection), quality gate, sync-docs, capture learnings, and commit/PR. Artifacts stored in
+  TDD + stagnation detection), code review (review-fix loop), quality gate,
+  sync-docs, capture learnings, and commit/PR. Artifacts stored in
   docs/spec/<name>/. Use when the user says orchestrate, run the pipeline, full workflow,
   or wants end-to-end development from spec to PR.
   Supports --auto mode for CI/CD pipelines — bypasses interactive approval gates while still producing all artifacts.
@@ -13,13 +14,13 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
 
 # Orchestrate: Multi-Agent Development Pipeline
 
-Runs a full development pipeline in 8 stages. Brainstorm and Planner run interactively in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
+Runs a full development pipeline in 9 stages. Brainstorm and Planner run interactively in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
 **CRITICAL: Do NOT explore the codebase, read project files, or fetch URLs before completing the Initialization steps below. The very first actions are: detect input, check for auto mode, then start the dashboard. No exceptions.**
 
-**CRITICAL: Do NOT stop, pause, or present a summary until ALL pipeline stages (0-7) have completed or a stage has explicitly failed/blocked. Each stage flows directly into the next. The only permitted pause is the plan approval gate after Stage 2.**
+**CRITICAL: Do NOT stop, pause, or present a summary until ALL pipeline stages (0-8) have completed or a stage has explicitly failed/blocked. Each stage flows directly into the next. The only permitted pause is the plan approval gate after Stage 2.**
 
 ---
 
@@ -39,7 +40,7 @@ When `AUTO_MODE=true`:
 - **Skip all AskUserQuestion calls** — Claude decides autonomously, auto-approves designs and plans
 - **Skip worktree creation** — use current working directory (e.g., GitHub Actions already checked out the PR branch)
 - **Skip all `dag-update` calls** — no live dashboard in CI
-- **Skip PR creation in Stage 7** — only commit and push; caller handles PR interaction
+- **Skip PR creation in Stage 8** — only commit and push; caller handles PR interaction
 - **All artifacts still produced** (design docs, specs, plans) for auditability
 
 ### Step 2: DAG Dashboard Bootstrap
@@ -61,7 +62,8 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
      $DU add-node brainstorm 'Brainstorm & Spec' --depends-on setup
      $DU add-node planning 'Planning' --depends-on brainstorm
      $DU add-node coder 'Coder' --depends-on planning
-     $DU add-node quality-gate 'Quality Gate' --depends-on coder
+     $DU add-node code-review 'Code Review' --depends-on coder
+     $DU add-node quality-gate 'Quality Gate' --depends-on code-review
      $DU add-node docs 'Sync Docs' --depends-on quality-gate
      $DU add-node learnings 'Capture Learnings' --depends-on quality-gate
      $DU add-node commit-pr 'Commit & PR' --depends-on docs,learnings
@@ -86,10 +88,11 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>
 | 1 | Brainstorm + Spec | **Main conversation** | `docs/spec/<name>/spec.md` |
 | 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` + `phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests |
-| 4 | Quality Gate | Sub-agent | PASS/BLOCKED verdict |
-| 5 | Sync Docs | Sub-agent | Updated/created docs list |
-| 6 | Capture Learnings | Sub-agent | `docs/solutions/<category>/<learning>.md` |
-| 7 | Commit & PR | Sub-agent | Commits + PR URL |
+| 4 | Code Review | Sub-agent (loop) | REVIEW.md verdict, fix iterations |
+| 5 | Quality Gate | Sub-agent | PASS/BLOCKED verdict |
+| 6 | Sync Docs | Sub-agent | Updated/created docs list |
+| 7 | Capture Learnings | Sub-agent | `docs/solutions/<category>/<learning>.md` |
+| 8 | Commit & PR | Sub-agent | Commits + PR URL |
 
 ---
 
@@ -117,7 +120,7 @@ For each skippable stage:
 |-------|---------------|
 | 1: Brainstorm + Spec | Explicit skip instruction from caller, OR agent evaluates input has complete context (clear problem definition, specific scope, acceptance criteria) |
 | 2: Planner | Explicit skip instruction from caller, OR agent evaluates task is straightforward enough (single-phase work, per-file instructions already provided) |
-| 5: Sync Docs | Explicit skip instruction from caller, OR the task itself is documentation fixes |
+| 6: Sync Docs | Explicit skip instruction from caller, OR the task itself is documentation fixes |
 
 ### Mandatory Stages (never skip)
 
@@ -125,9 +128,10 @@ For each skippable stage:
 |-------|-----|
 | 0: Setup | Worktree and baseline are always required |
 | 3: Coder | Core implementation — the whole point of the pipeline |
-| 4: Quality Gate | Hard verification gate — no exceptions |
-| 6: Capture Learnings | Always runs (agent skips internally if nothing to capture) |
-| 7: Commit & PR | Always runs to finalize work |
+| 4: Code Review | Semantic verification gate — catches bugs that metrics can't |
+| 5: Quality Gate | Hard metric verification gate — no exceptions |
+| 7: Capture Learnings | Always runs (agent skips internally if nothing to capture) |
+| 8: Commit & PR | Always runs to finalize work |
 
 ### Handling Skipped Stages
 
@@ -136,7 +140,7 @@ For each skipped stage:
 2. Log: "Skipping Stage N (<name>) — <reason>"
 3. Proceed to the next stage in order
 
-**Even when stages are skipped, all mandatory stages MUST execute in order.** Skipping brainstorm does not skip setup. Skipping planning does not skip coder, quality gate, or commit.
+**Even when stages are skipped, all mandatory stages MUST execute in order.** Skipping brainstorm does not skip setup. Skipping planning does not skip coder, code review, quality gate, or commit.
 
 ---
 
@@ -167,7 +171,7 @@ Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the mai
 - **Stage 1** runs in main because brainstorm needs conversation context and flows into spec generation.
 - **Stage 2** runs in main because the planner explores the codebase interactively and holds the only approval gate.
 
-Invoke their respective skills directly using the `Skill` tool. All other stages (3-7) run as sub-agents via the `Agent` tool.
+Invoke their respective skills directly using the `Skill` tool. All other stages (3-8) run as sub-agents via the `Agent` tool.
 
 ### Pipeline Flow
 
@@ -180,17 +184,19 @@ digraph pipeline {
   stage_1 [label="1: Brainstorm"]
   stage_2 [label="2: Planner"]
   stage_3 [label="3: Coder"]
-  stage_4 [label="4: Quality Gate"]
-  stage_5 [label="5: Sync Docs"]
-  stage_6 [label="6: Learnings"]
-  stage_7 [label="7: Commit & PR"]
+  stage_4 [label="4: Code Review"]
+  stage_5 [label="5: Quality Gate"]
+  stage_6 [label="6: Sync Docs"]
+  stage_7 [label="7: Learnings"]
+  stage_8 [label="8: Commit & PR"]
 
   stage_0 -> stage_1 -> stage_2 -> stage_3
-  stage_3 -> stage_4 -> stage_5 -> stage_6 -> stage_7
+  stage_3 -> stage_4 -> stage_5 -> stage_6 -> stage_7 -> stage_8
+  stage_4 -> stage_4 [label="REQUEST CHANGES\n(max 3)" style=dashed]
 }
 ```
 
-Stage 3 (Coder) is the only stage with internal parallelism — see "Parallel When Possible" below.
+Stage 3 (Coder) is the only stage with internal parallelism — see "Parallel When Possible" below. Stage 4 (Code Review) has an internal review-fix loop — see Stage 4 dispatch below.
 
 ### Parallel When Possible
 
@@ -373,7 +379,119 @@ Agent(prompt="
 
 Dispatch in waves: send all independent steps in parallel → wait for completion → dispatch next wave of steps whose dependencies are satisfied → repeat until all steps in the phase are done.
 
-### Stage 4: Quality Gate
+### Stage 4: Code Review Loop
+
+Runs a review-fix loop: dispatch a code review agent, parse the verdict, and if `REQUEST CHANGES`, dispatch a fix agent then re-review. Loop exits on `APPROVE` or `APPROVE WITH SUGGESTIONS`, or after a maximum of **3 iterations** (whichever comes first).
+
+Before dispatching:
+```
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status code-review running")
+```
+
+**Loop logic (run in the main orchestrator conversation, not in a sub-agent):**
+
+```
+MAX_REVIEW_ITERATIONS = 3
+iteration = 1
+
+while iteration <= MAX_REVIEW_ITERATIONS:
+  # 1. Add review child node
+  dag: add-node review-{iteration} 'Review #{iteration}' --parent code-review
+       (if iteration > 1: --depends-on fix-{iteration-1})
+  dag: set-status review-{iteration} running
+
+  # 2. Dispatch review agent
+  verdict = dispatch_review_agent(iteration)
+
+  # 3. Write review report and mark done
+  dag: set-status review-{iteration} done
+
+  # 4. Check verdict
+  if verdict != "REQUEST CHANGES":
+    break  # proceed to quality gate
+
+  if iteration == MAX_REVIEW_ITERATIONS:
+    log: "WARNING: Review still requesting changes after {MAX_REVIEW_ITERATIONS} iterations. Proceeding to quality gate."
+    break
+
+  # 5. Add fix child node and dispatch fix agent
+  dag: add-node fix-{iteration} 'Fix #{iteration}' --parent code-review --depends-on review-{iteration}
+  dag: set-status fix-{iteration} running
+  dispatch_fix_agent(iteration)
+  dag: set-status fix-{iteration} done
+
+  iteration++
+```
+
+After loop completes:
+```
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status code-review done")
+```
+
+**Review agent dispatch:**
+
+```
+Agent(prompt="
+  [PREAMBLE]
+  Invoke the code-review skill.
+  Plan: docs/spec/<SPEC_NAME>/plan.md
+  Scope: --commits <BASE_BRANCH>..HEAD
+  Output: docs/spec/<SPEC_NAME>/REVIEW-<N>.md
+
+  When done, write a report using this format:
+    export HARNESS_DIR='<HARNESS_DIR>'
+    /usr/bin/env bash '<DAG_SCRIPT>' write-report review-<N> '# Code Review #<N>
+
+## Verdict: <APPROVE|APPROVE WITH SUGGESTIONS|REQUEST CHANGES>
+
+## Summary
+<2-3 sentence assessment>
+
+## Defects Found
+- Critical: <count>
+- Important: <count>
+- Minor: <count>
+
+## Details
+<key findings with file:line references>'
+
+  Return: verdict (APPROVE/APPROVE WITH SUGGESTIONS/REQUEST CHANGES), review file path, count of defects by severity.
+")
+```
+
+**Fix agent dispatch:**
+
+```
+Agent(prompt="
+  [PREAMBLE]
+  Invoke the tdd skill.
+  Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
+
+  Fix the defects listed in docs/spec/<SPEC_NAME>/REVIEW-<N>.md.
+  Focus ONLY on Critical and Important defects. Do not address Minor findings.
+  Run tests after each fix to ensure no regressions.
+
+  When done, write a report using this format:
+    export HARNESS_DIR='<HARNESS_DIR>'
+    /usr/bin/env bash '<DAG_SCRIPT>' write-report fix-<N> '# Fix #<N>
+
+## Defects Addressed
+- **<defect title>** (`file:line`) — <what was fixed>
+
+## Files Modified
+- `path/to/file` — <what changed>
+
+## Tests
+- All passing: yes/no
+- New tests added: <count or "none">'
+
+  Return: files modified, defects addressed, tests still passing.
+")
+```
+
+**Verdict parsing:** Extract the verdict from the review agent's returned result text. Look for `REQUEST CHANGES`, `APPROVE WITH SUGGESTIONS`, or `APPROVE`. Match in that order (most specific first) to avoid a false match on the substring `APPROVE` within `APPROVE WITH SUGGESTIONS`.
+
+### Stage 5: Quality Gate
 
 Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status quality-gate running")`
 
@@ -408,11 +526,11 @@ Agent(prompt="
 
 **Extract from result:** verdict (PASS/BLOCKED/STAGNATION), gate report path
 
-**If BLOCKED → stop pipeline and report what failed and potential ways to solve it. Do not proceed to Stage 5.**
+**If BLOCKED → stop pipeline and report what failed and potential ways to solve it. Do not proceed to Stage 6.**
 
 **If STAGNATION → stop pipeline entirely. Do not retry. Report which check stagnated and the repeated error. This signals a fundamental issue that retrying won't fix.**
 
-### Stage 5: Sync Docs
+### Stage 6: Sync Docs
 
 Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status docs running")`
 
@@ -439,7 +557,7 @@ Agent(prompt="
 
 **Extract from result:** list of docs updated/created
 
-### Stage 6: Capture Learnings
+### Stage 7: Capture Learnings
 
 Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status learnings running")`
 
@@ -470,7 +588,7 @@ Agent(prompt="
 
 **Extract from result:** learning doc path (if any)
 
-### Stage 7: Commit & PR
+### Stage 8: Commit & PR
 
 Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status commit-pr running")`
 
@@ -518,10 +636,11 @@ After all stages complete, present a compact summary:
 | 1. Brainstorm | Spec: docs/spec/<name>/spec.md |
 | 2. Plan | <phase_count> phases, <parallel> parallel |
 | 3. TDD | <files> files, <tests> tests passing |
-| 4. Gate | <PASS/BLOCKED/STAGNATION> |
-| 5. Sync Docs | <docs_count> docs updated |
-| 6. Learnings | <doc_path or "none"> |
-| 7. PR | <PR_URL> |
+| 4. Review | <verdict> after <N> iteration(s) |
+| 5. Gate | <PASS/BLOCKED/STAGNATION> |
+| 6. Sync Docs | <docs_count> docs updated |
+| 7. Learnings | <doc_path or "none"> |
+| 8. PR | <PR_URL> |
 
 **Issues:** <any retries, failures, stagnation, or "None">
 ```
@@ -536,6 +655,8 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash \"<DAG_SCRIPT>\" f
 ## Error Handling
 
 - If any sub-agent fails or returns an error, **stop the pipeline** and report which stage failed and why
+- If the code review loop reaches the max iteration cap (3) with `REQUEST CHANGES` still active, **log a warning but proceed** to the quality gate — the gate will catch any remaining hard violations
+- If a review or fix sub-agent fails mid-loop, **stop the pipeline** — do not continue the loop or proceed to the quality gate
 - If the quality gate returns BLOCKED, **stop the pipeline** and report what failed
 - If the quality gate returns STAGNATION, **stop the pipeline entirely** — do not retry. Report which check stagnated, the repeated error signature, and that manual intervention is required
 - Do not proceed to the next stage if the current one failed
@@ -548,6 +669,7 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash \"<DAG_SCRIPT>\" f
 
 - **Each stage is isolated** — sub-agents don't share context, so pass all necessary information in the prompt
 - **Extract artifacts** — after each sub-agent returns, extract file paths and key info to pass forward
+- **Review before gate** — code review catches semantic bugs that metrics can't; the review-fix loop runs up to 3 iterations before handing off to the quality gate
 - **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly

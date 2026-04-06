@@ -11,13 +11,17 @@ disable-model-invocation: true
 
 ## Project-Specific Guidelines
 
-1. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
+1. **Always load local rules:** Glob `.claude/rules/*` in the project root. If any
+   files exist, read all of them. These contain project-wide coding standards,
+   conventions, and constraints that apply to every review.
+2. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
    its guidelines over the defaults below.
-2. Otherwise, check if `.claude/harness/code-review-reference.md` exists in the
+3. Otherwise, check if `.claude/harness/code-review-reference.md` exists in the
    project root. If it does, read it and apply its guidelines.
-3. If neither exists, use the defaults below.
+4. If neither (2) nor (3) provides guidelines, use the defaults below.
 
-User-provided guidelines take precedence on conflicts with defaults.
+Local rules from `.claude/rules/*` are always applied alongside any other guideline
+source. User-provided guidelines take precedence on conflicts with defaults.
 
 
 # Code Review
