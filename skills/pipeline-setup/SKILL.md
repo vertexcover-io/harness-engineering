@@ -51,6 +51,32 @@ Run each detected tool and record results:
 
 If a tool is not detected, record `null` for that key — do not fail on missing tooling.
 
+### 3b. E2E Infrastructure Detection
+
+Detect e2e test infrastructure without running anything:
+
+1. **Compose files** — check for `compose.yml`, `docker-compose.yml`, `compose.yaml`
+2. **E2E test frameworks** — scan for Playwright config (`playwright.config.*`), vitest e2e projects (vitest config with `e2e` in test include patterns), Cypress config
+3. **Infra scripts** — read `package.json` (root and per-package) for scripts containing `infra`, `docker`, `compose`, `db:migrate`, `db:setup`
+4. **Dev server command** — identify the command that starts the application (commonly `dev`, `start`, `serve` scripts)
+
+Record in baseline.json alongside the other metrics:
+
+```json
+{
+  "e2e": {
+    "detected": true,
+    "infra_up_cmd": "<script that starts backing services>",
+    "infra_down_cmd": "<script that stops backing services>",
+    "dev_cmd": "<script that starts the app>",
+    "e2e_cmd": "<script that runs e2e tests>",
+    "frameworks": ["playwright", "vitest-e2e"]
+  }
+}
+```
+
+If no e2e infrastructure is found, record `"e2e": { "detected": false }`. Do not fail — not every project has e2e tests.
+
 ### 4. Create Spec Directory
 
 1. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`)

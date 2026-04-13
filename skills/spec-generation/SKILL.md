@@ -65,11 +65,11 @@ Use the EARS (Easy Approach to Requirements Syntax) format for all requirements:
 
 ## Verification Matrix
 
-| REQ ID | Unit Test | Integration Test | Manual Test | Notes |
-|--------|-----------|-----------------|-------------|-------|
-| REQ-001 | Yes | Yes | No | |
-| REQ-002 | Yes | No | No | |
-| EDGE-001 | Yes | No | No | |
+| REQ ID | Unit Test | Integration Test | E2E Test | Manual Test | Notes |
+|--------|-----------|-----------------|----------|-------------|-------|
+| REQ-001 | Yes | Yes | No | No | |
+| REQ-002 | Yes | No | No | No | |
+| EDGE-001 | Yes | No | No | No | |
 
 ## Out of Scope
 
@@ -111,7 +111,8 @@ For each requirement, identify edge cases:
 For each REQ and EDGE ID:
 1. Determine which test types cover it (unit, integration, manual)
 2. At least one test type must be marked for every ID
-3. Add notes for anything requiring special setup or environment
+3. If a requirement describes a user-visible workflow or a flow crossing multiple services, mark E2E Test as Yes and note the journey and infrastructure needed
+4. Add notes for anything requiring special setup or environment
 
 ### Step 5: Write SPEC.md
 
