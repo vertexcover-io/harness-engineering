@@ -184,6 +184,18 @@ Each cycle should be small enough that "minimum code to pass" is obvious. If you
 
 ---
 
+## TDD with E2E Tests
+
+When the phase has an "E2E Verification" section or the spec marks a requirement as needing E2E, start with the e2e test as your first RED step.
+
+1. **RED**: Write a failing e2e test for the user journey. Infrastructure and dev server must be running.
+2. **GREEN**: Build the feature — use unit/integration TDD cycles for each component until the e2e test passes.
+3. **REFACTOR**: Clean up as usual.
+
+The e2e test defines the finish line. Unit and integration tests are written as needed to build toward it. Use accessible locators (role, label, text) and condition-based waits — never CSS selectors or hard-coded delays.
+
+---
+
 ## Step-Scoped TDD
 
 When invoked with a specific **step** (a subset of a phase), scope your work to that step only:

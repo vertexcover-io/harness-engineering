@@ -85,6 +85,18 @@ After confirming the code is testable, determine the right test level. Scan the 
 
 For the full guide on *how* to write integration and e2e tests, read `references/test-granularity.md`.
 
+### Browser Verification During Development
+
+When the project has a browser automation tool available (Playwright MCP or similar) and the change is user-visible:
+
+1. After implementation passes unit/integration tests, open the running application in the browser
+2. Navigate to the affected page
+3. Take an accessibility snapshot (preferred over screenshots — more stable, fewer tokens)
+4. Verify the feature renders and behaves correctly
+5. If something is wrong, fix it before moving on
+
+This is not a formal e2e test — it's a quick sanity check that catches visual/interaction bugs that pass in unit tests. Treat it as part of the GREEN step verification.
+
 ### The Test-First Mindset
 
 Write the test before the implementation:

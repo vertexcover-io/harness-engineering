@@ -56,6 +56,7 @@ Build understanding of existing code before planning changes. Use `Agent` sub-ag
 3. **Existing patterns** — utilities, base classes, conventions that the implementation should follow
 4. **Potential conflicts** — modules that share state, coupling risks, migration concerns
 5. **Test infrastructure** — how similar features are tested, what fixtures and helpers exist
+6. **E2E test infrastructure** — what e2e frameworks exist, what tests already cover, how backing services are started, what the dev server command is
 6. **Dependencies** — what depends on what, what can run in parallel
 7. **Library docs** — for external libraries the feature touches, use context7 or web search to check current API signatures and usage patterns
 
@@ -246,10 +247,15 @@ business rules that could easily be gotten wrong.]
 - [ ] Existing tests still pass
 - [ ] [Any phase-specific verification]
 
-## Smoke Test (optional)
+## E2E Verification (when applicable)
 
-- `curl localhost:3000/api/health` → 200
-- `npm run e2e -- --grep "user registration"`
+Include when the phase delivers user-visible behavior or modifies a flow crossing service boundaries.
+
+- **Infrastructure needed:** [backing services required]
+- **E2E tests to run:** [specific test commands or patterns]
+- **Browser verification:** [pages to visit, behaviors to confirm]
+
+Omit for phases that are purely internal (libraries, utilities, refactors with no user-facing change).
 ```
 
 ### When to include code in a phase

@@ -163,13 +163,31 @@ Detect project tooling in this order:
 - **Fail:** Any new ignore comment without inline justification → BLOCKED
 - Report: list of new ignore comments with context
 
-### Check 8: Smoke Test (Optional, Non-blocking)
+### Check 8: Smoke Test
 
-- Read phase files and plan for a "Smoke Test" section
+- Read phase files and plan for a "Smoke Test" or "E2E Verification" section
 - If found → run those commands and report results
 - If not found → INFO note "No smoke test defined."
-- **Non-blocking** — results are informational regardless of outcome
+- **Blocking when defined** — if a phase defines a smoke test command and it fails, verdict is BLOCKED
+- **Non-blocking when absent** — if no smoke test is defined, INFO note only
 - Report: commands run, output, pass/fail per command
+
+### Check 9: E2E Tests
+
+- Read `e2e` from baseline.json
+- If `e2e.detected` is false → `NOT_APPLICABLE` with justification "No e2e infrastructure detected"
+- If detected:
+  1. Verify backing services are running (check if services respond on expected ports)
+  2. If not running, start them using `e2e.infra_up_cmd` from baseline
+  3. Start the dev server using `e2e.dev_cmd` from baseline if e2e tests require it
+  4. Run `e2e.e2e_cmd` from baseline
+  5. Parse pass/fail counts from output
+  6. If the task involves UI changes and a browser MCP tool is available: navigate to affected pages, take accessibility snapshots, verify the feature renders correctly
+  7. Stop any dev server process started in step 3
+- **Pass:** Exit code 0 AND browser verification passes (if performed)
+- **Fail:** Non-zero exit code OR browser verification finds broken UI
+- Report: exit code, pass/fail/skip counts, accessibility snapshots (if taken)
+- Do NOT tear down backing services after the check
 
 ---
 
@@ -177,9 +195,9 @@ Detect project tooling in this order:
 
 | Stage | Checks Run | Trigger |
 |-------|-----------|---------|
-| After TDD (`post-tdd`) | All 7 mandatory + optional smoke | Implementation complete |
-| After Refactor (`post-refactor`) | Checks 1-4 (no scope/plan/ignore check) | Refactoring should not change scope |
-| Before PR (`pre-pr`) | All 7 mandatory + optional smoke | Final audit before commit |
+| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 when e2e detected | Implementation complete |
+| After Refactor (`post-refactor`) | Checks 1-4 (no scope/plan/ignore/smoke/e2e check) | Refactoring should not change scope |
+| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 when e2e detected | Final audit before commit |
 
 If any gate returns **BLOCKED**, the pipeline stops at that point. The orchestrator reports what failed and does not proceed to the next stage.
 
@@ -213,7 +231,8 @@ Written to `docs/spec/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `gate-rep
 | 5 | Scope Compliance | — | 3 files changed, all in plan | PASS |
 | 6 | Plan Compliance | — | 5/5 items verified | PASS |
 | 7 | Ignore Comment Audit | — | 0 new ignore comments | PASS |
-| 8 | Smoke Test | — | 2/2 passed | INFO |
+| 8 | Smoke Test | — | 2/2 passed | PASS |
+| 9 | E2E Tests | — | 12 passed, 0 failed | PASS |
 
 <!-- QG:VERDICT:PASS -->
 **Verdict: PASS**
@@ -249,7 +268,7 @@ Machine-parseable markers: `<!-- QG:VERDICT:PASS -->` and `<!-- QG:CHECK:N:PASS 
 
 Binary verdicts — no WARN tier:
 
-- **`PASS`** — all 7 mandatory checks pass
+- **`PASS`** — all mandatory checks pass (Checks 1-8, plus Check 9 when e2e is detected)
 - **`BLOCKED`** — any mandatory check fails (with specific reasons listed)
 - **`STAGNATION`** — same check failed 3 consecutive times across gate runs (special signal: stop entirely, don't retry)
 
