@@ -217,18 +217,18 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 Before dispatching any stage that invokes a named skill, check for a project-local override in the current working directory:
 
 ```
-<cwd>/.claude/skills/<skill-name>.md
+<cwd>/.claude/skills/<skill-name>/SKILL.md
 ```
 
 Resolution order:
-1. `<cwd>/.claude/skills/<skill-name>.md` — project-local (wins)
+1. `<cwd>/.claude/skills/<skill-name>/SKILL.md` — project-local (wins)
 2. Global harness skill — fallback
 
 Applies to: `quality-gate`, `tdd`, `testing`, `code-review`.
 Does NOT apply to `orchestrate` itself (no recursive override).
 
 When a local override is found, log:
-> "Using local skill override: .claude/skills/\<skill-name\>.md"
+> "Using local skill override: .claude/skills/\<skill-name\>/SKILL.md"
 
 The local skill is loaded and followed exactly in place of the global one. The local skill is responsible for emitting compatible verdict comments so orchestrate can parse the result:
 - `<!-- QG:VERDICT:PASS -->` or `<!-- QG:VERDICT:BLOCKED -->`
