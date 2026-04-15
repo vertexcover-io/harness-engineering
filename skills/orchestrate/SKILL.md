@@ -330,7 +330,7 @@ After all phases complete: `$DU set-status coder done` (include full preamble)
 **A) Phase has no Steps section** → single agent for the whole phase:
 
 ```
-Agent(prompt="
+Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke the tdd skill.
   Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase: <PHASE_N>
@@ -367,7 +367,7 @@ Agent(prompt="
 **B) Phase has Steps section** → dispatch per-step, parallelizing independent steps:
 
 ```
-Agent(prompt="
+Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke the tdd and testing skill.
   Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
@@ -431,7 +431,7 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>
 **Review agent dispatch:**
 
 ```
-Agent(prompt="
+Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke the code-review skill.
   Plan: docs/spec/<SPEC_NAME>/plan.md
@@ -462,7 +462,7 @@ Agent(prompt="
 **Fix agent dispatch:**
 
 ```
-Agent(prompt="
+Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke the tdd skill.
   Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
@@ -496,7 +496,7 @@ Agent(prompt="
 Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status quality-gate running")`
 
 ```
-Agent(prompt="
+Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke the quality-gate skill.
   Baseline file: docs/spec/<SPEC_NAME>/baseline.json
@@ -535,7 +535,7 @@ Agent(prompt="
 Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status docs running")`
 
 ```
-Agent(prompt="
+Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke the sync-docs skill.
   Spec dir: docs/spec/<SPEC_NAME>/
@@ -562,7 +562,7 @@ Agent(prompt="
 Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status learnings running")`
 
 ```
-Agent(prompt="
+Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke the learn skill.
   Focus on pipeline friction from this run — stalls, wrong assumptions, human interventions, retries.
@@ -593,7 +593,7 @@ Agent(prompt="
 Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status commit-pr running")`
 
 ```
-Agent(prompt="
+Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke the git-commit skill to create commits.
   Then push: git push -u origin <BRANCH_NAME>
