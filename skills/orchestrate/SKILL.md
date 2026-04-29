@@ -3,7 +3,7 @@ name: orchestrate
 description: >
   Multi-agent pipeline orchestrator. Takes a prompt or spec file and runs:
   brainstorm, planner, coder (TDD + stagnation detection), code review (review-fix loop),
-  verify & finalize (quality gate + sync docs + learnings), and commit/PR.
+  verify & finalize (functional verification + quality gate + sync docs + learnings), and commit/PR.
   Artifacts stored in docs/spec/<name>/. Use when the user says orchestrate, run the pipeline,
   full workflow, or wants end-to-end development from spec to PR.
   Supports --auto mode for CI/CD pipelines — bypasses interactive approval gates while still producing all artifacts.
@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
 
 # Orchestrate: Multi-Agent Development Pipeline
 
-Runs a full development pipeline in 7 stages. Brainstorm and Planner run interactively in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
+Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & PR run in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
@@ -84,8 +84,8 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
 | 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` + `phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests |
 | 4 | Code Review | Sub-agent (loop) | REVIEW.md verdict, fix iterations |
-| 5 | Verify & Finalize | Sub-agent | Quality gate PASS/BLOCKED, synced docs, learnings captured |
-| 6 | Commit & PR | Sub-agent | Commits + PR URL |
+| 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
+| 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
 ---
 
@@ -121,8 +121,8 @@ For each skippable stage:
 | 0: Setup | Worktree and baseline are always required |
 | 3: Coder | Core implementation — the whole point of the pipeline |
 | 4: Code Review | Semantic verification gate — catches bugs that metrics can't |
-| 5: Verify & Finalize | Quality gate + docs + learnings — always runs as single consolidated stage |
-| 6: Commit & PR | Always runs to finalize work |
+| 5: Verify & Finalize | Functional verification + quality gate + docs + learnings — always runs as single consolidated stage |
+| 6: Commit & PR | Always runs to finalize work (runs in main conversation) |
 
 ### Handling Skipped Stages
 
@@ -162,7 +162,7 @@ Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the mai
 - **Stage 1** runs in main because brainstorm needs conversation context and flows into spec generation.
 - **Stage 2** runs in main because the planner explores the codebase interactively and holds the only approval gate.
 
-Invoke their respective skills directly using the `Skill` tool. All other stages (3-6) run as sub-agents via the `Agent` tool.
+Invoke their respective skills directly using the `Skill` tool. All other stages (3-5) run as sub-agents via the `Agent` tool.
 
 ### Pipeline Flow
 
@@ -356,56 +356,62 @@ Agent(model="sonnet", prompt="
 
 ### Stage 5: Verify & Finalize
 
-Single consolidated sub-agent that runs quality gate, syncs docs, and captures learnings.
+Single consolidated sub-agent that runs functional verification, quality gate, syncs docs, and captures learnings.
 
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status verify-finalize running")`
 
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
-  Run these in order:
+  Run these in order. Stop and return failure immediately if any step fails.
 
-  1. QUALITY GATE: Invoke quality-gate skill.
+  1. FUNCTIONAL VERIFICATION: Invoke functional-verify skill.
+     Spec: docs/spec/<SPEC_NAME>/spec.md. Plan dir: docs/spec/<SPEC_NAME>/.
+     Phase files: docs/spec/<SPEC_NAME>/phase-*.md.
+     Write dashboard report following 'Verification Report' format in
+     references/dashboard-report-formats.md.
+     If FAILED: stop entirely, return failure with which scenarios failed and why.
+     Evidence is saved to docs/spec/<SPEC_NAME>/verification/ — do NOT delete it.
+
+  2. QUALITY GATE: Invoke quality-gate skill.
      Baseline: docs/spec/<SPEC_NAME>/baseline.json. Plan: docs/spec/<SPEC_NAME>/. Stage: post-tdd.
      Write dashboard report following 'Quality Gate Report' format in
      references/dashboard-report-formats.md.
      If BLOCKED or STAGNATION: stop entire pipeline, return verdict + failure details.
 
-  2. SYNC DOCS: Invoke sync-docs skill.
+  3. SYNC DOCS: Invoke sync-docs skill.
      Spec dir: docs/spec/<SPEC_NAME>/. Plan dir: docs/spec/<SPEC_NAME>/.
      Write dashboard report following 'Sync Docs Report' format in
      references/dashboard-report-formats.md.
 
-  3. CAPTURE LEARNINGS: Invoke learn skill.
+  4. CAPTURE LEARNINGS: Invoke learn skill.
      Focus on pipeline friction — stalls, wrong assumptions, retries.
      Spec dir: docs/spec/<SPEC_NAME>/. If nothing went wrong, skip.
      Write dashboard report following 'Learnings Report' format in
      references/dashboard-report-formats.md.
 
-  Return: gate verdict, docs list, learning doc path (or 'none').
+  Return: verification verdict, gate verdict, docs list, learning doc path (or 'none').
 ")
 ```
 
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status verify-finalize done")`
 
+**If functional verification FAILED → stop pipeline and report which scenarios failed.**
 **If quality gate BLOCKED → stop pipeline and report what failed.**
 **If STAGNATION → stop pipeline entirely, do not retry.**
 
-### Stage 6: Commit & PR
+### Stage 6: Commit & PR (Main Conversation)
 
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status commit-pr running")`
 
-```
-Agent(model="sonnet", prompt="
-  [PREAMBLE]
-  Invoke git-commit skill to create commits.
-  Push: git push -u origin <BRANCH_NAME>.
-  Create PR: gh pr create referencing task summary, spec, and plan.
-  When done, write dashboard report following 'Commit & PR Report' format in
-  references/dashboard-report-formats.md.
-  Return: commits list, PR URL.
-")
-```
+Do these directly (no sub-agent):
+
+1. Invoke the `git-commit` skill via `Skill` tool to create structured commits.
+2. `Bash("git push -u origin <BRANCH_NAME>")`
+3. If PR desired (not --no-pr): `Bash("gh pr create --title '<spec title>' --body 'Closes: docs/spec/<SPEC_NAME>' --base main --head <BRANCH_NAME>")`
+4. Write dashboard report following 'Commit & PR Report' format in references/dashboard-report-formats.md.
+   Use: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report commit-pr '...'")`
+5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status commit-pr done")`
 
 **Extract:** commits, `PR_URL`
 
@@ -428,7 +434,7 @@ After all stages complete, present a compact summary:
 | 2. Plan | <phase_count> phases |
 | 3. Coder | <files> files, <tests> tests |
 | 4. Review | <verdict> after <N> iteration(s) |
-| 5. Verify & Finalize | Gate: <PASS/BLOCKED>, docs: <N> updated, learnings: <path or none> |
+| 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated, learnings: <path or none> |
 | 6. PR | <PR_URL> |
 
 **Issues:** <any retries, failures, stagnation, or "None">
@@ -441,7 +447,8 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D finalize done")`
 ## Error Handling
 
 - If any sub-agent fails or returns an error, **stop the pipeline** and report which stage failed and why
-- If the review loop reaches max iterations (3) with `REQUEST CHANGES` still active, **log a warning but proceed** to Stage 5 — the gate catches remaining hard violations
+- If functional verification fails (any scenario), **stop the pipeline** — the feature doesn't work as specified
+- If the review loop reaches max iterations (3) with `REQUEST CHANGES` still active, **log a warning but proceed** to Stage 5 — the verification and gate catch remaining violations
 - If a review or fix sub-agent fails mid-loop, **stop the pipeline** — do not continue the loop
 - If the quality gate returns BLOCKED, **stop the pipeline** and report what failed
 - If the quality gate returns STAGNATION, **stop the pipeline entirely** — do not retry. Report which check stagnated, the repeated error signature, and that manual intervention is required
@@ -455,7 +462,7 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D finalize done")`
 
 - **Each stage is isolated** — sub-agents don't share context, so pass all necessary information in the prompt
 - **Extract artifacts** — after each sub-agent returns, extract file paths and key info to pass forward
-- **Review before gate** — code review catches semantic bugs that metrics can't; the review-fix loop runs up to 3 iterations before handing off to the verify & finalize stage
+- **Verify before gate** — functional verification runs the app and tests features live BEFORE the quality gate runs metrics. A feature that doesn't work is caught early, with evidence.
 - **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level. Only parallelize phases touching 3+ files
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly

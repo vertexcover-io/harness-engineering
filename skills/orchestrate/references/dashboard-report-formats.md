@@ -62,6 +62,44 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 - New tests added: <count or "none">
 ```
 
+## Verification Report
+
+```
+# Functional Verification
+
+## Verdict: <PASSED|FAILED>
+
+## Scenarios
+
+| # | Type | Description | Verdict |
+|---|------|-------------|---------|
+| 1 | api | POST /users → 201 + DB entry | PASSED |
+| 2 | ui  | Login flow redirects to dashboard | PASSED |
+
+## API Evidence
+
+### VS-1: POST /users
+**Command:** `curl -s -X POST http://localhost:3000/api/users -H 'Content-Type: application/json' -d '{...}'`
+**Status:** 201
+**Body (truncated):**
+\```json
+{...}
+\```
+**DB check:** `SELECT COUNT(*) FROM users WHERE email='test@example.com'` → 1 (expected: 1) PASSED
+
+## UI Evidence
+
+### VS-2: Login flow
+**Route:** /login
+**Screenshots:**
+- [Step 1: Login form](verification/ui/vs-2-step1.png)
+- [Step 2: After redirect](verification/ui/vs-2-step2.png)
+
+## Infrastructure
+- **Started:** `npm run dev` (PID 12345), `docker compose up -d`
+- **Cleaned up:** yes
+```
+
 ## Quality Gate Report
 
 ```
