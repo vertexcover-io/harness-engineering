@@ -2,11 +2,10 @@
 name: orchestrate
 description: >
   Multi-agent pipeline orchestrator. Takes a prompt or spec file and runs:
-  brainstorm (interactive), planner (interactive), coder (sub-agent with
-  TDD + stagnation detection), code review (review-fix loop), quality gate,
-  sync-docs, capture learnings, and commit/PR. Artifacts stored in
-  docs/spec/<name>/. Use when the user says orchestrate, run the pipeline, full workflow,
-  or wants end-to-end development from spec to PR.
+  brainstorm, planner, coder (TDD + stagnation detection), code review (review-fix loop),
+  verify & finalize (functional verification + quality gate + sync docs + learnings), and commit/PR.
+  Artifacts stored in docs/spec/<name>/. Use when the user says orchestrate, run the pipeline,
+  full workflow, or wants end-to-end development from spec to PR.
   Supports --auto mode for CI/CD pipelines — bypasses interactive approval gates while still producing all artifacts.
 argument-hint: "<prompt or path/to/spec.md> [--auto]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
@@ -14,13 +13,13 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
 
 # Orchestrate: Multi-Agent Development Pipeline
 
-Runs a full development pipeline in 9 stages. Brainstorm and Planner run interactively in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
+Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & PR run in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
 **CRITICAL: Do NOT explore the codebase, read project files, or fetch URLs before completing the Initialization steps below. The very first actions are: detect input, check for auto mode, then start the dashboard. No exceptions.**
 
-**CRITICAL: Do NOT stop, pause, or present a summary until ALL pipeline stages (0-8) have completed or a stage has explicitly failed/blocked. Each stage flows directly into the next. The only permitted pause is the plan approval gate after Stage 2.**
+**CRITICAL: Do NOT stop, pause, or present a summary until ALL pipeline stages (0-6) have completed or a stage has explicitly failed/blocked. Each stage flows directly into the next. The only permitted pause is the plan approval gate after Stage 2.**
 
 ---
 
@@ -40,7 +39,7 @@ When `AUTO_MODE=true`:
 - **Skip all AskUserQuestion calls** — Claude decides autonomously, auto-approves designs and plans
 - **Skip worktree creation** — use current working directory (e.g., GitHub Actions already checked out the PR branch)
 - **Skip all `dag-update` calls** — no live dashboard in CI
-- **Skip PR creation in Stage 8** — only commit and push; caller handles PR interaction
+- **Skip PR creation in Stage 6** — only commit and push; caller handles PR interaction
 - **All artifacts still produced** (design docs, specs, plans) for auditability
 
 ### Step 2: DAG Dashboard Bootstrap
@@ -55,28 +54,24 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
    ```
    Bash("
      export HARNESS_DIR=$(/usr/bin/env bash '<DAG_SCRIPT>' init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
-     DU='/usr/bin/env bash <DAG_SCRIPT>'
-     $DU add-node setup 'Setup'
-     $DU add-node worktree 'Create Worktree' --parent setup
-     $DU add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
-     $DU add-node brainstorm 'Brainstorm & Spec' --depends-on setup
-     $DU add-node planning 'Planning' --depends-on brainstorm
-     $DU add-node coder 'Coder' --depends-on planning
-     $DU add-node code-review 'Code Review' --depends-on coder
-     $DU add-node quality-gate 'Quality Gate' --depends-on code-review
-     $DU add-node docs 'Sync Docs' --depends-on quality-gate
-     $DU add-node learnings 'Capture Learnings' --depends-on quality-gate
-     $DU add-node commit-pr 'Commit & PR' --depends-on docs,learnings
-     $DU serve
+     D='/usr/bin/env bash <DAG_SCRIPT>'
+     $D add-node setup 'Setup'
+     $D add-node worktree 'Create Worktree' --parent setup
+     $D add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
+     $D add-node brainstorm 'Brainstorm & Spec' --depends-on setup
+     $D add-node planning 'Planning' --depends-on brainstorm
+     $D add-node coder 'Coder' --depends-on planning
+     $D add-node code-review 'Code Review' --depends-on coder
+     $D add-node verify-finalize 'Verify & Finalize' --depends-on code-review
+     $D add-node commit-pr 'Commit & PR' --depends-on verify-finalize
+     $D serve
    ")
    ```
    Note: Phase nodes are added as children of `coder` after planning (Stage 2) when phases are known.
 3. Store `HARNESS_DIR` for use in all subsequent `dag-update` calls.
 
-**IMPORTANT: Shell state does not persist between Bash tool calls.** Every `Bash(...)` call that uses `dag-update` must re-export `HARNESS_DIR` and re-define `DU` with the resolved `DAG_SCRIPT` path. Use this pattern for ALL dag-update calls throughout the pipeline:
-```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU <command> <args>")
-```
+**DAG shorthand:** All dag-update calls use this pattern where `$D` = `/usr/bin/env bash "<DAG_SCRIPT>"`:
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D <command> <args>")`
 
 ---
 
@@ -89,10 +84,8 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>
 | 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` + `phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests |
 | 4 | Code Review | Sub-agent (loop) | REVIEW.md verdict, fix iterations |
-| 5 | Quality Gate | Sub-agent | PASS/BLOCKED verdict |
-| 6 | Sync Docs | Sub-agent | Updated/created docs list |
-| 7 | Capture Learnings | Sub-agent | `docs/solutions/<category>/<learning>.md` |
-| 8 | Commit & PR | Sub-agent | Commits + PR URL |
+| 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
+| 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
 ---
 
@@ -120,7 +113,6 @@ For each skippable stage:
 |-------|---------------|
 | 1: Brainstorm + Spec | Explicit skip instruction from caller, OR agent evaluates input has complete context (clear problem definition, specific scope, acceptance criteria) |
 | 2: Planner | Explicit skip instruction from caller, OR agent evaluates task is straightforward enough (single-phase work, per-file instructions already provided) |
-| 6: Sync Docs | Explicit skip instruction from caller, OR the task itself is documentation fixes |
 
 ### Mandatory Stages (never skip)
 
@@ -129,9 +121,8 @@ For each skippable stage:
 | 0: Setup | Worktree and baseline are always required |
 | 3: Coder | Core implementation — the whole point of the pipeline |
 | 4: Code Review | Semantic verification gate — catches bugs that metrics can't |
-| 5: Quality Gate | Hard metric verification gate — no exceptions |
-| 7: Capture Learnings | Always runs (agent skips internally if nothing to capture) |
-| 8: Commit & PR | Always runs to finalize work |
+| 5: Verify & Finalize | Functional verification + quality gate + docs + learnings — always runs as single consolidated stage |
+| 6: Commit & PR | Always runs to finalize work (runs in main conversation) |
 
 ### Handling Skipped Stages
 
@@ -171,7 +162,7 @@ Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the mai
 - **Stage 1** runs in main because brainstorm needs conversation context and flows into spec generation.
 - **Stage 2** runs in main because the planner explores the codebase interactively and holds the only approval gate.
 
-Invoke their respective skills directly using the `Skill` tool. All other stages (3-8) run as sub-agents via the `Agent` tool.
+Invoke their respective skills directly using the `Skill` tool. All other stages (3-5) run as sub-agents via the `Agent` tool.
 
 ### Pipeline Flow
 
@@ -185,13 +176,11 @@ digraph pipeline {
   stage_2 [label="2: Planner"]
   stage_3 [label="3: Coder"]
   stage_4 [label="4: Code Review"]
-  stage_5 [label="5: Quality Gate"]
-  stage_6 [label="6: Sync Docs"]
-  stage_7 [label="7: Learnings"]
-  stage_8 [label="8: Commit & PR"]
+  stage_5 [label="5: Verify & Finalize"]
+  stage_6 [label="6: Commit & PR"]
 
   stage_0 -> stage_1 -> stage_2 -> stage_3
-  stage_3 -> stage_4 -> stage_5 -> stage_6 -> stage_7 -> stage_8
+  stage_3 -> stage_4 -> stage_5 -> stage_6
   stage_4 -> stage_4 [label="REQUEST CHANGES\n(max 3)" style=dashed]
 }
 ```
@@ -241,406 +230,190 @@ The local skill is loaded and followed exactly in place of the global one. The l
 ### Stage 0: Setup (Main Conversation)
 
 **Worktree sub-step:**
-1. Run this Bash command FIRST, before invoking any skill:
-   ```
-   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status setup running && $DU set-status worktree running")
-   ```
-2. Invoke the `using-git-worktrees` skill using the `Skill` tool to create the worktree
-3. `cd` into the worktree. Store: `WORKTREE_PATH`, `BRANCH_NAME`
-4. Run immediately after worktree is ready:
-   ```
-   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU write-report worktree '# Worktree\n- **Path:** <WORKTREE_PATH>\n- **Branch:** <BRANCH_NAME>' && $DU set-status worktree done")
-   ```
+1. Run FIRST: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status setup running && $D set-status worktree running")`
+2. Invoke the `using-git-worktrees` skill via `Skill` tool to create the worktree
+3. `cd` into worktree. Store: `WORKTREE_PATH`, `BRANCH_NAME`
+4. After worktree ready: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report worktree '# Worktree\n- **Path:** <WORKTREE_PATH>\n- **Branch:** <BRANCH_NAME>' && $D set-status worktree done")`
 
 **Baseline sub-step:**
-5. Run before starting baseline work:
-   ```
-   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status baseline running")
-   ```
-6. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`). Create `docs/spec/<SPEC_NAME>/` directory.
+5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status baseline running")`
+6. Derive `SPEC_NAME` from task, create `docs/spec/<SPEC_NAME>/` directory
 7. Auto-detect project tooling: check `CLAUDE.md` first, then `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`
-8. Run baseline metrics (typecheck, lint, test, coverage) and write results to `docs/spec/<SPEC_NAME>/baseline.json`
+8. Run baseline metrics (typecheck, lint, test, coverage), write to `docs/spec/<SPEC_NAME>/baseline.json`
 9. Store: `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
-10. Run after baseline completes:
-    ```
-    Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU write-report baseline '# Baseline Metrics\n- **Spec:** <SPEC_NAME> → <SPEC_DIR>\n- **Baseline:** <BASELINE_PATH>' && $DU set-status baseline done && $DU set-status setup done")
-    ```
+10. After baseline: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report baseline '# Baseline\n- **Spec:** <SPEC_NAME>\n- **Baseline:** <BASELINE_PATH>' && $D set-status baseline done && $D set-status setup done")`
 
 ### Stage 1: Brainstorm (Main Conversation)
 
-1. ```
-   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status brainstorm running")
-   ```
-2. Invoke the `brainstorm` skill using the `Skill` tool — no approval gate here, design flows straight through
-3. Invoke the `spec-generation` skill (still in main session — it's quick and needs the brainstorm context)
-4. Move/save spec output to `docs/spec/<SPEC_NAME>/spec.md`
-5. Store `SPEC_PATH`
-6. Copy design doc and spec into dashboard reports, set artifacts, and mark done:
-   ```
-   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && \
-     cp docs/plans/YYYY-MM-DD-<topic>-design.md $HARNESS_DIR/reports/design.md && \
-     $DU set-artifact brainstorm report reports/design.md; \
-     cp docs/spec/<SPEC_NAME>/spec.md $HARNESS_DIR/reports/spec.md && \
-     $DU set-artifact brainstorm phases reports/spec.md; \
-     [ -f \"$HARNESS_DIR/reports/design.md\" ] && [ -f \"$HARNESS_DIR/reports/spec.md\" ] && \
-     $DU set-artifact brainstorm tabs-title 'Brainstorm Artifacts'; \
-     $DU set-status brainstorm done")
-   ```
-
-Then continue to Stage 2.
+1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status brainstorm running")`
+2. Invoke `brainstorm` skill via `Skill` tool — no approval gate, design flows straight through
+3. Invoke `spec-generation` skill (main session — needs brainstorm context)
+4. Save spec to `docs/spec/<SPEC_NAME>/spec.md`, store `SPEC_PATH`
+5. Copy artifacts and mark done:
+   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report brainstorm '# Brainstorm' && $D set-status brainstorm done")`
 
 ### Stage 2: Planner (Main Conversation)
 
-1. ```
-   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status planning running")
-   ```
-2. Read the design doc (`docs/plans/YYYY-MM-DD-<topic>-design.md`) and spec (`docs/spec/<SPEC_NAME>/spec.md`) so the planner has full context from the brainstorm stage
-3. Invoke the `planning` skill using the `Skill` tool, referencing both files
-4. The planner explores the codebase deeply, asks the user implementation questions interactively, then designs phases
-5. **APPROVAL GATE:** Use `AskUserQuestion` to present the plan summary and wait for user approval. The `waiting` status is set automatically by the PreToolUse hook — no manual dag-update needed.
-6. Plan output is in `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`
-7. Store `PLAN_DIR`
-8. Copy plan and phase files into dashboard reports, add phase nodes, and mark done:
-   ```
-   Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && \
-     cp docs/spec/<SPEC_NAME>/plan.md $HARNESS_DIR/reports/planning-report.md && \
-     $DU set-artifact planning report reports/planning-report.md; \
-     PHASE_REPORTS=''; \
-     for f in docs/spec/<SPEC_NAME>/phase-*.md; do \
-       if cp \"\$f\" \"$HARNESS_DIR/reports/\$(basename \"\$f\")\"; then \
-         [ -n \"\$PHASE_REPORTS\" ] && PHASE_REPORTS=\"\$PHASE_REPORTS,\"; \
-         PHASE_REPORTS=\"\${PHASE_REPORTS}reports/\$(basename \"\$f\")\"; \
-       fi; \
-     done; \
-     [ -n \"\$PHASE_REPORTS\" ] && \
-       $DU set-artifact planning phases \"\$PHASE_REPORTS\" && \
-       $DU set-artifact planning tabs-title 'Phase Details'; \
-     $DU set-status planning done")
-   ```
+1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status planning running")`
+2. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally
+3. Planner explores codebase, asks interactive questions, designs phases
+4. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
+5. Output: `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`. Store `PLAN_DIR`
+6. Add phase DAG nodes as children of `coder`, mark planning done:
+   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status planning done")`
+7. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D add-node phase-1 'Phase 1: <label>' --parent coder && $D add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
 
 **Extract:** `PLAN_DIR`, phase graph (DOT from plan.md), phase count
-
-**Add phase nodes as children of coder and link their report artifacts:**
-```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && \
-  $DU add-node phase-1 'Phase 1: <label>' --parent coder && \
-  $DU add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1 && \
-  # ... for each phase from the plan
-  [ -f \"$HARNESS_DIR/reports/phase-1.md\" ] && $DU set-artifact phase-1 report reports/phase-1.md; \
-  [ -f \"$HARNESS_DIR/reports/phase-2.md\" ] && $DU set-artifact phase-2 report reports/phase-2.md")
-  # ... for each phase
-```
-
-Then continue to Stage 3 as sub-agents.
 
 ### Stage 3: Coder
 
 Dispatch based on phase and step dependency graphs. Two-level parallelism:
 
-**Phase level:** Parse the phase graph from plan.md. Dispatch all ready nodes (no incomplete predecessors) in parallel. After each wave, recompute and dispatch next wave.
+**Parallelism heuristic:** Only parallelize phases touching 3+ files or having a Steps section. Serialize smaller phases.
 
-**Step level:** For each phase, read `phase-N.md` for a step graph. If present, apply the same wave-based dispatch. If absent, single agent for the whole phase.
+**Phase level:** Parse the phase graph from plan.md. Dispatch ready nodes (no incomplete predecessors) in waves.
 
-For each phase, choose **one** dispatch strategy:
+**Step level:** For each phase, read `phase-N.md`. If it has a step graph → dispatch steps in waves. If not → single agent for the phase.
 
-Before dispatching any phase agents:
-```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status coder running")
-```
-Before each phase: `$DU set-status <phase-node> running` (include full `export HARNESS_DIR=... && DU=...` preamble)
-After each phase returns: `$DU set-status <phase-node> done` (or `failed`) (include full preamble)
-After all phases complete: `$DU set-status coder done` (include full preamble)
+DAG transitions (use `$D` shorthand):
+- Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status coder running")`
+- Before each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status <phase-node> running")`
+- After each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status <phase-node> done")`
+- After all phases: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status coder done")`
 
-**A) Phase has no Steps section** → single agent for the whole phase:
-
+**A) Phase has no Steps section** → single agent:
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
-  Invoke the tdd skill.
-  Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase: <PHASE_N>
-
-  Dashboard updates (use these to register sub-tasks and report progress):
-    export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>'
-    DU='/usr/bin/env bash <DAG_SCRIPT>'
-    # Register sub-tasks as you discover them (phases are children of coder):
-    $DU add-node '$NODE_ID.task-1' '<label>' --parent '$NODE_ID'
-    $DU set-status '$NODE_ID.task-1' running
-    # When done with the phase, write a detailed report using this format:
-    $DU write-report '$NODE_ID' '# Phase N: <name>
-
-## Summary
-2-3 sentences on what was accomplished.
-
-## Files Changed
-- `path/to/file.ts` — created/modified (what changed)
-
-## Tests
-- X tests added, all passing
-- Coverage: X%
-
-## Key Decisions
-- Decision and reasoning
-
-## Issues Encountered
-- Issue and resolution (or "None")'
-
-  Return: files created/modified, tests with pass/fail and REQ/EDGE coverage, phase completed or blocked.
+  Invoke tdd skill. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase: <PHASE_N>.
+  For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
+  D='/usr/bin/env bash <DAG_SCRIPT>'; use $D add-node for sub-tasks, $D set-status for progress.
+  When done, write a phase report following the 'Coder Phase Report' format in
+  references/dashboard-report-formats.md.
 ")
 ```
 
 **B) Phase has Steps section** → dispatch per-step, parallelizing independent steps:
-
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
-  Invoke the tdd and testing skill.
-  Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
-  Phase: <PHASE_N>. Step: <STEP_DETAILS>
-  Scope: Only implement and test what this step describes. Do not touch files outside this step's scope.
-  Return: files created/modified, tests with pass/fail, step completed or blocked.
+  Invoke tdd and testing skills. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
+  Phase: <PHASE_N>. Step: <STEP_DETAILS>.
+  Scope: Only this step's files. Return: files created/modified, test results, step completed or blocked.
 ")
 ```
 
-Dispatch in waves: send all independent steps in parallel → wait for completion → dispatch next wave of steps whose dependencies are satisfied → repeat until all steps in the phase are done.
+Dispatch in waves: send all independent steps in parallel → wait → dispatch next wave → repeat.
 
 ### Stage 4: Code Review Loop
 
-Runs a review-fix loop: dispatch a code review agent, parse the verdict, and if `REQUEST CHANGES`, dispatch a fix agent then re-review. Loop exits on `APPROVE` or `APPROVE WITH SUGGESTIONS`, or after a maximum of **3 iterations** (whichever comes first).
+Review-fix loop: dispatch review agent → parse verdict → if `REQUEST CHANGES`, dispatch fix agent → re-review. Loop exits on `APPROVE`/`APPROVE WITH SUGGESTIONS`, or after max **3 iterations**.
 
-Before dispatching:
-```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status code-review running")
-```
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status code-review running")`
 
-**Loop logic (run in the main orchestrator conversation, not in a sub-agent):**
-
+**Loop logic** (run in main orchestrator conversation):
 ```
 MAX_REVIEW_ITERATIONS = 3
 iteration = 1
-
 while iteration <= MAX_REVIEW_ITERATIONS:
-  # 1. Add review child node
-  dag: add-node review-{iteration} 'Review #{iteration}' --parent code-review
-       (if iteration > 1: --depends-on fix-{iteration-1})
-  dag: set-status review-{iteration} running
-
-  # 2. Dispatch review agent
+  Add node review-{iteration}, set running
   verdict = dispatch_review_agent(iteration)
-
-  # 3. Write review report and mark done
-  dag: set-status review-{iteration} done
-
-  # 4. Check verdict
-  if verdict != "REQUEST CHANGES":
-    break  # proceed to quality gate
-
-  if iteration == MAX_REVIEW_ITERATIONS:
-    log: "WARNING: Review still requesting changes after {MAX_REVIEW_ITERATIONS} iterations. Proceeding to quality gate."
-    break
-
-  # 5. Add fix child node and dispatch fix agent
-  dag: add-node fix-{iteration} 'Fix #{iteration}' --parent code-review --depends-on review-{iteration}
-  dag: set-status fix-{iteration} running
+  Set review-{iteration} done
+  if verdict != "REQUEST CHANGES": break
+  if iteration == MAX_REVIEW_ITERATIONS: log warning; break
+  Add node fix-{iteration}, set running
   dispatch_fix_agent(iteration)
-  dag: set-status fix-{iteration} done
-
-  iteration++
+  Set fix-{iteration} done; iteration++
 ```
+After loop: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status code-review done")`
 
-After loop completes:
-```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status code-review done")
-```
-
-**Review agent dispatch:**
-
+**Review agent:**
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
-  Invoke the code-review skill.
-  Plan: docs/spec/<SPEC_NAME>/plan.md
-  Scope: --commits <BASE_BRANCH>..HEAD
-  Output: docs/spec/<SPEC_NAME>/REVIEW-<N>.md
-
-  When done, write a report using this format:
-    export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '<DAG_SCRIPT>' write-report review-<N> '# Code Review #<N>
-
-## Verdict: <APPROVE|APPROVE WITH SUGGESTIONS|REQUEST CHANGES>
-
-## Summary
-<2-3 sentence assessment>
-
-## Defects Found
-- Critical: <count>
-- Important: <count>
-- Minor: <count>
-
-## Details
-<key findings with file:line references>'
-
-  Return: verdict (APPROVE/APPROVE WITH SUGGESTIONS/REQUEST CHANGES), review file path, count of defects by severity.
+  Invoke code-review skill. Plan: docs/spec/<SPEC_NAME>/plan.md.
+  Scope: --commits <BASE_BRANCH>..HEAD. Output: docs/spec/<SPEC_NAME>/REVIEW-<N>.md.
+  When done, write dashboard report following 'Code Review Report' format in
+  references/dashboard-report-formats.md.
+  Return: verdict, review file path, defect counts by severity.
 ")
 ```
 
-**Fix agent dispatch:**
-
+**Fix agent:**
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
-  Invoke the tdd skill.
-  Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
-
-  Fix the defects listed in docs/spec/<SPEC_NAME>/REVIEW-<N>.md.
-  Focus ONLY on Critical and Important defects. Do not address Minor findings.
-  Run tests after each fix to ensure no regressions.
-
-  When done, write a report using this format:
-    export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '<DAG_SCRIPT>' write-report fix-<N> '# Fix #<N>
-
-## Defects Addressed
-- **<defect title>** (`file:line`) — <what was fixed>
-
-## Files Modified
-- `path/to/file` — <what changed>
-
-## Tests
-- All passing: yes/no
-- New tests added: <count or "none">'
-
+  Invoke tdd skill. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
+  Fix ONLY Critical and Important defects from docs/spec/<SPEC_NAME>/REVIEW-<N>.md.
+  Run tests after each fix.
+  When done, write dashboard report following 'Fix Report' format in
+  references/dashboard-report-formats.md.
   Return: files modified, defects addressed, tests still passing.
 ")
 ```
 
-**Verdict parsing:** Extract the verdict from the review agent's returned result text. Look for `REQUEST CHANGES`, `APPROVE WITH SUGGESTIONS`, or `APPROVE`. Match in that order (most specific first) to avoid a false match on the substring `APPROVE` within `APPROVE WITH SUGGESTIONS`.
+**Verdict parsing:** Match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
 
-### Stage 5: Quality Gate
+### Stage 5: Verify & Finalize
 
-Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status quality-gate running")`
+Single consolidated sub-agent that runs functional verification, quality gate, syncs docs, and captures learnings.
 
-```
-Agent(model="sonnet", prompt="
-  [PREAMBLE]
-  Invoke the quality-gate skill.
-  Baseline file: docs/spec/<SPEC_NAME>/baseline.json
-  Plan dir: docs/spec/<SPEC_NAME>/
-  Stage: post-tdd
-
-  When done, write a report using this format:
-    export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '<DAG_SCRIPT>' write-report quality-gate '# Quality Gate
-
-## Verdict: PASS/BLOCKED/STAGNATION
-
-## Metrics Comparison
-| Metric | Baseline | Current | Status |
-|--------|----------|---------|--------|
-| Type check | 0 errors | X errors | PASS/FAIL |
-| Lint | X warnings | Y warnings | PASS/FAIL |
-| Tests | X passed | Y passed | PASS/FAIL |
-| Coverage | X% | Y% | PASS/FAIL |
-
-## Failures
-- Details of any failures (or "None")'
-
-  Return: gate report path, verdict (PASS/BLOCKED/STAGNATION).
-")
-```
-
-**Extract from result:** verdict (PASS/BLOCKED/STAGNATION), gate report path
-
-**If BLOCKED → stop pipeline and report what failed and potential ways to solve it. Do not proceed to Stage 6.**
-
-**If STAGNATION → stop pipeline entirely. Do not retry. Report which check stagnated and the repeated error. This signals a fundamental issue that retrying won't fix.**
-
-### Stage 6: Sync Docs
-
-Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status docs running")`
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status verify-finalize running")`
 
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
-  Invoke the sync-docs skill.
-  Spec dir: docs/spec/<SPEC_NAME>/
-  Plan dir: docs/spec/<SPEC_NAME>/
+  Run these in order. Stop and return failure immediately if any step fails.
 
-  When done, write a report using this format:
-    export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '<DAG_SCRIPT>' write-report docs '# Sync Docs
+  1. FUNCTIONAL VERIFICATION: Invoke functional-verify skill.
+     Spec: docs/spec/<SPEC_NAME>/spec.md. Plan dir: docs/spec/<SPEC_NAME>/.
+     Phase files: docs/spec/<SPEC_NAME>/phase-*.md.
+     Write dashboard report following 'Verification Report' format in
+     references/dashboard-report-formats.md.
+     If FAILED: stop entirely, return failure with which scenarios failed and why.
+     Evidence is saved to docs/spec/<SPEC_NAME>/verification/ — do NOT delete it.
 
-## Documents Updated
-- `path/to/doc.md` — what changed
+  2. QUALITY GATE: Invoke quality-gate skill.
+     Baseline: docs/spec/<SPEC_NAME>/baseline.json. Plan: docs/spec/<SPEC_NAME>/. Stage: post-tdd.
+     Write dashboard report following 'Quality Gate Report' format in
+     references/dashboard-report-formats.md.
+     If BLOCKED or STAGNATION: stop entire pipeline, return verdict + failure details.
 
-## Documents Created
-- `path/to/new-doc.md` — what it covers'
+  3. SYNC DOCS: Invoke sync-docs skill.
+     Spec dir: docs/spec/<SPEC_NAME>/. Plan dir: docs/spec/<SPEC_NAME>/.
+     Write dashboard report following 'Sync Docs Report' format in
+     references/dashboard-report-formats.md.
 
-  Return: list of docs updated/created.
+  4. CAPTURE LEARNINGS: Invoke learn skill.
+     Focus on pipeline friction — stalls, wrong assumptions, retries.
+     Spec dir: docs/spec/<SPEC_NAME>/. If nothing went wrong, skip.
+     Write dashboard report following 'Learnings Report' format in
+     references/dashboard-report-formats.md.
+
+  Return: verification verdict, gate verdict, docs list, learning doc path (or 'none').
 ")
 ```
 
-**Extract from result:** list of docs updated/created
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status verify-finalize done")`
 
-### Stage 7: Capture Learnings
+**If functional verification FAILED → stop pipeline and report which scenarios failed.**
+**If quality gate BLOCKED → stop pipeline and report what failed.**
+**If STAGNATION → stop pipeline entirely, do not retry.**
 
-Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status learnings running")`
+### Stage 6: Commit & PR (Main Conversation)
 
-```
-Agent(model="sonnet", prompt="
-  [PREAMBLE]
-  Invoke the learn skill.
-  Focus on pipeline friction from this run — stalls, wrong assumptions, human interventions, retries.
-  Spec dir: docs/spec/<SPEC_NAME>/
-  If nothing went wrong, skip.
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status commit-pr running")`
 
-  When done, write a report using this format:
-    export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '<DAG_SCRIPT>' write-report learnings '# Learnings
+Do these directly (no sub-agent):
 
-## Friction Points
-- What caused delays or confusion
+1. Invoke the `git-commit` skill via `Skill` tool to create structured commits.
+2. `Bash("git push -u origin <BRANCH_NAME>")`
+3. If PR desired (not --no-pr): `Bash("gh pr create --title '<spec title>' --body 'Closes: docs/spec/<SPEC_NAME>' --base main --head <BRANCH_NAME>")`
+4. Write dashboard report following 'Commit & PR Report' format in references/dashboard-report-formats.md.
+   Use: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report commit-pr '...'")`
+5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status commit-pr done")`
 
-## Patterns Documented
-- `path/to/learning.md` — what it covers
-
-## Recommendations
-- Suggestions for future runs (or "None — clean run")'
-
-  Return: doc path written (or 'none').
-")
-```
-
-**Extract from result:** learning doc path (if any)
-
-### Stage 8: Commit & PR
-
-Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && DU='/usr/bin/env bash \"<DAG_SCRIPT>\"' && $DU set-status commit-pr running")`
-
-```
-Agent(model="sonnet", prompt="
-  [PREAMBLE]
-  Invoke the git-commit skill to create commits.
-  Then push: git push -u origin <BRANCH_NAME>
-  Then create PR: gh pr create referencing task summary, spec, and plan.
-
-  When done, write a report using this format:
-    export HARNESS_DIR='<HARNESS_DIR>'
-    /usr/bin/env bash '<DAG_SCRIPT>' write-report commit-pr '# Commit & PR
-
-## Commits
-- `abc1234` — commit message 1
-- `def5678` — commit message 2
-
-## Pull Request
-- URL: <PR_URL>
-- Title: <PR title>
-- Branch: <branch> → main'
-
-  Return: commits list, PR URL.
-")
-```
-
-**Extract from result:** commits, `PR_URL`
+**Extract:** commits, `PR_URL`
 
 ---
 
@@ -658,29 +431,25 @@ After all stages complete, present a compact summary:
 |-------|--------|
 | 0. Setup | Worktree at <path>, baseline captured |
 | 1. Brainstorm | Spec: docs/spec/<name>/spec.md |
-| 2. Plan | <phase_count> phases, <parallel> parallel |
-| 3. TDD | <files> files, <tests> tests passing |
+| 2. Plan | <phase_count> phases |
+| 3. Coder | <files> files, <tests> tests |
 | 4. Review | <verdict> after <N> iteration(s) |
-| 5. Gate | <PASS/BLOCKED/STAGNATION> |
-| 6. Sync Docs | <docs_count> docs updated |
-| 7. Learnings | <doc_path or "none"> |
-| 8. PR | <PR_URL> |
+| 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated, learnings: <path or none> |
+| 6. PR | <PR_URL> |
 
 **Issues:** <any retries, failures, stagnation, or "None">
 ```
 
-After presenting the summary, finalize the dashboard:
-```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash \"<DAG_SCRIPT>\" finalize done")
-```
+Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D finalize done")`
 
 ---
 
 ## Error Handling
 
 - If any sub-agent fails or returns an error, **stop the pipeline** and report which stage failed and why
-- If the code review loop reaches the max iteration cap (3) with `REQUEST CHANGES` still active, **log a warning but proceed** to the quality gate — the gate will catch any remaining hard violations
-- If a review or fix sub-agent fails mid-loop, **stop the pipeline** — do not continue the loop or proceed to the quality gate
+- If functional verification fails (any scenario), **stop the pipeline** — the feature doesn't work as specified
+- If the review loop reaches max iterations (3) with `REQUEST CHANGES` still active, **log a warning but proceed** to Stage 5 — the verification and gate catch remaining violations
+- If a review or fix sub-agent fails mid-loop, **stop the pipeline** — do not continue the loop
 - If the quality gate returns BLOCKED, **stop the pipeline** and report what failed
 - If the quality gate returns STAGNATION, **stop the pipeline entirely** — do not retry. Report which check stagnated, the repeated error signature, and that manual intervention is required
 - Do not proceed to the next stage if the current one failed
@@ -693,9 +462,9 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash \"<DAG_SCRIPT>\" f
 
 - **Each stage is isolated** — sub-agents don't share context, so pass all necessary information in the prompt
 - **Extract artifacts** — after each sub-agent returns, extract file paths and key info to pass forward
-- **Review before gate** — code review catches semantic bugs that metrics can't; the review-fix loop runs up to 3 iterations before handing off to the quality gate
+- **Verify before gate** — functional verification runs the app and tests features live BEFORE the quality gate runs metrics. A feature that doesn't work is caught early, with evidence.
 - **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds
-- **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level
+- **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level. Only parallelize phases touching 3+ files
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly
 - **Spec folder structure** — all artifacts for a task live in `docs/spec/<name>/` for traceability
-- **Dashboard is explicit** — the orchestrator calls `dag-update set-status` at each stage transition. Sub-agents call `dag-update add-node` and `dag-update write-report` for sub-task tracking. A `SessionEnd` hook provides safety-net finalization if the session terminates unexpectedly.
+- **Dashboard** — orchestrator calls `$D set-status` at each stage transition. Sub-agents use `$D add-node` and `$D write-report` for sub-task tracking. Formats live in `references/dashboard-report-formats.md`.

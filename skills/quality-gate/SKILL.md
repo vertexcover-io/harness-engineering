@@ -22,20 +22,17 @@ The quality gate receives these parameters from the orchestrator:
 
 ---
 
-## Evidence Capture Protocol
+## Evidence Capture
 
-Every command executed during the gate MUST follow this pattern:
+Every check command runs with: `<command> 2>&1; echo "EXIT_CODE=$?"`
 
-```
-<command> 2>&1; echo "EXIT_CODE=$?"
-```
+For each check, the report includes:
+1. **Command run** — copy-pasteable
+2. **Exit code** — extracted from `EXIT_CODE=`
+3. **Summary metrics** — pass/fail/skip counts, coverage %, error count. Parse from tool output, do not dump raw output.
+4. **Full output only on FAILURE** — if a check fails, include the first 20 lines of error output to help diagnose. If it passes, summary metrics are sufficient.
 
-For each command, the report MUST include:
-1. **Exact command run** — copy-pasteable
-2. **Raw output** — first 50 lines + last 10 lines if output exceeds 60 lines, with `... <N lines truncated> ...` in between
-3. **Exit code** — extracted from the `EXIT_CODE=` line
-
-This makes fabrication detectable — real tool output has consistent formatting that's hard to fake.
+This keeps gate reports compact — no one reads raw `tsc --noEmit` output when it passes with exit 0.
 
 ---
 
@@ -242,22 +239,26 @@ Written to `docs/spec/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `gate-rep
 #### Check 1: Type Checker
 <!-- QG:CHECK:1:PASS -->
 **Command:** `tsc --noEmit 2>&1; echo "EXIT_CODE=$?"`
-**Output:**
-\```
-<verbatim output, truncated per protocol>
-EXIT_CODE=0
-\```
+**Exit code:** 0
+**Summary:** 0 errors
 
 #### Check 2: Linter
 <!-- QG:CHECK:2:PASS -->
 **Command:** `eslint . 2>&1; echo "EXIT_CODE=$?"`
-**Output:**
-\```
-<verbatim output>
-EXIT_CODE=0
-\```
+**Exit code:** 0
+**Summary:** 0 new warnings (baseline: 3, current: 3)
 
 ...
+
+#### Check 4: Coverage (FAIL example)
+<!-- QG:CHECK:4:FAIL -->
+**Command:** `pytest --cov 2>&1; echo "EXIT_CODE=$?"`
+**Exit code:** 0
+**Summary:** 78.2% (threshold: 100%)
+**Error output (first 20 lines):**
+\```
+<verbatim error output — only included because this check FAILED>
+\```
 ```
 
 Machine-parseable markers: `<!-- QG:VERDICT:PASS -->` and `<!-- QG:CHECK:N:PASS -->` for orchestrator extraction.
