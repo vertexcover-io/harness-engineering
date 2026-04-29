@@ -74,10 +74,8 @@ Handle these cases explicitly — never improvise on error recovery:
   write a REVIEW.md.
 - **PR not found or `gh` not authenticated.** Inform the user of the error, suggest
   they check the PR number or run `gh auth login`, and stop.
-- **Large diffs (>15 changed files).** Warn the user that review quality may degrade
-  at this scale. Suggest splitting the review into logical groups. If the user wants
-  to proceed, triage files — prioritize files with logic changes over renames, config
-  changes, and generated files.
+- **Large diffs (>15 changed files).** Warn the user. Triage to at most 8 logic files
+  + 5 related files (13 total). Suggest splitting into logical groups if larger.
 - **REVIEW.md already exists.** Inform the user and ask whether to overwrite or use a
   different filename.
 
@@ -104,15 +102,17 @@ Handle these cases explicitly — never improvise on error recovery:
 
 4. **Triage changed files.** Read the diff stat to see all changed files and their
    change volume. Categorize them:
-   - **Logic changes** (new functions, modified conditionals, changed data flow) → read
-     the complete current version of these files.
+   - **Logic changes** (new functions, modified conditionals, changed data flow) →
+     read the diff first. Only read the full file if the diff shows a suspicious pattern
+     that needs surrounding context to verify. Cap: read at most 8 full files.
    - **Peripheral changes** (import adjustments, renames, config/formatting) → a quick
      scan of the diff hunk is sufficient.
    - **Generated files** (lock files, build output, auto-generated code) → skip entirely.
 
-5. **Read related files.** If the changed code calls functions in other files, imports
-   types, or modifies shared state, read those files too. Follow the dependency chain
-   until you understand how the change integrates with the rest of the system.
+5. **Read related files (capped).** If the diff shows the changed code imports from or
+   calls functions in other files, read at most 5 additional files total — prioritize
+   files that the changed code directly modifies state in or passes data to. Do not
+   follow transitive dependencies beyond one level.
 
 6. **Identify languages.** Note the primary language(s) of the changed files. You will
    apply language-specific bug patterns in Step 2.
