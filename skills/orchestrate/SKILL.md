@@ -2,7 +2,7 @@
 name: orchestrate
 description: >
   Multi-agent pipeline orchestrator. Takes a prompt or spec file and runs:
-  brainstorm, planner, coder (TDD + stagnation detection), code review (review-fix loop),
+  brainstorm, planner, coder (TDD + stagnation detection), code review (two-pass review+fix),
   verify & finalize (functional verification + quality gate + sync docs + learnings), and commit/PR.
   Artifacts stored in docs/spec/<name>/. Use when the user says orchestrate, run the pipeline,
   full workflow, or wants end-to-end development from spec to PR.
@@ -83,7 +83,7 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
 | 1 | Brainstorm + Spec | **Main conversation** | `docs/spec/<name>/spec.md` |
 | 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` + `phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests |
-| 4 | Code Review | Sub-agent (loop) | REVIEW.md verdict, fix iterations |
+| 4 | Code Review | Sub-agent (2-pass) | REVIEW.md verdict, fixes applied |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
@@ -181,11 +181,11 @@ digraph pipeline {
 
   stage_0 -> stage_1 -> stage_2 -> stage_3
   stage_3 -> stage_4 -> stage_5 -> stage_6
-  stage_4 -> stage_4 [label="REQUEST CHANGES\n(max 3)" style=dashed]
+  stage_4 -> stage_4 [label="2-pass review+fix" style=dashed]
 }
 ```
 
-Stage 3 (Coder) is the only stage with internal parallelism — see "Parallel When Possible" below. Stage 4 (Code Review) has an internal review-fix loop — see Stage 4 dispatch below.
+Stage 3 (Coder) is the only stage with internal parallelism — see "Parallel When Possible" below. Stage 4 (Code Review) has a two-pass review — see Stage 4 dispatch below.
 
 ### Parallel When Possible
 
@@ -307,50 +307,49 @@ Dispatch in waves: send all independent steps in parallel → wait → dispatch 
 
 ### Stage 4: Code Review Loop
 
-Review-fix loop: dispatch review agent → parse verdict → if `REQUEST CHANGES`, dispatch fix agent → re-review. Loop exits on `APPROVE`/`APPROVE WITH SUGGESTIONS`, or after max **3 iterations**.
+Two-pass review: a review+fix agent addresses defects directly, then a final review validates.
 
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status code-review running")`
 
-**Loop logic** (run in main orchestrator conversation):
-```
-MAX_REVIEW_ITERATIONS = 3
-iteration = 1
-while iteration <= MAX_REVIEW_ITERATIONS:
-  Add node review-{iteration}, set running
-  verdict = dispatch_review_agent(iteration)
-  Set review-{iteration} done
-  if verdict != "REQUEST CHANGES": break
-  if iteration == MAX_REVIEW_ITERATIONS: log warning; break
-  Add node fix-{iteration}, set running
-  dispatch_fix_agent(iteration)
-  Set fix-{iteration} done; iteration++
-```
-After loop: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status code-review done")`
+**Pass 1 — Review & Fix:**
 
-**Review agent:**
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke code-review skill. Plan: docs/spec/<SPEC_NAME>/plan.md.
-  Scope: --commits <BASE_BRANCH>..HEAD. Output: docs/spec/<SPEC_NAME>/REVIEW-<N>.md.
-  When done, write dashboard report following 'Code Review Report' format in
+  Scope: --commits <BASE_BRANCH>..HEAD.
+
+  After completing the review:
+  — If verdict is APPROVE or APPROVE WITH SUGGESTIONS: skip fixing, just write the review report.
+  — If verdict is REQUEST CHANGES: FIX all Critical and Important defects you found.
+    Invoke tdd skill. Run tests after each fix. Then write a combined review+fix report.
+
+  Write dashboard reports following 'Code Review Report' and 'Fix Report' formats in
   references/dashboard-report-formats.md.
-  Return: verdict, review file path, defect counts by severity.
+  Return: verdict, defects found, defects fixed, files modified.
 ")
 ```
 
-**Fix agent:**
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status review-1 done")`
+
+**Pass 2 — Final Review:**
+
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
-  Invoke tdd skill. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
-  Fix ONLY Critical and Important defects from docs/spec/<SPEC_NAME>/REVIEW-<N>.md.
-  Run tests after each fix.
-  When done, write dashboard report following 'Fix Report' format in
+  Invoke code-review skill. Plan: docs/spec/<SPEC_NAME>/plan.md.
+  Scope: --commits <BASE_BRANCH>..HEAD. This is the FINAL review pass.
+
+  If verdict is REQUEST CHANGES: fix any remaining Critical/Important defects yourself.
+  Then re-review the fix. Your output is the definitive verdict.
+
+  Write dashboard report following 'Code Review Report' format in
   references/dashboard-report-formats.md.
-  Return: files modified, defects addressed, tests still passing.
+  Return: final verdict, any defects fixed in this pass.
 ")
 ```
+
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status code-review done")`
 
 **Verdict parsing:** Match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
 
@@ -433,7 +432,7 @@ After all stages complete, present a compact summary:
 | 1. Brainstorm | Spec: docs/spec/<name>/spec.md |
 | 2. Plan | <phase_count> phases |
 | 3. Coder | <files> files, <tests> tests |
-| 4. Review | <verdict> after <N> iteration(s) |
+| 4. Review | <verdict> (2-pass) |
 | 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated, learnings: <path or none> |
 | 6. PR | <PR_URL> |
 
@@ -448,8 +447,8 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D finalize done")`
 
 - If any sub-agent fails or returns an error, **stop the pipeline** and report which stage failed and why
 - If functional verification fails (any scenario), **stop the pipeline** — the feature doesn't work as specified
-- If the review loop reaches max iterations (3) with `REQUEST CHANGES` still active, **log a warning but proceed** to Stage 5 — the verification and gate catch remaining violations
-- If a review or fix sub-agent fails mid-loop, **stop the pipeline** — do not continue the loop
+- If the review pass 2 still returns `REQUEST CHANGES` after its own fix attempt, **log a warning but proceed** to Stage 5 — verification and gate catch remaining violations
+- If a review agent fails, **stop the pipeline** — do not continue
 - If the quality gate returns BLOCKED, **stop the pipeline** and report what failed
 - If the quality gate returns STAGNATION, **stop the pipeline entirely** — do not retry. Report which check stagnated, the repeated error signature, and that manual intervention is required
 - Do not proceed to the next stage if the current one failed

@@ -62,8 +62,8 @@ Build understanding of existing code before planning changes. Use `Agent` sub-ag
 
 **Depth scaling** (match effort to change size):
 - **Minor changes:** Quick scan of 2-3 files, skip parallel agents
-- **Medium changes:** Thorough scan, use 2-3 parallel explore agents
-- **Major changes:** Deep exploration with 4+ parallel agents covering different areas
+- **Medium changes:** Thorough scan, use 1-2 parallel explore agents
+- **Major changes:** Deep exploration, at most 2 parallel explore agents — use main-thread Glob/Grep for additional areas
 
 Record findings — they go into plan.md's Codebase Context section.
 

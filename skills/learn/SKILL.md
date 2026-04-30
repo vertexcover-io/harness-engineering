@@ -39,26 +39,8 @@ If the context hint above is empty, scan the conversation for the most significa
 
 ### Step 1: Extract the learning
 
-Spawn a haiku subagent to analyze the conversation and extract the raw material. The subagent returns text data only — it does NOT write any files.
-
-```
-Task(model: haiku, subagent_type: general-purpose)
-
-Prompt: "You have access to the full conversation context. Extract the following:
-
-1. TITLE: A clear, specific title (not generic — 'Flex Column Pinning for Modal Footers' not 'UI Fix')
-2. CATEGORY: One of: design-patterns, gotchas, debugging, architecture, performance, integration, workflow, tooling
-3. WHAT HAPPENED: 2-3 sentences. What was the problem or decision?
-4. WHY IT MATTERS: 1-2 sentences. Why would someone care about this in the future?
-5. THE INSIGHT: The core learning. Could be a principle, a pattern, a gotcha, or a fix. Be specific.
-6. CODE EXAMPLES: If applicable, before/after code or key snippets. Include file paths.
-7. PREVENTION/REUSE: How to apply this learning going forward. Concrete, not vague.
-8. TAGS: 3-7 lowercase hyphenated keywords for searchability.
-9. RELATED FILES: Key files that were involved.
-10. COMPONENT: Which part of the system (odin-orchestrator, odin-harness, taskit-backend, taskit-frontend, taskit-models, cost-tracking, testing, tooling, cross-cutting)
-
-Return these as clearly labeled sections. Be specific and concrete — exact error messages, exact file paths, exact code. No filler phrases like 'it's important to note that' or 'this ensures robustness'."
-```
+Reflect directly on the conversation. Do NOT spawn a sub-agent.
+Extract the following from memory:
 
 ### Step 2: Check for existing related docs
 
