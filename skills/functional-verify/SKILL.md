@@ -12,188 +12,177 @@ user-invocable: true
 
 # Functional Verify: Live Application Testing
 
-Verifies that implemented features work by running the application and testing it
-like a user or API client would — not just running the test suite.
+Verify implemented features by running the application and testing it like a user or API client — not just running the test suite.
 
 **Announce at start:** "Starting functional verification — running the application and testing features live."
 
----
+This skill exists because vision LLMs are good at running browsers and bad at honestly grading what they see. The structure below is designed against that failure mode: numbers come before nouns, every check has a typed verdict, and every "MET" must cite evidence that a reviewer can re-run. If you find yourself wanting to write `verdict: OK` somewhere — stop. That isn't a value in this rubric.
 
 ## Inputs
 
-- **Spec:** `docs/spec/<SPEC_NAME>/spec.md`
-- **Plan dir:** `docs/spec/<SPEC_NAME>/`
-- **Phase files:** `docs/spec/<SPEC_NAME>/phase-*.md`
+- Spec: `docs/spec/<SPEC_NAME>/spec.md`
+- Plan dir (incl. `phase-*.md`): `docs/spec/<SPEC_NAME>/`
 
----
+## Step 1 — Verification Scenarios
 
-## Step 1 — Read Verification Scenarios
+Read the spec's `## Verification Scenarios` section. For each `### VS-N: <description>` extract: `**Type:**` (api|ui|db), `**Endpoint:**`/`**Route:**`, `**Payload:**`, `**Steps:**`, `**Expected:**`, `**DB check:**`, `**Screenshot at:**`.
 
-Read the spec file. Look for a `## Verification Scenarios` section.
+If absent, derive one scenario per acceptance criterion: API endpoints → api; pages/routes → ui; data persistence → db check on the related scenario.
 
-**If present:** Parse each `### VS-N: <description>` block. Extract:
-- `**Type:**` (api | ui | db)
-- `**Endpoint:**` or `**Route:**` (for api/ui)
-- `**Payload:**` (for api — JSON body)
-- `**Steps:**` (for ui — numbered list of actions)
-- `**Expected:**` (status, content, behavior, redirects)
-- `**DB check:**` (optional SQL/query + expected count/value)
-- `**Screenshot at:**` (optional — which steps to capture)
-
-**If absent:** Derive scenarios from the plan's acceptance criteria and phase files.
-For each acceptance criterion, create one scenario:
-- If it mentions API endpoints → type: api
-- If it mentions pages/UI/routes → type: ui
-- If it mentions data persistence → db check on relevant api/ui scenario
-
-**If no scenarios can be derived** (spec has no Verification Scenarios section and plan
-has no testable acceptance criteria): skip verification entirely. Report: "No functional
-verification scenarios — skipping." Do NOT fabricate scenarios.
-
-**Token rule:** Do NOT re-read the spec/plan files if already loaded. Reference from memory.
-
----
+If no scenarios can be derived, report "No functional verification scenarios — skipping" and stop. Do NOT fabricate scenarios. Do NOT re-read spec/plan files if already in context.
 
 ## Step 2 — Start Infrastructure
 
-1. **Check if services are already running** (try all, proceed with whatever responds):
-   ```
-   curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>/dev/null
-   curl -s -o /dev/null -w '%{http_code}' http://localhost:3001 2>/dev/null
-   curl -s -o /dev/null -w '%{http_code}' http://localhost:8080 2>/dev/null
-   curl -s -o /dev/null -w '%{http_code}' http://localhost:8000 2>/dev/null
-   # UI dev servers:
-   curl -s -o /dev/null -w '%{http_code}' http://localhost:5173 2>/dev/null
-   curl -s -o /dev/null -w '%{http_code}' http://localhost:4200 2>/dev/null
-   ```
+Probe common ports and proceed with whatever responds:
+```
+for p in 3000 3001 8080 8000 5173 4200; do curl -s -o /dev/null -w "$p:%{http_code}\n" http://localhost:$p; done
+```
 
-2. **If any required service is not running,** find startup commands:
-   - Check `package.json` → `scripts.dev`, `scripts.start`, `scripts.start:api`, `scripts.start:dev`
-   - Check `docker-compose.yml` / `compose.yml` → `docker compose up -d`
-   - Check `Makefile` → `up`, `start`, `dev` targets
-   
-   Start in background:
-   ```
-   npm run dev &> /tmp/functional-verify-api.log &
-   ```
-   Or for docker:
-   ```
-   docker compose up -d --wait 2>&1
-   ```
+If a required service isn't up, find a startup command in `package.json` (`scripts.dev|start|start:api`), `docker-compose.yml` / `compose.yml`, or `Makefile` (`up|start|dev`). Start in background:
+```
+npm run dev &> /tmp/functional-verify.log &
+# or
+docker compose up -d --wait
+```
 
-3. **Wait for health.** Poll the expected port until it responds (max 30s):
-   ```
-   for i in $(seq 1 30); do
-     curl -s -o /dev/null http://localhost:<PORT> && break
-     sleep 1
-   done
-   ```
+Poll for health up to 30s: `for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:<PORT> && break; sleep 1; done`.
 
-4. **Cleanup note:** Services started by this skill should be killed after verification.
-   Track PIDs or use `docker compose down` when done.
+If you started a process here, you are responsible for killing it in Step 7. If a process was already running when you arrived, leave it alone and note that in the proof report.
 
----
-
-## Step 3 — Run API Verification
+## Step 3 — API Verification
 
 For each API scenario:
-
 ```
-# Execute
 curl -s -w '\n%{http_code}' -X <METHOD> http://localhost:<PORT>/<endpoint> \
-  -H 'Content-Type: application/json' \
-  -d '<PAYLOAD>' 2>&1
-
-# Capture: exit code, HTTP status, response body (truncated to 50 lines)
+  -H 'Content-Type: application/json' -d '<PAYLOAD>'
 ```
 
-**For each scenario record:**
-- Scenario ID and description
-- Exact curl command executed
-- HTTP status code
-- Response body (first 50 lines if long)
-- Whether expected status/content matched
-- PASSED / FAILED verdict
+Record scenario ID, exact curl, HTTP status, response body (≤50 lines), expected-match, PASSED/FAILED. Save to `docs/spec/<SPEC_NAME>/verification/api/<scenario-id>.txt`.
 
-**DB verification (if scenario has `**DB check:**`):**
-1. Check available MCP tools for database capabilities (look for psql, mongosh, sqlite3, etc.)
-2. If MCP tool connected → use it directly
-3. If not → read connection string from `.env` / `.env.local` / `docker-compose.yml`
-4. Execute the check query and compare against expected value
-5. Record result: actual value, expected value, PASSED / FAILED
+**DB check** (when the scenario has one): use a connected DB MCP tool if available; otherwise read the connection string from `.env*` or compose. Run the query, compare to expected, record actual/expected/verdict.
 
-**Save evidence:** Write each scenario's curl output to `docs/spec/<SPEC_NAME>/verification/api/<scenario-id>.txt`
+## Step 4 — UI Verification (Playwright MCP)
 
----
+Drive a real browser via `mcp__playwright__browser_*` tools. Do NOT write `.spec.ts`, run `npx playwright test`, or install `@playwright/test`.
 
-## Step 4 — Run UI Verification (Playwright MCP)
+If those tools are unavailable, report "Playwright MCP not available — skipping UI verification" and continue with API/DB only.
 
-Drive a real browser via the Playwright MCP tools (`mcp__plugin_playwright_playwright__browser_*`).
-Do NOT write `.spec.ts` files. Do NOT run `npx playwright test`. Do NOT install `@playwright/test`.
+`mkdir -p docs/spec/<SPEC_NAME>/verification/ui`.
 
-**4a. Verify MCP availability:** Confirm `mcp__plugin_playwright_playwright__browser_navigate` (and related `browser_*` tools) are accessible. If they are not, report "Playwright MCP not available — skipping UI verification" and continue with API/DB scenarios only.
+### 4.1 Drive each scenario
 
-**4b. Prepare evidence directory:**
-```
-mkdir -p docs/spec/<SPEC_NAME>/verification/ui
-```
+- `browser_navigate` → load the route.
+- `browser_snapshot` → a11y tree to locate elements (cheaper than a screenshot).
+- `browser_click` / `browser_type` / `browser_fill_form` / `browser_select_option` / `browser_press_key` → user actions.
+- `browser_wait_for` → wait for text/state changes.
+- `browser_console_messages` → check runtime errors after each flow.
+- `browser_network_requests` → optional, when verifying API calls fired from UI.
 
-**4c. Execute each UI scenario interactively:**
+Reuse one browser session across scenarios; `browser_close` once at the end.
 
-For each scenario, drive the browser step-by-step using MCP tools:
+### 4.2 Capture rules
 
-- `browser_navigate` → load `http://localhost:<UI_PORT>/<route>`
-- `browser_snapshot` → get the accessibility tree to locate elements (preferred over guessing selectors)
-- `browser_click` / `browser_type` / `browser_fill_form` / `browser_select_option` / `browser_press_key` → perform user actions
-- `browser_wait_for` → wait for text/state changes when needed
-- `browser_take_screenshot` with `filename: docs/spec/<SPEC_NAME>/verification/ui/<scenario-id>-stepN.png` → capture evidence at the points specified in the scenario (or at least: initial state, after key interactions, final state)
-- `browser_console_messages` → check for runtime errors after the flow completes
-- `browser_network_requests` → optional, for verifying API calls fired from the UI
+For each route at each in-scope viewport (375 / 768 / 1280 for responsive specs; otherwise the spec's declared viewports):
 
-Assertions are performed by you, the agent, by reading the snapshot/screenshot output — not by `expect()` calls. Compare the observed state against the scenario's `**Expected:**` block.
+1. **Page screenshot** — `browser_take_screenshot` with `fullPage: false`. Save as `<route>-<viewport>.png`.
+2. **Slices for tall pages** — when `document.documentElement.scrollHeight > 2 × viewport.h`, capture viewport-scale slices at `scrollY = 0, vh, 2vh, …`. Save as `<route>-<viewport>-slice-NN.png`. Full-page screenshots are too compressed for layout review at scale; slices are the evidence.
+3. **Component crops** — for any component repeated ≥2 times in the route (cards, rows, list items), tight-crop two instances using `browser_take_screenshot` with a `target` selector. Save as `<route>-<viewport>-<component>-i0.png` and `-i1.png`. Pick instances by index `0` and `⌊N/2⌋` — never let the model choose the "easiest" instance.
+4. **Squint capture** — for each component crop, run `document.documentElement.style.filter = 'blur(6px)'`, screenshot, then revert. Save as `<crop>.blur.png`.
 
-**4d. Analyze screenshots:** Read each captured PNG with the Read tool. Verify the rendered UI matches the expected state from the spec, AND apply general UX judgment beyond the spec — flag anything that looks wrong even if the spec doesn't mention it (broken layout, overlapping/cut-off elements, unreadable contrast, misaligned components, placeholder/lorem text, console error overlays, obviously wrong styling). If the screenshot contradicts the expected behavior or shows clear visual defects, mark the scenario FAILED.
+Inline previews returned by `browser_take_screenshot` do NOT count as analysis — `Read` each PNG file path before grading it.
 
-**4e. Close the browser between scenarios only if state contamination is a risk.** Otherwise reuse the session. Call `browser_close` once after the last UI scenario.
+### 4.3 Inventory before prose (mandatory)
 
-**4f. Record:** For each scenario — result (PASSED/FAILED), screenshots captured, one-line visual observation per screenshot, any console errors or unexpected network failures observed.
+Before writing a single sentence about a screenshot, run the controls-inventory `browser_evaluate` from `references/visual-rubric.md` Step A and dump the JSON to `verification/ui/<route>-<viewport>.controls.json`. Every prose claim that follows must reference these `id`s — "the trash icon (id 14)" beats "the trash icon".
 
----
+This is the most important rule in the skill. Skipping it is the failure mode.
+
+### 4.4 Atomic verdict block per screenshot
+
+For every PNG under `verification/ui/`, append a JSON block to `observations.md` following the schema in `references/visual-rubric.md` Step C. The schema is closed: every check field listed there must appear, with a verdict in `{MET, UNMET, CANNOT_ASSESS}` and `evidence` that a reviewer could re-run.
+
+The set of mandatory checks is:
+
+- `clipping`, `overlap`, `double_nav`, `hidden_cta`, `contrast`, `alignment_row_peers`, `target_size_44`, `grid_8pt`, `common_region`, `squint_blur`, `pairwise_with_iN` (for component crops).
+
+Hard rules:
+
+- `MET` without `evidence` is a verification failure. Evidence means rects, mod arithmetic, computed-style values, or quoted text — not adjectives.
+- The block-level `verdict` is `UNMET` if any check is `UNMET`. There is no "minor" carve-out.
+- "Looks fine" / "OK" / "Looks good" are not values in the schema. If you cannot evaluate something, it is `CANNOT_ASSESS` with the reason.
+- For `alignment_row_peers`: name the row peers by id, list their top-edge or center-line coordinates, and give the delta. If the delta exceeds ε=2 px and they are declared peers, the verdict is `UNMET` and the offending id goes in `blocking_findings`.
+- For `target_size_44`: either enumerate every interactive rect or give the count and `min(w, h)`. "All ≥44×44" without numbers is not evidence.
+- For `pairwise_with_iN` on component crops: list every control by role/label and answer `IDENTICAL | DIFFERENT | MISSING_IN_CROP_2`. Summaries are not allowed.
+
+### 4.5 Adversarial second pass (mandatory when 4.4 produces all-`MET`)
+
+If every block in `observations.md` for a given route was `MET` on the first pass, do not move on. Re-prompt yourself with the screenshots only (verdict block hidden) and this seed:
+
+> "The previous reviewer claims this page is fine. The page contains at least one alignment, grouping, grid, or proximity defect. Find it. Output the rect of the offending element and the rect of the row peers it should align with. If after rect math you cannot find a defect, report 'second pass clean' with the rect math."
+
+Reconcile:
+
+- Findings only in pass 2 → re-ground by rect; if math confirms, escalate the original block to `UNMET`.
+- "Second pass clean" with rect math → leave `MET` and note the second-pass attempt in the block under a `second_pass: clean` field.
+
+This is the single most reliable defense against the "model wrote MET because nothing jumped out" failure mode.
+
+### 4.6 Reference image when available
+
+If a Storybook story, baseline screenshot from a prior run, or a known-good production URL exists, capture it and present `[golden, current]` to the model with the prompt in `references/visual-rubric.md` Step F. Add a `pairwise_with_golden` field to the block.
+
+If no golden exists, skip — do not invent one.
+
+### 4.7 Console & network
+
+After every navigation: `browser_console_messages level: error`. Any error → record it. Distinguish *new* errors from pre-existing ones by checking if the error reproduces on the main branch route (when feasible) — pre-existing errors should be flagged as such, not silently dropped.
 
 ## Step 5 — Generate Proof Report
 
-Generate `docs/spec/<SPEC_NAME>/verification/proof-report.md` following the
-**Verification Report** format in `references/dashboard-report-formats.md`
-(see orchestrate skill references).
+**Before writing:**
 
-Include:
-- Summary table: scenario ID, type, description, verdict
-- API evidence: curl commands and truncated responses
-- UI evidence: embedded screenshot references
-- DB evidence: queries and results
-- Infrastructure note: what was started, when it was cleaned up
+1. Read `verification/ui/observations.md` end-to-end.
+2. Confirm every PNG under `verification/ui/` has a JSON block. If any are missing, go back to 4.4. The harness should `grep` for orphan PNGs and refuse to write the report otherwise.
+3. **Spec coverage check.** Build a coverage table: every REQ-N / EDGE-N in the spec → which scenario covered it → evidence file. Any row without evidence is a gap; either run the missing scenario or list it as "NOT VERIFIED" in the report with the reason. Do not silently skip spec items.
+4. Every block with `verdict: UNMET` must appear in the "Visual anomalies & UX observations" section. Silently dropping one is a verification failure.
 
----
+Write `docs/spec/<SPEC_NAME>/verification/proof-report.md` with these sections:
 
-## Step 6 — Cleanup
+- **Summary table** — scenario ID, type, description, verdict.
+- **API evidence** — curl + truncated responses.
+- **UI evidence** — screenshot references; one row per (route, viewport).
+- **DB evidence** — queries + results.
+- **Visual anomalies & UX observations** — for every `UNMET` block: which screenshot, which check failed, the rect math that failed it, whether the second pass surfaced it. If all blocks were `MET` after the second pass, write "Second pass clean across N screenshots; per-block evidence in observations.md." Do not omit this section.
+- **Spec coverage table** — REQ/EDGE → evidence path.
+- **Infrastructure note** — what was started, when it was cleaned up, what was already running.
 
-1. Kill any background processes started in Step 2:
-   ```
-   kill %1 2>/dev/null  # npm dev server
-   docker compose down 2>/dev/null  # docker services
-   ```
-2. Leave verification artifacts in `docs/spec/<SPEC_NAME>/verification/` —
-   do NOT delete them. They will be committed by the orchestrator's Commit & PR stage.
+## Step 6 — Honest non-verification
 
----
+Some things in a spec cannot be verified by this skill — touch-hold gestures the MCP can't emulate, real-device sensors, manual visual diffs against last week's build, no-new-deps assertions that require a code-review pass. List them under a "Not executed" subsection of the report with the reason. Do not paper over them with adjacent passing checks.
 
-## Token Efficiency Rules
+## Step 7 — Cleanup
 
-- **Curl responses capped at 50 lines.** Use `head -50` if piping output.
-- **Screenshots, not HTML dumps.** A PNG is smaller than page DOM in conversation.
-- **Scenarios as a table in the proof report** — each row one line, not paragraph per scenario.
-- **Don't re-read spec/plan/phase files** if the orchestrator already loaded them.
-- **Reuse one browser session** across UI scenarios — only `browser_close` at the end.
-- **Snapshot before screenshot** when locating elements — the a11y tree is cheaper than a PNG round-trip.
-- **DB queries use `--csv` or `-t` flags** for compact output (`psql -t -c '...'`).
-- **Kill background processes before returning** — don't leak resources.
+Kill background processes you started in Step 2 (`kill %1`, `docker compose down`). Leave processes that were already running. Leave `verification/` artifacts in place — the orchestrator's Commit & PR stage handles them.
+
+## References
+
+- `references/visual-rubric.md` — the atomic JSON verdict schema, the inventory query, the pairwise prompt, the squint test, the per-failure-mode definitions. Read this before writing any block in `observations.md`.
+
+## Token efficiency
+
+- Curl responses ≤50 lines (`head -50`).
+- Prefer screenshots over HTML dumps — a PNG is smaller than the DOM in conversation.
+- Report scenarios as a one-line-per-row table.
+- Don't re-read spec/plan/phase files already loaded by the orchestrator.
+- One browser session for all UI scenarios; `browser_close` only at the end.
+- Snapshot before screenshot when locating elements (a11y tree < PNG round-trip).
+- DB queries use `--csv` or `-t` for compact output.
+
+## Anti-patterns
+
+- Filling out every field of the rubric without running the underlying queries. The harness checks that cited evidence files exist on disk.
+- Picking which component instance to grade. The skill picks for you (index 0 and ⌊N/2⌋).
+- Skipping the second pass because the first pass "felt thorough."
+- Naming an alignment line that you didn't get from `getBoundingClientRect()`. The model is allowed to invent plausible-sounding lines; the rubric isn't.
+- Treating intentional `truncate` / `line-clamp` as automatically `MET`. If the truncated content is the headline of a primary card, that is a UX finding even if the CSS is doing what was asked.
+- Counting "no horizontal scroll" as proof of correct layout. Reflow passes can coexist with arbitrary alignment defects.
