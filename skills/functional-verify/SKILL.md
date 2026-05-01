@@ -126,53 +126,37 @@ curl -s -w '\n%{http_code}' -X <METHOD> http://localhost:<PORT>/<endpoint> \
 
 ---
 
-## Step 4 — Run UI Verification
+## Step 4 — Run UI Verification (Playwright MCP)
 
-For each UI scenario:
+Drive a real browser via the Playwright MCP tools (`mcp__plugin_playwright_playwright__browser_*`).
+Do NOT write `.spec.ts` files. Do NOT run `npx playwright test`. Do NOT install `@playwright/test`.
 
-**4a. Ensure Playwright is available:**
+**4a. Verify MCP availability:** Confirm `mcp__plugin_playwright_playwright__browser_navigate` (and related `browser_*` tools) are accessible. If they are not, report "Playwright MCP not available — skipping UI verification" and continue with API/DB scenarios only.
+
+**4b. Prepare evidence directory:**
 ```
-# Check
-npx playwright --version 2>/dev/null || echo "NOT_INSTALLED"
-
-# Install if needed
-npm install -D @playwright/test 2>&1
-npx playwright install chromium 2>&1
+mkdir -p docs/spec/<SPEC_NAME>/verification/ui
 ```
 
-**4b. Create playwright.config.ts if absent:**
-Check if `playwright.config.ts` exists at project root. If not, create a minimal one:
-```ts
-import { defineConfig } from '@playwright/test';
-export default defineConfig({
-  testDir: './docs/spec/<SPEC_NAME>/verification/ui',
-  use: { baseURL: 'http://localhost:<UI_PORT>' },
-});
-```
-Use the UI dev server port detected in Step 2.
+**4c. Execute each UI scenario interactively:**
 
-**4c. Write and execute a Playwright test for each UI scenario:**
+For each scenario, drive the browser step-by-step using MCP tools:
 
-Create `docs/spec/<SPEC_NAME>/verification/ui/<scenario-id>.spec.ts`:
-```ts
-import { test, expect } from '@playwright/test';
-test('<scenario description>', async ({ page }) => {
-  // Step-by-step from scenario, with screenshot() calls at specified points
-  await page.goto('/route');
-  await page.screenshot({ path: 'docs/spec/<SPEC_NAME>/verification/ui/<scenario-id>-step1.png' });
-  // ... fill, click, assert ...
-  await page.screenshot({ path: 'docs/spec/<SPEC_NAME>/verification/ui/<scenario-id>-stepN.png' });
-});
-```
+- `browser_navigate` → load `http://localhost:<UI_PORT>/<route>`
+- `browser_snapshot` → get the accessibility tree to locate elements (preferred over guessing selectors)
+- `browser_click` / `browser_type` / `browser_fill_form` / `browser_select_option` / `browser_press_key` → perform user actions
+- `browser_wait_for` → wait for text/state changes when needed
+- `browser_take_screenshot` with `filename: docs/spec/<SPEC_NAME>/verification/ui/<scenario-id>-stepN.png` → capture evidence at the points specified in the scenario (or at least: initial state, after key interactions, final state)
+- `browser_console_messages` → check for runtime errors after the flow completes
+- `browser_network_requests` → optional, for verifying API calls fired from the UI
 
-Execute:
-```
-npx playwright test docs/spec/<SPEC_NAME>/verification/ui/<scenario-id>.spec.ts 2>&1
-```
+Assertions are performed by you, the agent, by reading the snapshot/screenshot output — not by `expect()` calls. Compare the observed state against the scenario's `**Expected:**` block.
 
-**4d. Analyze screenshots:** Read each captured PNG with the Read tool. Verify the rendered UI matches the expected state from the spec, AND apply general UX judgment beyond the spec — flag anything that looks wrong even if the spec doesn't mention it (broken layout, overlapping/cut-off elements, unreadable contrast, misaligned components, placeholder/lorem text, console error overlays, obviously wrong styling). If the screenshot contradicts the Playwright assertions or shows clear visual defects, mark the scenario FAILED.
+**4d. Analyze screenshots:** Read each captured PNG with the Read tool. Verify the rendered UI matches the expected state from the spec, AND apply general UX judgment beyond the spec — flag anything that looks wrong even if the spec doesn't mention it (broken layout, overlapping/cut-off elements, unreadable contrast, misaligned components, placeholder/lorem text, console error overlays, obviously wrong styling). If the screenshot contradicts the expected behavior or shows clear visual defects, mark the scenario FAILED.
 
-**4e. Record:** For each scenario — result (PASSED/FAILED), screenshots captured, one-line visual observation per screenshot, any assertion failures.
+**4e. Close the browser between scenarios only if state contamination is a risk.** Otherwise reuse the session. Call `browser_close` once after the last UI scenario.
+
+**4f. Record:** For each scenario — result (PASSED/FAILED), screenshots captured, one-line visual observation per screenshot, any console errors or unexpected network failures observed.
 
 ---
 
@@ -209,6 +193,7 @@ Include:
 - **Screenshots, not HTML dumps.** A PNG is smaller than page DOM in conversation.
 - **Scenarios as a table in the proof report** — each row one line, not paragraph per scenario.
 - **Don't re-read spec/plan/phase files** if the orchestrator already loaded them.
-- **One `npx playwright install` check** — not per scenario.
+- **Reuse one browser session** across UI scenarios — only `browser_close` at the end.
+- **Snapshot before screenshot** when locating elements — the a11y tree is cheaper than a PNG round-trip.
 - **DB queries use `--csv` or `-t` flags** for compact output (`psql -t -c '...'`).
 - **Kill background processes before returning** — don't leak resources.
