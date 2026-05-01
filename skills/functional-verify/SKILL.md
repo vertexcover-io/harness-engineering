@@ -170,7 +170,9 @@ Execute:
 npx playwright test docs/spec/<SPEC_NAME>/verification/ui/<scenario-id>.spec.ts 2>&1
 ```
 
-**4d. Record:** For each scenario — result (PASSED/FAILED), screenshots captured, any assertion failures.
+**4d. Analyze screenshots:** Read each captured PNG with the Read tool. Verify the rendered UI matches the expected state from the spec, AND apply general UX judgment beyond the spec — flag anything that looks wrong even if the spec doesn't mention it (broken layout, overlapping/cut-off elements, unreadable contrast, misaligned components, placeholder/lorem text, console error overlays, obviously wrong styling). If the screenshot contradicts the Playwright assertions or shows clear visual defects, mark the scenario FAILED.
+
+**4e. Record:** For each scenario — result (PASSED/FAILED), screenshots captured, one-line visual observation per screenshot, any assertion failures.
 
 ---
 
