@@ -16,7 +16,7 @@ Verify implemented features by running the application and testing it like a use
 
 **Announce at start:** "Starting functional verification — running the application and testing features live."
 
-This skill exists because vision LLMs are good at running browsers and bad at honestly grading what they see. The structure below is designed against that failure mode: numbers come before nouns, every check has a typed verdict, and every "MET" must cite evidence that a reviewer can re-run. If you find yourself wanting to write `verdict: OK` somewhere — stop. That isn't a value in this rubric.
+This skill exists because vision LLMs are good at running browsers and bad at honestly grading what they see. The defense is simple: every claim — spec or open-review — must cite evidence a reviewer can re-run (a rect, a quoted string, a computed style, a network response). Bare adjectives like "looks fine" or "feels off" are not evidence.
 
 ## Inputs
 
@@ -86,54 +86,34 @@ For each route at each in-scope viewport (375 / 768 / 1280 for responsive specs;
 
 1. **Page screenshot** — `browser_take_screenshot` with `fullPage: false`. Save as `<route>-<viewport>.png`.
 2. **Slices for tall pages** — when `document.documentElement.scrollHeight > 2 × viewport.h`, capture viewport-scale slices at `scrollY = 0, vh, 2vh, …`. Save as `<route>-<viewport>-slice-NN.png`. Full-page screenshots are too compressed for layout review at scale; slices are the evidence.
-3. **Component crops** — for any component repeated ≥2 times in the route (cards, rows, list items), tight-crop two instances using `browser_take_screenshot` with a `target` selector. Save as `<route>-<viewport>-<component>-i0.png` and `-i1.png`. Pick instances by index `0` and `⌊N/2⌋` — never let the model choose the "easiest" instance.
-4. **Squint capture** — for each component crop, run `document.documentElement.style.filter = 'blur(6px)'`, screenshot, then revert. Save as `<crop>.blur.png`.
 
 Inline previews returned by `browser_take_screenshot` do NOT count as analysis — `Read` each PNG file path before grading it.
 
-### 4.3 Inventory before prose (mandatory)
+### 4.3 Per-screenshot observations
 
-Before writing a single sentence about a screenshot, run the controls-inventory `browser_evaluate` from `references/visual-rubric.md` Step A and dump the JSON to `verification/ui/<route>-<viewport>.controls.json`. Every prose claim that follows must reference these `id`s — "the trash icon (id 14)" beats "the trash icon".
+For every PNG under `verification/ui/`, append an entry to `observations.md` covering two tracks:
 
-This is the most important rule in the skill. Skipping it is the failure mode.
+1. **Spec-based checks** — for each requirement/acceptance criterion that this screenshot is meant to evidence, state the requirement and the verdict (`MET` / `UNMET` / `CANNOT_ASSESS`) with concrete evidence (rect, text, computed style, network response — not adjectives).
+2. **Open visual review (always required)** — describe what you actually see and flag anything that looks wrong, even if the spec doesn't mention it: alignment, spacing, hierarchy, contrast, clipping, overlap, hidden CTAs, broken states, copy/typography issues, inconsistent components, weird empty states, etc. This runs on every screenshot regardless of how the spec checks turned out — passing spec checks do **not** let you skip it. If nothing looks wrong, say so explicitly ("no visual issues found") rather than leaving the section blank.
 
-### 4.4 Atomic verdict block per screenshot
+Ground claims in evidence the reviewer can re-run — a rect from `getBoundingClientRect()`, a quoted string, a computed-style value, a console message, a network response. Adjectives without referents ("looks polished", "feels off") are not evidence. When you need to refer to a specific element, run a quick `browser_evaluate` to get its rect or text rather than describing it loosely.
 
-For every PNG under `verification/ui/`, append a JSON block to `observations.md` following the schema in `references/visual-rubric.md` Step C. The schema is closed: every check field listed there must appear, with a verdict in `{MET, UNMET, CANNOT_ASSESS}` and `evidence` that a reviewer could re-run.
+The block-level verdict is `UNMET` if any spec check is `UNMET` or any open-review finding is a real defect (not a stylistic nit you'd dismiss in review). List every `UNMET` finding in `blocking_findings` so Step 5 picks them up.
 
-The set of mandatory checks is:
+### 4.4 Adversarial second pass (mandatory when 4.3 surfaces no findings)
 
-- `clipping`, `overlap`, `double_nav`, `hidden_cta`, `contrast`, `alignment_row_peers`, `target_size_44`, `grid_8pt`, `common_region`, `squint_blur`, `pairwise_with_iN` (for component crops).
+The open visual review in 4.3 is non-skippable — it must run for every screenshot, even when all spec checks pass. If a route's first pass surfaced no `UNMET` findings — neither spec nor open review — do not move on. Re-prompt yourself with the screenshots only (verdict hidden) and this seed:
 
-Hard rules:
-
-- `MET` without `evidence` is a verification failure. Evidence means rects, mod arithmetic, computed-style values, or quoted text — not adjectives.
-- The block-level `verdict` is `UNMET` if any check is `UNMET`. There is no "minor" carve-out.
-- "Looks fine" / "OK" / "Looks good" are not values in the schema. If you cannot evaluate something, it is `CANNOT_ASSESS` with the reason.
-- For `alignment_row_peers`: name the row peers by id, list their top-edge or center-line coordinates, and give the delta. If the delta exceeds ε=2 px and they are declared peers, the verdict is `UNMET` and the offending id goes in `blocking_findings`.
-- For `target_size_44`: either enumerate every interactive rect or give the count and `min(w, h)`. "All ≥44×44" without numbers is not evidence.
-- For `pairwise_with_iN` on component crops: list every control by role/label and answer `IDENTICAL | DIFFERENT | MISSING_IN_CROP_2`. Summaries are not allowed.
-
-### 4.5 Adversarial second pass (mandatory when 4.4 produces all-`MET`)
-
-If every block in `observations.md` for a given route was `MET` on the first pass, do not move on. Re-prompt yourself with the screenshots only (verdict block hidden) and this seed:
-
-> "The previous reviewer claims this page is fine. The page contains at least one alignment, grouping, grid, or proximity defect. Find it. Output the rect of the offending element and the rect of the row peers it should align with. If after rect math you cannot find a defect, report 'second pass clean' with the rect math."
+> "The previous reviewer claims this page is fine. Look again — there is likely at least one defect (alignment, grouping, grid, hierarchy, contrast, copy, broken state, or anything else that would make a designer wince). Find it and ground it in a rect, a quoted string, or a computed style. If after looking carefully you genuinely find nothing, report 'second pass clean' and say what you checked."
 
 Reconcile:
 
-- Findings only in pass 2 → re-ground by rect; if math confirms, escalate the original block to `UNMET`.
-- "Second pass clean" with rect math → leave `MET` and note the second-pass attempt in the block under a `second_pass: clean` field.
+- Findings only in pass 2 → re-ground by rect/evidence; if confirmed, escalate the verdict to `UNMET`.
+- "Second pass clean" → leave the verdict as-is and note the second-pass attempt in the entry.
 
 This is the single most reliable defense against the "model wrote MET because nothing jumped out" failure mode.
 
-### 4.6 Reference image when available
-
-If a Storybook story, baseline screenshot from a prior run, or a known-good production URL exists, capture it and present `[golden, current]` to the model with the prompt in `references/visual-rubric.md` Step F. Add a `pairwise_with_golden` field to the block.
-
-If no golden exists, skip — do not invent one.
-
-### 4.7 Console & network
+### 4.5 Console & network
 
 After every navigation: `browser_console_messages level: error`. Any error → record it. Distinguish *new* errors from pre-existing ones by checking if the error reproduces on the main branch route (when feasible) — pre-existing errors should be flagged as such, not silently dropped.
 
@@ -142,9 +122,9 @@ After every navigation: `browser_console_messages level: error`. Any error → r
 **Before writing:**
 
 1. Read `verification/ui/observations.md` end-to-end.
-2. Confirm every PNG under `verification/ui/` has a JSON block. If any are missing, go back to 4.4. The harness should `grep` for orphan PNGs and refuse to write the report otherwise.
+2. Confirm every PNG under `verification/ui/` has an entry. If any are missing, go back to 4.3.
 3. **Spec coverage check.** Build a coverage table: every REQ-N / EDGE-N in the spec → which scenario covered it → evidence file. Any row without evidence is a gap; either run the missing scenario or list it as "NOT VERIFIED" in the report with the reason. Do not silently skip spec items.
-4. Every block with `verdict: UNMET` must appear in the "Visual anomalies & UX observations" section. Silently dropping one is a verification failure.
+4. Every `UNMET` finding — spec-based or open-review — must appear in the "Visual anomalies & UX observations" section. Silently dropping one is a verification failure.
 
 Write `docs/spec/<SPEC_NAME>/verification/proof-report.md` with these sections:
 
@@ -152,7 +132,7 @@ Write `docs/spec/<SPEC_NAME>/verification/proof-report.md` with these sections:
 - **API evidence** — curl + truncated responses.
 - **UI evidence** — screenshot references; one row per (route, viewport).
 - **DB evidence** — queries + results.
-- **Visual anomalies & UX observations** — for every `UNMET` block: which screenshot, which check failed, the rect math that failed it, whether the second pass surfaced it. If all blocks were `MET` after the second pass, write "Second pass clean across N screenshots; per-block evidence in observations.md." Do not omit this section.
+- **Visual anomalies & UX observations** — for every `UNMET` finding (spec or open-review): which screenshot, what's wrong, the evidence (rect / quoted text / computed style / network response), whether the second pass surfaced it. If everything was clean after the second pass, write "Second pass clean across N screenshots; per-screenshot notes in observations.md." Do not omit this section.
 - **Spec coverage table** — REQ/EDGE → evidence path.
 - **Infrastructure note** — what was started, when it was cleaned up, what was already running.
 
@@ -163,10 +143,6 @@ Some things in a spec cannot be verified by this skill — touch-hold gestures t
 ## Step 7 — Cleanup
 
 Kill background processes you started in Step 2 (`kill %1`, `docker compose down`). Leave processes that were already running. Leave `verification/` artifacts in place — the orchestrator's Commit & PR stage handles them.
-
-## References
-
-- `references/visual-rubric.md` — the atomic JSON verdict schema, the inventory query, the pairwise prompt, the squint test, the per-failure-mode definitions. Read this before writing any block in `observations.md`.
 
 ## Token efficiency
 
@@ -180,9 +156,9 @@ Kill background processes you started in Step 2 (`kill %1`, `docker compose down
 
 ## Anti-patterns
 
-- Filling out every field of the rubric without running the underlying queries. The harness checks that cited evidence files exist on disk.
-- Picking which component instance to grade. The skill picks for you (index 0 and ⌊N/2⌋).
+- Skipping the open visual review when all spec checks pass. The spec doesn't enumerate every UX defect; the open review is the only place those get caught.
 - Skipping the second pass because the first pass "felt thorough."
-- Naming an alignment line that you didn't get from `getBoundingClientRect()`. The model is allowed to invent plausible-sounding lines; the rubric isn't.
-- Treating intentional `truncate` / `line-clamp` as automatically `MET`. If the truncated content is the headline of a primary card, that is a UX finding even if the CSS is doing what was asked.
+- Naming an alignment, size, or position you didn't actually measure. If you need to claim something about a rect, get it from `getBoundingClientRect()`.
+- Treating intentional `truncate` / `line-clamp` as automatically fine. If the truncated content is the headline of a primary card, that is a UX finding even if the CSS is doing what was asked.
 - Counting "no horizontal scroll" as proof of correct layout. Reflow passes can coexist with arbitrary alignment defects.
+- Bare adjectives as evidence — "looks fine", "feels off", "polished". Either ground the claim or mark it `CANNOT_ASSESS` with the reason.
