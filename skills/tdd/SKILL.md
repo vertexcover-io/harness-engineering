@@ -277,6 +277,35 @@ Listen to the test. Hard to test means hard to use. The difficulty is telling yo
 
 ---
 
+## Library Suspect Detection (`LIB_SUSPECT`)
+
+Default failure mode: tunneling on the symptom when the lib itself is the
+problem. This classifier surfaces "the lib is wrong" as an explicit hypothesis
+instead of burning iterations on doomed retries.
+
+**Trigger** — emit `LIB_SUSPECT` only when **all** hold for the same test:
+- Failed ≥ 3 times in a row.
+- Every failure's stack trace contains a frame inside the *same* external lib.
+- Error class is one of: `auth` (401/403), `schema` (shape mismatch),
+  `not-found` (404 on a documented endpoint), `import-error`, or `timeout`
+  after retries.
+
+**Action:**
+1. Stop the TDD loop on this test — do not retry.
+2. Write a short diagnosis to `docs/spec/<SPEC_NAME>/lib-suspect-<lib>.md`:
+   lib + version, top-3 stack frames, error class, what you tried.
+3. Emit `<!-- LIB_SUSPECT:<library-name>:<error-class> -->` in your report.
+4. Return control. Orchestrate re-invokes `library-probe --lib <name>` to
+   walk the fallback chain.
+
+**Guards (don't false-positive):**
+- Most failures are in *your* code — flip only when the lib frame is
+  consistently in the stack.
+- Read the docs (context7) first; your call may be wrong, not the lib.
+- Different errors on each retry = flailing, not a lib problem. Slow down.
+
+---
+
 ## Red Flags — Stop and Start Over
 
 If any of these are happening, TDD has been abandoned. Delete the production code and restart from RED:

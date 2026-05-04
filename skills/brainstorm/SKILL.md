@@ -132,6 +132,28 @@ the user must respond before exploration continues.
 - **Scope probing:** "What's the smallest version of this that delivers value?"
 - **Dependency mapping:** "What else in the system does this touch or depend on?"
 
+### Phase 2.5: Library Trust Surfacing
+
+For every external library or third-party API in the design, record four
+things — they're the input contract for the `library-probe` skill:
+
+- **Maturity signals:** Last commit, deprecated/archived flags, weekly
+  downloads. State bad signals explicitly; don't paper over them.
+- **Distinct use cases to probe:** Each flow we depend on is a separate probe
+  (e.g. Twitter: single tweet, list, thread — three probes, not one).
+- **Auth surface:** none / api-key / oauth / cookies, plus the exact env keys
+  needed (all loaded from project-root `.env.harness`, gitignored).
+- **Fallback chain:** Ordered alternatives. MUST end in a paid API or
+  build-our-own option so the harness always has somewhere to land.
+
+**Why mandatory:** A library is a belief until probed. Declaring the chain
+*now* — when context is freshest — produces better choices than declaring it
+later under failure pressure, and lets the harness pivot without asking a human.
+
+**Output:** Append a `## External Dependencies & Fallback Chain` section to
+the design doc (see `references/design-template.md`). If no external deps,
+write `None — pure-internal feature.` and proceed.
+
 ### Phase 3: Architectural Challenges
 
 Identify the hard structural problems that shape the entire solution.

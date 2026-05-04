@@ -58,8 +58,10 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
      $D add-node setup 'Setup'
      $D add-node worktree 'Create Worktree' --parent setup
      $D add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
-     $D add-node brainstorm 'Brainstorm & Spec' --depends-on setup
-     $D add-node planning 'Planning' --depends-on brainstorm
+     $D add-node brainstorm 'Brainstorm' --depends-on setup
+     $D add-node library-probe 'Library Probe' --depends-on brainstorm
+     $D add-node spec-gen 'Spec Generation' --depends-on library-probe
+     $D add-node planning 'Planning' --depends-on spec-gen
      $D add-node coder 'Coder' --depends-on planning
      $D add-node code-review 'Code Review' --depends-on coder
      $D add-node verify-finalize 'Verify & Finalize' --depends-on code-review
@@ -80,7 +82,9 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
 | # | Stage | Execution | Output |
 |---|-------|-----------|--------|
 | 0 | Setup | **Main conversation** | Worktree path, baseline metrics, spec directory |
-| 1 | Brainstorm + Spec | **Main conversation** | `docs/spec/<name>/spec.md` |
+| 1 | Brainstorm | **Main conversation** | Design doc with declared dependency + fallback chain |
+| 1.5 | Library Probe | **Main conversation** | `docs/spec/<name>/library-probe.md` + verified probe scripts |
+| 1.7 | Spec Generation | **Main conversation** | `docs/spec/<name>/spec.md` (folds VS-0 probe scenarios in) |
 | 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` + `phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests |
 | 4 | Code Review | Sub-agent (2-pass) | REVIEW.md verdict, fixes applied |
@@ -119,6 +123,7 @@ For each skippable stage:
 | Stage | Why |
 |-------|-----|
 | 0: Setup | Worktree and baseline are always required |
+| 1.5: Library Probe | Trust gate — every external dep must be verified before code is written |
 | 3: Coder | Core implementation — the whole point of the pipeline |
 | 4: Code Review | Semantic verification gate — catches bugs that metrics can't |
 | 5: Verify & Finalize | Functional verification + quality gate + docs + learnings — always runs as single consolidated stage |
@@ -173,15 +178,18 @@ digraph pipeline {
 
   stage_0 [label="0: Setup"]
   stage_1 [label="1: Brainstorm"]
+  stage_15 [label="1.5: Library Probe"]
+  stage_17 [label="1.7: Spec Generation"]
   stage_2 [label="2: Planner"]
   stage_3 [label="3: Coder"]
   stage_4 [label="4: Code Review"]
   stage_5 [label="5: Verify & Finalize"]
   stage_6 [label="6: Commit & PR"]
 
-  stage_0 -> stage_1 -> stage_2 -> stage_3
+  stage_0 -> stage_1 -> stage_15 -> stage_17 -> stage_2 -> stage_3
   stage_3 -> stage_4 -> stage_5 -> stage_6
   stage_4 -> stage_4 [label="2-pass review+fix" style=dashed]
+  stage_3 -> stage_15 [label="LIB_SUSPECT loopback" style=dashed color=red]
 }
 ```
 
@@ -213,7 +221,7 @@ Resolution order:
 1. `<cwd>/.claude/skills/<skill-name>/SKILL.md` — project-local (wins)
 2. Global harness skill — fallback
 
-Applies to: `quality-gate`, `tdd`, `testing`, `code-review`.
+Applies to: `quality-gate`, `tdd`, `testing`, `code-review`, `library-probe`.
 Does NOT apply to `orchestrate` itself (no recursive override).
 
 When a local override is found, log:
@@ -246,11 +254,30 @@ The local skill is loaded and followed exactly in place of the global one. The l
 ### Stage 1: Brainstorm (Main Conversation)
 
 1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status brainstorm running")`
-2. Invoke `brainstorm` skill via `Skill` tool — no approval gate, design flows straight through
-3. Invoke `spec-generation` skill (main session — needs brainstorm context)
-4. Save spec to `docs/spec/<SPEC_NAME>/spec.md`, store `SPEC_PATH`
-5. Copy artifacts and mark done:
+2. Invoke `brainstorm` skill via `Skill` tool — no approval gate, design flows straight through.
+   The brainstorm skill MUST produce a `## External Dependencies & Fallback Chain` section in the design doc (see brainstorm Phase 2.5). If absent, library-probe will block.
+3. Mark brainstorm done:
    `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report brainstorm '# Brainstorm' && $D set-status brainstorm done")`
+
+### Stage 1.5: Library Probe (Main Conversation)
+
+The trust gate. Runs *before* spec generation so verified probes can be folded into the spec as VS-0 scenarios.
+
+1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status library-probe running")`
+2. Invoke `library-probe` skill via `Skill` tool. Pass design-doc path and `SPEC_DIR`. Pass `--auto` if `AUTO_MODE=true`.
+3. Read the verdict marker from `docs/spec/<SPEC_NAME>/library-probe.md`:
+   - `<!-- LP:VERDICT:PASS -->` → continue.
+   - `<!-- LP:VERDICT:BLOCKED -->` → **stop the pipeline.** Report which library failed and the user's choice (or that creds were missing in `--auto`).
+   - `NOT_APPLICABLE` (no external deps) → continue.
+4. Mark done:
+   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report library-probe '<summary>' && $D set-status library-probe done")`
+
+### Stage 1.7: Spec Generation (Main Conversation)
+
+1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status spec-gen running")`
+2. Invoke `spec-generation` skill — it reads design doc + `library-probe.md` + the probe verification stubs at `docs/spec/<SPEC_NAME>/probes/verification-stubs.md` and folds them into the spec's `## Verification Scenarios` (so functional-verify re-runs the probes).
+3. Save spec to `docs/spec/<SPEC_NAME>/spec.md`, store `SPEC_PATH`.
+4. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status spec-gen done")`
 
 ### Stage 2: Planner (Main Conversation)
 
@@ -280,6 +307,27 @@ DAG transitions (use `$D` shorthand):
 - Before each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status <phase-node> running")`
 - After each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status <phase-node> done")`
 - After all phases: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status coder done")`
+
+### LIB_SUSPECT Loopback (from Stage 3 → 1.5)
+
+After every coder sub-agent returns, scan its report for the marker
+`<!-- LIB_SUSPECT:<lib>:<class> -->`. If present:
+
+1. Increment a session-level counter `LOOPBACK_COUNT` (start at 0). Cap at **2**.
+   Beyond 2 → stop the pipeline with `BLOCKED:repeated-lib-failure` and report.
+2. Mark the failed phase node `blocked` in the DAG.
+3. Re-invoke `library-probe` skill with `--lib <lib>`:
+   ```
+   Skill(name="library-probe", args="--lib <lib> --auto" if AUTO_MODE else "--lib <lib>")
+   ```
+4. Read `docs/spec/<SPEC_NAME>/library-probe.md` after it returns:
+   - If `<!-- LP:VERDICT:BLOCKED -->` → stop the pipeline. The user (or auto-fail) said no viable alternative.
+   - If a `## Re-plan Required` section is present → re-invoke the `planning` skill scoped to the affected phase(s) only. The planner reads the new selected library from `library-probe.md` and rewrites the relevant `phase-N.md`.
+5. Re-dispatch the affected phase agent. Skip phases already marked done.
+
+This is the only retry loop the pipeline performs automatically. It exists
+because library failure is the one error class where retrying the *same* code
+is futile — the answer is to swap the underlying tool, not iterate the call.
 
 **A) Phase has no Steps section** → single agent:
 ```
