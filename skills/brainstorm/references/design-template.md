@@ -49,6 +49,24 @@ Which approach and why. What trade-offs we're accepting.
 Architectural overview — components, boundaries, data flow, contracts.
 This is conceptual, not code. Think boxes-and-arrows, not classes-and-methods.
 
+## External Dependencies & Fallback Chain
+Required whenever the design names any external library or third-party API.
+Write `None — pure-internal feature.` if there are no external deps.
+
+### Primary: <lib-name>
+- **Purpose:** What it does in this feature.
+- **Use cases to probe:** Distinct flows we depend on (e.g. for Twitter:
+  single tweet, list, thread). Each one becomes a separate probe.
+- **Maturity:** Last commit, downloads, deprecated/archived flags. Note bad signals.
+- **Auth:** none | api-key | oauth | cookies
+- **Required env keys:** KEY1, KEY2 (all loaded from project-root `.env.harness`, gitignored)
+
+### Fallbacks (in order)
+1. <alt-lib-1> — why this is a fallback.
+2. <alt-lib-2> — why.
+3. <paid-api or build-custom> — must end with a non-OSS option so the harness
+   can always land somewhere.
+
 ## Open Questions
 Things that still need investigation or decisions.
 
