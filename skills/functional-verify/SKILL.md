@@ -22,6 +22,20 @@ This skill exists because vision LLMs are good at running browsers and bad at ho
 
 - Spec: `docs/spec/<SPEC_NAME>/spec.md`
 - Plan dir (incl. `phase-*.md`): `docs/spec/<SPEC_NAME>/`
+- E2E report (optional): `docs/spec/<SPEC_NAME>/e2e-report.json`
+
+## Step 0 — Read E2E Coverage
+
+Before deriving scenarios, read `docs/spec/<SPEC_NAME>/e2e-report.json`.
+
+- If the file exists and `not_applicable` is not true:
+  - Extract the `coverage` array — these are requirements already proven by E2E during coding. Do NOT re-run these as spec scenarios in Steps 3-4. Mark them `COVERED_BY_E2E` in the proof report.
+  - Extract the `gaps` array — this is the primary input for the adversarial pass in Step 4.6.
+  - If any entry in `coverage` has `"verdict": "FAIL"` — that is a BLOCKER. Report it immediately and stop; the feature should not have reached this stage with failing E2E tests.
+
+- If the file does not exist: proceed as normal (no E2E was run during coding). Note the absence in the proof report under Infrastructure. The adversarial pass in Step 4.6 will derive gaps from the spec instead.
+
+- If `not_applicable` is true: note it in the proof report, proceed without filtering.
 
 ## Step 1 — Verification Scenarios
 
@@ -117,6 +131,25 @@ This is the single most reliable defense against the "model wrote MET because no
 
 After every navigation: `browser_console_messages level: error`. Any error → record it. Distinguish *new* errors from pre-existing ones by checking if the error reproduces on the main branch route (when feasible) — pre-existing errors should be flagged as such, not silently dropped.
 
+### 4.6 Adversarial gap testing (mandatory)
+
+This step runs after all spec scenarios are complete. Its job is to break the app in ways the E2E suite did not attempt.
+
+**Derive targets from the `gaps` field in `e2e-report.json`.** If no e2e-report exists, derive gaps yourself by reading the spec and identifying: error paths, boundary values, multi-step flows in unexpected order, concurrent actions, stale-state operations.
+
+For each gap, generate and run adversarial scenarios:
+- **Boundary inputs**: empty strings, null, max-length values, wrong types
+- **Unexpected sequences**: cancel mid-flow, submit twice, navigate back during a save, reload mid-operation
+- **Broader surface**: if the modified area is a settings page, test every field on that page, not just the new one
+- **Error recovery**: after triggering an error, can the user recover? Does the app leave stale state?
+- **Status accuracy**: cancellations, timeouts, and failures — verify the status text matches the actual outcome
+
+Run each adversarial scenario using the same curl/Playwright infrastructure. For each:
+- Document: scenario description, inputs used, actual outcome, whether it's a defect or expected behavior
+- A bug found here is a success — record it in `blocking_findings` and include it in the proof report
+
+**Do not duplicate** scenarios already covered by the E2E report. The gaps field is your guide to what's genuinely un-tested.
+
 ## Step 5 — Generate Proof Report
 
 **Before writing:**
@@ -134,6 +167,8 @@ Write `docs/spec/<SPEC_NAME>/verification/proof-report.md` with these sections:
 - **DB evidence** — queries + results.
 - **Visual anomalies & UX observations** — for every `UNMET` finding (spec or open-review): which screenshot, what's wrong, the evidence (rect / quoted text / computed style / network response), whether the second pass surfaced it. If everything was clean after the second pass, write "Second pass clean across N screenshots; per-screenshot notes in observations.md." Do not omit this section.
 - **Spec coverage table** — REQ/EDGE → evidence path.
+- **E2E coverage summary** — list which spec requirements were `COVERED_BY_E2E` (skipped in this run, already proven during coding). Reference the e2e-report artifact path. If e2e-report was absent, note that all scenarios were run fresh.
+- **Adversarial findings** — for each adversarial scenario from Step 4.6: description, inputs, actual outcome, verdict (defect / expected). If no defects found, write "Adversarial pass clean — N scenarios attempted, all behaved correctly."
 - **Infrastructure note** — what was started, when it was cleaned up, what was already running.
 
 ## Step 6 — Honest non-verification
@@ -162,3 +197,5 @@ Kill background processes you started in Step 2 (`kill %1`, `docker compose down
 - Treating intentional `truncate` / `line-clamp` as automatically fine. If the truncated content is the headline of a primary card, that is a UX finding even if the CSS is doing what was asked.
 - Counting "no horizontal scroll" as proof of correct layout. Reflow passes can coexist with arbitrary alignment defects.
 - Bare adjectives as evidence — "looks fine", "feels off", "polished". Either ground the claim or mark it `CANNOT_ASSESS` with the reason.
+- Re-running scenarios already proven by the E2E report. Read e2e-report.json in Step 0 and skip covered requirements — duplicate verification wastes time and adds no confidence.
+- Skipping the adversarial pass because all spec scenarios passed. Spec scenarios prove what was specified; adversarial testing finds what wasn't. Both are required.

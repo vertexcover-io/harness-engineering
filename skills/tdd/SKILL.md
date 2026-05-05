@@ -186,13 +186,41 @@ Each cycle should be small enough that "minimum code to pass" is obvious. If you
 
 ## TDD with E2E Tests
 
-When the phase has an "E2E Verification" section or the spec marks a requirement as needing E2E, start with the e2e test as your first RED step.
+For any phase with user-facing changes (UI routes or API endpoints), E2E TDD is **mandatory, not optional**. The phase is BLOCKED until the E2E test passes and the e2e-report artifact is written.
 
-1. **RED**: Write a failing e2e test for the user journey. Infrastructure and dev server must be running.
+1. **RED**: Write a failing e2e test for the user journey. Infrastructure and dev server must be running. Use accessible locators (role, label, text) and condition-based waits — never CSS selectors or hard-coded delays.
 2. **GREEN**: Build the feature — use unit/integration TDD cycles for each component until the e2e test passes.
 3. **REFACTOR**: Clean up as usual.
 
-The e2e test defines the finish line. Unit and integration tests are written as needed to build toward it. Use accessible locators (role, label, text) and condition-based waits — never CSS selectors or hard-coded delays.
+The e2e test defines the finish line. Unit and integration tests are written as needed to build toward it.
+
+### E2E Report Artifact (mandatory)
+
+After all E2E tests pass, write `docs/spec/<SPEC_NAME>/e2e-report.json`:
+
+```json
+{
+  "phase": "<PHASE_N>",
+  "timestamp": "<ISO timestamp>",
+  "passed": 0,
+  "failed": 0,
+  "coverage": [
+    {
+      "req": "REQ-1",
+      "description": "<what was tested>",
+      "inputs": ["<input1>", "<input2>"],
+      "routes": ["/path/exercised"],
+      "endpoints": ["POST /api/resource"],
+      "verdict": "PASS"
+    }
+  ],
+  "gaps": ["<what this E2E suite did NOT test — user flows skipped, edge cases not covered>"]
+}
+```
+
+The `gaps` field is as important as `coverage` — it tells functional-verify what to target. Be honest: list input combinations not tried, error paths not exercised, concurrent scenarios not tested, and surface areas not touched.
+
+If a phase has no user-facing changes (pure refactoring, config change, data migration), write the e2e-report with `"not_applicable": true, "reason": "<why>"` and proceed without E2E tests.
 
 ---
 

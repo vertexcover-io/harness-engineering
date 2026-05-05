@@ -169,22 +169,20 @@ Detect project tooling in this order:
 - **Non-blocking when absent** — if no smoke test is defined, INFO note only
 - Report: commands run, output, pass/fail per command
 
-### Check 9: E2E Tests
+### Check 9: E2E Report Verification
 
-- Read `e2e` from baseline.json
-- If `e2e.detected` is false → `NOT_APPLICABLE` with justification "No e2e infrastructure detected"
-- If detected:
-  1. Verify backing services are running (check if services respond on expected ports)
-  2. If not running, start them using `e2e.infra_up_cmd` from baseline
-  3. Start the dev server using `e2e.dev_cmd` from baseline if e2e tests require it
-  4. Run `e2e.e2e_cmd` from baseline
-  5. Parse pass/fail counts from output
-  6. If the task involves UI changes and a browser MCP tool is available: navigate to affected pages, take accessibility snapshots, verify the feature renders correctly
-  7. Stop any dev server process started in step 3
-- **Pass:** Exit code 0 AND browser verification passes (if performed)
-- **Fail:** Non-zero exit code OR browser verification finds broken UI
-- Report: exit code, pass/fail/skip counts, accessibility snapshots (if taken)
-- Do NOT tear down backing services after the check
+- Read `docs/spec/<SPEC_NAME>/e2e-report.json`
+- If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found"
+- If `not_applicable: true` → `NOT_APPLICABLE` with the reason from the file
+- If file exists, verify:
+  1. `failed` count is 0 — any E2E failures during coding are a hard block
+  2. `coverage` array is non-empty — report must cover at least one spec requirement
+  3. Each coverage entry maps to a REQ or EDGE ID from the spec — verify the IDs exist in `docs/spec/<SPEC_NAME>/spec.md`
+  4. `gaps` field exists and is non-empty — a report with no documented gaps is suspicious; flag as WARNING (not BLOCKED)
+  5. Timestamp is within the pipeline run window (not stale from a previous run)
+- **Pass:** `failed` = 0, coverage non-empty, all REQ IDs valid, timestamp current
+- **Fail:** `failed` > 0, or coverage empty, or REQ IDs don't match spec, or file missing for user-facing task
+- Report: failed count, coverage count, gap count, REQ ID validation results
 
 ---
 
@@ -192,9 +190,9 @@ Detect project tooling in this order:
 
 | Stage | Checks Run | Trigger |
 |-------|-----------|---------|
-| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 when e2e detected | Implementation complete |
+| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 always (verifies e2e-report artifact) | Implementation complete |
 | After Refactor (`post-refactor`) | Checks 1-4 (no scope/plan/ignore/smoke/e2e check) | Refactoring should not change scope |
-| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 when e2e detected | Final audit before commit |
+| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 always (verifies e2e-report artifact) | Final audit before commit |
 
 If any gate returns **BLOCKED**, the pipeline stops at that point. The orchestrator reports what failed and does not proceed to the next stage.
 

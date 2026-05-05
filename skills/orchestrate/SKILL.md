@@ -334,6 +334,9 @@ is futile — the answer is to swap the underlying tool, not iterate the call.
 Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke tdd skill. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase: <PHASE_N>.
+  If this phase has user-facing changes (UI routes or API endpoints), E2E TDD is mandatory:
+  write failing e2e tests first, implement until they pass, then write docs/spec/<SPEC_NAME>/e2e-report.json.
+  The phase is BLOCKED until e2e-report.json exists with failed=0.
   For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
   D='/usr/bin/env bash <DAG_SCRIPT>'; use $D add-node for sub-tasks, $D set-status for progress.
   When done, write a phase report following the 'Coder Phase Report' format in
@@ -347,6 +350,9 @@ Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke tdd and testing skills. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
   Phase: <PHASE_N>. Step: <STEP_DETAILS>.
+  If this step introduces user-facing changes (UI routes or API endpoints), E2E TDD is mandatory:
+  write failing e2e tests first, implement until they pass, then write docs/spec/<SPEC_NAME>/e2e-report.json.
+  The step is BLOCKED until e2e-report.json exists with failed=0.
   Scope: Only this step's files. Return: files created/modified, test results, step completed or blocked.
 ")
 ```
@@ -415,6 +421,8 @@ Agent(model="sonnet", prompt="
   1. FUNCTIONAL VERIFICATION: Invoke functional-verify skill.
      Spec: docs/spec/<SPEC_NAME>/spec.md. Plan dir: docs/spec/<SPEC_NAME>/.
      Phase files: docs/spec/<SPEC_NAME>/phase-*.md.
+     E2E report: docs/spec/<SPEC_NAME>/e2e-report.json (functional-verify reads this in Step 0 to skip
+     already-proven scenarios and derive adversarial gap targets).
      Write dashboard report following 'Verification Report' format in
      references/dashboard-report-formats.md.
      If FAILED: stop entirely, return failure with which scenarios failed and why.
