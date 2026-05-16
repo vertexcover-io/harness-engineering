@@ -186,6 +186,16 @@ Risks & Mitigations, Assumptions, External Dependencies & Fallback Chain, What T
 - **Justification budget** — one clause per decision. If more is needed, the decision
   isn't ready.
 
+**Diagrams required** (mermaid, part of the design — not decoration):
+- **Architecture diagram** (`graph TB` / `graph LR`) — required for designs with 3+
+  components. Show components and their connections.
+- **Sequence diagrams** (`sequenceDiagram`) — one per multi-component flow that crosses
+  2+ boundaries (e.g., upload pipeline, auth handshake, write-with-fanout).
+- **State diagrams** (`stateDiagram-v2`) — when an entity has non-trivial transitions
+  (e.g., subscription confirmation, payment lifecycle, document review states).
+
+If the diagram is wrong, the design is wrong. Update diagrams when the design changes.
+
 ### Phase 9 — Spec Review
 
 Dispatch a fresh subagent with the design doc + review rubric (NOT session history).
