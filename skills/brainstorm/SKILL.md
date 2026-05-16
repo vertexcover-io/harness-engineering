@@ -4,245 +4,225 @@ description: >
   Structured brainstorming and design exploration for deep problem understanding before implementation.
   Use this skill whenever the user says "brainstorm", "think through", "explore this problem",
   "let's think about", "what are the angles", "help me understand", "design this", or wants to
-  deeply analyze a problem, feature, architecture decision, or technical challenge before writing
-  code. Also trigger when the user is about to jump into implementation of something non-trivial
-  and hasn't explored the problem space yet — a gentle nudge toward brainstorming prevents
-  wasted effort from unexamined assumptions. This skill is about understanding the problem deeply
-  and producing an approved architectural design, not writing code.
+  deeply analyze a feature, architecture decision, or technical challenge before writing code.
+  Also trigger when the user is about to jump into implementation of something non-trivial and
+  hasn't explored the problem space yet. This skill produces an architectural design doc — no
+  code, scaffolding, or implementation.
 ---
 
 # Brainstorm: Deep Problem Understanding and Design
 
-This skill has two jobs that work together:
+Two jobs that work together:
 
-1. **Deep problem understanding** — explore the problem from every angle, surface hidden
-   assumptions, identify what hasn't been considered, and build genuine comprehension.
-2. **Design synthesis** — produce an architectural design before implementation
-   begins. The design stays at the conceptual and architectural level, never descending
-   into code-level detail.
+- **Deep problem understanding** — explore the problem from every angle, surface hidden
+  assumptions, identify what hasn't been considered.
+- **Design synthesis** — produce an architectural design (conceptual, not code-level).
 
-Understanding feeds design, and designing reveals gaps in understanding. But the emphasis
-is weighted toward understanding. A thorough exploration naturally produces a good design;
-a rushed design without understanding produces rework.
+A thorough exploration produces a good design; a rushed design produces rework.
 
-**Note:** No code, scaffolding, or implementation occurs during brainstorming — this skill
-produces a design document, then flows directly into the next pipeline stage.
+<HARD-GATE>
+Do NOT write code, scaffold, or invoke an implementation skill until the design doc is
+written AND (unless bypassed) approved by the user. Applies to EVERY project, however
+"simple" it seems.
+</HARD-GATE>
 
 ## Depth Scaling
 
-Not every problem needs the same depth. Scale the brainstorming to the problem:
+- **Minor** (small feature, bug fix): early phases as one question round, later phases brief.
+  Design doc = a few paragraphs.
+- **Medium** (new feature, moderate refactor): all phases, each focused. Doc covers key
+  sections without exhaustive detail.
+- **Major** (new system, architectural redesign): every phase at full depth. Thorough doc.
 
-- **Minor changes** (small feature, bug fix): Phases 1-2 can be a single round of
-  questions. Phases 3-5 can be a brief risk check and a short design summary. The
-  design document can be a few paragraphs.
-- **Medium changes** (new feature, moderate refactor): Run all phases but keep each
-  focused. Design document covers the key sections without exhaustive detail.
-- **Major changes** (new system, architectural redesign, multi-tenancy): Run every
-  phase at full depth. Use all exploration techniques. Produce a thorough design document.
-
-When in doubt, start shallow and go deeper if the exploration reveals hidden complexity.
+Start shallow; go deeper if hidden complexity surfaces.
 
 ## Core Principles
 
-### 1. Understand Before Solving
+- **Understand before solving** — a well-understood problem reveals its own solution.
+- **Surface what's hidden** — unstated constraints, implicit requirements, hidden dependencies,
+  catastrophic edge cases.
+- **Thinking gaps over solutions** — finding what hasn't been considered beats refining what has.
+- **Design at the right level** — components, contracts, boundaries, trade-offs. No pseudocode.
+- **YAGNI ruthlessly** — every knob, flag, optional feature must justify its existence *now*.
 
-The instinct to jump to solutions is strong. Resist it. A well-understood problem often
-reveals its own solution. A poorly-understood problem leads to building the wrong thing
-efficiently.
+## Scope of This Skill
 
-### 2. Surface What's Hidden
+Brainstorm applies to **structural changes**: extractions, rearchitectures, new components
+inside existing systems, migration paths. Output is a design (what changes, where boundaries
+move, how things connect).
 
-The most dangerous assumptions are the ones nobody knows they're making. Actively probe for:
-- Unstated constraints ("we assumed this runs on a single machine")
-- Implicit requirements ("users obviously need to undo this")
-- Hidden dependencies ("this only works if service X is available")
-- Edge cases that seem unlikely but would be catastrophic
+Brainstorm does **not** apply to:
+- **Bug investigation** — use direct exploration. Output should be a root cause and fix.
+- **Tactical refactoring** (rename, extract function, restructure one file) — use `harness:refactor`.
+- **Performance investigation** — profile first; brainstorm only if the fix is structural.
 
-### 3. Multiple Perspectives
-
-Every problem looks different depending on where you stand. Consider the view from:
-- The end user
-- The developer maintaining this in 6 months
-- The system under load / at scale
-- Adjacent systems that interact with this
-- Security and abuse scenarios
-- Failure and recovery modes
-
-### 4. Thinking Gaps Over Solutions
-
-It's more valuable to identify what we *haven't* thought about than to refine what we
-have. A brainstorming session succeeds when it surfaces questions nobody had asked yet.
-
-### 5. Design at the Right Level
-
-The design is architectural and conceptual — component relationships, data flow,
-boundaries, contracts, and trade-offs. It should make clear *what* the system does,
-*why* it's structured that way, and *where* the key boundaries are — without prescribing
-*how* each piece is coded. If you're writing pseudocode, you've gone too deep.
+Rule of thumb: "change these 10 lines" is not brainstorm; "this changes how three components
+talk to each other" is.
 
 ## The Brainstorming Flow
 
-### Phase 1: Context Gathering
+### Phase 1 — Context Gathering & Scope Check
 
-Start by understanding what already exists and what prompted this exploration.
+Review relevant files, docs, and recent changes. Build a mental model.
 
-**Actions:**
-- Review relevant files, documentation, and recent changes in the codebase
-- Read any linked issues, specs, or prior discussions the user references
-- Build a mental model of the current state
+**Scope decomposition check** — if the request spans multiple independent subsystems
+(own data model + API + auth/contract, each independently shippable), flag it. Each
+sub-project gets its own design cycle. Tells: title contains "system"/"platform"/"overhaul";
+author drafting Phase 1/Phase 2 internally; 2+ items with own data model + API + auth;
+sub-piece A ships and provides value while B waits.
 
-**Questioning approach:** Begin with small batches (2-3 related questions) to efficiently
-establish context. Focus on: what triggered this, who is affected, and what success
-looks like. **Always use the `AskUserQuestion` tool** to ask questions — never embed
-questions in plain text output. This ensures the user sees a clear interactive prompt
-and the conversation blocks until they respond.
+Don't split if sub-pieces share >30% of files and ship together — that's delivery
+sequencing, not scope.
 
-### Phase 2: Problem and Requirements Exploration
+Use `AskUserQuestion` for every question (2-3 related Qs to establish context). Focus:
+what triggered this, who is affected, what success looks like.
 
-Go wide — map the full problem space and discover what's actually needed. Requirements
-rarely arrive complete; draw them out through exploration.
+### Phase 2 — Visual Companion Offer (conditional)
 
-**Problem space:**
-- Map out all facets of the problem
-- Identify stakeholders and their potentially conflicting needs
-- Surface constraints (technical, organizational, temporal, budgetary)
-- Look for analogous problems that have been solved before
+If upcoming questions will involve visual content (mockups, layouts, diagrams, side-by-side
+designs), offer the visual companion **as its own standalone message** before further
+questions:
 
-**Functional requirements** — what the system must do:
-- Core behaviors, input/output expectations, business rules, integration points
+> "Some of what we're working on might be easier to explain visually. I can put together
+> mockups, diagrams, and comparisons in a browser as we go. Want to try it?
+> (Requires opening a local URL)"
 
-**Non-functional requirements** — qualities the system must have:
-- Performance, scalability, reliability, security, observability, maintainability
+This message must contain ONLY the offer — no other content. Wait for response. If
+declined, proceed text-only. If accepted, decide **per question** whether to use the
+browser or terminal — the test is: would the user understand this better by *seeing* it
+than reading it? Use browser for mockups, wireframes, layout comparisons. Use terminal for
+requirements, tradeoffs, scope decisions. A question about UI is not automatically a visual
+question. Skip this phase entirely for backend-only work.
 
-**Edge cases** — actively hunt for these:
-- Boundary conditions (empty inputs, maximum sizes, concurrent access)
-- Dependency failures (network down, service unavailable, bad data)
-- Unexpected user behavior (rapid actions, stale state, back-button)
-- Time-based concerns (data growth, schema evolution, version migration)
+### Phase 3 — Problem & Requirements Exploration
 
-**Questioning approach:** Switch to one question at a time for deeper exploration.
-Use multiple-choice when possible to reduce cognitive load. **Always use the
-`AskUserQuestion` tool** for each question — this guarantees interactive flow where
-the user must respond before exploration continues.
+Map the full problem space and discover what's needed. Requirements rarely arrive complete.
 
-**Structured exploration techniques:**
-- **Assumption surfacing:** "What are we assuming is true here? What if it isn't?"
-- **Pre-mortem:** "Imagine this ships and fails badly. What went wrong?"
-- **Constraint inversion:** "What if we removed constraint X? What would change?"
-- **Scope probing:** "What's the smallest version of this that delivers value?"
-- **Dependency mapping:** "What else in the system does this touch or depend on?"
+- **Problem space:** stakeholders, conflicting needs, constraints (technical, organizational,
+  temporal), analogous solved problems.
+- **Functional requirements:** core behaviors, I/O, business rules, integration points.
+- **Non-functional:** performance, scalability, reliability, security, observability,
+  maintainability.
+- **Edge cases:** boundaries, dependency failures, unexpected user behavior, time/version
+  evolution.
 
-### Phase 2.5: Library Trust Surfacing
+Switch to **one question at a time** for deeper exploration. Multiple-choice when possible.
+Always via `AskUserQuestion`.
 
-For every external library or third-party API in the design, record four
-things — they're the input contract for the `library-probe` skill:
+**Techniques:** assumption surfacing, pre-mortem, constraint inversion, scope probing,
+dependency mapping.
 
-- **Maturity signals:** Last commit, deprecated/archived flags, weekly
-  downloads. State bad signals explicitly; don't paper over them.
-- **Distinct use cases to probe:** Each flow we depend on is a separate probe
-  (e.g. Twitter: single tweet, list, thread — three probes, not one).
-- **Auth surface:** none / api-key / oauth / cookies, plus the exact env keys
-  needed (all loaded from project-root `.env.harness`, gitignored).
-- **Fallback chain:** Ordered alternatives. MUST end in a paid API or
-  build-our-own option so the harness always has somewhere to land.
+### Phase 4 — Library Trust Surfacing
 
-**Why mandatory:** A library is a belief until probed. Declaring the chain
-*now* — when context is freshest — produces better choices than declaring it
-later under failure pressure, and lets the harness pivot without asking a human.
+For every external library or third-party API, record:
 
-**Output:** Append a `## External Dependencies & Fallback Chain` section to
-the design doc (see `references/design-template.md`). If no external deps,
-write `None — pure-internal feature.` and proceed.
+- **Maturity signals:** last commit, deprecated/archived, downloads. State bad signals plainly.
+- **Distinct use cases to probe:** each flow we depend on is a separate probe.
+- **Auth surface:** none / api-key / oauth / cookies + exact env keys (loaded from
+  project-root `.env.harness`, gitignored).
+- **Fallback chain:** ordered alternatives. MUST end in a paid API or build-our-own.
 
-### Phase 3: Architectural Challenges
+Output: `## External Dependencies & Fallback Chain` section in the design doc. If none,
+write `None — pure-internal feature.` (Input contract for `library-probe` skill.)
 
-Identify the hard structural problems that shape the entire solution.
+### Phase 5 — Architectural Challenges
 
-Consider:
-- **Boundaries and interfaces:** Where do components start and end? What are the
-  contracts between them?
-- **Data flow and ownership:** Where does data originate, how does it move, who
-  is the source of truth?
-- **State management:** Where does state live? How is it synchronized?
-- **Concurrency and ordering:** Are there race conditions? Does ordering matter?
-- **Evolution and migration:** How does this change over time? Can we migrate
-  incrementally?
-- **Integration seams:** Where does this connect to existing systems? Are those
-  interfaces stable?
+Identify hard structural problems shaping the solution:
+- **Boundaries & interfaces** — where components start/end; contracts between them.
+- **Data flow & ownership** — origin, movement, source of truth.
+- **State management** — where state lives, how it syncs.
+- **Concurrency & ordering** — races, ordering dependencies.
+- **Evolution & migration** — change over time, incremental migration path.
+- **Integration seams** — connections to existing systems, contract stability.
 
-### Phase 4: Approach Comparison
+### Phase 6 — Approach Comparison
 
-Present 2-3 distinct approaches. For each:
-- **Core idea:** What's the fundamental strategy?
-- **How it addresses requirements:** Map back to functional and non-functional needs
-- **How it handles identified edge cases:** Be specific
-- **Architectural trade-offs:** What does this approach make easy? What becomes hard?
-- **Risks:** What could go wrong? What's the blast radius?
-- **Effort and complexity:** Relative comparison, not time estimates
+Present 2-3 distinct approaches **only when real alternatives exist**. For each: core idea,
+how it maps to requirements, how it handles edge cases, trade-offs, risks, relative effort.
+Include a recommendation, held loosely.
 
-Include a recommendation with reasoning, but hold it loosely.
+If only one approach is viable, write a 2-line "Why not X, Y" instead of parallel
+Pros/Cons blocks for losers.
 
-### Phase 5: Gap Analysis
+### Phase 7 — Approach Stress Test
 
-Before producing the design, explicitly check for thinking gaps:
+Stress-test the chosen approach before writing the doc. Walk these lenses against it —
+generative, not just review. Each finding flows into Requirements, Edge Cases, Risks, or
+Decisions:
 
-- **Blind spots:** What haven't we discussed?
-- **Open questions:** What needs more investigation?
-- **Unvalidated assumptions:** What are we taking on faith?
-- **Biggest risks:** Ranked by impact and likelihood.
-- **Decision reversibility:** What would change our mind?
-- **Uncovered edge cases:** Review edge cases from Phase 2 against the chosen approach.
+- **End user:** failure modes visible or silently degrading?
+- **6-months-later maintainer:** where will the next reader get stuck?
+- **System under load:** what breaks at 10x / 100x?
+- **Adjacent systems:** what contract did we assume that might change?
+- **Security & abuse:** who exploits this and how?
+- **Failure modes:** what happens when each dependency dies?
 
-### Phase 6: Design Synthesis and Documentation
+Also check: unvalidated assumptions, decision reversibility, edge cases vs. chosen approach.
+If a lens produces nothing, that's suspicious — try again or note why it doesn't apply.
 
-Produce the design document. Read `references/design-template.md` for the full template.
-Save to `docs/spec/<SPEC_NAME>/design.md` (the orchestrator passes `SPEC_NAME`; if invoked standalone without a `SPEC_NAME`, slugify the topic and create `docs/spec/<slug>/design.md`).
+### Phase 8 — YAGNI Pass + Design Synthesis
 
-The document covers: Problem Statement, Context, Requirements (functional, non-functional,
-edge cases), Key Insights, Architectural Challenges, Approaches Considered, Chosen Approach,
-High-Level Design, Open Questions, Risks and Mitigations, and Assumptions.
+**YAGNI pass first.** Every knob, flag, optional feature must answer: "needed now, or can
+we hardcode and add it when the need is real?" Hardcode by default. Knobs survive only if
+the right value is genuinely empirical (then defer the value, not the knob).
 
-Save the design document and proceed directly to the next stage (spec generation or
-implementation planning). No approval gate — the design flows through.
+**Then write the doc.** Read `references/design-template.md`. Save to
+`docs/spec/<SPEC_NAME>/design.md` (the orchestrator passes `SPEC_NAME`; if invoked
+standalone without a `SPEC_NAME`, slugify the topic and create `docs/spec/<slug>/design.md`).
 
-## Handling Code-Level Problems
+Sections: Problem, Context, Requirements (functional + non-functional + edge cases as EARS-style
+IDs: F1, F2, NF1, NF2…), Architectural Decisions, Approaches Considered, Open Questions,
+Risks & Mitigations, Assumptions, External Dependencies & Fallback Chain, What This Does NOT Do.
 
-When the problem IS about code (refactoring, bug investigation, performance):
+**Output rules** (to keep docs tight):
+- **Key Insights section is conditional** — include only when 3-4 genuine reframings exist
+  that aren't restated in Architectural Decisions.
+- **Assumptions** — no tautologies, no verified facts, no "we'll see". Omit if empty.
+- **Open Questions** — items that block planning. Tunable knobs go inline with their
+  decision as `(default X, tune empirically)`.
+- **Code blocks show shapes, not bodies** — interfaces, signatures, data shapes. Bodies
+  belong in planning/coding.
+- **Cite, don't re-enumerate** — if a linked artifact covers it, reference the section.
+- **Justification budget** — one clause per decision. If more is needed, the decision
+  isn't ready.
 
-- Reading and analyzing existing code is exploration, not implementation — do it freely
-- The brainstorming phases still apply, but context gathering involves reading code
-- The "design" is about *what* changes structurally (which components, interfaces, data
-  flows) — not the specific code changes
-- Still resist fixing things during brainstorming — understand the full picture first
+### Phase 9 — Spec Review
+
+Dispatch a fresh subagent with the design doc + review rubric (NOT session history).
+Rubric covers: completeness vs. the lens list (Phase 7), EARS-style requirement IDs,
+YAGNI pass evidence, no tautological assumptions, contract clarity, missing sections.
+Iterate fixes; max 5 iterations, then surface to human.
+
+### Phase 10 — User Review Gate (configurable)
+
+**Default ON.** Present the design path to the user and pause:
+> "Design at `<path>`. Review and confirm before I hand off to spec-generation."
+
+**Bypass** when:
+- `--auto` flag set (orchestrate / CI mode)
+- Prompt contains "don't wait for approval", "skip review", "no review gate"
+
+On approval (or bypass), flow to spec-generation.
 
 ## Handling Pushback
 
-If the user wants to skip phases, let them — but note what's being skipped and what
-risks that introduces. The brainstorming should serve the user, not frustrate them.
+If the user wants to skip phases, let them — but note what's skipped and what risk it
+introduces. If they disagree with the recommendation, explore why — their context often
+reveals factors you missed. If they want to go straight to implementation, that's their
+call, but ensure it's conscious, not habit.
 
-If the user disagrees with the recommendation, explore why. Their context often reveals
-factors you missed. A disagreement is an opportunity to surface hidden information, not
-a problem to resolve.
+## Anti-Patterns
 
-If the user wants to go straight to implementation, that's their call — but make sure
-they're making it consciously, not just skipping brainstorming out of habit.
-
-## Anti-Patterns to Avoid
-
-- **Premature solutioning:** Jumping to "here's how to implement it" before the problem
-  is fully understood.
-
-- **Single-perspective analysis:** Only thinking about the happy path, or only the
-  developer's view. Rotate through perspectives.
-
-- **Skipping for "simple" problems:** Simple-seeming problems harbor unexamined
-  assumptions. The brainstorm can be brief, but it should still happen.
-
-- **Ignoring non-functional requirements:** Performance, security, observability, and
-  maintainability are where production problems actually live.
-
-- **Treating edge cases as afterthoughts:** Edge cases found during brainstorming are
-  cheap to address. Found in production, they're catastrophic.
-
-- **Ignoring the user's energy:** If the user is engaged, follow their lead. If they're
-  uncertain, provide more structure. Adapt depth and formality to what's productive.
+- **Premature solutioning** — jumping to "here's how to implement" before understanding.
+- **Single-perspective analysis** — only happy path or only developer view. Rotate.
+- **Skipping for "simple" problems** — simple-seeming problems harbor unexamined assumptions.
+- **Ignoring non-functional requirements** — perf, security, observability, maintainability
+  is where production problems live.
+- **Edge cases as afterthought** — found in brainstorm = cheap; found in prod = catastrophic.
+- **Restating across sections** — Key Insights ↔ Architectural Decisions ↔ Risks should
+  not say the same thing in different words.
+- **Justification-stacking** — piling rationale on already-settled decisions.
+- **Straw-man approaches** — listing obvious losers with full Pros/Cons to make the chosen
+  one look better.
+- **Combining the visual companion offer with other content** — the offer must be its own
+  standalone message.

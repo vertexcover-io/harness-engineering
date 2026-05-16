@@ -3,67 +3,154 @@
   "evals": [
     {
       "id": 1,
-      "name": "new-feature-brainstorm",
+      "name": "new-feature-end-to-end",
       "prompt": "Brainstorm adding real-time collaboration to our document editor. Multiple users should be able to edit the same document simultaneously, like Google Docs.",
-      "expected_output": "A structured exploration through all phases ending with a design document saved to docs/spec/<SPEC_NAME>/design.md, with explicit user approval gates at each stage",
+      "expected_output": "A full brainstorm covering questioning, non-functional requirements, edge cases, dependency surfacing, YAGNI, self-review, and a tight design document",
       "files": [],
       "expectations": [
-        "Uses the AskUserQuestion tool for all questions rather than embedding questions in plain text output",
-        "Begins with Phase 1 context gathering by reviewing relevant codebase files and asking 2-3 initial questions about current state",
-        "Phase 2 explores non-functional requirements including performance, scalability, reliability, and security",
-        "Phase 2 actively hunts for edge cases such as concurrent edits, network failures, and conflict resolution",
-        "Phase 4 presents 2-3 distinct architectural approaches with trade-offs, risks, and a recommendation",
-        "Phase 5 performs explicit gap analysis checking for blind spots, open questions, and unvalidated assumptions",
-        "Phase 6 produces a design document saved to docs/spec/<SPEC_NAME>/design.md",
-        "Phase 6 presents the design section by section using AskUserQuestion for approval on each section"
+        "Asks the right questions: clarifies purpose, scope, success criteria, and user/system constraints before proposing solutions",
+        "Does not miss important questions: covers concurrency model (CRDT vs OT), presence/cursor behavior, offline editing, conflict resolution policy, and persistence boundary",
+        "Uses the AskUserQuestion tool for every question instead of embedding questions in plain text",
+        "Identifies non-functional requirements explicitly: performance/latency target, scalability bound, reliability, security/auth, observability",
+        "Hunts for edge cases: concurrent edits on the same range, network partition, stale clients, document deleted mid-edit, abusive payload sizes",
+        "Surfaces external dependencies (CRDT lib, WebSocket service) with maturity signals, auth surface, env var names, and an ordered fallback chain ending in a paid API or build-our-own option",
+        "Stress-tests the chosen approach against multiple lenses (end user, maintainer, scale, adjacent systems, security, failure modes)",
+        "Applies YAGNI: every knob, flag, and optional feature is challenged; defaults to hardcoding unless the value is genuinely empirical",
+        "Runs a self-review / spec-reviewer pass on the written design before handoff",
+        "Pauses for user approval on the written design before flowing to the next stage",
+        "Produces a design document at docs/spec/<SPEC_NAME>/design.md with EARS-style requirement IDs (F1, NF1, etc.)"
       ],
       "anti_expectations": [
-        "Does not write any implementation code, scaffolding, or pseudocode during the brainstorming session",
-        "Does not skip directly to proposing a solution without first exploring the problem space in Phases 1-2",
-        "Does not embed questions in plain text output instead of using the AskUserQuestion tool",
-        "Does not proceed to implementation before receiving explicit user approval of the design"
+        "Does not write any code, scaffolding, or pseudocode during the brainstorm",
+        "Does not embed function bodies or implementation code blocks in the design document — only interfaces, signatures, and data shapes",
+        "Does not repeat the same conclusion across Key Insights, Architectural Decisions, and Risks sections",
+        "Does not pile multiple paragraphs of justification on already-settled decisions",
+        "Does not include tautological assumptions ('UUIDs are unique') or 'we'll see how it goes' placeholders",
+        "Does not include straw-man alternative approaches with full Pros/Cons when only one approach is real",
+        "Does not skip to a solution before exploring the problem space",
+        "Does not proceed to implementation before explicit user approval"
       ]
     },
     {
       "id": 2,
-      "name": "minor-change-depth-scaling",
+      "name": "minor-change-stays-proportionate",
       "prompt": "Think through adding a dark mode toggle to our settings page. We already have a theme context provider, just need the UI toggle and to persist the preference.",
-      "expected_output": "A scaled-down brainstorm appropriate for a minor change: brief context gathering, quick risk check, short design summary rather than exhaustive multi-phase exploration",
+      "expected_output": "A brainstorm scaled to a minor change: short questioning, focused exploration, brief design document, sections omitted when empty",
       "files": [],
       "expectations": [
-        "Scales depth appropriately to a minor change rather than running full-depth exploration on all phases",
-        "Still performs some form of context gathering even though the problem seems simple",
-        "Uses the AskUserQuestion tool for questions rather than embedding them in plain text",
-        "Considers at least one non-functional concern (e.g., persistence mechanism, accessibility, SSR compatibility)",
-        "Identifies edge cases even for this minor feature (e.g., system preference changes, stored preference conflicts)",
-        "Produces a design document even if brief, saved to docs/spec/<SPEC_NAME>/design.md"
+        "Scales depth to the problem: short questioning round, brief exploration, concise design",
+        "Asks the right questions even on a small change: persistence target (localStorage vs server), SSR/flash-of-wrong-theme behavior, system-preference detection, accessibility (prefers-reduced-motion contrast)",
+        "Identifies at least one non-functional concern (SSR compatibility, accessibility, persistence semantics)",
+        "Identifies edge cases proportionate to scope (system preference change while app is open, stored preference for a no-longer-supported theme, flash on initial load)",
+        "Uses the AskUserQuestion tool for questions",
+        "Applies YAGNI: rejects unnecessary knobs (custom theme builder, per-page overrides, animation timing config) for a binary toggle",
+        "Omits sections that have no genuine content (no Assumptions section if nothing is assumed; no Open Questions section if none block planning)",
+        "Produces a brief design document at docs/spec/<SPEC_NAME>/design.md"
       ],
       "anti_expectations": [
-        "Does not skip brainstorming entirely just because the problem seems simple",
-        "Does not jump straight to writing implementation code or providing code snippets",
-        "Does not produce an exhaustive multi-page design document disproportionate to the problem size"
+        "Does not skip brainstorming entirely on the grounds that the problem is simple",
+        "Does not jump to writing implementation code or providing code snippets",
+        "Does not produce an exhaustive multi-page design disproportionate to the problem",
+        "Does not invent multiple straw-man alternative approaches when only one is realistic",
+        "Does not repeat the same insight across multiple sections in the design document"
       ]
     },
     {
       "id": 3,
-      "name": "code-level-refactoring-brainstorm",
+      "name": "structural-refactoring",
       "prompt": "Help me think through refactoring our payment processing module. It's a 2000-line file handling Stripe, PayPal, and bank transfers all in one class. Error handling is inconsistent and adding new payment methods is painful.",
-      "expected_output": "Exploration that reads and analyzes existing code as part of context gathering, identifies architectural challenges around boundaries and interfaces, and produces a design focused on structural changes without prescribing specific code",
+      "expected_output": "Exploration that reads the existing code, identifies boundaries and contracts, presents alternative refactor shapes, and produces an architectural design without code",
       "files": [],
       "expectations": [
-        "Reads and analyzes existing code files during Phase 1 context gathering since the problem is code-level",
-        "Uses AskUserQuestion tool for all interactive questions",
-        "Explores the problem from multiple perspectives including the developer maintaining it, the system under load, and failure/recovery modes",
-        "Phase 3 identifies architectural challenges around component boundaries, interfaces, and contracts between payment providers",
-        "Phase 4 presents 2-3 distinct refactoring approaches with trade-offs (e.g., strategy pattern vs. microservices vs. plugin architecture)",
-        "Design stays at the architectural level describing what changes structurally rather than prescribing specific code changes",
-        "Phase 7 asks for explicit design approval using AskUserQuestion before any implementation begins"
+        "Reads and analyzes existing code during context gathering since the problem is code-level",
+        "Asks the right questions: which provider behaviors actually differ (auth, idempotency, webhook handling, refund semantics), which are accidentally divergent, what's the migration plan for in-flight payments",
+        "Does not miss important questions: error-handling unification approach, observability gap, backward compatibility for in-flight transactions, test coverage starting point",
+        "Identifies architectural challenges around boundaries, interfaces, and contracts between payment providers",
+        "Presents 2-3 distinct refactoring shapes (e.g., strategy pattern, plugin architecture, provider microservices) with trade-offs and recommendation",
+        "Stress-tests from multiple lenses: maintainer adding the 4th provider, system under failure (provider outage mid-payment), adjacent systems (refund flow, reconciliation job)",
+        "Applies YAGNI: rejects speculative abstraction layers that aren't needed for the three current providers",
+        "Runs a self-review / spec-reviewer pass on the design",
+        "Pauses for user approval before handoff"
       ],
       "anti_expectations": [
-        "Does not start refactoring or writing code during the brainstorming session",
-        "Does not produce pseudocode or code-level implementation details in the design document",
-        "Does not analyze only the happy path while ignoring error handling and failure modes",
-        "Does not treat edge cases like partial payment failures or provider outages as afterthoughts"
+        "Does not start refactoring or writing code during the brainstorm",
+        "Does not embed pseudocode or function bodies in the design document",
+        "Does not route this to harness:refactor — structural rework belongs in brainstorm, not tactical refactor",
+        "Does not analyze only the happy path while ignoring partial-failure and provider-outage scenarios",
+        "Does not duplicate the same architectural insight across Key Insights, Architectural Decisions, and Risks",
+        "Does not propose a generic 'plugin framework' with knobs for features not yet needed"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "scope-decomposition-triggered",
+      "prompt": "Brainstorm a complete newsletter system for our platform. We need subscriber signup with double opt-in, a daily send pipeline with unsubscribe handling, and analytics on bounces and opens.",
+      "expected_output": "Flags multi-subsystem scope, proposes decomposition into independent sub-projects, confirms with the user, then brainstorms the first sub-project alone",
+      "files": [],
+      "expectations": [
+        "Flags that the request spans multiple independent subsystems (subscribe, delivery, analytics) before deep-diving",
+        "Proposes decomposition into sub-projects that can each ship value independently",
+        "Names the contracts between sub-projects (e.g., subscribers table state shape) as deliberate design artifacts",
+        "Confirms decomposition with the user via AskUserQuestion before continuing",
+        "After confirmation, brainstorms only the first sub-project — does not bundle all three into one design"
+      ],
+      "anti_expectations": [
+        "Does not produce a single design document covering subscribe, delivery, and analytics in one artifact",
+        "Does not over-split on prompts where sub-pieces share most of their files and ship together",
+        "Does not skip the decomposition check on prompts whose titles contain 'system', 'platform', or 'overhaul'"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "visual-companion-on-ui-work",
+      "prompt": "Brainstorm a redesign of our analytics dashboard. We want to compare layout options — a card grid vs a single-column scroll vs a left-nav-with-detail-pane.",
+      "expected_output": "Offers the visual companion as a standalone message because the work involves comparing visual layouts, then proceeds with text questions for non-visual decisions",
+      "files": [],
+      "expectations": [
+        "Offers the visual companion because the work involves comparing visual layouts",
+        "Sends the visual companion offer as its own standalone message — no clarifying questions, context, or other content in the same message",
+        "Uses AskUserQuestion for subsequent clarifying questions",
+        "Produces a design document at docs/plans/ with the chosen layout direction"
+      ],
+      "anti_expectations": [
+        "Does not combine the visual companion offer with clarifying questions or context in the same message",
+        "Does not offer the visual companion on purely backend work where no visual artifacts exist",
+        "Does not force every question through the browser after the companion is accepted — text questions stay in the terminal"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "auto-bypass-review-gate",
+      "prompt": "Run in auto mode — don't wait for approval. Brainstorm adding rate limiting to our public API endpoints.",
+      "expected_output": "Completes context gathering, exploration, design, and self-review, but bypasses the user approval gate per the prompt instruction",
+      "files": [],
+      "expectations": [
+        "Detects the bypass instruction in the prompt ('don't wait for approval' / '--auto' / 'no review gate')",
+        "Still produces the full design document at docs/plans/",
+        "Still runs the self-review / spec-reviewer pass on the design",
+        "Skips the user-facing approval pause and flows directly to the next stage"
+      ],
+      "anti_expectations": [
+        "Does not pause and ask for user approval on the design when bypass is active",
+        "Does not skip the spec-reviewer pass just because the user-facing approval is bypassed",
+        "Does not skip context gathering, exploration, YAGNI, or other earlier phases — bypass only affects the final user gate"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "out-of-scope-bug-investigation",
+      "prompt": "Brainstorm why our login flow sometimes returns 500 errors. It happens roughly once every 50 logins and we can't reproduce it locally.",
+      "expected_output": "Recognizes bug investigation is out of scope and routes the user to direct exploration rather than producing a design doc",
+      "files": [],
+      "expectations": [
+        "Recognizes the prompt is a bug investigation, not a structural design problem",
+        "Tells the user that brainstorm is for structural changes and offers an alternative path (direct exploration, debugging workflow)",
+        "Does not force the request through brainstorming phases"
+      ],
+      "anti_expectations": [
+        "Does not produce a design document for a bug investigation",
+        "Does not propose architectural rework as a fix without first investigating the root cause",
+        "Does not walk through brainstorming phases for a problem whose output should be a root cause and fix"
       ]
     }
   ]
