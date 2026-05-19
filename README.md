@@ -52,18 +52,21 @@ claude --plugin-dir <path-to-harness>
 
 ### Codex
 
-Install Harness from the Codex plugin marketplace:
+Install Harness from a configured Codex marketplace:
 
 ```bash
-/plugins
+codex plugin marketplace add <marketplace-source>
+codex plugin add harness --marketplace <marketplace-name>
 ```
 
-Search for `Harness`, then install it. For local development, point Codex at a checkout of this repository and restart Codex after making plugin changes:
+For example, once this repository is published as a Codex marketplace source:
 
 ```bash
-git clone https://github.com/vertexcover-io/harness-engineering.git
-cd harness-engineering
+codex plugin marketplace add vertexcover-io/harness-engineering
+codex plugin add harness --marketplace harness-local
 ```
+
+Restart Codex after installing or updating the marketplace.
 
 Merge the config snippet into `~/.codex/config.toml` to enable plugin-bundled hooks, set subagent concurrency, and apply the harness permissions profile:
 
