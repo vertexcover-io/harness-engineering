@@ -68,10 +68,14 @@ If Playwright MCP is unavailable: report "Playwright MCP not available — skipp
 
 `mkdir -p docs/spec/<SPEC_NAME>/verification/{screenshots,traces}`. One browser session for all scenarios; `browser_close` once at the end.
 
+**Before driving the browser:** read the project's page-level layout contract (typically the routing/layout section of CLAUDE.md, or the relevant page component file) and record — in `observations.md` as a one-line "expected ordering" note — the expected vertical ordering of the page's top-level sections. This becomes the layout invariant that screenshots must validate alongside the feature's own checks.
+
+**Screenshot framing rule:** every UI screenshot MUST include at least one non-feature element on the top edge AND the bottom edge of the frame (e.g. the section above the feature and the section below it, or a sticky save bar / page footer / nav). Tight crops of the feature alone are explicitly insufficient — they hide neighbour-ordering bugs (sticky bars appearing mid-page, orphaned actions, broken header/footer alignment after the feature mounts).
+
 For each scenario: navigate → snapshot (a11y) → act → wait → screenshot. See `references/playwright-capture.md` for viewport sizing, slice rules for tall pages, and console/network capture. Save PNGs to `verification/screenshots/`; save network/console captures to `verification/traces/`.
 
 **Size guardrail (committed artifacts — keep diffs reasonable):**
-- Each screenshot ≤ 200KB. Prefer cropped/clipped over full-page; downscale if needed.
+- Each screenshot ≤ 300KB. Prefer cropped/clipped over full-page; downscale if needed. (Raised from 200KB to accommodate the screenshot framing rule above — a frame that includes neighbour context is necessarily wider.)
 - Total ≤ 5 screenshots per spec (one per key verification scenario).
 - Trace files ≤ 100KB each.
 - If any cap is exceeded, fail the gate with `BLOCKED:artifact-size` and report which file(s).
