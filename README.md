@@ -61,6 +61,16 @@ codex plugin add harness --marketplace harness-local
 
 Restart Codex after installing or updating the marketplace.
 
+If you added Harness before the Codex marketplace catalog existed and see
+`plugin 'harness' was not found in marketplace 'harness-local'`, remove the old
+snapshot and add it again:
+
+```bash
+codex plugin marketplace remove main
+codex plugin marketplace add vertexcover-io/harness-engineering
+codex plugin add harness --marketplace harness-local
+```
+
 Merge the config snippet into `~/.codex/config.toml` to enable plugin-bundled hooks, set subagent concurrency, and apply the harness permissions profile:
 
 ```bash
@@ -292,6 +302,9 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 
 ```
 harness/
+├── .agents/
+│   └── plugins/
+│       └── marketplace.json  # Codex marketplace catalog
 ├── .codex-plugin/
 │   └── plugin.json  # Codex plugin manifest
 ├── .claude-plugin/
@@ -333,6 +346,8 @@ harness/
 **.claude-plugin/plugin.json** — Claude Code plugin metadata.
 
 **.codex-plugin/plugin.json** — Codex plugin metadata. It points Codex at the same `skills/` directory used by Claude Code.
+
+**.agents/plugins/marketplace.json** — Codex marketplace catalog. It exposes `harness@harness-local` for `codex plugin add`.
 
 **settings.json** — Claude Code runtime behavior:
 - Pre-approved read-only tools (git, grep, find, jq) and denied dangerous commands
