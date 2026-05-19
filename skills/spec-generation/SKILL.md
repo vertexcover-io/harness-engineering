@@ -14,11 +14,14 @@ Reads an approved design document and produces a structured SPEC.md with EARS-fo
 
 ## Input / Output
 
-**Input:** `docs/plans/YYYY-MM-DD-<topic>-design.md` — the approved brainstorm output.
+**Inputs:**
+- `docs/spec/<SPEC_NAME>/design.md` — the approved brainstorm output.
+- `docs/spec/<SPEC_NAME>/library-probe.md` — selected libraries (optional; folded into VS-0 scenarios if present).
+- `docs/spec/<SPEC_NAME>/verification/verification-stubs.md` — probe scenarios to fold in (optional).
 
-**Output:** `docs/plans/<feature-name>/SPEC.md` — structured specification with testable requirements.
+**Output:** `docs/spec/<SPEC_NAME>/spec.md` — structured specification with testable requirements.
 
-The `<feature-name>` directory is the same one the planning skill will use for phase files.
+The `docs/spec/<SPEC_NAME>/` directory is created by pipeline-setup; the planning skill writes `plan.md` alongside.
 
 ---
 
@@ -114,12 +117,13 @@ For each REQ and EDGE ID:
 3. If a requirement describes a user-visible workflow or a flow crossing multiple services, mark E2E Test as Yes and note the journey and infrastructure needed
 4. Add notes for anything requiring special setup or environment
 
-### Step 5: Write SPEC.md
+### Step 5: Write spec.md
 
-1. Create the `docs/plans/<feature-name>/` directory if it doesn't exist
-2. Write SPEC.md using the template above
-3. Verify every REQ ID appears in the verification matrix
-4. Verify every EDGE ID links to a valid REQ ID
+1. The `docs/spec/<SPEC_NAME>/` directory is created by pipeline-setup; verify it exists
+2. Write `docs/spec/<SPEC_NAME>/spec.md` using the template above
+3. If `docs/spec/<SPEC_NAME>/verification/verification-stubs.md` exists, append its VS-0 entries to the spec's Verification Scenarios section
+4. Verify every REQ ID appears in the verification matrix
+5. Verify every EDGE ID links to a valid REQ ID
 
 ---
 

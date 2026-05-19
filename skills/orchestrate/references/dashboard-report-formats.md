@@ -92,8 +92,8 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 ### VS-2: Login flow
 **Route:** /login
 **Screenshots:**
-- [Step 1: Login form](verification/ui/vs-2-step1.png)
-- [Step 2: After redirect](verification/ui/vs-2-step2.png)
+- [Step 1: Login form](verification/screenshots/vs-2-step1.png)
+- [Step 2: After redirect](verification/screenshots/vs-2-step2.png)
 
 ## Infrastructure
 - **Started:** `npm run dev` (PID 12345), `docker compose up -d`

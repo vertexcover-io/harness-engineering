@@ -57,7 +57,7 @@ a linter or formatter would catch. Focus exclusively on correctness and subtle d
 | `plan-path` | No | Path to the plan/design document. If omitted, review proceeds without plan compliance checks. |
 | `--pr NUMBER` | No | Review a PR diff (uses `gh pr diff NUMBER`). |
 | `--commits RANGE` | No | Review a commit range (e.g. `HEAD~3..HEAD`). |
-| `--output PATH` | No | Where to write REVIEW.md. Defaults to `./REVIEW.md`. |
+| `--output PATH` | No | Where to write the review report. Defaults to `./REVIEW.md`. The orchestrator pipeline passes `.harness/<SPEC_NAME>/review/pass-1.md` and `pass-2.md` for its two review passes (gitignored — review trail is pipeline working state, not committed). |
 
 **Scope resolution** (first match wins):
 1. `--pr NUMBER` → PR diff

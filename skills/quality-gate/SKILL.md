@@ -1,6 +1,6 @@
 ---
 name: quality-gate
-description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Captures baseline metrics to docs/spec/<SPEC_NAME>/baseline.json."
+description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads baseline metrics from .harness/<SPEC_NAME>/baseline.json."
 user-invocable: false
 ---
 
@@ -16,8 +16,9 @@ Every claim in this report is backed by verbatim command output. No check may be
 
 The quality gate receives these parameters from the orchestrator:
 
-- **Baseline file:** `docs/spec/<SPEC_NAME>/baseline.json`
-- **Plan dir:** `docs/spec/<SPEC_NAME>/`
+- **Baseline file:** `.harness/<SPEC_NAME>/baseline.json`
+- **Spec dir:** `docs/spec/<SPEC_NAME>/` (committed — spec.md, plan.md)
+- **Harness dir:** `.harness/<SPEC_NAME>/` (gitignored — phase-*.md, e2e-report.json, gate reports)
 - **Stage:** `post-tdd` | `post-refactor` | `pre-pr`
 
 ---
@@ -53,7 +54,7 @@ This proves the gate ran against the actual current code state.
 
 Run at pipeline start, immediately after worktree setup. Records the starting state so gates can detect regressions.
 
-**Capture these metrics and write to `docs/spec/<SPEC_NAME>/baseline.json`:**
+**Capture these metrics and write to `.harness/<SPEC_NAME>/baseline.json`:**
 
 ```json
 {
@@ -136,7 +137,7 @@ Detect project tooling in this order:
 
 ### Check 6: Plan Compliance
 
-- Read each `phase-N.md` in the plan directory
+- Read each `phase-N.md` in `.harness/<SPEC_NAME>/`
 - Extract all "Done When" checklist items
 - For each item, cite specific evidence:
   - Test name that passes
@@ -171,7 +172,7 @@ Detect project tooling in this order:
 
 ### Check 9: E2E Report Verification
 
-- Read `docs/spec/<SPEC_NAME>/e2e-report.json`
+- Read `.harness/<SPEC_NAME>/e2e-report.json`
 - If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found"
 - If `not_applicable: true` → `NOT_APPLICABLE` with the reason from the file
 - If file exists, verify:
@@ -200,7 +201,7 @@ If any gate returns **BLOCKED**, the pipeline stops at that point. The orchestra
 
 ## Gate Report Format
 
-Written to `docs/spec/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `gate-report-post-tdd-001.md`). Increment the sequence number based on existing reports in the directory:
+Written to `.harness/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `gate-report-post-tdd-001.md`). Increment the sequence number based on existing reports in the directory:
 
 ```markdown
 ## Quality Gate Report — <stage>
@@ -275,7 +276,7 @@ Binary verdicts — no WARN tier:
 
 ## Stagnation Detection
 
-Read previous gate reports from the spec directory (`gate-report-*.md`).
+Read previous gate reports from `.harness/<SPEC_NAME>/gate-report-*.md`.
 
 Compare error signatures: check name + first error line. If the **same check fails 3 consecutive times with the same error signature**, report STAGNATION.
 

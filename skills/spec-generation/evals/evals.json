@@ -10,7 +10,7 @@
         "skills/spec-generation/evals/files/eval1_design_doc.md"
       ],
       "expectations": [
-        "Output file is named SPEC.md and placed under docs/plans/<feature-name>/",
+        "Output file is named spec.md and placed under docs/spec/<SPEC_NAME>/",
         "SPEC contains a Requirements table with columns: ID, Type, Requirement, Acceptance Criterion, Priority",
         "Every requirement uses EARS format (starts with 'The system shall', 'When [event], the system shall', 'While [state], the system shall', or 'If [condition], then the system shall')",
         "No requirement combines multiple behaviors with 'and' or 'also' — each requirement covers one behavior",
@@ -37,7 +37,7 @@
         "skills/spec-generation/evals/files/eval2_design_doc.md"
       ],
       "expectations": [
-        "Output file is named SPEC.md and written to docs/plans/<feature-name>/",
+        "Output file is named spec.md and written to docs/spec/<SPEC_NAME>/",
         "Requirements use EARS format with correct type classification (event-driven for 'when delivery fails', unwanted-behavior for error handling, state-driven for circuit breaker open state)",
         "Requirements cover at-least-once delivery semantics and idempotency expectation",
         "Requirements cover the circuit breaker behavior: opening after 10 consecutive failures, probe delivery every 5 minutes, and closing on probe success",
@@ -63,7 +63,7 @@
         "skills/spec-generation/evals/files/eval3_design_doc.md"
       ],
       "expectations": [
-        "Output SPEC.md is written to docs/plans/<feature-name>/ directory",
+        "Output spec.md is written to docs/spec/<SPEC_NAME>/ directory",
         "Announces at start with the required message: 'Using the spec-generation skill to create a testable SPEC from the design doc'",
         "Requirements table uses REQ-001 through REQ-N sequential IDs with EARS format",
         "File status lifecycle transitions (pending_upload -> uploading -> pending_scan -> scanning -> clean/infected/scan_timeout/rejected) are captured as separate requirements, not combined",

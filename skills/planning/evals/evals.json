@@ -5,7 +5,7 @@
       "id": 1,
       "name": "feature-plan-from-description",
       "prompt": "Plan the implementation for adding webhook support to our notification system. We need to let users register webhook URLs, validate them with a test ping, and deliver event payloads with retries on failure. The codebase already has email and SMS notification channels.",
-      "expected_output": "A docs/plans/webhook-support/ folder with plan.md overview, phase-N.md files for each logical capability, DOT dependency graph, codebase context section, and interactive Q&A before phase design",
+      "expected_output": "A docs/spec/<SPEC_NAME>/plan.md overview (committed) plus .harness/<SPEC_NAME>/phase-N.md files (gitignored) for each logical capability, DOT dependency graph, codebase context section, and interactive Q&A before phase design",
       "files": [],
       "expectations": [
         "Announces 'Using the planning skill to create an implementation plan' at the start",
@@ -13,7 +13,7 @@
         "Uses Agent sub-agents or Glob/Grep/Read to investigate the existing codebase patterns",
         "Asks clarifying questions using the AskUserQuestion tool before designing phases — not embedded in plain text",
         "All questions are resolved before proceeding to phase design (hard gate respected)",
-        "Creates a docs/plans/ directory structure with plan.md and at least two phase-N.md files",
+        "Writes docs/spec/<SPEC_NAME>/plan.md and at least two .harness/<SPEC_NAME>/phase-N.md files",
         "plan.md contains a DOT digraph showing phase dependencies",
         "plan.md contains a Codebase Context section with Existing Patterns to Follow",
         "Each phase-N.md has a clear Overview, Implementation section with Files, What to test, and Done When criteria"
@@ -29,7 +29,7 @@
       "id": 2,
       "name": "plan-from-design-doc-with-parallel-phases",
       "prompt": "I have a design doc at docs/spec/search-indexing.md that describes adding full-text search to our product catalog. It covers indexing strategy, query parsing, and result ranking. Please create an implementation plan from this design doc.",
-      "expected_output": "A multi-phase plan under docs/plans/search-indexing/ derived from the design doc, with independent phases identified for parallel execution, codebase exploration findings, and user Q&A completed before phase design",
+      "expected_output": "A multi-phase plan with docs/spec/<SPEC_NAME>/plan.md plus .harness/<SPEC_NAME>/phase-N.md files derived from the design doc, with independent phases identified for parallel execution, codebase exploration findings, and user Q&A completed before phase design",
       "files": [],
       "expectations": [
         "Announces 'Using the planning skill to create an implementation plan' at the start",
@@ -50,7 +50,7 @@
     {
       "id": 3,
       "name": "fix-tag-plan-update",
-      "prompt": "Update the existing plan at docs/plans/auth-system/. I've added @fix tags to phase-2.md and phase-3.md marking what needs to change. Phase 2 is too large and needs splitting, and phase 3 should use argon2 instead of bcrypt.",
+      "prompt": "Update the existing plan at docs/spec/auth-system/plan.md (with phase files in .harness/auth-system/). I've added @fix tags to phase-2.md and phase-3.md marking what needs to change. Phase 2 is too large and needs splitting, and phase 3 should use argon2 instead of bcrypt.",
       "expected_output": "Updated phase files with @fix tags processed and removed, phase-2 split into smaller phases, phase-3 updated to use argon2, plan.md updated to reflect structural changes",
       "files": [],
       "expectations": [

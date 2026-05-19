@@ -137,6 +137,7 @@ Did behavior change?
 - **Large changesets (50+ files)**: batch by directory/module, propose high-level grouping first, suggest multiple PRs.
 - **Already-staged changes**: ask whether to incorporate or leave as-is.
 - **Monorepo**: use package name as scope (`feat(api): ...`, `fix(web): ...`).
+- **Pipeline artifacts under `docs/spec/<SPEC_NAME>/`** (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/): always isolate these into a **separate, final commit** — `docs(spec): add artifacts for <SPEC_NAME>` — never bundled with feature/fix commits. Rationale: reviewers should be able to read feature diffs without artifact noise, and read the artifact tree as one coherent unit.
 
 ## Scope Boundaries
 

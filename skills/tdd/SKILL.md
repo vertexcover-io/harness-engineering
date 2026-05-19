@@ -196,7 +196,7 @@ The e2e test defines the finish line. Unit and integration tests are written as 
 
 ### E2E Report Artifact (mandatory)
 
-After all E2E tests pass, write `docs/spec/<SPEC_NAME>/e2e-report.json`:
+After all E2E tests pass, write `.harness/<SPEC_NAME>/e2e-report.json` (gitignored — pipeline working state consumed by functional-verify and quality-gate):
 
 ```json
 {
@@ -320,7 +320,7 @@ instead of burning iterations on doomed retries.
 
 **Action:**
 1. Stop the TDD loop on this test — do not retry.
-2. Write a short diagnosis to `docs/spec/<SPEC_NAME>/lib-suspect-<lib>.md`:
+2. Write a short diagnosis to `.harness/<SPEC_NAME>/lib-suspect-<lib>.md`:
    lib + version, top-3 stack frames, error class, what you tried.
 3. Emit `<!-- LIB_SUSPECT:<library-name>:<error-class> -->` in your report.
 4. Return control. Orchestrate re-invokes `library-probe --lib <name>` to
