@@ -44,7 +44,7 @@ When `AUTO_MODE=true`:
 
 ### Step 2: DAG Dashboard Bootstrap
 
-The dashboard script path is: !`echo "${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/dag-update.sh"`
+The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.sh"`
 Store the path above as `DAG_SCRIPT`. All Bash calls below use this resolved path.
 
 Start the dashboard immediately. Do NOT read files, explore the codebase, or invoke any Skill or Agent before this.
@@ -54,26 +54,25 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
    ```
    Bash("
      export HARNESS_DIR=$(/usr/bin/env bash '<DAG_SCRIPT>' init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
-     D='/usr/bin/env bash <DAG_SCRIPT>'
-     $D add-node setup 'Setup'
-     $D add-node worktree 'Create Worktree' --parent setup
-     $D add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
-     $D add-node brainstorm 'Brainstorm' --depends-on setup
-     $D add-node library-probe 'Library Probe' --depends-on brainstorm
-     $D add-node spec-gen 'Spec Generation' --depends-on library-probe
-     $D add-node planning 'Planning' --depends-on spec-gen
-     $D add-node coder 'Coder' --depends-on planning
-     $D add-node code-review 'Code Review' --depends-on coder
-     $D add-node verify-finalize 'Verify & Finalize' --depends-on code-review
-     $D add-node commit-pr 'Commit & PR' --depends-on verify-finalize
-     $D serve
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node setup 'Setup'
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node worktree 'Create Worktree' --parent setup
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node brainstorm 'Brainstorm' --depends-on setup
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node library-probe 'Library Probe' --depends-on brainstorm
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node spec-gen 'Spec Generation' --depends-on library-probe
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node planning 'Planning' --depends-on spec-gen
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node coder 'Coder' --depends-on planning
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node code-review 'Code Review' --depends-on coder
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node verify-finalize 'Verify & Finalize' --depends-on code-review
+     /usr/bin/env bash '<DAG_SCRIPT>' add-node commit-pr 'Commit & PR' --depends-on verify-finalize
+     /usr/bin/env bash '<DAG_SCRIPT>' serve
    ")
    ```
    Note: Phase nodes are added as children of `coder` after planning (Stage 2) when phases are known.
 3. Store `HARNESS_DIR` for use in all subsequent `dag-update` calls.
 
-**DAG shorthand:** All dag-update calls use this pattern where `$D` = `/usr/bin/env bash "<DAG_SCRIPT>"`:
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D <command> <args>")`
+**DAG command pattern:** Invoke `dag-update.sh` directly instead of storing the command in a shell string. This works in both bash and zsh:
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' <command> <args>")`
 
 ---
 
@@ -238,13 +237,13 @@ The local skill is loaded and followed exactly in place of the global one. The l
 ### Stage 0: Setup (Main Conversation)
 
 **Worktree sub-step:**
-1. Run FIRST: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status setup running && $D set-status worktree running")`
+1. Run FIRST: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status setup running && /usr/bin/env bash '<DAG_SCRIPT>' set-status worktree running")`
 2. Invoke the `using-git-worktrees` skill via `Skill` tool to create the worktree
 3. `cd` into worktree. Store: `WORKTREE_PATH`, `BRANCH_NAME`
-4. After worktree ready: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report worktree '# Worktree\n- **Path:** <WORKTREE_PATH>\n- **Branch:** <BRANCH_NAME>' && $D set-status worktree done")`
+4. After worktree ready: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' write-report worktree '# Worktree\n- **Path:** <WORKTREE_PATH>\n- **Branch:** <BRANCH_NAME>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status worktree done")`
 
 **Baseline sub-step:**
-5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status baseline running")`
+5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status baseline running")`
 6. Derive `SPEC_NAME` from task, create:
    - `docs/spec/<SPEC_NAME>/verification/{screenshots,traces}/` (committed tree)
    - `.harness/<SPEC_NAME>/review/` (gitignored working tree; `reports/` already created by dashboard init)
@@ -252,46 +251,46 @@ The local skill is loaded and followed exactly in place of the global one. The l
 8. Run baseline metrics (typecheck, lint, test, coverage), write to `.harness/<SPEC_NAME>/baseline.json`
 9. Write `.harness/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`
 10. Store: `SPEC_NAME`, `SPEC_DIR` (`docs/spec/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
-11. After baseline: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report baseline '# Baseline\n- **Spec:** <SPEC_NAME>\n- **Baseline:** <BASELINE_PATH>' && $D set-status baseline done && $D set-status setup done")`
+11. After baseline: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' write-report baseline '# Baseline\n- **Spec:** <SPEC_NAME>\n- **Baseline:** <BASELINE_PATH>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status baseline done && /usr/bin/env bash '<DAG_SCRIPT>' set-status setup done")`
 
 ### Stage 1: Brainstorm (Main Conversation)
 
-1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status brainstorm running")`
+1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status brainstorm running")`
 2. Invoke `brainstorm` skill via `Skill` tool — no approval gate, design flows straight through.
    The brainstorm skill MUST produce a `## External Dependencies & Fallback Chain` section in the design doc (see brainstorm Phase 2.5). If absent, library-probe will block.
 3. Mark brainstorm done:
-   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report brainstorm '# Brainstorm' && $D set-status brainstorm done")`
+   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' write-report brainstorm '# Brainstorm' && /usr/bin/env bash '<DAG_SCRIPT>' set-status brainstorm done")`
 
 ### Stage 1.5: Library Probe (Main Conversation)
 
 The trust gate. Runs *before* spec generation so verified probes can be folded into the spec as VS-0 scenarios.
 
-1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status library-probe running")`
+1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status library-probe running")`
 2. Invoke `library-probe` skill via `Skill` tool. Pass design-doc path and `SPEC_DIR`. Pass `--auto` if `AUTO_MODE=true`.
 3. Read the verdict marker from `docs/spec/<SPEC_NAME>/library-probe.md`:
    - `<!-- LP:VERDICT:PASS -->` → continue.
    - `<!-- LP:VERDICT:BLOCKED -->` → **stop the pipeline.** Report which library failed and the user's choice (or that creds were missing in `--auto`).
    - `NOT_APPLICABLE` (no external deps) → continue.
 4. Mark done:
-   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report library-probe '<summary>' && $D set-status library-probe done")`
+   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' write-report library-probe '<summary>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status library-probe done")`
 
 ### Stage 1.7: Spec Generation (Main Conversation)
 
-1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status spec-gen running")`
+1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status spec-gen running")`
 2. Invoke `spec-generation` skill — it reads `docs/spec/<SPEC_NAME>/design.md` + `library-probe.md` + the probe verification stubs at `docs/spec/<SPEC_NAME>/verification/verification-stubs.md` and folds them into the spec's `## Verification Scenarios` (so functional-verify re-runs the probes).
 3. Save spec to `docs/spec/<SPEC_NAME>/spec.md`, store `SPEC_PATH`.
-4. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status spec-gen done")`
+4. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status spec-gen done")`
 
 ### Stage 2: Planner (Main Conversation)
 
-1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status planning running")`
+1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status planning running")`
 2. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally
 3. Planner explores codebase, asks interactive questions, designs phases
 4. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
 5. Output: `docs/spec/<SPEC_NAME>/plan.md` (committed) + `.harness/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH=docs/spec/<SPEC_NAME>/plan.md` and `PHASE_DIR=.harness/<SPEC_NAME>/`
 6. Add phase DAG nodes as children of `coder`, mark planning done:
-   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status planning done")`
-7. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D add-node phase-1 'Phase 1: <label>' --parent coder && $D add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
+   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status planning done")`
+7. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && /usr/bin/env bash '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
 
 **Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count
 
@@ -305,11 +304,11 @@ Dispatch based on phase and step dependency graphs. Two-level parallelism:
 
 **Step level:** For each phase, read `.harness/<SPEC_NAME>/phase-N.md`. If it has a step graph → dispatch steps in waves. If not → single agent for the phase.
 
-DAG transitions (use `$D` shorthand):
-- Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status coder running")`
-- Before each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status <phase-node> running")`
-- After each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status <phase-node> done")`
-- After all phases: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status coder done")`
+DAG transitions:
+- Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status coder running")`
+- Before each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status <phase-node> running")`
+- After each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status <phase-node> done")`
+- After all phases: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status coder done")`
 
 ### LIB_SUSPECT Loopback (from Stage 3 → 1.5)
 
@@ -362,7 +361,7 @@ Agent(model="sonnet", prompt="
   this report independently after you return.
 
   For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
-  D='/usr/bin/env bash <DAG_SCRIPT>'; use $D add-node for sub-tasks, $D set-status for progress.
+  use /usr/bin/env bash '<DAG_SCRIPT>' add-node for sub-tasks, /usr/bin/env bash '<DAG_SCRIPT>' set-status for progress.
   When done, write a phase report following the 'Coder Phase Report' format in
   references/dashboard-report-formats.md.
 ")
@@ -393,7 +392,7 @@ Dispatch in waves: send all independent steps in parallel → wait → dispatch 
 
 Two-pass review: a review+fix agent addresses defects directly, then a final review validates.
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status code-review running")`
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status code-review running")`
 
 **Pass 1 — Review & Fix:**
 
@@ -415,7 +414,7 @@ Agent(model="sonnet", prompt="
 ")
 ```
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status review-1 done")`
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status review-1 done")`
 
 **Pass 2 — Final Review:**
 
@@ -435,7 +434,7 @@ Agent(model="sonnet", prompt="
 ")
 ```
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status code-review done")`
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status code-review done")`
 
 **Verdict parsing:** Match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
 
@@ -443,7 +442,7 @@ Agent(model="sonnet", prompt="
 
 Single consolidated sub-agent that runs functional verification, quality gate, syncs docs, and captures learnings.
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status verify-finalize running")`
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status verify-finalize running")`
 
 ```
 Agent(model="sonnet", prompt="
@@ -526,7 +525,7 @@ The detection regex matches any diff path under a frontend package or an HTTP ro
 
 If the e2e gate fails → stop the pipeline with the exit message. A spec file authored but never run is the exact gap that ships unverified UI. The author of `e2e-report.json` is the test runner, not the agent — the file must be the *output* of `playwright test`, not hand-written.
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status verify-finalize done")`
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status verify-finalize done")`
 
 **If functional verification FAILED → stop pipeline and report which scenarios failed.**
 **If proof-report.md or adversarial-findings.md is missing → stop pipeline, report MISSING_VERIFICATION_ARTIFACTS.**
@@ -535,7 +534,7 @@ If the e2e gate fails → stop the pipeline with the exit message. A spec file a
 
 ### Stage 6: Commit & PR (Main Conversation)
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status commit-pr running")`
+`Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status commit-pr running")`
 
 Do these directly (no sub-agent):
 
@@ -550,8 +549,8 @@ Do these directly (no sub-agent):
 4. If PR desired (not --no-pr): `Bash("gh pr create --title '<spec title>' --body 'Closes: see docs/spec/<SPEC_NAME>/README.md for design, spec, plan, and verification proof.' --base main --head <BRANCH_NAME>")`
 5. Update `.harness/<SPEC_NAME>/manifest.json` with `pr_number` and `completed_at`. Backfill the PR URL into `docs/spec/<SPEC_NAME>/README.md` and amend the artifact commit (or follow up with a new commit if pre-existing commit policy forbids amend).
 6. Write dashboard report following 'Commit & PR Report' format in references/dashboard-report-formats.md.
-   Use: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report commit-pr '...'")`
-7. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status commit-pr done")`
+   Use: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' write-report commit-pr '...'")`
+7. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status commit-pr done")`
 
 **Extract:** commits, `PR_URL`
 
@@ -580,7 +579,7 @@ After all stages complete, present a compact summary:
 **Issues:** <any retries, failures, stagnation, or "None">
 ```
 
-Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D finalize done")`
+Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' finalize done")`
 
 ---
 
@@ -607,4 +606,4 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D finalize done")`
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level. Only parallelize phases touching 3+ files
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly
 - **Spec folder structure** — committed, reviewer-facing artifacts live in `docs/spec/<name>/` (design, spec, plan, library-probe, learnings, verification/); pipeline working state lives in `.harness/<name>/` (baseline, phase-*, e2e-report, gate-reports, review/, probes/, manifest) and is gitignored
-- **Dashboard** — orchestrator calls `$D set-status` at each stage transition. Sub-agents use `$D add-node` and `$D write-report` for sub-task tracking. Formats live in `references/dashboard-report-formats.md`.
+- **Dashboard** — orchestrator calls `/usr/bin/env bash '<DAG_SCRIPT>' set-status` at each stage transition. Sub-agents use `/usr/bin/env bash '<DAG_SCRIPT>' add-node` and `/usr/bin/env bash '<DAG_SCRIPT>' write-report` for sub-task tracking. Formats live in `references/dashboard-report-formats.md`.
