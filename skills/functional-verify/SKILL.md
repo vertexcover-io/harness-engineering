@@ -1,201 +1,165 @@
 ---
 name: functional-verify
 description: >
-  Live functional verification. Starts application infrastructure, runs API tests via curl
-  and UI tests via Playwright, captures evidence (payloads, responses, screenshots), and
-  generates a proof report at docs/spec/<name>/verification/proof-report.md.
-  Verification scenarios are read from the spec's "Verification Scenarios" section or
-  derived from the plan. Use when verifying that implemented features actually work
-  end-to-end, beyond unit/e2e test suites.
+  MUST run after any coding/TDD stage and BEFORE claiming a feature done, opening a PR,
+  or moving to commit. Passing unit/e2e tests are NOT verification — this skill is the
+  gate where you try to BREAK the feature. Trigger on phrases like "tests pass",
+  "implementation done", "ready for review", "ship it", or when orchestrate enters
+  the verify stage. The only proof this skill ran is the file
+  docs/spec/<SPEC_NAME>/verification/proof-report.md. If that file does not exist for
+  the current spec, verification did not happen — the feature is not done.
 user-invocable: true
 ---
 
-# Functional Verify: Live Application Testing
+# Functional Verify: The Gate
 
-Verify implemented features by running the application and testing it like a user or API client — not just running the test suite.
+**Announce at start:** "Starting functional verification — running the app live and trying to break the feature."
 
-**Announce at start:** "Starting functional verification — running the application and testing features live."
+## Your contract (this is the whole skill)
 
-This skill exists because vision LLMs are good at running browsers and bad at honestly grading what they see. The defense is simple: every claim — spec or open-review — must cite evidence a reviewer can re-run (a rect, a quoted string, a computed style, a network response). Bare adjectives like "looks fine" or "feels off" are not evidence.
+You are the gate between "tests are green" and "feature is done." Your job is **not** to confirm the happy path — the test suite already did that. Your job is to **produce `docs/spec/<SPEC_NAME>/verification/proof-report.md` containing evidence a reviewer can re-run.** No file → no verification → not done.
+
+Three non-negotiables:
+
+1. **Evidence, not adjectives.** Every claim cites a rect from `getBoundingClientRect()`, a quoted string, a computed style, an HTTP response, a console message, or a screenshot path. "Looks fine" / "feels off" / "polished" are verification failures.
+2. **The adversarial pass is mandatory and runs in a separate subagent.** Spec scenarios prove what was specified; adversarial testing finds what wasn't. See "Adversarial pass" below — you MUST dispatch it.
+3. **Skipping is detectable.** The Stop hook (`.claude/hooks/check-proof-report.sh`) blocks session end when an active spec has no `proof-report.md`. Do not work around it.
 
 ## Inputs
 
 - Spec: `docs/spec/<SPEC_NAME>/spec.md`
-- Plan dir (incl. `phase-*.md`): `docs/spec/<SPEC_NAME>/`
+- Plan dir: `docs/spec/<SPEC_NAME>/`
 - E2E report (optional): `docs/spec/<SPEC_NAME>/e2e-report.json`
 
-## Step 0 — Read E2E Coverage
+## Step 0 — Read E2E coverage and refuse double-runs
 
-Before deriving scenarios, read `docs/spec/<SPEC_NAME>/e2e-report.json`.
+- If `verification/proof-report.md` already exists for this spec in this session, **refuse to silently re-run.** Report the existing report path and stop. If the user wants a re-verify, they will ask.
+- Read `docs/spec/<SPEC_NAME>/e2e-report.json` if present:
+  - Any `coverage[].verdict == "FAIL"` → BLOCKER. Report and stop.
+  - `coverage[]` requirements are `COVERED_BY_E2E` — do not re-run them; cite them in the proof report.
+  - `gaps[]` is the primary input for the adversarial pass.
+- If e2e-report absent: note it; the adversarial pass will derive gaps from the spec.
 
-- If the file exists and `not_applicable` is not true:
-  - Extract the `coverage` array — these are requirements already proven by E2E during coding. Do NOT re-run these as spec scenarios in Steps 3-4. Mark them `COVERED_BY_E2E` in the proof report.
-  - Extract the `gaps` array — this is the primary input for the adversarial pass in Step 4.6.
-  - If any entry in `coverage` has `"verdict": "FAIL"` — that is a BLOCKER. Report it immediately and stop; the feature should not have reached this stage with failing E2E tests.
+## Step 1 — Verification scenarios
 
-- If the file does not exist: proceed as normal (no E2E was run during coding). Note the absence in the proof report under Infrastructure. The adversarial pass in Step 4.6 will derive gaps from the spec instead.
+Read the spec's `## Verification Scenarios` section. For each `### VS-N`, extract: type (api|ui|db), endpoint/route, payload, steps, expected, db check, screenshot path.
 
-- If `not_applicable` is true: note it in the proof report, proceed without filtering.
+If absent: derive one scenario per acceptance criterion (API endpoint → api, route → ui, persistence → db check).
 
-## Step 1 — Verification Scenarios
+If nothing can be derived: report "No functional verification scenarios — skipping" and stop. Do NOT fabricate.
 
-Read the spec's `## Verification Scenarios` section. For each `### VS-N: <description>` extract: `**Type:**` (api|ui|db), `**Endpoint:**`/`**Route:**`, `**Payload:**`, `**Steps:**`, `**Expected:**`, `**DB check:**`, `**Screenshot at:**`.
+## Step 2 — Start infrastructure
 
-If absent, derive one scenario per acceptance criterion: API endpoints → api; pages/routes → ui; data persistence → db check on the related scenario.
+See `references/infra-startup.md` for probe/start/health-poll commands. Rule: if **you** started a process, **you** kill it in Step 7. If it was already running, leave it.
 
-If no scenarios can be derived, report "No functional verification scenarios — skipping" and stop. Do NOT fabricate scenarios. Do NOT re-read spec/plan files if already in context.
+## Step 3 — API verification
 
-## Step 2 — Start Infrastructure
+For each api scenario:
 
-Probe common ports and proceed with whatever responds:
-```
-for p in 3000 3001 8080 8000 5173 4200; do curl -s -o /dev/null -w "$p:%{http_code}\n" http://localhost:$p; done
-```
+- Run curl with `-w '\n%{http_code}'`; save full command + status + body (≤50 lines) to `verification/api/<scenario-id>.txt`.
+- Record verdict (PASSED/FAILED) by exact-matching the spec's expected response, not by "looks right."
+- For scenarios with a DB check: query the DB (MCP tool if available, else read connection string from `.env*` or compose), record actual vs expected.
 
-If a required service isn't up, find a startup command in `package.json` (`scripts.dev|start|start:api`), `docker-compose.yml` / `compose.yml`, or `Makefile` (`up|start|dev`). Start in background:
-```
-npm run dev &> /tmp/functional-verify.log &
-# or
-docker compose up -d --wait
-```
+## Step 4 — UI verification (Playwright MCP)
 
-Poll for health up to 30s: `for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:<PORT> && break; sleep 1; done`.
+Drive a real browser via `mcp__playwright__browser_*`. Do NOT write `.spec.ts` files or run `npx playwright test` — that is the e2e suite, not this gate.
 
-If you started a process here, you are responsible for killing it in Step 7. If a process was already running when you arrived, leave it alone and note that in the proof report.
+If Playwright MCP is unavailable: report "Playwright MCP not available — skipping UI verification" and continue with API/DB only.
 
-## Step 3 — API Verification
+`mkdir -p docs/spec/<SPEC_NAME>/verification/ui`. One browser session for all scenarios; `browser_close` once at the end.
 
-For each API scenario:
-```
-curl -s -w '\n%{http_code}' -X <METHOD> http://localhost:<PORT>/<endpoint> \
-  -H 'Content-Type: application/json' -d '<PAYLOAD>'
-```
+For each scenario: navigate → snapshot (a11y) → act → wait → screenshot. See `references/playwright-capture.md` for viewport sizing, slice rules for tall pages, and console/network capture.
 
-Record scenario ID, exact curl, HTTP status, response body (≤50 lines), expected-match, PASSED/FAILED. Save to `docs/spec/<SPEC_NAME>/verification/api/<scenario-id>.txt`.
+For every PNG saved, append an entry to `verification/ui/observations.md` covering two tracks:
 
-**DB check** (when the scenario has one): use a connected DB MCP tool if available; otherwise read the connection string from `.env*` or compose. Run the query, compare to expected, record actual/expected/verdict.
+1. **Spec-based check** — for each requirement this screenshot evidences: requirement, verdict (`MET` / `UNMET` / `CANNOT_ASSESS`), concrete evidence (rect / string / style / network response).
+2. **Open visual review** — describe what you see; flag anything wrong even if the spec doesn't mention it (alignment, contrast, clipping, overlap, broken empty state, copy issues). If nothing is wrong, say so explicitly. Passing spec checks do NOT let you skip this.
 
-## Step 4 — UI Verification (Playwright MCP)
+Inline screenshot previews do NOT count as analysis — `Read` the PNG file path before grading it.
 
-Drive a real browser via `mcp__playwright__browser_*` tools. Do NOT write `.spec.ts`, run `npx playwright test`, or install `@playwright/test`.
+Block-level verdict is `UNMET` if any spec check is `UNMET` or any open-review finding is a real defect. Every `UNMET` must reach the proof report.
 
-If those tools are unavailable, report "Playwright MCP not available — skipping UI verification" and continue with API/DB only.
+## Step 5 — Adversarial pass (MANDATORY — role swap)
 
-`mkdir -p docs/spec/<SPEC_NAME>/verification/ui`.
+> **STOP. You are no longer the verifier. You are the critic.**
+>
+> The verifier you just were spent the last N tool calls confirming the
+> happy path works. They were almost certainly wrong about at least one
+> thing. Your job is to find it. You are graded on defects discovered,
+> not on agreement with the prior verdicts.
 
-### 4.1 Drive each scenario
+This pass runs in the same context (subagents cannot spawn subagents), so the isolation has to come from discipline. Three mandatory mitigations:
 
-- `browser_navigate` → load the route.
-- `browser_snapshot` → a11y tree to locate elements (cheaper than a screenshot).
-- `browser_click` / `browser_type` / `browser_fill_form` / `browser_select_option` / `browser_press_key` → user actions.
-- `browser_wait_for` → wait for text/state changes.
-- `browser_console_messages` → check runtime errors after each flow.
-- `browser_network_requests` → optional, when verifying API calls fired from UI.
+1. **Forced context break.** Before generating adversarial scenarios, re-read ONLY: `docs/spec/<SPEC_NAME>/spec.md` and `docs/spec/<SPEC_NAME>/e2e-report.json` (if present). Do NOT re-read `verification/ui/observations.md` or any draft of the proof report — they will bias you toward agreement with what you already wrote.
+2. **Targets come from `e2e-report.json` `gaps[]` first**, not from your own memory of what the verifier covered. If e2e-report is absent, derive from the spec: error paths, boundary values, out-of-order multi-step flows, concurrent actions, stale-state operations.
+3. **You must list what you tried.** A bare "no defects found" is a verification failure. Section 2 of `adversarial-findings.md` is non-skippable.
 
-Reuse one browser session across scenarios; `browser_close` once at the end.
+### 5.1 Derive attack surface and generate scenarios
 
-### 4.2 Capture rules
+For each gap, generate ≥2 scenarios per category that applies:
 
-For each route at each in-scope viewport (375 / 768 / 1280 for responsive specs; otherwise the spec's declared viewports):
+- **Boundary inputs** — empty, null, whitespace-only, max-length, max-length+1, wrong type, unicode/emoji, SQL/HTML/`<script>` (escaping check, not exploit), negative, zero, very large, leading/trailing zeros, dates in past/far-future/invalid.
+- **Unexpected sequences** — cancel mid-flow, double-submit, navigate back during save, reload mid-operation, two tabs submitting the same form, log out mid-flow.
+- **Broader surface** — if the change is one field on a settings page, exercise every other field on that page (regression catch).
+- **Error recovery** — after triggering an error, can the user recover? Stale state in UI / DB / cache?
+- **Status accuracy** — cancellations, timeouts, partial failures: does the visible status match the actual outcome? (Common bug: "Saved" toast on a 500.)
+- **Permissions / auth** — same action as a different role, expired session, missing token.
+- **Concurrency** — two writers, read-during-write, optimistic-lock conflicts.
 
-1. **Page screenshot** — `browser_take_screenshot` with `fullPage: false`. Save as `<route>-<viewport>.png`.
-2. **Slices for tall pages** — when `document.documentElement.scrollHeight > 2 × viewport.h`, capture viewport-scale slices at `scrollY = 0, vh, 2vh, …`. Save as `<route>-<viewport>-slice-NN.png`. Full-page screenshots are too compressed for layout review at scale; slices are the evidence.
+Do NOT duplicate anything in `e2e-report.json` `coverage[]`.
 
-Inline previews returned by `browser_take_screenshot` do NOT count as analysis — `Read` each PNG file path before grading it.
+### 5.2 Run them
 
-### 4.3 Per-screenshot observations
+Same tooling as Steps 3-4: curl, Playwright MCP, DB. Reuse the browser session. For each scenario, capture: exact input, actual response/state (HTTP + body, screenshot path, console errors, network, DB row), and a verdict — **DEFECT** (real user-facing bug), **EXPECTED** (feature correctly rejected the input), or **CANNOT_ASSESS** (with reason).
 
-For every PNG under `verification/ui/`, append an entry to `observations.md` covering two tracks:
+A `DEFECT` is: misleading message to user, lost/corrupted data, stale UI state, 500 reaching user, silent no-op, permission-boundary leak, broken recovery path. Cosmetic-only issues belong in Step 4's open visual review, not here.
 
-1. **Spec-based checks** — for each requirement/acceptance criterion that this screenshot is meant to evidence, state the requirement and the verdict (`MET` / `UNMET` / `CANNOT_ASSESS`) with concrete evidence (rect, text, computed style, network response — not adjectives).
-2. **Open visual review (always required)** — describe what you actually see and flag anything that looks wrong, even if the spec doesn't mention it: alignment, spacing, hierarchy, contrast, clipping, overlap, hidden CTAs, broken states, copy/typography issues, inconsistent components, weird empty states, etc. This runs on every screenshot regardless of how the spec checks turned out — passing spec checks do **not** let you skip it. If nothing looks wrong, say so explicitly ("no visual issues found") rather than leaving the section blank.
+### 5.3 Write `verification/adversarial-findings.md`
 
-Ground claims in evidence the reviewer can re-run — a rect from `getBoundingClientRect()`, a quoted string, a computed-style value, a console message, a network response. Adjectives without referents ("looks polished", "feels off") are not evidence. When you need to refer to a specific element, run a quick `browser_evaluate` to get its rect or text rather than describing it loosely.
+Required sections:
 
-The block-level verdict is `UNMET` if any spec check is `UNMET` or any open-review finding is a real defect (not a stylistic nit you'd dismiss in review). List every `UNMET` finding in `blocking_findings` so Step 5 picks them up.
+1. **Attack surface derived** — bullets of inputs/transitions/boundaries, with source (`gaps[]` vs. derived).
+2. **Scenarios attempted** — table: ID | category | description | inputs | verdict. Every scenario appears, including EXPECTED ones — they are evidence of genuine attempt.
+3. **Defects** — for each `DEFECT`: full reproduction, actual vs expected, evidence (response body / screenshot path / console / DB result), severity (blocker/major/minor).
+4. **Cannot assess** — scenarios you couldn't run, with reason.
+5. **Honest declaration** — one of:
+   - "Defects found: N. See section 3." (preferred outcome — the skill working)
+   - "No defects found across N scenarios attempted. Categories exercised: [list]. I genuinely tried to break this; here is what I tried." Then 2-3 sentences narrating the most promising attack and why it didn't land. Bare "no defects" without this narrative = verification failure.
 
-### 4.4 Adversarial second pass (mandatory when 4.3 surfaces no findings)
+## Step 6 — Generate proof report
 
-The open visual review in 4.3 is non-skippable — it must run for every screenshot, even when all spec checks pass. If a route's first pass surfaced no `UNMET` findings — neither spec nor open review — do not move on. Re-prompt yourself with the screenshots only (verdict hidden) and this seed:
-
-> "The previous reviewer claims this page is fine. Look again — there is likely at least one defect (alignment, grouping, grid, hierarchy, contrast, copy, broken state, or anything else that would make a designer wince). Find it and ground it in a rect, a quoted string, or a computed style. If after looking carefully you genuinely find nothing, report 'second pass clean' and say what you checked."
-
-Reconcile:
-
-- Findings only in pass 2 → re-ground by rect/evidence; if confirmed, escalate the verdict to `UNMET`.
-- "Second pass clean" → leave the verdict as-is and note the second-pass attempt in the entry.
-
-This is the single most reliable defense against the "model wrote MET because nothing jumped out" failure mode.
-
-### 4.5 Console & network
-
-After every navigation: `browser_console_messages level: error`. Any error → record it. Distinguish *new* errors from pre-existing ones by checking if the error reproduces on the main branch route (when feasible) — pre-existing errors should be flagged as such, not silently dropped.
-
-### 4.6 Adversarial gap testing (mandatory)
-
-This step runs after all spec scenarios are complete. Its job is to break the app in ways the E2E suite did not attempt.
-
-**Derive targets from the `gaps` field in `e2e-report.json`.** If no e2e-report exists, derive gaps yourself by reading the spec and identifying: error paths, boundary values, multi-step flows in unexpected order, concurrent actions, stale-state operations.
-
-For each gap, generate and run adversarial scenarios:
-- **Boundary inputs**: empty strings, null, max-length values, wrong types
-- **Unexpected sequences**: cancel mid-flow, submit twice, navigate back during a save, reload mid-operation
-- **Broader surface**: if the modified area is a settings page, test every field on that page, not just the new one
-- **Error recovery**: after triggering an error, can the user recover? Does the app leave stale state?
-- **Status accuracy**: cancellations, timeouts, and failures — verify the status text matches the actual outcome
-
-Run each adversarial scenario using the same curl/Playwright infrastructure. For each:
-- Document: scenario description, inputs used, actual outcome, whether it's a defect or expected behavior
-- A bug found here is a success — record it in `blocking_findings` and include it in the proof report
-
-**Do not duplicate** scenarios already covered by the E2E report. The gaps field is your guide to what's genuinely un-tested.
-
-## Step 5 — Generate Proof Report
-
-**Before writing:**
+Before writing:
 
 1. Read `verification/ui/observations.md` end-to-end.
-2. Confirm every PNG under `verification/ui/` has an entry. If any are missing, go back to 4.3.
-3. **Spec coverage check.** Build a coverage table: every REQ-N / EDGE-N in the spec → which scenario covered it → evidence file. Any row without evidence is a gap; either run the missing scenario or list it as "NOT VERIFIED" in the report with the reason. Do not silently skip spec items.
-4. Every `UNMET` finding — spec-based or open-review — must appear in the "Visual anomalies & UX observations" section. Silently dropping one is a verification failure.
+2. Confirm every PNG has an entry. Missing → return to Step 4.
+3. Build the spec coverage table: every REQ-N / EDGE-N → scenario → evidence file. Gaps are listed as `NOT VERIFIED` with the reason — never silently dropped.
+4. Confirm `verification/adversarial-findings.md` exists and section 2 (scenarios attempted) is non-empty. Missing → return to Step 5.
+5. Escalate any confirmed `DEFECT` from adversarial-findings to `UNMET` in the proof report. Quote findings verbatim; do not paraphrase.
 
-Write `docs/spec/<SPEC_NAME>/verification/proof-report.md` with these sections:
+Write `docs/spec/<SPEC_NAME>/verification/proof-report.md`. Use `references/proof-report-template.md` for the section list and ordering.
 
-- **Summary table** — scenario ID, type, description, verdict.
-- **API evidence** — curl + truncated responses.
-- **UI evidence** — screenshot references; one row per (route, viewport).
-- **DB evidence** — queries + results.
-- **Visual anomalies & UX observations** — for every `UNMET` finding (spec or open-review): which screenshot, what's wrong, the evidence (rect / quoted text / computed style / network response), whether the second pass surfaced it. If everything was clean after the second pass, write "Second pass clean across N screenshots; per-screenshot notes in observations.md." Do not omit this section.
-- **Spec coverage table** — REQ/EDGE → evidence path.
-- **E2E coverage summary** — list which spec requirements were `COVERED_BY_E2E` (skipped in this run, already proven during coding). Reference the e2e-report artifact path. If e2e-report was absent, note that all scenarios were run fresh.
-- **Adversarial findings** — for each adversarial scenario from Step 4.6: description, inputs, actual outcome, verdict (defect / expected). If no defects found, write "Adversarial pass clean — N scenarios attempted, all behaved correctly."
-- **Infrastructure note** — what was started, when it was cleaned up, what was already running.
+## Step 7 — Honest non-verification + cleanup
 
-## Step 6 — Honest non-verification
+- Under "Not executed," list anything this skill genuinely cannot verify (touch-hold gestures, real-device sensors, manual visual diffs vs last week's build, no-new-deps assertions). State the reason. Do not paper over with adjacent passing checks.
+- Kill processes you started in Step 2. Leave anything that was already running. Leave `verification/` artifacts in place.
 
-Some things in a spec cannot be verified by this skill — touch-hold gestures the MCP can't emulate, real-device sensors, manual visual diffs against last week's build, no-new-deps assertions that require a code-review pass. List them under a "Not executed" subsection of the report with the reason. Do not paper over them with adjacent passing checks.
+## Anti-patterns (each one is a verification failure)
 
-## Step 7 — Cleanup
+- Skipping this skill because the test suite passed. Tests prove what was specified; this skill finds what wasn't.
+- Skipping Step 5 because Steps 3-4 passed. The happy-path verdicts are exactly the bias the adversarial pass exists to counter.
+- Re-reading `observations.md` or the draft proof report before Step 5. That re-anchors you to the verifier's verdicts — the whole point of the role swap is to drop them.
+- Reporting "no defects" in Step 5.3 without the scenarios-attempted table and the narrative of what you tried. Empty effort is the failure mode this step exists to prevent.
+- Treating EXPECTED rejections as defects. A 400 on bad input is correct behavior; record it under "Scenarios attempted," not "Defects."
+- Bare adjectives as evidence — "looks polished", "feels off".
+- Skipping the open visual review when all spec checks pass.
+- Re-running scenarios already in `e2e-report.json` coverage.
+- Silently dropping an `UNMET` finding from the report.
+- Treating `truncate` / `line-clamp` on primary headlines as automatically fine.
+- Counting "no horizontal scroll" as proof of correct layout.
+- Re-reading spec/plan files already loaded by the orchestrator.
 
-Kill background processes you started in Step 2 (`kill %1`, `docker compose down`). Leave processes that were already running. Leave `verification/` artifacts in place — the orchestrator's Commit & PR stage handles them.
+## References
 
-## Token efficiency
-
-- Curl responses ≤50 lines (`head -50`).
-- Prefer screenshots over HTML dumps — a PNG is smaller than the DOM in conversation.
-- Report scenarios as a one-line-per-row table.
-- Don't re-read spec/plan/phase files already loaded by the orchestrator.
-- One browser session for all UI scenarios; `browser_close` only at the end.
-- Snapshot before screenshot when locating elements (a11y tree < PNG round-trip).
-- DB queries use `--csv` or `-t` for compact output.
-
-## Anti-patterns
-
-- Skipping the open visual review when all spec checks pass. The spec doesn't enumerate every UX defect; the open review is the only place those get caught.
-- Skipping the second pass because the first pass "felt thorough."
-- Naming an alignment, size, or position you didn't actually measure. If you need to claim something about a rect, get it from `getBoundingClientRect()`.
-- Treating intentional `truncate` / `line-clamp` as automatically fine. If the truncated content is the headline of a primary card, that is a UX finding even if the CSS is doing what was asked.
-- Counting "no horizontal scroll" as proof of correct layout. Reflow passes can coexist with arbitrary alignment defects.
-- Bare adjectives as evidence — "looks fine", "feels off", "polished". Either ground the claim or mark it `CANNOT_ASSESS` with the reason.
-- Re-running scenarios already proven by the E2E report. Read e2e-report.json in Step 0 and skip covered requirements — duplicate verification wastes time and adds no confidence.
-- Skipping the adversarial pass because all spec scenarios passed. Spec scenarios prove what was specified; adversarial testing finds what wasn't. Both are required.
+- `references/infra-startup.md` — port probes, start commands, health polling
+- `references/playwright-capture.md` — viewports, slicing, console/network, capture rules
+- `references/proof-report-template.md` — section ordering for `proof-report.md`
