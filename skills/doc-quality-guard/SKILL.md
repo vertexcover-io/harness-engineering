@@ -45,7 +45,7 @@ Parse `$ARGUMENTS`:
 
 ### Step 2: Dispatch Parallel Scanners
 
-Launch **up to 4 agents in parallel** using the Agent tool. Only dispatch agents whose scope overlaps with the resolved scan path. Each agent reads every doc file in its section, then cross-references against the corresponding source code.
+Launch **up to 4 agents in parallel** (Claude Code: `Agent` tool; Codex: invoke the `worker` agent at `.codex/agents/worker.toml` — see `references/codex-tools.md`). Only dispatch agents whose scope overlaps with the resolved scan path. Each agent reads every doc file in its section, then cross-references against the corresponding source code.
 
 **Agent Assignment:**
 

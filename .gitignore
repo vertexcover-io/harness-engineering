@@ -1,4 +1,5 @@
 dot-not-commit
+.DS_Store
 .worktrees/
 .harness/
 docs/*

@@ -52,7 +52,7 @@ The input is either a **design document**, a **spec**, or a **feature descriptio
 
 ### Step 2: Explore the Codebase
 
-Build understanding of existing code before planning changes. Dispatch sub-agents in parallel to investigate multiple areas simultaneously — Claude Code: `Agent` tool with `subagent_type=Explore`; Codex: `spawn_agent` with the `explorer` role (see `references/codex-tools.md`). Also use `Glob`/`Grep`/`Read` directly for targeted lookups.
+Build understanding of existing code before planning changes. Dispatch sub-agents in parallel to investigate multiple areas simultaneously — Claude Code: `Agent` tool with `subagent_type=Explore`; Codex: invoke the `explore` agent defined at `.codex/agents/explore.toml` (see `references/codex-tools.md`). Also use `Glob`/`Grep`/`Read` directly for targeted lookups.
 
 **What to explore:**
 

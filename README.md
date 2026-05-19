@@ -2,13 +2,14 @@
 
 <p align="center">
   <strong>Engineering discipline for AI-assisted development</strong><br>
-  A Claude Code plugin that adds the engineering your AI skips — design docs before code, tests before implementation, quality gates before merging
+  A Claude Code and Codex plugin that adds the engineering your AI skips — design docs before code, tests before implementation, quality gates before merging
 </p>
 
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://github.com/vertexcover-io/harness-engineering/stargazers"><img src="https://img.shields.io/github/stars/vertexcover-io/harness-engineering?style=flat" alt="GitHub stars"></a>
   <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-Plugin-blueviolet" alt="Claude Code Plugin"></a>
+  <img src="https://img.shields.io/badge/Codex-Plugin-111111" alt="Codex Plugin">
 </p>
 
 <p align="center">
@@ -28,7 +29,7 @@ Run the full pipeline end-to-end, or pick individual skills for smaller tasks.
 
 ## Installation
 
-### Option 1: Plugin marketplace (recommended)
+### Claude Code
 
 ```bash
 # Clone the repo
@@ -43,17 +44,38 @@ git clone https://github.com/vertexcover-io/harness-engineering.git
 
 This persists across sessions — the plugin loads automatically on startup.
 
-### Option 2: Load with `--plugin-dir`
-
 For quick one-off usage without installing:
 
 ```bash
 claude --plugin-dir <path-to-harness>
 ```
 
+### Codex
+
+Install Harness as a local Codex plugin by pointing Codex at this repository. The plugin includes `.codex-plugin/plugin.json`, which exposes the existing `skills/` directory to Codex.
+
+```bash
+git clone https://github.com/vertexcover-io/harness-engineering.git
+```
+
+Codex will discover the plugin through its Codex plugin manifest when this repository is installed as a local plugin or added to a Codex plugin marketplace.
+
+Merge the bundled config snippet into `~/.codex/config.toml` to enable plugin-bundled hooks, set subagent concurrency, and apply the harness permissions profile:
+
+```bash
+mkdir -p ~/.codex
+cat references/codex-config.toml >> ~/.codex/config.toml
+```
+
+**Codex compatibility notes:**
+- Skills auto-load from `skills/` via `.codex-plugin/plugin.json` — no `/plugin install` step.
+- Tool-name differences vs Claude Code are documented in [`references/codex-tools.md`](./references/codex-tools.md) (e.g. `TodoWrite` → `update_plan`, `Edit` → `apply_patch`, `WebSearch` → `web_search`).
+- Hooks are supported via `hooks/hooks.json`; requires `[features] plugin_hooks = true` in `config.toml`.
+- Named subagent types map to TOML agent files at `.codex/agents/` (`explore.toml`, `plan.toml`, `worker.toml`).
+
 ## Quick Start
 
-Tell Claude what you want to build. For the full pipeline:
+Tell Claude Code or Codex what you want to build. For the full pipeline:
 
 ```
 /orchestrate "Add rate limiting to the API"
@@ -269,11 +291,15 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 
 ```
 harness/
+├── .codex-plugin/
+│   └── plugin.json  # Codex plugin manifest
+├── .claude-plugin/
+│   └── plugin.json  # Claude Code plugin manifest
 ├── CLAUDE.md        # Global instructions for Claude Code
 ├── settings.json    # Permissions, hooks, and environment config
 ├── hooks/
 │   └── hooks.json   # Session hooks for dashboard management (ask-user, DAG updates)
-└── skills/          # Reusable skills that extend Claude's capabilities
+└── skills/          # Reusable skills that extend Claude Code and Codex
     ├── brainstorm/
     ├── code-quality/
     ├── code-review/
@@ -298,12 +324,16 @@ harness/
 
 ## Configuration
 
-**CLAUDE.md** — Global instructions Claude Code follows across every project:
+**CLAUDE.md / AGENTS.md** — Global instructions followed by Claude Code and Codex:
 - TDD-first approach, strict TypeScript, Python type hints, functional style
 - Explore before implementing, plan before coding, re-plan when stuck
 - Small focused functions, early returns over nested conditionals
 
-**settings.json** — Runtime behavior:
+**.claude-plugin/plugin.json** — Claude Code plugin metadata.
+
+**.codex-plugin/plugin.json** — Codex plugin metadata. It points Codex at the same `skills/` directory used by Claude Code.
+
+**settings.json** — Claude Code runtime behavior:
 - Pre-approved read-only tools (git, grep, find, jq) and denied dangerous commands
 - Deny rules for dotfiles, `~/Library`, `/etc`, and other sensitive paths
 - Session lifecycle hooks for the orchestrate dashboard

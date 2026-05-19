@@ -1,0 +1,42 @@
+{
+  "name": "harness",
+  "version": "1.0.30",
+  "description": "Systematic software engineering pipeline: brainstorm, plan, TDD, quality gates, code review, and full orchestration from spec to PR.",
+  "author": {
+    "name": "Vertex Cover"
+  },
+  "homepage": "https://github.com/vertexcover-io/harness-engineering",
+  "repository": "https://github.com/vertexcover-io/harness-engineering",
+  "license": "MIT",
+  "keywords": [
+    "tdd",
+    "code-quality",
+    "orchestration",
+    "planning",
+    "code-review",
+    "testing"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "agents": "./.codex/agents/",
+  "interface": {
+    "displayName": "Harness",
+    "shortDescription": "Engineering discipline for AI-assisted development",
+    "longDescription": "Harness guides Codex through design, planning, test-driven development, quality gates, code review, documentation sync, and full spec-to-PR orchestration workflows.",
+    "developerName": "Vertex Cover",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/vertexcover-io/harness-engineering",
+    "privacyPolicyURL": "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement",
+    "termsOfServiceURL": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
+    "defaultPrompt": [
+      "Use /orchestrate to build this feature",
+      "Use /tdd to fix this bug"
+    ],
+    "brandColor": "#2563EB",
+    "screenshots": []
+  }
+}

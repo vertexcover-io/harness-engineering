@@ -46,7 +46,7 @@ Parse `$ARGUMENTS`:
 
 ### Step 2: Dispatch Parallel Scanners
 
-Launch **3 agents in parallel** using the Agent tool. Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, fix_hint, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`).
+Launch **3 agents in parallel** (Claude Code: `Agent` tool; Codex: invoke the `worker` agent at `.codex/agents/worker.toml` — see `references/codex-tools.md`). Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, fix_hint, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`).
 
 The `fix_hint` field is a one-liner describing why the finding matters and a suggested fix direction (e.g., "Re-raise or log with context before continuing"). If a finding has no clear fix direction, omit `fix_hint`.
 

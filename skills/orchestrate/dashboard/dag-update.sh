@@ -104,7 +104,7 @@ cmd_add_node() {
 
   jq_filter='
     .nodes[$id] = {
-      "label": $label,
+      "label": $lbl,
       "status": "pending",
       "startedAt": null,
       "completedAt": null,
@@ -117,7 +117,7 @@ cmd_add_node() {
     jq_filter="$jq_filter | .nodes[\$parent].children += [\$id]"
   fi
 
-  local jq_args=(--arg id "$node_id" --arg label "$label")
+  local jq_args=(--arg id "$node_id" --arg lbl "$label")
   if [[ -n "$parent" ]]; then
     jq_args+=(--arg parent "$parent")
   fi
