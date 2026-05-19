@@ -55,13 +55,6 @@ claude --plugin-dir <path-to-harness>
 Install Harness from a configured Codex marketplace:
 
 ```bash
-codex plugin marketplace add <marketplace-source>
-codex plugin add harness --marketplace <marketplace-name>
-```
-
-For example, once this repository is published as a Codex marketplace source:
-
-```bash
 codex plugin marketplace add vertexcover-io/harness-engineering
 codex plugin add harness --marketplace harness-local
 ```
