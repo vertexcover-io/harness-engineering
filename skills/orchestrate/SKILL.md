@@ -337,9 +337,30 @@ is futile — the answer is to swap the underlying tool, not iterate the call.
 Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke tdd skill. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase file: .harness/<SPEC_NAME>/phase-<PHASE_N>.md.
-  If this phase has user-facing changes (UI routes or API endpoints), E2E TDD is mandatory:
-  write failing e2e tests first, implement until they pass, then write .harness/<SPEC_NAME>/e2e-report.json.
-  The phase is BLOCKED until e2e-report.json exists with failed=0.
+
+  **E2E TDD is MANDATORY when this phase touches:**
+  - any file under packages/web/ (or app/, pages/, frontend/, src/components/ — adapt to project layout), OR
+  - any HTTP route file (packages/api/src/routes/, src/routes/, etc.)
+
+  When mandatory:
+  1. Write the failing e2e test(s) FIRST (Playwright, Cypress, or project-standard).
+  2. Implement until they pass.
+  3. **Actually run the suite** end-to-end against live services. Authoring the spec is not enough.
+     For infra startup, follow the global reference at
+     `<harness-skills-root>/functional-verify/references/infra-startup.md` — it covers
+     port probing, finding the right `package.json`/`compose.yml`/`Makefile` command,
+     background-starting the service, health-polling up to 30 s, and the cleanup contract
+     ("if you started it, you kill it"). Apply migrations first, then start API + web
+     dev servers (or project equivalent), then run the e2e command. If the project has a
+     local override at `.claude/skills/functional-verify/`, prefer that.
+  4. Write the runner's output to .harness/<SPEC_NAME>/e2e-report.json with shape:
+     { 'executed': N, 'passed': N, 'failed': 0, 'scenarios': [{name, status, durationMs}, ...] }
+     The 'executed' field must be > 0 — a non-executed suite does not satisfy this gate.
+
+  The phase is BLOCKED until e2e-report.json exists with executed > 0 AND failed = 0.
+  Authoring the spec without running it = BLOCKED, not done. The orchestrator verifies
+  this report independently after you return.
+
   For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
   D='/usr/bin/env bash <DAG_SCRIPT>'; use $D add-node for sub-tasks, $D set-status for progress.
   When done, write a phase report following the 'Coder Phase Report' format in
@@ -353,9 +374,15 @@ Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke tdd and testing skills. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
   Phase file: .harness/<SPEC_NAME>/phase-<PHASE_N>.md. Step: <STEP_DETAILS>.
-  If this step introduces user-facing changes (UI routes or API endpoints), E2E TDD is mandatory:
-  write failing e2e tests first, implement until they pass, then write .harness/<SPEC_NAME>/e2e-report.json.
-  The step is BLOCKED until e2e-report.json exists with failed=0.
+
+  **E2E TDD is MANDATORY when this step touches frontend or HTTP routes** — see the full
+  E2E contract in the Phase-A agent prompt above. Summary:
+    1. Write the failing e2e test FIRST.
+    2. Implement until it passes.
+    3. **Actually run the suite** against live services (start infra + dev servers if needed).
+    4. Append to .harness/<SPEC_NAME>/e2e-report.json with executed > 0 AND failed = 0.
+  Authoring the spec without running it = BLOCKED, not done.
+
   Scope: Only this step's files. Return: files created/modified, test results, step completed or blocked.
 ")
 ```
@@ -460,7 +487,7 @@ Agent(model="sonnet", prompt="
 ")
 ```
 
-**After the sub-agent returns, enforce the proof-report contract before trusting the verdict:**
+**After the sub-agent returns, enforce the proof-report contract AND the e2e-execution contract before trusting the verdict:**
 
 ```
 Bash("
@@ -471,6 +498,33 @@ Bash("
 ```
 
 If either file is missing → treat verification as FAILED regardless of what the sub-agent returned, stop the pipeline. A "PASSED" verdict without the artifacts means the gate was skipped — the Stop/SubagentStop hook should have already blocked it, but this is the belt-and-suspenders check in orchestrate.
+
+**E2E execution contract (mandatory when the diff is user-facing):**
+
+```
+Bash("
+  # Detect user-facing changes since the base branch
+  if git diff --name-only <BASE_BRANCH>..HEAD | grep -qE '^(packages/web/|packages/api/src/routes/|src/routes/|app/|pages/|frontend/)'; then
+    REPORT=.harness/<SPEC_NAME>/e2e-report.json
+    if [ ! -f \"$REPORT\" ]; then
+      echo 'MISSING_E2E_REPORT — user-facing diff requires e2e execution'; exit 1
+    fi
+    # Report must show that scenarios actually ran (not just that the file exists)
+    EXECUTED=$(jq -r '.executed // .passed // 0' \"$REPORT\")
+    FAILED=$(jq -r '.failed // 0' \"$REPORT\")
+    if [ \"$EXECUTED\" = '0' ] || [ \"$EXECUTED\" = 'null' ]; then
+      echo 'E2E_NOT_EXECUTED — report exists but 0 scenarios ran. Authoring a spec without running it does not count.'; exit 1
+    fi
+    if [ \"$FAILED\" != '0' ]; then
+      echo \"E2E_FAILED — $FAILED scenario(s) failed; see $REPORT\"; exit 1
+    fi
+  fi
+")
+```
+
+The detection regex matches any diff path under a frontend package or an HTTP route directory. Tune it once per project layout — over-matching is safe (forces e2e on a backend-only diff that touched a route file); under-matching is the failure mode this gate exists to prevent.
+
+If the e2e gate fails → stop the pipeline with the exit message. A spec file authored but never run is the exact gap that ships unverified UI. The author of `e2e-report.json` is the test runner, not the agent — the file must be the *output* of `playwright test`, not hand-written.
 
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status verify-finalize done")`
 
