@@ -423,6 +423,10 @@ Agent(model="sonnet", prompt="
      Phase files: docs/spec/<SPEC_NAME>/phase-*.md.
      E2E report: docs/spec/<SPEC_NAME>/e2e-report.json (functional-verify reads this in Step 0 to skip
      already-proven scenarios and derive adversarial gap targets).
+     The skill produces TWO required artifacts:
+       - docs/spec/<SPEC_NAME>/verification/proof-report.md  (gate output — the verdict)
+       - docs/spec/<SPEC_NAME>/verification/adversarial-findings.md  (Step 5 role-swap pass: scenarios attempted + defects)
+     Both must exist before you return. Missing either one = verification did not happen, treat as FAILED.
      Write dashboard report following 'Verification Report' format in
      references/dashboard-report-formats.md.
      If FAILED: stop entirely, return failure with which scenarios failed and why.
@@ -449,9 +453,22 @@ Agent(model="sonnet", prompt="
 ")
 ```
 
+**After the sub-agent returns, enforce the proof-report contract before trusting the verdict:**
+
+```
+Bash("
+  test -f docs/spec/<SPEC_NAME>/verification/proof-report.md &&
+  test -f docs/spec/<SPEC_NAME>/verification/adversarial-findings.md ||
+  { echo 'MISSING_VERIFICATION_ARTIFACTS'; exit 1; }
+")
+```
+
+If either file is missing → treat verification as FAILED regardless of what the sub-agent returned, stop the pipeline. A "PASSED" verdict without the artifacts means the gate was skipped — the Stop/SubagentStop hook should have already blocked it, but this is the belt-and-suspenders check in orchestrate.
+
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status verify-finalize done")`
 
 **If functional verification FAILED → stop pipeline and report which scenarios failed.**
+**If proof-report.md or adversarial-findings.md is missing → stop pipeline, report MISSING_VERIFICATION_ARTIFACTS.**
 **If quality gate BLOCKED → stop pipeline and report what failed.**
 **If STAGNATION → stop pipeline entirely, do not retry.**
 
