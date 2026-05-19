@@ -1,0 +1,72 @@
+{
+  "skill_name": "testing",
+  "evals": [
+    {
+      "id": 1,
+      "name": "untestable-notification-service-with-integration-signals",
+      "prompt": "Write tests for the NotificationService in skills/testing/evals/files/eval1_notification_service.py. I need coverage for send, quiet hours deferral, and flush_deferred.",
+      "expected_output": "Identifies multiple testability barriers (singleton, Redis in constructor, SMTP/HTTP calls inside private methods, module-level mutable _sent_log) and suggests refactoring. Also detects integration test signals (Redis, external APIs). If tests are written, they use dependency injection and factory functions.",
+      "files": ["skills/testing/evals/files/eval1_notification_service.py"],
+      "expectations": [
+        "Performs a testability assessment before writing any tests",
+        "Identifies the singleton pattern (get_instance / _instance) as a testability barrier causing shared state across tests",
+        "Identifies that Redis is instantiated directly in __init__ (hidden dependency) and suggests injecting a storage interface",
+        "Identifies that _send_email imports and uses smtplib.SMTP directly — a side effect mixed with logic that should be behind an abstraction",
+        "Identifies the module-level _sent_log as shared mutable global state that causes test interference",
+        "Assesses test level and explicitly tells the user that Redis, SMTP, Twilio, and FCM integrations mean unit tests alone are insufficient",
+        "Suggests separating the pure quiet-hours logic (_is_quiet_hours) from the I/O-dependent send method so it can be unit tested independently",
+        "If tests are written, uses factory functions for notification request data rather than inline dicts"
+      ],
+      "anti_expectations": [
+        "Does not write tests that mock every Redis call and SMTP interaction without first flagging the testability problems",
+        "Does not proceed to write heavily mocked tests without suggesting refactoring the singleton and hidden dependencies",
+        "Does not ignore the _sent_log global mutable state as acceptable test design",
+        "Does not test only the happy path while skipping error cases (missing email, missing phone, unknown channel)"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "behavior-focused-inventory-tests",
+      "prompt": "Add tests for the InventoryManager class in skills/testing/evals/files/eval2_inventory.py. Cover reserve, restock, get_status, and discontinue.",
+      "expected_output": "Recognizes the code is well-structured with injected storage dependency. Writes behavior-focused tests using Arrange-Act-Assert, factory functions for Product data, covers happy paths, edge cases (zero stock, max capacity cap, discontinued products), and error cases (unknown SKU, negative quantity).",
+      "files": ["skills/testing/evals/files/eval2_inventory.py"],
+      "expectations": [
+        "Performs a testability assessment and notes the code is well-structured with an injectable storage dependency",
+        "Creates a factory function (e.g., make_product) that returns complete Product instances with sensible defaults and partial overrides",
+        "Tests are named by behavior (e.g., 'reserve reduces available quantity', 'restock caps at max quantity') not by implementation",
+        "Tests follow Arrange-Act-Assert structure with clear separation of phases",
+        "Covers reserve edge cases: reserving exact remaining quantity, reserving more than available (InsufficientStockError), reserving from discontinued product",
+        "Covers restock edge case: restocking beyond max_quantity is capped",
+        "Covers get_status transitions: in_stock, low_stock (at threshold), out_of_stock (zero), discontinued",
+        "Uses a fake or simple stub for the storage dependency rather than deep MagicMock chains"
+      ],
+      "anti_expectations": [
+        "Does not assert on storage.update_quantity call arguments as the primary assertion — asserts on the returned dict values instead",
+        "Does not create a 1:1 test file mapping (one test class per method) instead of organizing by behavior",
+        "Does not skip error path tests (unknown SKU raising KeyError, negative quantity raising ValueError)",
+        "Does not share mutable Product instances across test methods"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "detect-shared-state-and-implementation-coupling",
+      "prompt": "Review the tests in skills/testing/evals/files/eval3_fragile_tests.py. These tests pass individually but fail intermittently in CI. What's wrong and how should they be fixed?",
+      "expected_output": "Identifies shared mutable state (shared_items list mutated by test_empty_cart), tests that assert on mock interactions instead of computed values, tests that mirror if-else code structure rather than describing behaviors, and test names that describe code paths not user-facing outcomes.",
+      "files": ["skills/testing/evals/files/eval3_fragile_tests.py"],
+      "expectations": [
+        "Identifies shared_items as module-level shared mutable state and pinpoints test_empty_cart calling shared_items.clear() as the cause of intermittent CI failures",
+        "Identifies that test_apply_discounts_calls_get_tier, test_apply_discounts_calls_validate_when_promo_code_given, and test_apply_discounts_does_not_call_validate_without_promo assert on mock interactions rather than business outcomes",
+        "Identifies that tests like test_gold_tier_path and test_percent_promo_path mirror the internal if-else structure rather than testing user-facing behavior",
+        "Notes that test_gold_tier_path only checks discount_source but never verifies the actual discount amount or final_total — the most important business values",
+        "Suggests using factory functions to create fresh CartItem lists per test instead of sharing a module-level list",
+        "Suggests rewriting tests to assert on final_total and discount_applied values as primary assertions",
+        "Suggests behavior-oriented test names like 'gold members get 10 percent off subtotal' or 'larger of loyalty and promo discount is applied'"
+      ],
+      "anti_expectations": [
+        "Does not approve the existing tests as adequate or well-written",
+        "Does not suggest adding more mock-call-assertion tests in the same pattern",
+        "Does not miss the shared_items.clear() mutation as the root cause of the intermittent failures"
+      ]
+    }
+  ]
+}

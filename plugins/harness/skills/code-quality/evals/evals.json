@@ -1,0 +1,81 @@
+{
+  "skill_name": "code-quality",
+  "evals": [
+    {
+      "id": 1,
+      "name": "typescript-order-service-refactor",
+      "prompt": "Refactor this order service to follow strict quality patterns. The code is at skills/code-quality/evals/files/eval1_order_service.ts.",
+      "expected_output": "Refactored TypeScript with all `any` types replaced by proper types, immutable data (no mutation of order or items), pure calculateTotal function, early returns instead of nested conditionals in createOrder, Result types instead of thrown errors for business logic, createOrder parameters collapsed into an options object, @ts-ignore removed, and comments replaced by self-documenting function names.",
+      "files": [
+        "skills/code-quality/evals/files/eval1_order_service.ts"
+      ],
+      "expectations": [
+        "Removes all `any` type annotations — calculateTotal parameter typed as Order, processRefund return typed as a discriminated union or Result type, not `any`",
+        "Replaces `as any` cast in applyCoupon with a properly typed structure (extends the item type or uses a new type)",
+        "Removes @ts-ignore directive and handles the error type properly (unknown + type narrowing)",
+        "Makes applyCoupon return a new order object instead of mutating the existing one (order.discount mutation eliminated)",
+        "processRefund does not mutate order.status — returns a new object or uses a Result pattern",
+        "Replaces nested if/else pyramid in createOrder (total > 10000 block) with early returns or guard clauses",
+        "Collapses createOrder's 7 positional parameters into a single options object or interface",
+        "Uses declarative transformation (map/reduce) instead of imperative for-loop in calculateTotal",
+        "Uses a Result or discriminated union return type for error cases instead of throwing errors for business logic (validation failures, user not found)"
+      ],
+      "anti_expectations": [
+        "Does not use `any`, `as Type`, or `@ts-ignore` in the refactored code",
+        "Does not add comments explaining what code does — code should be self-documenting through naming",
+        "Does not leave mutable operations on function arguments (no direct property assignment on passed-in objects)",
+        "Does not silence the type checker with escape hatches"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "python-analytics-quality-pass",
+      "prompt": "Apply code quality patterns to this Python analytics module. File is at skills/code-quality/evals/files/eval2_analytics.py.",
+      "expected_output": "Refactored Python with all `Any` types replaced by specific types, frozen dataclass for Event, pure compute_top_events using Counter or comprehension instead of imperative loop, merge_event_properties returning a new dict instead of mutating base, no `# type: ignore` directives, dependency injection for I/O in AnalyticsTracker, and datetime.now(tz=UTC) instead of naive datetime.",
+      "files": [
+        "skills/code-quality/evals/files/eval2_analytics.py"
+      ],
+      "expectations": [
+        "Removes all `Any` type annotations — Event.properties typed with specific types or `object`, function return types use concrete types not `Any`",
+        "Removes all `# type: ignore` directives (in filter_events_by_date and parse_event_from_json) and fixes the underlying type issues",
+        "Makes Event dataclass frozen (frozen=True) to enforce immutability",
+        "Rewrites merge_event_properties to return a new dict (`{**base, **override}` or `base | override`) instead of mutating the base argument",
+        "Rewrites compute_top_events using Counter or a declarative approach instead of the imperative counting loop with the off-by-one bug",
+        "Rewrites filter_events_by_date using a list comprehension instead of an imperative loop with append",
+        "Injects I/O dependencies into AnalyticsTracker (file writer, API key) via constructor parameters instead of reading os.environ and writing directly to filesystem",
+        "Replaces class-level mutable `_events: List[Event] = []` with instance-level initialization to avoid shared state across instances"
+      ],
+      "anti_expectations": [
+        "Does not use `Any`, `cast()`, or `# type: ignore` in the refactored code",
+        "Does not add docstrings or comments explaining what functions do — uses self-documenting names instead",
+        "Does not leave the singleton pattern with hardcoded I/O (os.environ access, direct file writes) embedded in business logic",
+        "Does not mutate function arguments (no in-place dict updates on parameters)"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "typescript-cache-module-cleanup",
+      "prompt": "Clean up this cache module following strict code quality principles. Source at skills/code-quality/evals/files/eval3_cache.ts.",
+      "expected_output": "Refactored cache module with all `any` replaced by generic type parameters, CacheEntry made readonly, module-level mutable Map replaced with injected dependency, pure getStats function, warmCache using Promise.all instead of sequential await in loop, proper error handling with Result types instead of silent catch, and as CacheEntry assertion removed.",
+      "files": [
+        "skills/code-quality/evals/files/eval3_cache.ts"
+      ],
+      "expectations": [
+        "Removes all `any` types — uses generic type parameter `<T>` for cache value types (getOrSet<T>, warmCache<T>, setWithRetry<T>)",
+        "Makes CacheEntry properties readonly to enforce immutability",
+        "Removes `as CacheEntry` type assertion in setWithRetry and constructs the object with proper typing",
+        "Replaces module-level mutable `const cache: Map` with an injected dependency (passed as parameter or via constructor of a class)",
+        "Injects the redis client as a dependency rather than importing it as a module-level singleton",
+        "Rewrites warmCache to use Promise.all (or Promise.allSettled) instead of sequential await-in-loop for parallel fetching",
+        "Replaces silent catch-and-continue in warmCache with explicit error handling (Result type or collected errors)",
+        "Uses early return pattern in getOrSet — checks cache hit and returns early instead of fall-through logic"
+      ],
+      "anti_expectations": [
+        "Does not use `any` or `as Type` assertions in the refactored code",
+        "Does not silently swallow errors (no empty catch blocks or catch-and-continue without reporting)",
+        "Does not leave module-level mutable state (the global Map) — state is injected or encapsulated",
+        "Does not add explanatory comments — relies on clear function and variable names"
+      ]
+    }
+  ]
+}

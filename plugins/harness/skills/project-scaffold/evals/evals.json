@@ -1,0 +1,88 @@
+{
+  "skill_name": "monorepo-scaffold",
+  "evals": [
+    {
+      "id": 1,
+      "name": "fullstack-nextjs-hono-postgres-redis",
+      "prompt": "Scaffold the monorepo from this spec: skills/monorepo-scaffold/evals/files/eval1_spec.md",
+      "expected_output": "A working Turborepo monorepo with @taskflow/web (Next.js), @taskflow/api (Hono), @taskflow/shared packages, Podman Compose with PostgreSQL and Redis, all building and typechecking successfully",
+      "files": [
+        "skills/monorepo-scaffold/evals/files/eval1_spec.md"
+      ],
+      "expectations": [
+        "Reads and parses the spec document before scaffolding anything",
+        "Uses create-turbo CLI to initialize the Turborepo workspace with pnpm as package manager",
+        "Removes default create-turbo example packages (apps/web, apps/docs, packages/ui) and restructures to match the spec's flat packages/ layout",
+        "Creates all three packages from the spec: @taskflow/web, @taskflow/api, @taskflow/shared",
+        "Uses Next.js CLI generator (create-next-app) for the web package instead of hand-writing config",
+        "Creates a compose.yml with PostgreSQL 16 and Redis 7 services with correct ports and credentials from the spec",
+        "Creates .env.example with all environment variables from the spec (DATABASE_URL, REDIS_URL, API_PORT, NEXT_PUBLIC_API_URL)",
+        "Creates .env with working local dev defaults and adds .env to .gitignore",
+        "Adds infra:up, infra:down, and infra:reset scripts to root package.json using podman-compose",
+        "Wires cross-package workspace dependencies (@taskflow/api depends on @taskflow/shared, @taskflow/web depends on @taskflow/shared)",
+        "Runs turbo build and turbo typecheck as verification steps before presenting summary",
+        "Enables TypeScript strict mode in root tsconfig.json",
+        "Presents a summary listing all packages created, infrastructure services with ports, and key commands"
+      ],
+      "anti_expectations": [
+        "Does not add packages, frameworks, or infrastructure not mentioned in the spec",
+        "Does not hand-write package.json or tsconfig.json when a CLI generator is available for the framework",
+        "Does not skip the verification step (turbo build + turbo typecheck)",
+        "Does not leave placeholder version numbers in package.json dependencies",
+        "Does not hardcode database URLs or credentials directly in source code instead of using environment variables"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "microservices-npm-bullmq-minio",
+      "prompt": "Set up the project from this spec: skills/monorepo-scaffold/evals/files/eval2_spec.md",
+      "expected_output": "A Turborepo monorepo using npm with @mediapipe/gateway (Fastify), @mediapipe/ingest, @mediapipe/transcode workers, @mediapipe/db (Drizzle), Podman Compose with PostgreSQL, Redis, and MinIO, all building successfully",
+      "files": [
+        "skills/monorepo-scaffold/evals/files/eval2_spec.md"
+      ],
+      "expectations": [
+        "Uses npm as the package manager since the spec explicitly says npm, not pnpm",
+        "Uses create-turbo CLI with --package-manager npm flag",
+        "Scaffolds all four packages from the spec: gateway, ingest, transcode, db",
+        "Uses Fastify CLI generator for the gateway package if available, otherwise creates manually with fastify dependency",
+        "Creates the ingest and transcode worker packages manually (no CLI generator) with BullMQ dependency and a minimal worker entry point",
+        "Creates the db package with drizzle-orm, drizzle-kit, and pg as dependencies",
+        "Creates compose.yml with PostgreSQL on port 5433, Redis on port 6380, and MinIO on ports 9000/9001 matching spec exactly",
+        "MinIO service in compose.yml includes the media-uploads bucket, access key, and secret key from the spec",
+        "Creates .env.example with all 7 environment variables from the spec including S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET",
+        "All four packages have correct workspace dependency references (@mediapipe/db referenced by gateway, ingest, and transcode)",
+        "Runs install, turbo build, and turbo typecheck to verify the scaffold works",
+        "turbo.json build pipeline respects dependency graph (gateway/ingest/transcode depend on db building first)"
+      ],
+      "anti_expectations": [
+        "Does not default to pnpm when the spec explicitly specifies npm",
+        "Does not omit the MinIO service from compose.yml even though it's less common than PostgreSQL/Redis",
+        "Does not skip verification (turbo build + turbo typecheck must both run)",
+        "Does not create packages not listed in the spec (e.g., no shared or common package unless spec says so)"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "ambiguous-spec-asks-before-guessing",
+      "prompt": "Bootstrap the monorepo from this spec: skills/monorepo-scaffold/evals/files/eval3_spec.md",
+      "expected_output": "The skill identifies that the spec is too vague and asks clarifying questions before scaffolding. It does not guess at frameworks, database choices, or package structure.",
+      "files": [
+        "skills/monorepo-scaffold/evals/files/eval3_spec.md"
+      ],
+      "expectations": [
+        "Reads the spec document and identifies it as ambiguous or incomplete",
+        "Stops and asks the user clarifying questions before creating any files or running any scaffold commands",
+        "Asks about which frameworks to use for the storefront, admin dashboard, and API (spec says 'some kind of API' with no framework)",
+        "Asks about which specific database and caching technology to use (spec says 'a database and probably caching' without specifics)",
+        "Asks about the package naming scope (spec doesn't define a workspace scope like @shopline/)",
+        "Does not default to pnpm silently — either asks or notes the default since spec doesn't specify a package manager"
+      ],
+      "anti_expectations": [
+        "Does not guess at architecture or make framework choices when the spec is vague",
+        "Does not run create-turbo or any scaffold commands before getting clarification from the user",
+        "Does not create a compose.yml with assumed database choices (e.g., picking PostgreSQL when spec just says 'a database')",
+        "Does not proceed with scaffolding and present results without first resolving ambiguities"
+      ]
+    }
+  ]
+}

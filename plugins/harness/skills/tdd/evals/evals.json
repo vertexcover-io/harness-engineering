@@ -1,0 +1,69 @@
+{
+  "skill_name": "tdd",
+  "evals": [
+    {
+      "id": 1,
+      "name": "new-feature-email-validation",
+      "prompt": "Add email validation to the user registration function. It should reject empty emails, emails without an @ sign, and emails with spaces. The project uses pytest.",
+      "expected_output": "A failing test is written first for each validation rule, then minimum implementation code is added to pass each test, with refactoring assessed after each green phase",
+      "files": [],
+      "expectations": [
+        "Writes a failing test before writing any production/implementation code",
+        "Runs the test after writing it and confirms it fails before implementing",
+        "The test failure is because the feature is missing, not due to a syntax error or import error",
+        "Writes minimum code to make the failing test pass — no extra validation rules beyond what the current test demands",
+        "Runs the test again after implementation to confirm it passes",
+        "Follows multiple RED-GREEN-REFACTOR cycles — one per validation rule (empty, missing @, spaces) rather than implementing all at once",
+        "Assesses whether refactoring is needed after each green phase",
+        "All tests pass at the end of the workflow with clean output"
+      ],
+      "anti_expectations": [
+        "Does not write implementation code before a failing test exists",
+        "Does not implement all three validation rules at once before writing tests",
+        "Does not skip running the test in the RED phase to confirm failure",
+        "Does not add anticipatory features beyond what failing tests demand (e.g., DNS validation, disposable email checking)"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "bug-fix-duplicate-entries",
+      "prompt": "There's a bug where duplicate items are being added to the shopping cart when the user clicks 'Add to Cart' quickly. Fix it using TDD. The project uses Jest for testing.",
+      "expected_output": "A reproduction test is written first that demonstrates the duplicate-entry bug, then a minimal fix is implemented to make the test pass",
+      "files": [],
+      "expectations": [
+        "Investigates the relevant code before writing any test or fix — reads the cart logic to understand actual behavior",
+        "Writes a reproduction test that demonstrates the duplicate-entry bug before writing any fix",
+        "Runs the reproduction test and confirms it fails with the same symptom as the reported bug",
+        "Fixes the bug with minimum code to make the reproduction test pass",
+        "Runs all tests after the fix to confirm nothing else broke",
+        "Does not modify production code before the reproduction test fails",
+        "Assesses refactoring after the fix is green"
+      ],
+      "anti_expectations": [
+        "Does not fix the bug first and write tests afterward",
+        "Does not skip the investigation step and jump straight to coding a fix",
+        "Does not write a test that passes immediately without demonstrating the bug"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "refactor-extract-helper-with-existing-tests",
+      "prompt": "The formatCurrency function in utils.ts is 45 lines long with duplicated logic for different locales. Refactor it into smaller functions. Tests already exist in utils.test.ts.",
+      "expected_output": "Existing tests are run first as a safety net, then structural changes are made one at a time with tests confirmed green after each step",
+      "files": [],
+      "expectations": [
+        "Runs all existing tests first before making any structural changes to confirm they pass",
+        "Makes one structural change at a time (extract, rename, move) rather than rewriting everything at once",
+        "Runs tests after each individual refactoring step to confirm they still pass",
+        "Does not add new behavior during the refactoring — only changes structure",
+        "Does not add new tests during the refactoring phase (new tests belong in the next RED phase)",
+        "If a test breaks during refactoring, undoes the change and takes a smaller step"
+      ],
+      "anti_expectations": [
+        "Does not rewrite the entire function in one step without running tests between changes",
+        "Does not add new features or behavior under the guise of refactoring",
+        "Does not skip running tests between structural changes"
+      ]
+    }
+  ]
+}

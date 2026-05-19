@@ -1,0 +1,72 @@
+{
+  "skill_name": "quality-gate",
+  "evals": [
+    {
+      "id": 1,
+      "name": "post-tdd-gate-typescript-project",
+      "prompt": "Run the quality gate for post-tdd stage. The spec is 'add-search-feature' and the baseline is at docs/spec/add-search-feature/baseline.json. This is a TypeScript project using Vitest for testing.",
+      "expected_output": "A gate report written to docs/spec/add-search-feature/gate-report-post-tdd-001.md with all 8 checks (7 mandatory + smoke test), verbatim command output for each, and a final PASS or BLOCKED verdict with machine-parseable markers.",
+      "files": [],
+      "expectations": [
+        "Announces 'Running quality gate checks against baseline metrics' at the start",
+        "Captures state snapshot by running git log --oneline -1 and git diff --stat before any checks",
+        "Every command is run with the pattern: <command> 2>&1; echo \"EXIT_CODE=$?\"",
+        "Report includes exact command, raw output, and exit code for every check executed",
+        "All 7 mandatory checks are attempted: type checker, linter, test suite, coverage, scope compliance, plan compliance, ignore comment audit",
+        "Check 8 (smoke test) is attempted or noted as 'No smoke test defined'",
+        "Reads baseline.json and compares current results against baseline values",
+        "Gate report is written to docs/spec/add-search-feature/gate-report-post-tdd-001.md",
+        "Report contains machine-parseable markers: <!-- QG:VERDICT:PASS --> or <!-- QG:VERDICT:BLOCKED --> and <!-- QG:CHECK:N:PASS --> or <!-- QG:CHECK:N:BLOCKED --> for each check"
+      ],
+      "anti_expectations": [
+        "Does not skip any of the 7 mandatory checks or silently omit a check from the report",
+        "Does not report a coverage percentage without running an actual coverage tool command",
+        "Does not weaken or adjust pass/fail thresholds (e.g., allowing some type errors as 'minor')",
+        "Does not use a WARN verdict tier -- verdicts are strictly PASS, BLOCKED, or STAGNATION"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "post-refactor-gate-with-regression",
+      "prompt": "Run the post-refactor quality gate for spec 'refactor-auth-module'. The baseline is at docs/spec/refactor-auth-module/baseline.json. Previous baseline shows 42 passing tests. The project is a Python project with pytest and mypy.",
+      "expected_output": "A gate report running only checks 1-4 (type checker, linter, test suite, coverage) since post-refactor skips scope/plan/ignore checks. If test count dropped below 42, the verdict is BLOCKED.",
+      "files": [],
+      "expectations": [
+        "Only runs checks 1-4 (type checker, linter, test suite, coverage) for the post-refactor stage",
+        "Does not run scope compliance, plan compliance, or ignore comment audit checks",
+        "Compares test count against baseline and flags BLOCKED if test count < baseline",
+        "Auto-detects Python tooling: mypy for type checking, ruff or equivalent for lint, pytest for tests",
+        "Uses three-tier detection classification: DETECTED, NOT_APPLICABLE, or MISSING for each tool",
+        "If a tool is MISSING for a project with source files, reports BLOCKED verdict",
+        "Includes the Toolchain table showing detected status and command for each tool"
+      ],
+      "anti_expectations": [
+        "Does not run scope compliance, plan compliance, or ignore comment audit during post-refactor stage",
+        "Does not mark a tool as NOT_APPLICABLE without providing a justification",
+        "Does not delete or ignore baseline test count when current count is lower"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "pre-pr-gate-stagnation-detection",
+      "prompt": "Run the pre-pr quality gate for spec 'fix-payment-flow'. Baseline is at docs/spec/fix-payment-flow/baseline.json. There are already two previous gate reports in the spec directory: gate-report-post-tdd-001.md and gate-report-post-tdd-002.md, both showing the linter check failing with 'Unexpected any. Specify a different type' on line 45 of src/payments.ts. This is the third consecutive run with this same linter failure.",
+      "expected_output": "A gate report that detects stagnation on the linter check (same error 3 consecutive times) and reports STAGNATION, halting the pipeline rather than retrying.",
+      "files": [],
+      "expectations": [
+        "Reads previous gate reports from the spec directory to check for repeated failures",
+        "Detects that the linter check has failed 3 consecutive times with the same error signature",
+        "Reports STAGNATION with format: 'STAGNATION DETECTED: [check] has failed 3 consecutive times with: [error summary]'",
+        "Stops the pipeline and does not suggest retrying after stagnation detection",
+        "Runs all 7 mandatory checks plus optional smoke test since this is pre-pr stage",
+        "Gate report sequence number is incremented based on existing reports in the directory",
+        "Report includes verbatim output for all checks that were run before stagnation was determined",
+        "Includes the ignore comment audit check, scanning git diff for @ts-ignore, @ts-expect-error, eslint-disable, etc."
+      ],
+      "anti_expectations": [
+        "Does not retry or suggest retrying after detecting stagnation",
+        "Does not weaken the linter threshold to make the check pass",
+        "Does not skip reading previous gate reports when they exist in the spec directory"
+      ]
+    }
+  ]
+}

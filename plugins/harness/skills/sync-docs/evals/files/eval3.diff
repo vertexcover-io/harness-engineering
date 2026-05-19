@@ -1,0 +1,45 @@
+diff --git a/src/Button.tsx b/src/Button.tsx
+index 1111111..2222222 100644
+--- a/src/Button.tsx
++++ b/src/Button.tsx
+@@ -1,16 +1,25 @@
+ import React from "react";
+ import { clsx } from "clsx";
++import { Tooltip } from "./Tooltip";
+ import styles from "./Button.module.css";
+
+ export interface ButtonProps {
+-  variant?: "primary" | "secondary" | "ghost";
+-  size?: "sm" | "md" | "lg";
++  variant?: "primary" | "secondary" | "ghost" | "danger";
++  size?: "xs" | "sm" | "md" | "lg";
+   onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+   disabled?: boolean;
++  loading?: boolean;
++  tooltip?: string;
++  icon?: React.ReactNode;
+   children: React.ReactNode;
+ }
+diff --git a/src/index.ts b/src/index.ts
+index 3333333..4444444 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -7,3 +7,12 @@ export type { TextInputProps } from "./TextInput";
+ export { Modal } from "./Modal";
+ export type { ModalProps } from "./Modal";
++
++export { Tooltip } from "./Tooltip";
++export type { TooltipProps } from "./Tooltip";
++
++export { Toast, useToast } from "./Toast";
++export type { ToastProps } from "./Toast";
++
++export { Select } from "./Select";
++export type { SelectProps } from "./Select";
+diff --git a/src/ThemeProvider.tsx b/src/ThemeProvider.tsx
+index 5555555..6666666 100644
+--- a/src/ThemeProvider.tsx
++++ b/src/ThemeProvider.tsx
+@@ -1,4 +1,4 @@
+-export type Theme = "light" | "dark";
++export type Theme = "light" | "dark" | "system";

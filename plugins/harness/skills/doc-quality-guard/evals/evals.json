@@ -1,0 +1,69 @@
+{
+  "skill_name": "doc-quality-guard",
+  "evals": [
+    {
+      "id": 1,
+      "name": "full-repo-scan-default-scope",
+      "prompt": "Check docs for quality issues across the whole repo",
+      "expected_output": "Announces doc-quality-guard usage, scans docs/ and README.md files, dispatches parallel agents, prints a severity-classified report table, generates a fix spec, and asks for approval before invoking orchestrate",
+      "files": [],
+      "expectations": [
+        "Announces 'Using doc-quality-guard to audit documentation...' at the start",
+        "Resolves default scope to docs/ and README.md files when no path argument is given",
+        "Uses Glob to collect all .md files in the resolved scope",
+        "Dispatches up to 4 parallel agents using the Agent tool, each covering a distinct doc scope",
+        "Each agent prompt includes the accuracy checklist (wrong API signatures, removed features, stale examples, wrong parameter tables, dead links, outdated install instructions)",
+        "Each agent prompt includes the 8 AI slop patterns (AI vocabulary, promotional language, filler phrases, chatbot tone, excessive hedging, em dash overuse, generic conclusions, copula avoidance)",
+        "Prints a report with severity categories: critical, high, medium, low",
+        "Generates a fix spec file at dev-docs/superpowers/specs/ with the date-stamped filename pattern"
+      ],
+      "anti_expectations": [
+        "Does not fix documentation files directly — only generates a spec and delegates to /orchestrate",
+        "Does not skip the approval gate — must use AskUserQuestion before invoking /orchestrate",
+        "Does not check external links (only internal relative links)"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "scoped-scan-specific-directory",
+      "prompt": "Audit docs quality for docs/providers/ only",
+      "expected_output": "Scopes scan to docs/providers/, dispatches only the relevant agent (Agent A: Providers), cross-references against provider source code, prints report, generates spec if issues found",
+      "files": [],
+      "expectations": [
+        "Scopes scan to docs/providers/ based on the user-provided path argument",
+        "Only dispatches agents whose scope overlaps with docs/providers/ — does not dispatch all 4 agents",
+        "Agent prompt cross-references provider docs against packages/tarash-gateway/src/tarash/tarash_gateway/providers/",
+        "Agent prompt includes tone reference instructions pointing to docs/getting-started/quickstart.md and docs/providers/openai.md",
+        "Agent output follows the structured format with file, issues, type, severity, line, description, and suggested_fix fields",
+        "Deduplicates findings: same file + same line keeps the highest severity entry",
+        "Report table includes columns: File, Line, Issue, Suggested Fix"
+      ],
+      "anti_expectations": [
+        "Does not scan docs outside the specified scope (e.g., docs/guides/, docs/api-reference/, README.md)",
+        "Does not flag style issues like formatting or naming conventions as critical or high severity",
+        "Does not proceed to /orchestrate without user approval via AskUserQuestion"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "clean-docs-early-exit",
+      "prompt": "Check docs in docs/getting-started/ for any quality issues",
+      "expected_output": "Scans docs/getting-started/, dispatches the relevant agent, and if zero issues are found prints 'Docs are clean' message and stops without generating a spec or invoking orchestrate",
+      "files": [],
+      "expectations": [
+        "Announces 'Using doc-quality-guard to audit documentation...' at the start",
+        "Resolves scope to docs/getting-started/ based on user argument",
+        "Dispatches the appropriate agent (Agent B: Guides + Getting Started) for the scoped path",
+        "If all agents find zero issues, prints 'Docs are clean — no accuracy or tone issues detected.'",
+        "If zero issues found, does NOT generate a fix spec file",
+        "If zero issues found, does NOT invoke /orchestrate",
+        "Reports error and stops if the scoped path does not exist or contains no .md files"
+      ],
+      "anti_expectations": [
+        "Does not generate a fix spec when zero issues are found",
+        "Does not invoke /orchestrate or AskUserQuestion when zero issues are found",
+        "Does not track quality over time — treats the run as a fresh scan"
+      ]
+    }
+  ]
+}

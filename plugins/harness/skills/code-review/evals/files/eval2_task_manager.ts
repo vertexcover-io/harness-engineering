@@ -1,0 +1,100 @@
+import { EventEmitter } from "events";
+
+interface Task {
+  id: string;
+  title: string;
+  status: "pending" | "running" | "done" | "failed";
+  priority: number;
+  result?: unknown;
+  error?: string;
+}
+
+interface TaskStore {
+  [id: string]: Task;
+}
+
+const tasks: TaskStore = {};
+const emitter = new EventEmitter();
+
+export async function createTask(title: string, priority: number): Promise<Task> {
+  const id = Math.random().toString(36).slice(2, 10);
+  const task: Task = { id, title, status: "pending", priority };
+  tasks[id] = task;
+  emitter.emit("task:created", task);
+  return task;
+}
+
+export function getTask(id: string): Task | undefined {
+  return tasks[id];
+}
+
+export async function runTask(
+  id: string,
+  handler: (task: Task) => Promise<unknown>
+): Promise<Task> {
+  const task = tasks[id];
+  if (!task) {
+    throw new Error(`Task ${id} not found`);
+  }
+
+  task.status = "running";
+  emitter.emit("task:started", task);
+
+  try {
+    const result = handler(task);
+    task.result = result;
+    task.status = "done";
+    emitter.emit("task:completed", task);
+  } catch (err) {
+    task.status = "failed";
+    task.error = String(err);
+    emitter.emit("task:failed", task);
+  }
+
+  return task;
+}
+
+export function getTasksByPriority(minPriority: number): Task[] {
+  return Object.values(tasks)
+    .filter((t) => t.priority >= minPriority)
+    .sort((a, b) => b.priority - a.priority);
+}
+
+export async function runAllPending(
+  handler: (task: Task) => Promise<unknown>
+): Promise<void> {
+  const pending = Object.values(tasks).filter((t) => t.status == "pending");
+
+  pending.forEach(async (task) => {
+    await runTask(task.id, handler);
+  });
+}
+
+export function parseTaskConfig(jsonString: string): Record<string, unknown> {
+  const config = JSON.parse(jsonString);
+  return { ...config, parsedAt: new Date().toISOString() };
+}
+
+export function mergeTaskMetadata(
+  task: Task,
+  userInput: Record<string, unknown>
+): Task {
+  const merged = Object.assign({}, task, userInput);
+  return merged;
+}
+
+export function findTask(id: string): Task {
+  const task = tasks[id];
+  return task?.status === "done" ? task : undefined;
+}
+
+export function deleteCompletedTasks(): number {
+  let count = 0;
+  Object.keys(tasks).forEach((id) => {
+    if (tasks[id].status == "done") {
+      delete tasks[id];
+      count++;
+    }
+  });
+  return count;
+}
