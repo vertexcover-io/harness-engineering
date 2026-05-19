@@ -5,7 +5,7 @@
       "id": 1,
       "name": "new-feature-brainstorm",
       "prompt": "Brainstorm adding real-time collaboration to our document editor. Multiple users should be able to edit the same document simultaneously, like Google Docs.",
-      "expected_output": "A structured exploration through all phases ending with a design document saved to docs/plans/, with explicit user approval gates at each stage",
+      "expected_output": "A structured exploration through all phases ending with a design document saved to docs/spec/<SPEC_NAME>/design.md, with explicit user approval gates at each stage",
       "files": [],
       "expectations": [
         "Uses the AskUserQuestion tool for all questions rather than embedding questions in plain text output",
@@ -14,7 +14,7 @@
         "Phase 2 actively hunts for edge cases such as concurrent edits, network failures, and conflict resolution",
         "Phase 4 presents 2-3 distinct architectural approaches with trade-offs, risks, and a recommendation",
         "Phase 5 performs explicit gap analysis checking for blind spots, open questions, and unvalidated assumptions",
-        "Phase 6 produces a design document saved to docs/plans/YYYY-MM-DD-<topic>-design.md",
+        "Phase 6 produces a design document saved to docs/spec/<SPEC_NAME>/design.md",
         "Phase 6 presents the design section by section using AskUserQuestion for approval on each section"
       ],
       "anti_expectations": [
@@ -36,7 +36,7 @@
         "Uses the AskUserQuestion tool for questions rather than embedding them in plain text",
         "Considers at least one non-functional concern (e.g., persistence mechanism, accessibility, SSR compatibility)",
         "Identifies edge cases even for this minor feature (e.g., system preference changes, stored preference conflicts)",
-        "Produces a design document even if brief, saved to docs/plans/"
+        "Produces a design document even if brief, saved to docs/spec/<SPEC_NAME>/design.md"
       ],
       "anti_expectations": [
         "Does not skip brainstorming entirely just because the problem seems simple",

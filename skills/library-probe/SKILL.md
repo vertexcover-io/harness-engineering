@@ -34,8 +34,9 @@ turns belief into evidence before a single line of production code is written.
 
 ## Inputs
 
-- Design doc: `docs/plans/<date>-<topic>-design.md` (or path passed in)
-- Spec dir: `docs/spec/<SPEC_NAME>/` (where `library-probe.md` is written)
+- Design doc: `docs/spec/<SPEC_NAME>/design.md` (or path passed in)
+- Spec dir: `docs/spec/<SPEC_NAME>/` (committed — `library-probe.md`, `verification/verification-stubs.md`)
+- Harness dir: `.harness/<SPEC_NAME>/` (gitignored — `probes/<lib>/` scripts and logs)
 - Optional flag: `--lib <name>` to probe a single library on loopback
 - Optional flag: `--auto` to skip AskUserQuestion (CI mode)
 
@@ -43,8 +44,9 @@ turns belief into evidence before a single line of production code is written.
 
 ## Outputs
 
-- `docs/spec/<SPEC_NAME>/library-probe.md` — verdict file (see template below)
-- `docs/spec/<SPEC_NAME>/probes/<lib>/` — per-library evidence:
+- `docs/spec/<SPEC_NAME>/library-probe.md` — verdict file, committed (see template below)
+- `docs/spec/<SPEC_NAME>/verification/verification-stubs.md` — committed; folded by spec-generation into VS-0 scenarios
+- `.harness/<SPEC_NAME>/probes/<lib>/` — gitignored, per-library evidence:
   - `health.json` — health heuristic snapshot
   - `probe.<ext>` — the smoke script (kept for re-run)
   - `probe.log` — actual stdout/stderr
@@ -102,7 +104,7 @@ Score:
 - `dead` → 3+ thresholds tripped or `deprecated` flag → skip smoke, mark FAILED,
   pivot immediately.
 
-Write `docs/spec/<SPEC_NAME>/probes/<lib>/health.json`.
+Write `.harness/<SPEC_NAME>/probes/<lib>/health.json`.
 
 ---
 
@@ -162,7 +164,7 @@ The skill **never** writes to `.env.harness`. It only reads.
 
 For each `Use cases to probe` entry, generate a minimal throwaway script that
 exercises *exactly* that flow. The script lives at
-`docs/spec/<SPEC_NAME>/probes/<lib>/probe-<usecase>.<ext>`.
+`.harness/<SPEC_NAME>/probes/<lib>/probe-<usecase>.<ext>`.
 
 Generation rules:
 
@@ -224,11 +226,11 @@ For every library that landed `VERIFIED`, write a stub VS entry that
 ```markdown
 ### VS-0-<lib>-<usecase>: Library probe — <lib> <usecase>
 **Type:** api
-**Run:** bash docs/spec/<SPEC_NAME>/probes/<lib>/probe-<usecase>.sh
+**Run:** bash .harness/<SPEC_NAME>/probes/<lib>/probe-<usecase>.sh
 **Expected:** exit 0, payload.sample.json non-empty
 ```
 
-Save as `docs/spec/<SPEC_NAME>/probes/verification-stubs.md`. Spec-generation
+Save as `docs/spec/<SPEC_NAME>/verification/verification-stubs.md` (committed — reviewers see which probe scenarios will be re-run during verification). Spec-generation
 appends these to the spec's `## Verification Scenarios` section.
 
 This way `functional-verify` re-runs the same probes at the end of the
@@ -252,7 +254,7 @@ pipeline — if the lib died between probe and PR, we catch it.
 | twitterapi.io | trusted | VERIFIED | SELECTED |
 
 ## Selected
-- **<lib>** for <use case>. Evidence: probes/<lib>/probe.log
+- **<lib>** for <use case>. Evidence: `.harness/<SPEC_NAME>/probes/<lib>/probe.log`
 
 ## Pivot Log
 1. <lib-1> failed: <reason>. Tried next.

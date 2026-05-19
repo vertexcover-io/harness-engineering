@@ -196,7 +196,7 @@ Before producing the design, explicitly check for thinking gaps:
 ### Phase 6: Design Synthesis and Documentation
 
 Produce the design document. Read `references/design-template.md` for the full template.
-Save to `docs/plans/YYYY-MM-DD-<topic>-design.md`.
+Save to `docs/spec/<SPEC_NAME>/design.md` (the orchestrator passes `SPEC_NAME`; if invoked standalone without a `SPEC_NAME`, slugify the topic and create `docs/spec/<slug>/design.md`).
 
 The document covers: Problem Statement, Context, Requirements (functional, non-functional,
 edge cases), Key Insights, Architectural Challenges, Approaches Considered, Chosen Approach,

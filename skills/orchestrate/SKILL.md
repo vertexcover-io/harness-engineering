@@ -4,7 +4,7 @@ description: >
   Multi-agent pipeline orchestrator. Takes a prompt or spec file and runs:
   brainstorm, planner, coder (TDD + stagnation detection), code review (two-pass review+fix),
   verify & finalize (functional verification + quality gate + sync docs + learnings), and commit/PR.
-  Artifacts stored in docs/spec/<name>/. Use when the user says orchestrate, run the pipeline,
+  Reviewer-facing artifacts stored in docs/spec/<name>/ (committed); pipeline working state in .harness/<name>/ (gitignored). Use when the user says orchestrate, run the pipeline,
   full workflow, or wants end-to-end development from spec to PR.
   Supports --auto mode for CI/CD pipelines — bypasses interactive approval gates while still producing all artifacts.
 argument-hint: "<prompt or path/to/spec.md> [--auto]"
@@ -82,12 +82,12 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
 | # | Stage | Execution | Output |
 |---|-------|-----------|--------|
 | 0 | Setup | **Main conversation** | Worktree path, baseline metrics, spec directory |
-| 1 | Brainstorm | **Main conversation** | Design doc with declared dependency + fallback chain |
-| 1.5 | Library Probe | **Main conversation** | `docs/spec/<name>/library-probe.md` + verified probe scripts |
+| 1 | Brainstorm | **Main conversation** | `docs/spec/<name>/design.md` with declared dependency + fallback chain |
+| 1.5 | Library Probe | **Main conversation** | `docs/spec/<name>/library-probe.md` + verified probe scripts (in `.harness/<name>/probes/`) |
 | 1.7 | Spec Generation | **Main conversation** | `docs/spec/<name>/spec.md` (folds VS-0 probe scenarios in) |
-| 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` + `phase-*.md` |
-| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests |
-| 4 | Code Review | Sub-agent (2-pass) | REVIEW.md verdict, fixes applied |
+| 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` (committed) + `.harness/<name>/phase-*.md` (gitignored) |
+| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `.harness/<name>/e2e-report.json` |
+| 4 | Code Review | Sub-agent (2-pass) | `.harness/<name>/review/pass-{1,2}.md` verdicts, fixes applied |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
@@ -245,11 +245,14 @@ The local skill is loaded and followed exactly in place of the global one. The l
 
 **Baseline sub-step:**
 5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status baseline running")`
-6. Derive `SPEC_NAME` from task, create `docs/spec/<SPEC_NAME>/` directory
+6. Derive `SPEC_NAME` from task, create:
+   - `docs/spec/<SPEC_NAME>/verification/{screenshots,traces}/` (committed tree)
+   - `.harness/<SPEC_NAME>/review/` (gitignored working tree; `reports/` already created by dashboard init)
 7. Auto-detect project tooling: check `CLAUDE.md` first, then `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`
-8. Run baseline metrics (typecheck, lint, test, coverage), write to `docs/spec/<SPEC_NAME>/baseline.json`
-9. Store: `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH`
-10. After baseline: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report baseline '# Baseline\n- **Spec:** <SPEC_NAME>\n- **Baseline:** <BASELINE_PATH>' && $D set-status baseline done && $D set-status setup done")`
+8. Run baseline metrics (typecheck, lint, test, coverage), write to `.harness/<SPEC_NAME>/baseline.json`
+9. Write `.harness/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`
+10. Store: `SPEC_NAME`, `SPEC_DIR` (`docs/spec/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
+11. After baseline: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report baseline '# Baseline\n- **Spec:** <SPEC_NAME>\n- **Baseline:** <BASELINE_PATH>' && $D set-status baseline done && $D set-status setup done")`
 
 ### Stage 1: Brainstorm (Main Conversation)
 
@@ -275,7 +278,7 @@ The trust gate. Runs *before* spec generation so verified probes can be folded i
 ### Stage 1.7: Spec Generation (Main Conversation)
 
 1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status spec-gen running")`
-2. Invoke `spec-generation` skill — it reads design doc + `library-probe.md` + the probe verification stubs at `docs/spec/<SPEC_NAME>/probes/verification-stubs.md` and folds them into the spec's `## Verification Scenarios` (so functional-verify re-runs the probes).
+2. Invoke `spec-generation` skill — it reads `docs/spec/<SPEC_NAME>/design.md` + `library-probe.md` + the probe verification stubs at `docs/spec/<SPEC_NAME>/verification/verification-stubs.md` and folds them into the spec's `## Verification Scenarios` (so functional-verify re-runs the probes).
 3. Save spec to `docs/spec/<SPEC_NAME>/spec.md`, store `SPEC_PATH`.
 4. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status spec-gen done")`
 
@@ -285,12 +288,12 @@ The trust gate. Runs *before* spec generation so verified probes can be folded i
 2. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally
 3. Planner explores codebase, asks interactive questions, designs phases
 4. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
-5. Output: `docs/spec/<SPEC_NAME>/plan.md` + `phase-*.md`. Store `PLAN_DIR`
+5. Output: `docs/spec/<SPEC_NAME>/plan.md` (committed) + `.harness/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH=docs/spec/<SPEC_NAME>/plan.md` and `PHASE_DIR=.harness/<SPEC_NAME>/`
 6. Add phase DAG nodes as children of `coder`, mark planning done:
    `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status planning done")`
 7. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D add-node phase-1 'Phase 1: <label>' --parent coder && $D add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
 
-**Extract:** `PLAN_DIR`, phase graph (DOT from plan.md), phase count
+**Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count
 
 ### Stage 3: Coder
 
@@ -300,7 +303,7 @@ Dispatch based on phase and step dependency graphs. Two-level parallelism:
 
 **Phase level:** Parse the phase graph from plan.md. Dispatch ready nodes (no incomplete predecessors) in waves.
 
-**Step level:** For each phase, read `phase-N.md`. If it has a step graph → dispatch steps in waves. If not → single agent for the phase.
+**Step level:** For each phase, read `.harness/<SPEC_NAME>/phase-N.md`. If it has a step graph → dispatch steps in waves. If not → single agent for the phase.
 
 DAG transitions (use `$D` shorthand):
 - Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status coder running")`
@@ -322,7 +325,7 @@ After every coder sub-agent returns, scan its report for the marker
    ```
 4. Read `docs/spec/<SPEC_NAME>/library-probe.md` after it returns:
    - If `<!-- LP:VERDICT:BLOCKED -->` → stop the pipeline. The user (or auto-fail) said no viable alternative.
-   - If a `## Re-plan Required` section is present → re-invoke the `planning` skill scoped to the affected phase(s) only. The planner reads the new selected library from `library-probe.md` and rewrites the relevant `phase-N.md`.
+   - If a `## Re-plan Required` section is present → re-invoke the `planning` skill scoped to the affected phase(s) only. The planner reads the new selected library from `library-probe.md` and rewrites the relevant `.harness/<SPEC_NAME>/phase-N.md`.
 5. Re-dispatch the affected phase agent. Skip phases already marked done.
 
 This is the only retry loop the pipeline performs automatically. It exists
@@ -333,9 +336,9 @@ is futile — the answer is to swap the underlying tool, not iterate the call.
 ```
 Agent(model="sonnet", prompt="
   [PREAMBLE]
-  Invoke tdd skill. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase: <PHASE_N>.
+  Invoke tdd skill. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase file: .harness/<SPEC_NAME>/phase-<PHASE_N>.md.
   If this phase has user-facing changes (UI routes or API endpoints), E2E TDD is mandatory:
-  write failing e2e tests first, implement until they pass, then write docs/spec/<SPEC_NAME>/e2e-report.json.
+  write failing e2e tests first, implement until they pass, then write .harness/<SPEC_NAME>/e2e-report.json.
   The phase is BLOCKED until e2e-report.json exists with failed=0.
   For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
   D='/usr/bin/env bash <DAG_SCRIPT>'; use $D add-node for sub-tasks, $D set-status for progress.
@@ -349,9 +352,9 @@ Agent(model="sonnet", prompt="
 Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke tdd and testing skills. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
-  Phase: <PHASE_N>. Step: <STEP_DETAILS>.
+  Phase file: .harness/<SPEC_NAME>/phase-<PHASE_N>.md. Step: <STEP_DETAILS>.
   If this step introduces user-facing changes (UI routes or API endpoints), E2E TDD is mandatory:
-  write failing e2e tests first, implement until they pass, then write docs/spec/<SPEC_NAME>/e2e-report.json.
+  write failing e2e tests first, implement until they pass, then write .harness/<SPEC_NAME>/e2e-report.json.
   The step is BLOCKED until e2e-report.json exists with failed=0.
   Scope: Only this step's files. Return: files created/modified, test results, step completed or blocked.
 ")
@@ -371,12 +374,13 @@ Two-pass review: a review+fix agent addresses defects directly, then a final rev
 Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke code-review skill. Plan: docs/spec/<SPEC_NAME>/plan.md.
-  Scope: --commits <BASE_BRANCH>..HEAD.
+  Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/<SPEC_NAME>/review/pass-1.md.
 
   After completing the review:
   — If verdict is APPROVE or APPROVE WITH SUGGESTIONS: skip fixing, just write the review report.
   — If verdict is REQUEST CHANGES: FIX all Critical and Important defects you found.
-    Invoke tdd skill. Run tests after each fix. Then write a combined review+fix report.
+    Invoke tdd skill. Run tests after each fix. Then write a combined review+fix report
+    and append the list of fixed defects to .harness/<SPEC_NAME>/review/fixes-applied.md.
 
   Write dashboard reports following 'Code Review Report' and 'Fix Report' formats in
   references/dashboard-report-formats.md.
@@ -392,7 +396,8 @@ Agent(model="sonnet", prompt="
 Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke code-review skill. Plan: docs/spec/<SPEC_NAME>/plan.md.
-  Scope: --commits <BASE_BRANCH>..HEAD. This is the FINAL review pass.
+  Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/<SPEC_NAME>/review/pass-2.md.
+  This is the FINAL review pass.
 
   If verdict is REQUEST CHANGES: fix any remaining Critical/Important defects yourself.
   Then re-review the fix. Your output is the definitive verdict.
@@ -419,33 +424,35 @@ Agent(model="sonnet", prompt="
   Run these in order. Stop and return failure immediately if any step fails.
 
   1. FUNCTIONAL VERIFICATION: Invoke functional-verify skill.
-     Spec: docs/spec/<SPEC_NAME>/spec.md. Plan dir: docs/spec/<SPEC_NAME>/.
-     Phase files: docs/spec/<SPEC_NAME>/phase-*.md.
-     E2E report: docs/spec/<SPEC_NAME>/e2e-report.json (functional-verify reads this in Step 0 to skip
+     Spec: docs/spec/<SPEC_NAME>/spec.md. Plan: docs/spec/<SPEC_NAME>/plan.md.
+     Phase files: .harness/<SPEC_NAME>/phase-*.md.
+     E2E report: .harness/<SPEC_NAME>/e2e-report.json (functional-verify reads this in Step 0 to skip
      already-proven scenarios and derive adversarial gap targets).
-     The skill produces TWO required artifacts:
+     The skill produces TWO required artifacts (both committed):
        - docs/spec/<SPEC_NAME>/verification/proof-report.md  (gate output — the verdict)
        - docs/spec/<SPEC_NAME>/verification/adversarial-findings.md  (Step 5 role-swap pass: scenarios attempted + defects)
-     Both must exist before you return. Missing either one = verification did not happen, treat as FAILED.
+     Plus screenshots in docs/spec/<SPEC_NAME>/verification/screenshots/ and traces in verification/traces/.
+     Both proof-report.md and adversarial-findings.md must exist before you return. Missing either one = verification did not happen, treat as FAILED.
      Write dashboard report following 'Verification Report' format in
      references/dashboard-report-formats.md.
      If FAILED: stop entirely, return failure with which scenarios failed and why.
      Evidence is saved to docs/spec/<SPEC_NAME>/verification/ — do NOT delete it.
 
   2. QUALITY GATE: Invoke quality-gate skill.
-     Baseline: docs/spec/<SPEC_NAME>/baseline.json. Plan: docs/spec/<SPEC_NAME>/. Stage: post-tdd.
+     Baseline: .harness/<SPEC_NAME>/baseline.json. Spec dir: docs/spec/<SPEC_NAME>/. Harness dir: .harness/<SPEC_NAME>/. Stage: post-tdd.
      Write dashboard report following 'Quality Gate Report' format in
      references/dashboard-report-formats.md.
      If BLOCKED or STAGNATION: stop entire pipeline, return verdict + failure details.
 
   3. SYNC DOCS: Invoke sync-docs skill.
-     Spec dir: docs/spec/<SPEC_NAME>/. Plan dir: docs/spec/<SPEC_NAME>/.
+     Spec dir: docs/spec/<SPEC_NAME>/. Harness dir: .harness/<SPEC_NAME>/ (phase-*.md).
      Write dashboard report following 'Sync Docs Report' format in
      references/dashboard-report-formats.md.
 
   4. CAPTURE LEARNINGS: Invoke learn skill.
      Focus on pipeline friction — stalls, wrong assumptions, retries.
-     Spec dir: docs/spec/<SPEC_NAME>/. If nothing went wrong, skip.
+     Spec dir: docs/spec/<SPEC_NAME>/ (task-specific learnings land in learnings.md; reusable patterns
+     still go to docs/solutions/<category>/). If nothing went wrong, skip.
      Write dashboard report following 'Learnings Report' format in
      references/dashboard-report-formats.md.
 
@@ -478,12 +485,19 @@ If either file is missing → treat verification as FAILED regardless of what th
 
 Do these directly (no sub-agent):
 
-1. Invoke the `git-commit` skill via `Skill` tool to create structured commits.
-2. `Bash("git push -u origin <BRANCH_NAME>")`
-3. If PR desired (not --no-pr): `Bash("gh pr create --title '<spec title>' --body 'Closes: docs/spec/<SPEC_NAME>' --base main --head <BRANCH_NAME>")`
-4. Write dashboard report following 'Commit & PR Report' format in references/dashboard-report-formats.md.
+1. **Generate `docs/spec/<SPEC_NAME>/README.md`** — the reviewer index. Include:
+   - Title (from spec) + final verification verdict (PASS / BLOCKED, with link to `verification/proof-report.md`)
+   - One-paragraph summary of what was built (from spec)
+   - Table of contents linking each committed artifact: `design.md`, `spec.md`, `plan.md`, `library-probe.md`, `learnings.md` (if present), `verification/proof-report.md`, `verification/adversarial-findings.md`
+   - Library-probe verdict line (selected lib + alternatives tried)
+   - PR link placeholder (filled in after step 4)
+2. Invoke the `git-commit` skill via `Skill` tool. It should create a final, separate commit for the artifact tree: `docs(spec): add artifacts for <SPEC_NAME>` containing only the `docs/spec/<SPEC_NAME>/` files (kept distinct from feature commits for review clarity).
+3. `Bash("git push -u origin <BRANCH_NAME>")`
+4. If PR desired (not --no-pr): `Bash("gh pr create --title '<spec title>' --body 'Closes: see docs/spec/<SPEC_NAME>/README.md for design, spec, plan, and verification proof.' --base main --head <BRANCH_NAME>")`
+5. Update `.harness/<SPEC_NAME>/manifest.json` with `pr_number` and `completed_at`. Backfill the PR URL into `docs/spec/<SPEC_NAME>/README.md` and amend the artifact commit (or follow up with a new commit if pre-existing commit policy forbids amend).
+6. Write dashboard report following 'Commit & PR Report' format in references/dashboard-report-formats.md.
    Use: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D write-report commit-pr '...'")`
-5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status commit-pr done")`
+7. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D set-status commit-pr done")`
 
 **Extract:** commits, `PR_URL`
 
@@ -538,5 +552,5 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && $D finalize done")`
 - **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level. Only parallelize phases touching 3+ files
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly
-- **Spec folder structure** — all artifacts for a task live in `docs/spec/<name>/` for traceability
+- **Spec folder structure** — committed, reviewer-facing artifacts live in `docs/spec/<name>/` (design, spec, plan, library-probe, learnings, verification/); pipeline working state lives in `.harness/<name>/` (baseline, phase-*, e2e-report, gate-reports, review/, probes/, manifest) and is gitignored
 - **Dashboard** — orchestrator calls `$D set-status` at each stage transition. Sub-agents use `$D add-node` and `$D write-report` for sub-task tracking. Formats live in `references/dashboard-report-formats.md`.

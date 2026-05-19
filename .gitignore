@@ -1,7 +1,8 @@
 dot-not-commit
 .worktrees/
 .harness/
-docs/
+docs/*
+!docs/spec/
 orchestrate-workspace
 code-review-workspace
 dev-docs

@@ -9,7 +9,7 @@ Annotated examples for the plan folder structure.
 ```markdown
 # Plan: User Authentication System
 
-> **Source:** `docs/plans/2026-02-20-auth-design.md`
+> **Source:** `docs/spec/<SPEC_NAME>/design.md`
 > **Created:** 2026-02-24
 > **Status:** in-progress
 

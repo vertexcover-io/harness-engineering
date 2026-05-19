@@ -77,11 +77,19 @@ Record in baseline.json alongside the other metrics:
 
 If no e2e infrastructure is found, record `"e2e": { "detected": false }`. Do not fail — not every project has e2e tests.
 
-### 4. Create Spec Directory
+### 4. Create Spec + Harness Directories
+
+Artifacts are split across two trees:
+
+- `docs/spec/<SPEC_NAME>/` — committed, reviewer-facing (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/, README.md)
+- `.harness/<SPEC_NAME>/` — gitignored, pipeline working state (baseline.json, manifest.json, phase-*.md, e2e-report.json, gate-report-*.md, lib-suspect-*.md, review/, probes/)
+
+Steps:
 
 1. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`)
-2. Create `docs/spec/<SPEC_NAME>/` directory
-3. Write baseline metrics to `docs/spec/<SPEC_NAME>/baseline.json`:
+2. Create `docs/spec/<SPEC_NAME>/` and `docs/spec/<SPEC_NAME>/verification/{screenshots,traces}/`
+3. Create `.harness/<SPEC_NAME>/review/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`)
+4. Write baseline metrics to `.harness/<SPEC_NAME>/baseline.json`:
 
 ```json
 {
@@ -93,7 +101,22 @@ If no e2e infrastructure is found, record `"e2e": { "detected": false }`. Do not
 }
 ```
 
-Store: `SPEC_NAME`, `SPEC_DIR`, `BASELINE_PATH` (path to baseline.json)
+5. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
+
+```json
+{
+  "spec_name": "<SPEC_NAME>",
+  "branch": "<BRANCH_NAME>",
+  "worktree": "<WORKTREE_PATH>",
+  "started_at": "<ISO8601>",
+  "pr_number": null,
+  "stages": {}
+}
+```
+
+Downstream stages append `stages.<stage_name> = { started_at, completed_at, outcome }` entries.
+
+Store: `SPEC_NAME`, `SPEC_DIR` (`docs/spec/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
 
 ---
 
@@ -106,5 +129,7 @@ After completion, the following variables are available for downstream stages:
 | `WORKTREE_PATH` | Absolute path to the git worktree |
 | `BRANCH_NAME` | Name of the worktree branch |
 | `SPEC_NAME` | Slugified task name |
-| `SPEC_DIR` | Path to `docs/spec/<SPEC_NAME>/` |
-| `BASELINE_PATH` | Path to `baseline.json` |
+| `SPEC_DIR` | Path to `docs/spec/<SPEC_NAME>/` (committed artifacts) |
+| `HARNESS_SPEC_DIR` | Path to `.harness/<SPEC_NAME>/` (gitignored working state) |
+| `BASELINE_PATH` | Path to `.harness/<SPEC_NAME>/baseline.json` |
+| `MANIFEST_PATH` | Path to `.harness/<SPEC_NAME>/manifest.json` |

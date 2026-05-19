@@ -28,13 +28,13 @@ Three non-negotiables:
 ## Inputs
 
 - Spec: `docs/spec/<SPEC_NAME>/spec.md`
-- Plan dir: `docs/spec/<SPEC_NAME>/`
-- E2E report (optional): `docs/spec/<SPEC_NAME>/e2e-report.json`
+- Plan: `docs/spec/<SPEC_NAME>/plan.md` (per-phase breakdowns live in `.harness/<SPEC_NAME>/phase-*.md`)
+- E2E report (optional): `.harness/<SPEC_NAME>/e2e-report.json`
 
 ## Step 0 — Read E2E coverage and refuse double-runs
 
 - If `verification/proof-report.md` already exists for this spec in this session, **refuse to silently re-run.** Report the existing report path and stop. If the user wants a re-verify, they will ask.
-- Read `docs/spec/<SPEC_NAME>/e2e-report.json` if present:
+- Read `.harness/<SPEC_NAME>/e2e-report.json` if present:
   - Any `coverage[].verdict == "FAIL"` → BLOCKER. Report and stop.
   - `coverage[]` requirements are `COVERED_BY_E2E` — do not re-run them; cite them in the proof report.
   - `gaps[]` is the primary input for the adversarial pass.
@@ -66,11 +66,17 @@ Drive a real browser via `mcp__playwright__browser_*`. Do NOT write `.spec.ts` f
 
 If Playwright MCP is unavailable: report "Playwright MCP not available — skipping UI verification" and continue with API/DB only.
 
-`mkdir -p docs/spec/<SPEC_NAME>/verification/ui`. One browser session for all scenarios; `browser_close` once at the end.
+`mkdir -p docs/spec/<SPEC_NAME>/verification/{screenshots,traces}`. One browser session for all scenarios; `browser_close` once at the end.
 
-For each scenario: navigate → snapshot (a11y) → act → wait → screenshot. See `references/playwright-capture.md` for viewport sizing, slice rules for tall pages, and console/network capture.
+For each scenario: navigate → snapshot (a11y) → act → wait → screenshot. See `references/playwright-capture.md` for viewport sizing, slice rules for tall pages, and console/network capture. Save PNGs to `verification/screenshots/`; save network/console captures to `verification/traces/`.
 
-For every PNG saved, append an entry to `verification/ui/observations.md` covering two tracks:
+**Size guardrail (committed artifacts — keep diffs reasonable):**
+- Each screenshot ≤ 200KB. Prefer cropped/clipped over full-page; downscale if needed.
+- Total ≤ 5 screenshots per spec (one per key verification scenario).
+- Trace files ≤ 100KB each.
+- If any cap is exceeded, fail the gate with `BLOCKED:artifact-size` and report which file(s).
+
+For every PNG saved, append an entry to `verification/screenshots/observations.md` covering two tracks:
 
 1. **Spec-based check** — for each requirement this screenshot evidences: requirement, verdict (`MET` / `UNMET` / `CANNOT_ASSESS`), concrete evidence (rect / string / style / network response).
 2. **Open visual review** — describe what you see; flag anything wrong even if the spec doesn't mention it (alignment, contrast, clipping, overlap, broken empty state, copy issues). If nothing is wrong, say so explicitly. Passing spec checks do NOT let you skip this.
@@ -90,7 +96,7 @@ Block-level verdict is `UNMET` if any spec check is `UNMET` or any open-review f
 
 This pass runs in the same context (subagents cannot spawn subagents), so the isolation has to come from discipline. Three mandatory mitigations:
 
-1. **Forced context break.** Before generating adversarial scenarios, re-read ONLY: `docs/spec/<SPEC_NAME>/spec.md` and `docs/spec/<SPEC_NAME>/e2e-report.json` (if present). Do NOT re-read `verification/ui/observations.md` or any draft of the proof report — they will bias you toward agreement with what you already wrote.
+1. **Forced context break.** Before generating adversarial scenarios, re-read ONLY: `docs/spec/<SPEC_NAME>/spec.md` and `.harness/<SPEC_NAME>/e2e-report.json` (if present). Do NOT re-read `verification/screenshots/observations.md` or any draft of the proof report — they will bias you toward agreement with what you already wrote.
 2. **Targets come from `e2e-report.json` `gaps[]` first**, not from your own memory of what the verifier covered. If e2e-report is absent, derive from the spec: error paths, boundary values, out-of-order multi-step flows, concurrent actions, stale-state operations.
 3. **You must list what you tried.** A bare "no defects found" is a verification failure. Section 2 of `adversarial-findings.md` is non-skippable.
 
@@ -130,7 +136,7 @@ Required sections:
 
 Before writing:
 
-1. Read `verification/ui/observations.md` end-to-end.
+1. Read `verification/screenshots/observations.md` end-to-end.
 2. Confirm every PNG has an entry. Missing → return to Step 4.
 3. Build the spec coverage table: every REQ-N / EDGE-N → scenario → evidence file. Gaps are listed as `NOT VERIFIED` with the reason — never silently dropped.
 4. Confirm `verification/adversarial-findings.md` exists and section 2 (scenarios attempted) is non-empty. Missing → return to Step 5.

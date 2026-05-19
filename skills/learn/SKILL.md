@@ -77,9 +77,24 @@ Examples:
 - `cost-estimation-token-extraction-all-harnesses.md`
 - `cascading-fetch-usecallback-searchparams-taskit-frontend-20260220.md`
 
-### Step 4: Write the doc
+### Step 4: Decide scope — task-specific or globally reusable?
+
+Two destinations. Most learnings go to *one* of them; rarely both.
+
+- **Task-specific** — gotchas, decisions, or context that only matter for understanding *this* PR. Write to `docs/spec/<SPEC_NAME>/learnings.md` (committed, lives next to the spec it pertains to). If invoked outside the orchestrate pipeline (no `SPEC_NAME` available), skip this destination.
+- **Globally reusable** — patterns, gotchas, or architectural insights that future work on *any* feature should benefit from. Write to `docs/solutions/<category>/<filename>.md` (gitignored per repo policy, but checked locally and surfaced via CLAUDE.md).
+
+Ask: "Would a developer working on an unrelated feature 6 months from now benefit from this?" → if yes, global. If it only makes sense in the context of this spec → task-specific.
+
+If both apply, write the global doc and add a short pointer from `docs/spec/<SPEC_NAME>/learnings.md` referencing it.
+
+### Step 5: Write the doc
 
 Create a single markdown file using the template below. Populate it from the subagent's extracted material. The main conversation writes the file — no subagent writes files.
+
+For **task-specific**: append to `docs/spec/<SPEC_NAME>/learnings.md` (create on first learning; subsequent learnings append as new sections).
+
+For **globally reusable**:
 
 ```bash
 mkdir -p docs/solutions/<category>/
@@ -154,22 +169,22 @@ Not every doc needs every section. Use judgment:
 
 If a section would be empty or forced, skip it. A 3-section doc that's all signal beats a 6-section doc with filler.
 
-### Step 5: Surface critical learnings in CLAUDE.md
+### Step 6: Surface critical learnings in CLAUDE.md
 
-If the learning's severity is `high` or `critical`, append a one-liner to the "Critical gotchas" list in `CLAUDE.md` (under the `## Prior Learnings` section):
+If the learning is **globally reusable** AND severity is `high` or `critical`, append a one-liner to the "Critical gotchas" list in `CLAUDE.md` (under the `## Prior Learnings` section):
 
 ```markdown
 - `<title>` — see `docs/solutions/<category>/<filename>.md`
 ```
 
-This ensures critical mistakes are visible every session without searching. Skip this step for `low`, `medium`, or `design` severity.
+This ensures critical mistakes are visible every session without searching. Skip for `low`, `medium`, `design` severity, or task-specific learnings (those live with the spec and are rediscovered via the PR, not CLAUDE.md).
 
-### Step 6: Present result
+### Step 7: Present result
 
 After writing the file, show the user:
 
 ```
-Done — docs/solutions/<category>/<filename>.md
+Done — <path-written>  (e.g. docs/spec/<SPEC_NAME>/learnings.md, or docs/solutions/<category>/<filename>.md)
 
 <2-sentence summary of what was captured>
 

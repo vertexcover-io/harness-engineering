@@ -22,11 +22,16 @@ lets you work on early phases while refining later ones in parallel sessions.
 **Announce at start:** "Using the planning skill to create an implementation plan."
 
 **Plan output:**
+
+`plan.md` (the overview + DOT phase graph) is committed; per-phase breakdowns are pipeline working state and stay gitignored.
+
 ```
-docs/plans/<feature-name>/
-├── plan.md          # Overview — what each phase achieves
-├── phase-1.md       # First logical feature
-├── phase-2.md       # Second logical feature
+docs/spec/<SPEC_NAME>/
+└── plan.md          # Committed — overview, DOT phase graph, codebase context
+
+.harness/<SPEC_NAME>/
+├── phase-1.md       # Gitignored — detailed steps for phase 1
+├── phase-2.md       # Gitignored — detailed steps for phase 2
 └── ...
 ```
 
@@ -47,7 +52,7 @@ The input is either a **design document**, a **spec**, or a **feature descriptio
 
 ### Step 2: Explore the Codebase
 
-Build understanding of existing code before planning changes. Use `Agent` sub-agents (subagent_type=Explore) in parallel to investigate multiple areas simultaneously. Also use `Glob`, `Grep`, and `Read` directly for targeted lookups.
+Build understanding of existing code before planning changes. Dispatch sub-agents in parallel to investigate multiple areas simultaneously — Claude Code: `Agent` tool with `subagent_type=Explore`; Codex: `spawn_agent` with the `explorer` role (see `references/codex-tools.md`). Also use `Glob`/`Grep`/`Read` directly for targeted lookups.
 
 **What to explore:**
 
