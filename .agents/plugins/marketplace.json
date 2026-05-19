@@ -1,7 +1,7 @@
 {
-  "name": "harness-local",
+  "name": "harness",
   "interface": {
-    "displayName": "Harness Local"
+    "displayName": "Harness"
   },
   "plugins": [
     {
