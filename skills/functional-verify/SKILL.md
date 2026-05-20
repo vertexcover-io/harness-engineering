@@ -29,16 +29,24 @@ Three non-negotiables:
 
 - Spec: `docs/spec/<SPEC_NAME>/spec.md`
 - Plan: `docs/spec/<SPEC_NAME>/plan.md` (per-phase breakdowns live in `.harness/<SPEC_NAME>/phase-*.md`)
-- E2E report (optional): `.harness/<SPEC_NAME>/e2e-report.json`
+- **Claims report (required when present): `.harness/<SPEC_NAME>/claims.json`** — aggregated from
+  per-phase `phase-*-claims.json` produced by the coder stage. Schema lives in
+  `skills/tdd/references/phase-claims-format.md` (per phase) and
+  `skills/orchestrate/references/claims-aggregation-format.md` (aggregated).
 
-## Step 0 — Read E2E coverage and refuse double-runs
+## Step 0 — Read claims and refuse double-runs
 
 - If `verification/proof-report.md` already exists for this spec in this session, **refuse to silently re-run.** Report the existing report path and stop. If the user wants a re-verify, they will ask.
-- Read `.harness/<SPEC_NAME>/e2e-report.json` if present:
-  - Any `coverage[].verdict == "FAIL"` → BLOCKER. Report and stop.
-  - `coverage[]` requirements are `COVERED_BY_E2E` — do not re-run them; cite them in the proof report.
-  - `gaps[]` is the primary input for the adversarial pass.
-- If e2e-report absent: note it; the adversarial pass will derive gaps from the spec.
+- Read `.harness/<SPEC_NAME>/claims.json` if present and classify each claim:
+  - `failed > 0` → BLOCKER. Report and stop.
+  - **`type: "ui"` claims are NOT considered proven** by the phase test. Every UI claim is a
+    *work item* for Step 4 — you MUST drive a real browser via Playwright MCP, capture a screenshot
+    under `verification/screenshots/`, and reference the claim id in the proof report. A passing
+    phase `.spec.ts` is corroborating evidence, not a substitute.
+  - `type: "api"` and `type: "db"` claims are `COVERED_BY_E2E`; cite the `proven_by` test in the
+    proof report without re-running them.
+  - Claims with no matching spec requirement are still in scope — verify them anyway.
+- If claims.json absent: note it; derive scenarios from the spec as before.
 
 ## Step 1 — Verification scenarios
 
@@ -60,11 +68,19 @@ For each api scenario:
 - Record verdict (PASSED/FAILED) by exact-matching the spec's expected response, not by "looks right."
 - For scenarios with a DB check: query the DB (MCP tool if available, else read connection string from `.env*` or compose), record actual vs expected.
 
-## Step 4 — UI verification (Playwright MCP)
+## Step 4 — UI verification (Playwright MCP) — MANDATORY per UI claim
 
 Drive a real browser via `mcp__playwright__browser_*`. Do NOT write `.spec.ts` files or run `npx playwright test` — that is the e2e suite, not this gate.
 
-If Playwright MCP is unavailable: report "Playwright MCP not available — skipping UI verification" and continue with API/DB only.
+**Per-claim coverage rule.** For every `type: "ui"` entry in `.harness/<SPEC_NAME>/claims.json`, you MUST:
+
+1. Navigate to the claim's `surface` (route), act out the `behavior`, and capture a screenshot.
+2. Save the PNG with the claim id in the filename (e.g. `PHASE7-C1-settings-enabled.png`).
+3. Reference the claim id and the screenshot path together in `observations.md` and ultimately in `proof-report.md`. The orchestrator's UI-proof gate greps for `<claim_id>` and a screenshot path on the same/nearby line — if either is missing, the pipeline fails with `MISSING_UI_PROOF`.
+
+Spec-derived UI scenarios (`VS-*` with `type: ui`) are covered the same way. UI claims and spec UI scenarios are additive, not substitutes.
+
+If Playwright MCP is unavailable: this is a hard failure for any spec with UI claims. Report `BLOCKED:no-playwright-mcp` listing the unproven claim ids and stop. Do not paper over with adjacent API checks.
 
 `mkdir -p docs/spec/<SPEC_NAME>/verification/{screenshots,traces}`. One browser session for all scenarios; `browser_close` once at the end.
 
@@ -100,8 +116,8 @@ Block-level verdict is `UNMET` if any spec check is `UNMET` or any open-review f
 
 This pass runs in the same context (subagents cannot spawn subagents), so the isolation has to come from discipline. Three mandatory mitigations:
 
-1. **Forced context break.** Before generating adversarial scenarios, re-read ONLY: `docs/spec/<SPEC_NAME>/spec.md` and `.harness/<SPEC_NAME>/e2e-report.json` (if present). Do NOT re-read `verification/screenshots/observations.md` or any draft of the proof report — they will bias you toward agreement with what you already wrote.
-2. **Targets come from `e2e-report.json` `gaps[]` first**, not from your own memory of what the verifier covered. If e2e-report is absent, derive from the spec: error paths, boundary values, out-of-order multi-step flows, concurrent actions, stale-state operations.
+1. **Forced context break.** Before generating adversarial scenarios, re-read ONLY: `docs/spec/<SPEC_NAME>/spec.md` and `.harness/<SPEC_NAME>/claims.json` (if present). Do NOT re-read `verification/screenshots/observations.md` or any draft of the proof report — they will bias you toward agreement with what you already wrote.
+2. **Targets are spec requirements NOT covered by `claims.json` `claims[]`** (gaps you compute by diffing spec ACs against claim ids), not from your own memory of what the verifier covered. If claims.json is absent, derive from the spec: error paths, boundary values, out-of-order multi-step flows, concurrent actions, stale-state operations.
 3. **You must list what you tried.** A bare "no defects found" is a verification failure. Section 2 of `adversarial-findings.md` is non-skippable.
 
 ### 5.1 Derive attack surface and generate scenarios
@@ -116,7 +132,7 @@ For each gap, generate ≥2 scenarios per category that applies:
 - **Permissions / auth** — same action as a different role, expired session, missing token.
 - **Concurrency** — two writers, read-during-write, optimistic-lock conflicts.
 
-Do NOT duplicate anything in `e2e-report.json` `coverage[]`.
+Do NOT duplicate happy-path scenarios already in `claims.json` `claims[]` (except UI claims, which you re-prove via Playwright MCP in Step 4 regardless).
 
 ### 5.2 Run them
 
@@ -128,7 +144,7 @@ A `DEFECT` is: misleading message to user, lost/corrupted data, stale UI state, 
 
 Required sections:
 
-1. **Attack surface derived** — bullets of inputs/transitions/boundaries, with source (`gaps[]` vs. derived).
+1. **Attack surface derived** — bullets of inputs/transitions/boundaries, with source (spec-gap vs. claim-coverage-gap vs. derived).
 2. **Scenarios attempted** — table: ID | category | description | inputs | verdict. Every scenario appears, including EXPECTED ones — they are evidence of genuine attempt.
 3. **Defects** — for each `DEFECT`: full reproduction, actual vs expected, evidence (response body / screenshot path / console / DB result), severity (blocker/major/minor).
 4. **Cannot assess** — scenarios you couldn't run, with reason.
@@ -162,7 +178,8 @@ Write `docs/spec/<SPEC_NAME>/verification/proof-report.md`. Use `references/proo
 - Treating EXPECTED rejections as defects. A 400 on bad input is correct behavior; record it under "Scenarios attempted," not "Defects."
 - Bare adjectives as evidence — "looks polished", "feels off".
 - Skipping the open visual review when all spec checks pass.
-- Re-running scenarios already in `e2e-report.json` coverage.
+- Re-running API/DB scenarios already in `claims.json` claims (UI claims are exempt — they MUST be re-proven via Playwright MCP).
+- Treating a passing phase `.spec.ts` as substitute for Playwright MCP browser-driven UI verification.
 - Silently dropping an `UNMET` finding from the report.
 - Treating `truncate` / `line-clamp` on primary headlines as automatically fine.
 - Counting "no horizontal scroll" as proof of correct layout.
@@ -173,3 +190,5 @@ Write `docs/spec/<SPEC_NAME>/verification/proof-report.md`. Use `references/proo
 - `references/infra-startup.md` — port probes, start commands, health polling
 - `references/playwright-capture.md` — viewports, slicing, console/network, capture rules
 - `references/proof-report-template.md` — section ordering for `proof-report.md`
+- `../tdd/references/phase-claims-format.md` — per-phase `phase-<N>-claims.json` schema (input source)
+- `../orchestrate/references/claims-aggregation-format.md` — aggregated `claims.json` schema + the UI-proof gate that runs after this skill
