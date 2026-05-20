@@ -85,7 +85,7 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
 | 1.5 | Library Probe | **Main conversation** | `docs/spec/<name>/library-probe.md` + verified probe scripts (in `.harness/<name>/probes/`) |
 | 1.7 | Spec Generation | **Main conversation** | `docs/spec/<name>/spec.md` (folds VS-0 probe scenarios in) |
 | 2 | Planner | **Main conversation** | `docs/spec/<name>/plan.md` (committed) + `.harness/<name>/phase-*.md` (gitignored) |
-| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `.harness/<name>/e2e-report.json` |
+| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `.harness/<name>/phase-<N>-claims.json` (one per phase) |
 | 4 | Code Review | Sub-agent (2-pass) | `.harness/<name>/review/pass-{1,2}.md` verdicts, fixes applied |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
@@ -310,6 +310,14 @@ DAG transitions:
 - After each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status <phase-node> done")`
 - After all phases: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status coder done")`
 
+**Claims aggregation (mandatory, runs after the last phase completes):**
+
+Aggregate every `.harness/<SPEC_NAME>/phase-*-claims.json` into a single
+`.harness/<SPEC_NAME>/claims.json`. The aggregated schema and the exact `jq`
+command live in `references/claims-aggregation-format.md` — invoke it verbatim.
+If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated
+`claims.json` is what verify reads; phase files are kept for audit.
+
 ### LIB_SUSPECT Loopback (from Stage 3 → 1.5)
 
 After every coder sub-agent returns, scan its report for the marker
@@ -352,13 +360,14 @@ Agent(model="sonnet", prompt="
      ("if you started it, you kill it"). Apply migrations first, then start API + web
      dev servers (or project equivalent), then run the e2e command. If the project has a
      local override at `.claude/skills/functional-verify/`, prefer that.
-  4. Write the runner's output to .harness/<SPEC_NAME>/e2e-report.json with shape:
-     { 'executed': N, 'passed': N, 'failed': 0, 'scenarios': [{name, status, durationMs}, ...] }
-     The 'executed' field must be > 0 — a non-executed suite does not satisfy this gate.
+  4. Write the runner's output to `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`.
+     Follow the schema and rules in `skills/tdd/references/phase-claims-format.md` —
+     it covers the JSON shape, the `claims[]` contract (UI surfaces require ≥1
+     `type: "ui"` claim), id format (`PHASE<N>-C<M>`), and anti-patterns.
 
-  The phase is BLOCKED until e2e-report.json exists with executed > 0 AND failed = 0.
-  Authoring the spec without running it = BLOCKED, not done. The orchestrator verifies
-  this report independently after you return.
+  The phase is BLOCKED until phase-<N>-claims.json exists with `executed > 0` AND
+  `failed = 0` AND (if UI is touched) at least one UI claim. Authoring the spec
+  without running it = BLOCKED, not done. The orchestrator verifies this independently.
 
   For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
   use /usr/bin/env bash '<DAG_SCRIPT>' add-node for sub-tasks, /usr/bin/env bash '<DAG_SCRIPT>' set-status for progress.
@@ -379,7 +388,9 @@ Agent(model="sonnet", prompt="
     1. Write the failing e2e test FIRST.
     2. Implement until it passes.
     3. **Actually run the suite** against live services (start infra + dev servers if needed).
-    4. Append to .harness/<SPEC_NAME>/e2e-report.json with executed > 0 AND failed = 0.
+    4. Write `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json` per
+       `skills/tdd/references/phase-claims-format.md` (executed > 0, failed = 0,
+       UI surfaces require ≥1 `type: "ui"` claim).
   Authoring the spec without running it = BLOCKED, not done.
 
   Scope: Only this step's files. Return: files created/modified, test results, step completed or blocked.
@@ -452,8 +463,11 @@ Agent(model="sonnet", prompt="
   1. FUNCTIONAL VERIFICATION: Invoke functional-verify skill.
      Spec: docs/spec/<SPEC_NAME>/spec.md. Plan: docs/spec/<SPEC_NAME>/plan.md.
      Phase files: .harness/<SPEC_NAME>/phase-*.md.
-     E2E report: .harness/<SPEC_NAME>/e2e-report.json (functional-verify reads this in Step 0 to skip
-     already-proven scenarios and derive adversarial gap targets).
+     Claims report: .harness/<SPEC_NAME>/claims.json (aggregated from phase-*-claims.json).
+     Functional-verify reads this in Step 0. Every `type: "ui"` claim MUST be independently re-proven
+     via Playwright MCP — a passing phase .spec.ts is NOT a substitute. API/DB claims may be cited
+     as COVERED_BY_E2E. Phase format: skills/tdd/references/phase-claims-format.md.
+     Aggregated format + UI-proof gate: skills/orchestrate/references/claims-aggregation-format.md.
      The skill produces TWO required artifacts (both committed):
        - docs/spec/<SPEC_NAME>/verification/proof-report.md  (gate output — the verdict)
        - docs/spec/<SPEC_NAME>/verification/adversarial-findings.md  (Step 5 role-swap pass: scenarios attempted + defects)
@@ -498,32 +512,24 @@ Bash("
 
 If either file is missing → treat verification as FAILED regardless of what the sub-agent returned, stop the pipeline. A "PASSED" verdict without the artifacts means the gate was skipped — the Stop/SubagentStop hook should have already blocked it, but this is the belt-and-suspenders check in orchestrate.
 
-**E2E execution contract (mandatory when the diff is user-facing):**
+**E2E execution + UI-proof gate (mandatory):**
 
-```
-Bash("
-  # Detect user-facing changes since the base branch
-  if git diff --name-only <BASE_BRANCH>..HEAD | grep -qE '^(packages/web/|packages/api/src/routes/|src/routes/|app/|pages/|frontend/)'; then
-    REPORT=.harness/<SPEC_NAME>/e2e-report.json
-    if [ ! -f \"$REPORT\" ]; then
-      echo 'MISSING_E2E_REPORT — user-facing diff requires e2e execution'; exit 1
-    fi
-    # Report must show that scenarios actually ran (not just that the file exists)
-    EXECUTED=$(jq -r '.executed // .passed // 0' \"$REPORT\")
-    FAILED=$(jq -r '.failed // 0' \"$REPORT\")
-    if [ \"$EXECUTED\" = '0' ] || [ \"$EXECUTED\" = 'null' ]; then
-      echo 'E2E_NOT_EXECUTED — report exists but 0 scenarios ran. Authoring a spec without running it does not count.'; exit 1
-    fi
-    if [ \"$FAILED\" != '0' ]; then
-      echo \"E2E_FAILED — $FAILED scenario(s) failed; see $REPORT\"; exit 1
-    fi
-  fi
-")
-```
+After verify returns, run the aggregated-claims gate from
+`references/claims-aggregation-format.md`. It enforces, in order:
 
-The detection regex matches any diff path under a frontend package or an HTTP route directory. Tune it once per project layout — over-matching is safe (forces e2e on a backend-only diff that touched a route file); under-matching is the failure mode this gate exists to prevent.
+1. `claims.json` exists, `executed > 0`, `failed = 0`.
+2. Every `type: "ui"` claim id appears in `verification/proof-report.md` AND has a
+   `verification/screenshots/*.png` reference on the same / a nearby line.
 
-If the e2e gate fails → stop the pipeline with the exit message. A spec file authored but never run is the exact gap that ships unverified UI. The author of `e2e-report.json` is the test runner, not the agent — the file must be the *output* of `playwright test`, not hand-written.
+Failure modes (stop the pipeline, do not continue):
+
+- `MISSING_PHASE_CLAIMS` / `MISSING_CLAIMS_FILE` — coder or aggregation skipped.
+- `E2E_NOT_EXECUTED` / `E2E_FAILED` — phase suites did not run or had failures.
+- `MISSING_UI_PROOF — <claim-ids>` — verify skipped Playwright MCP for one or more
+  UI claims. Re-dispatch verify with explicit instruction to cover the listed ids.
+
+A passing phase `.spec.ts` is NOT sufficient — the verifier must drive a real
+browser via `mcp__playwright__browser_*` and capture screenshots per claim id.
 
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status verify-finalize done")`
 
@@ -605,5 +611,5 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_S
 - **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds
 - **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level. Only parallelize phases touching 3+ files
 - **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly
-- **Spec folder structure** — committed, reviewer-facing artifacts live in `docs/spec/<name>/` (design, spec, plan, library-probe, learnings, verification/); pipeline working state lives in `.harness/<name>/` (baseline, phase-*, e2e-report, gate-reports, review/, probes/, manifest) and is gitignored
+- **Spec folder structure** — committed, reviewer-facing artifacts live in `docs/spec/<name>/` (design, spec, plan, library-probe, learnings, verification/); pipeline working state lives in `.harness/<name>/` (baseline, phase-*, phase-*-claims.json, claims.json, gate-reports, review/, probes/, manifest) and is gitignored
 - **Dashboard** — orchestrator calls `/usr/bin/env bash '<DAG_SCRIPT>' set-status` at each stage transition. Sub-agents use `/usr/bin/env bash '<DAG_SCRIPT>' add-node` and `/usr/bin/env bash '<DAG_SCRIPT>' write-report` for sub-task tracking. Formats live in `references/dashboard-report-formats.md`.
