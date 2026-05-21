@@ -186,13 +186,25 @@ Each cycle should be small enough that "minimum code to pass" is obvious. If you
 
 ## TDD with E2E Tests
 
-For any phase with user-facing changes (UI routes or API endpoints), E2E TDD is **mandatory, not optional**. The phase is BLOCKED until the E2E test passes and the e2e-report artifact is written.
+**E2E TDD is mandatory for every phase that changes production behavior**, not only for UI or HTTP changes. A backend job, a CLI command, a queue consumer, a scheduled task — if it has an externally-observable effect, the e2e test exercises that effect end-to-end (real services, real I/O, no mocks at the boundary).
+
+The phase is BLOCKED until the E2E test passes and the e2e-report artifact is written.
 
 1. **RED**: Write a failing e2e test for the user journey. Infrastructure and dev server must be running. Use accessible locators (role, label, text) and condition-based waits — never CSS selectors or hard-coded delays.
 2. **GREEN**: Build the feature — use unit/integration TDD cycles for each component until the e2e test passes.
 3. **REFACTOR**: Clean up as usual.
 
 The e2e test defines the finish line. Unit and integration tests are written as needed to build toward it.
+
+### Before writing a new E2E spec: check for duplicates
+
+A flow is identified by the user-visible surface it exercises — a route path, a CLI command, a queue topic, a UI selector chain. Before creating a new spec file:
+
+1. Grep the project's e2e directory for the surface you're about to test (route literal, command name, selector, topic).
+2. If a spec already covers that surface, **extend it** with new `test()` cases for the new behavior. Do not create a parallel spec file.
+3. Only create a new spec file when the surface is genuinely new.
+
+Duplicate e2e specs for the same flow are a BLOCKED condition — they double maintenance cost and drift apart over time. The reviewer will flag them.
 
 ### E2E Report Artifact (mandatory)
 
@@ -220,7 +232,7 @@ After all E2E tests pass, write `.harness/<SPEC_NAME>/e2e-report.json` (gitignor
 
 The `gaps` field is as important as `coverage` — it tells functional-verify what to target. Be honest: list input combinations not tried, error paths not exercised, concurrent scenarios not tested, and surface areas not touched.
 
-If a phase has no user-facing changes (pure refactoring, config change, data migration), write the e2e-report with `"not_applicable": true, "reason": "<why>"` and proceed without E2E tests.
+**Escape hatch — use sparingly.** A phase may skip E2E only if it changes *no externally-observable behavior*: pure internal refactors with identical outputs, doc-only changes, or config changes with no runtime effect. Migrations, new endpoints, new background jobs, and behavior-preserving changes that still touch the request path do NOT qualify. Write `"not_applicable": true, "reason": "<specific why>"` to the e2e-report and be ready to justify it in code review.
 
 ---
 

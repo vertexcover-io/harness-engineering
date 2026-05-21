@@ -345,29 +345,19 @@ Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke tdd skill. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md. Phase file: .harness/<SPEC_NAME>/phase-<PHASE_N>.md.
 
-  **E2E TDD is MANDATORY when this phase touches:**
-  - any file under packages/web/ (or app/, pages/, frontend/, src/components/ — adapt to project layout), OR
-  - any HTTP route file (packages/api/src/routes/, src/routes/, etc.)
-
-  When mandatory:
-  1. Write the failing e2e test(s) FIRST (Playwright, Cypress, or project-standard).
-  2. Implement until they pass.
-  3. **Actually run the suite** end-to-end against live services. Authoring the spec is not enough.
-     For infra startup, follow the global reference at
-     `<harness-skills-root>/functional-verify/references/infra-startup.md` — it covers
-     port probing, finding the right `package.json`/`compose.yml`/`Makefile` command,
-     background-starting the service, health-polling up to 30 s, and the cleanup contract
-     ("if you started it, you kill it"). Apply migrations first, then start API + web
-     dev servers (or project equivalent), then run the e2e command. If the project has a
-     local override at `.claude/skills/functional-verify/`, prefer that.
-  4. Write the runner's output to `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`.
-     Follow the schema and rules in `skills/tdd/references/phase-claims-format.md` —
-     it covers the JSON shape, the `claims[]` contract (UI surfaces require ≥1
-     `type: "ui"` claim), id format (`PHASE<N>-C<M>`), and anti-patterns.
+  **E2E TDD is mandatory and unconditional** for every phase that changes production
+  behavior. The contract lives in the tdd skill's "TDD with E2E Tests" section — read
+  it. Summary: write the failing e2e test FIRST, extend existing specs rather than
+  creating duplicates, actually run the suite against live services (see
+  `<harness-skills-root>/functional-verify/references/infra-startup.md` for the
+  infra startup + cleanup contract; prefer `.claude/skills/functional-verify/` if
+  present), then write `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json` per
+  `skills/tdd/references/phase-claims-format.md` (UI surfaces require ≥1
+  `type: "ui"` claim).
 
   The phase is BLOCKED until phase-<N>-claims.json exists with `executed > 0` AND
-  `failed = 0` AND (if UI is touched) at least one UI claim. Authoring the spec
-  without running it = BLOCKED, not done. The orchestrator verifies this independently.
+  `failed = 0` AND (if UI is touched) at least one UI claim. The escape hatch
+  (`not_applicable: true`) is narrow — see tdd skill. The orchestrator verifies independently.
 
   For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
   use /usr/bin/env bash '<DAG_SCRIPT>' add-node for sub-tasks, /usr/bin/env bash '<DAG_SCRIPT>' set-status for progress.
@@ -383,15 +373,13 @@ Agent(model="sonnet", prompt="
   Invoke tdd and testing skills. Spec: <SPEC_PATH>. Plan: docs/spec/<SPEC_NAME>/plan.md.
   Phase file: .harness/<SPEC_NAME>/phase-<PHASE_N>.md. Step: <STEP_DETAILS>.
 
-  **E2E TDD is MANDATORY when this step touches frontend or HTTP routes** — see the full
-  E2E contract in the Phase-A agent prompt above. Summary:
-    1. Write the failing e2e test FIRST.
-    2. Implement until it passes.
-    3. **Actually run the suite** against live services (start infra + dev servers if needed).
-    4. Write `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json` per
-       `skills/tdd/references/phase-claims-format.md` (executed > 0, failed = 0,
-       UI surfaces require ≥1 `type: "ui"` claim).
-  Authoring the spec without running it = BLOCKED, not done.
+  **E2E TDD is mandatory and unconditional** for every step that changes production
+  behavior — see the tdd skill's "TDD with E2E Tests" section for the full contract.
+  Write the failing e2e test FIRST (extend an existing spec if one already covers the
+  surface; do not create duplicates), implement until it passes, run the suite against
+  live services, then write `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json` per
+  `skills/tdd/references/phase-claims-format.md` (executed > 0, failed = 0, UI surfaces
+  require ≥1 `type: "ui"` claim). Authoring the spec without running it = BLOCKED.
 
   Scope: Only this step's files. Return: files created/modified, test results, step completed or blocked.
 ")
