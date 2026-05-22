@@ -26,6 +26,13 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
       "durationMs": 1840
     }
   ],
+  "e2e_run": {                         // REQUIRED. Re-verified by coder-e2e-gate hook.
+    "runner": "playwright",            // "playwright" | "vitest" | "jest" | "generic"
+    "report_path": ".harness/<SPEC_NAME>/phase-7-playwright.json",
+    "command": "pnpm test:e2e --reporter=json",
+    "started_at": "2026-05-20T18:11:02Z",
+    "finished_at": "2026-05-20T18:12:43Z"
+  },
   "claims": [                          // human-meaningful behaviors this phase asserts
     {
       "id": "PHASE7-C1",               // stable id; format PHASE<N>-C<M> (1-indexed within phase)
@@ -42,6 +49,8 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
 
 - **`executed` must be > 0.** A non-executed suite does not satisfy the phase gate. Authoring a `.spec.ts` without running it = BLOCKED.
 - **`failed` must be 0.** Any failure blocks the phase.
+- **`e2e_run.report_path` must point at the raw runner JSON on disk.** The `coder-e2e-gate` SubagentStop hook re-parses this file to derive `executed` / `passed` / `failed` independently. Hand-written counts that disagree with the runner output = BLOCKED (`E2E_COUNTS_TAMPERED`). Use the runner's machine-readable reporter (Playwright JSON reporter, vitest/jest `--reporter=json`, or a generic `{executed,passed,failed}` shape).
+- **Every touched production *code* file must appear in some claim's `proven_by` — this rule is universal and not UI-specific.** It applies equally to UI components, backend routes, CLI handlers, libraries, workers, and any other source. Code extensions: `.ts .tsx .js .jsx .mjs .cjs .py .go .rs .java .kt .scala .swift .rb .c .cc .cpp .h .hpp .vue .svelte`. Config/lock/doc/env files are exempt. Test files (`*.spec.*`, `*.test.*`, `*_test.go`, `tests/`, `e2e/`) are not themselves required to be covered. Match is by basename or stem, so a `widget.spec.ts` covers `widget.ts`. Uncovered code file = BLOCKED (`UNCOVERED_FILES`). Note: the separate "UI surfaces require a `type: "ui"` claim" rule below is *additional* — it constrains the *type* of claim for UI files, but does not relax the universal e2e-coverage requirement for non-UI code.
 - **Every user-visible behavior introduced or modified by this phase is one claim.** Do not collapse multiple distinct behaviors into one claim ("the settings page works" is not a claim).
 - **UI surfaces require a `type: "ui"` claim.** If the phase touches any file under a UI surface (`packages/web/`, `app/`, `pages/`, `frontend/`, `src/components/`), the `claims[]` array MUST contain ≥1 entry with `type: "ui"`. Missing UI claim = BLOCKED.
 - **API/DB claims are corroborated by the phase tests** and do not require independent reproof downstream.
@@ -53,7 +62,9 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
 
 - Omitting a UI claim because "the API claim covers it." API claims do not exercise the rendered UI.
 - One mega-claim covering an entire feature ("user can use Web Search"). Split per behavior.
-- Hand-writing `executed`/`passed`/`failed`. These come from the test runner's machine-readable output (e.g. Playwright JSON reporter, vitest `--reporter=json`).
+- Hand-writing `executed`/`passed`/`failed`. These come from the test runner's machine-readable output (e.g. Playwright JSON reporter, vitest `--reporter=json`). The `coder-e2e-gate` hook will detect divergence and block the phase.
+- Declaring an `e2e_run.report_path` that does not exist on disk, or omitting the block entirely. Both fail the hook.
+- Touching a `.ts` source file without authoring or extending an e2e spec that names it. The hook walks `git diff` from the phase start sha and will flag uncovered code files.
 - Marking a phase done while the suite still has failing scenarios.
 - Treating `claims[]` as documentation. It is a worklist for the verifier.
 

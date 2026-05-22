@@ -12,6 +12,19 @@ After every coder phase has produced `.harness/<SPEC_NAME>/phase-<N>-claims.json
   "passed":   38,
   "failed":    0,
   "phases":   [3, 5, 7],              // phases that contributed a report
+  "e2e_runs": [                       // one entry per phase report — runner evidence
+    {
+      "phase": 7,
+      "runner": "playwright",
+      "report_path": ".harness/web-search-settings/phase-7-playwright.json",
+      "command": "pnpm test:e2e --reporter=json",
+      "executed": 12,
+      "passed":   12,
+      "failed":    0,
+      "started_at":  "2026-05-20T18:11:02Z",
+      "finished_at": "2026-05-20T18:12:43Z"
+    }
+  ],
   "claims": [                         // concatenated, ids remain unique because of PHASE<N>-C<M> scheme
     {
       "id": "PHASE7-C1",
@@ -41,6 +54,17 @@ jq -s '{
   passed:   (map(.passed   // 0) | add),
   failed:   (map(.failed   // 0) | add),
   phases:   (map(.phase)),
+  e2e_runs: (map(select(.e2e_run != null) | {
+              phase: .phase,
+              runner: .e2e_run.runner,
+              report_path: .e2e_run.report_path,
+              command: .e2e_run.command,
+              executed: .executed,
+              passed:   .passed,
+              failed:   .failed,
+              started_at:  .e2e_run.started_at,
+              finished_at: .e2e_run.finished_at
+            })),
   claims:   (map(.claims // []) | add)
 }' "${PHASE_FILES[@]}" > "$HARNESS_SPEC_DIR/claims.json"
 ```

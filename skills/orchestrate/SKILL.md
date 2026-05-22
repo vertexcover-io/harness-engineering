@@ -307,8 +307,28 @@ Dispatch based on phase and step dependency graphs. Two-level parallelism:
 DAG transitions:
 - Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status coder running")`
 - Before each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status <phase-node> running")`
-- After each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status <phase-node> done")`
+- After each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status <phase-node> done && rm -f .harness/current-phase")`
 - After all phases: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && /usr/bin/env bash '<DAG_SCRIPT>' set-status coder done")`
+
+**Coder-e2e-gate breadcrumb (mandatory before EVERY coder dispatch):**
+
+Before dispatching any coder sub-agent (phase-level or step-level), write the
+active-phase breadcrumb so the `coder-e2e-gate` SubagentStop hook can verify the
+phase report after the agent returns. Without this file, the hook no-ops and the
+phase is unprotected.
+
+```bash
+START_SHA="$(git rev-parse HEAD)"
+cat > .harness/current-phase <<EOF
+SPEC_NAME=<SPEC_NAME>
+PHASE_N=<PHASE_N>
+START_SHA=$START_SHA
+EOF
+```
+
+After each phase completes (whether single-agent or last step of a multi-step
+phase), delete the breadcrumb so unrelated subagents in later stages do not
+trigger the gate.
 
 **Claims aggregation (mandatory, runs after the last phase completes):**
 

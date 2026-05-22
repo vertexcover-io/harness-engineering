@@ -32,6 +32,16 @@
         ]
       }
     ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/env bash \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/coder-e2e-gate.sh\""
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
