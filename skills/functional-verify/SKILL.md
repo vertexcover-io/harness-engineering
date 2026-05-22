@@ -23,7 +23,7 @@ Three non-negotiables:
 
 1. **Evidence, not adjectives.** Every claim cites a rect from `getBoundingClientRect()`, a quoted string, a computed style, an HTTP response, a console message, or a screenshot path. "Looks fine" / "feels off" / "polished" are verification failures.
 2. **The adversarial pass is mandatory and runs in a separate subagent.** Spec scenarios prove what was specified; adversarial testing finds what wasn't. See "Adversarial pass" below — you MUST dispatch it.
-3. **Skipping is detectable.** The Stop hook (`.claude/hooks/check-proof-report.sh`) blocks session end when an active spec has no `proof-report.md`. Do not work around it.
+3. **Skipping is detectable.** The Stop hook (`.claude/hooks/check-proof-report.mjs`) blocks session end when an active spec has no `proof-report.md`. Do not work around it.
 
 ## Inputs
 

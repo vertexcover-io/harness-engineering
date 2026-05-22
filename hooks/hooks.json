@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/env bash \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.sh\" pre 2>/dev/null || true"
+            "command": "node",
+            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.mjs", "pre"]
           }
         ]
       }
@@ -17,7 +18,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/env bash \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.sh\" post 2>/dev/null || true"
+            "command": "node",
+            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.mjs", "post"]
           }
         ]
       }
@@ -27,7 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/env bash \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.sh\" finalize interrupted 2>/dev/null || true"
+            "command": "node",
+            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs", "finalize", "interrupted"]
           }
         ]
       }
@@ -37,7 +40,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/env bash \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/coder-e2e-gate.sh\""
+            "command": "node",
+            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/coder-e2e-gate.mjs"]
           }
         ]
       }
@@ -47,7 +51,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/env bash \"${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/dag-update.sh\" finalize interrupted 2>/dev/null || true"
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/dag-update.mjs", "finalize", "interrupted"]
           }
         ]
       }
