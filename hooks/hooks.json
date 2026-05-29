@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.mjs", "pre"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/ask-user-hook.mjs", "pre"]
           }
         ]
       }
@@ -19,7 +19,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.mjs", "post"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/ask-user-hook.mjs", "post"]
           }
         ]
       }
@@ -30,7 +30,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs", "finalize", "interrupted"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/dag-update.mjs", "finalize", "interrupted"]
           }
         ]
       }
@@ -41,7 +41,7 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/coder-e2e-gate.mjs"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/coder-e2e-gate.mjs"]
           }
         ]
       }
