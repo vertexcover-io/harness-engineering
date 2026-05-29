@@ -6,8 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.mjs", "pre"]
+            "command": "node \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.mjs\" pre 2>/dev/null || true"
           }
         ]
       }
@@ -18,8 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.mjs", "post"]
+            "command": "node \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/ask-user-hook.mjs\" post 2>/dev/null || true"
           }
         ]
       }
@@ -29,8 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs", "finalize", "interrupted"]
+            "command": "node \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs\" finalize interrupted 2>/dev/null || true"
           }
         ]
       }
@@ -40,8 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/coder-e2e-gate.mjs"]
+            "command": "node \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/coder-e2e-gate.mjs\""
           }
         ]
       }
@@ -51,8 +47,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/dag-update.mjs", "finalize", "interrupted"]
+            "command": "node \"${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs\" finalize interrupted 2>/dev/null || true"
           }
         ]
       }
