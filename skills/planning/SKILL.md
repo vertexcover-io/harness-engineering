@@ -64,6 +64,14 @@ Build understanding of existing code before planning changes. Dispatch sub-agent
 6. **E2E test infrastructure** — what e2e frameworks exist, what tests already cover, how backing services are started, what the dev server command is
 6. **Dependencies** — what depends on what, what can run in parallel
 7. **Library docs** — for external libraries the feature touches, use context7 or web search to check current API signatures and usage patterns
+8. **Context map** — if `docs/context/` exists, read it to shape the plan's *approach*: `ARCHITECTURE.md`
+   (system shape, boundaries), `DECISIONS.md` (`D-*` cross-cutting tradeoffs the plan must not re-litigate),
+   and the **owning `PACKAGE.md`** for each package this feature touches (purpose, data-flow traces, gotchas).
+   Also read the **standards headlines** — the `S-*` rule *titles* from the matching `docs/context/standards/*.md`
+   (the `## S-*` lines only, not the full bodies) so the plan's approach respects them; the full rule bodies
+   land with the coder/reviewer where code is written and enforced. **Refer to these for the existing shape
+   and rule names, but verify specifics against the actual code — code is authoritative; docs are advisory.**
+   Existence-gated: no `docs/context/` → skip.
 
 **Depth scaling** (match effort to change size):
 - **Minor changes:** Quick scan of 2-3 files, skip parallel agents

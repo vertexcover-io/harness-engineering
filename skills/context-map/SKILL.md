@@ -264,6 +264,11 @@ re-trace. Map each changed code file to its **owning package/sub-package** (not 
 - **Scope coverage (no-arg sync)**: every in-scope package with code now has a `PACKAGE.md`. Any
   package with code and still no doc is a FAIL (it was skipped) — list it. A scoped (path-arg) sync
   only asserts coverage for the given path.
+- **Cross-package recheck (scoped sync MUST still do this)**: a change in package A can invalidate a
+  flow trace in package B's `DATAFLOW.md` or a `D-*` whose `governs` spans A. So even a path-scoped sync
+  re-verifies any `DATAFLOW.md` flow and any `DECISIONS.md` `D-*` whose trace/governs **names a changed
+  package** — not just the in-scope docs. Flag a now-wrong cross-package trace for re-trace. (Scoped sync
+  stays fast on PACKAGE.md/standards but never lets cross-package drift pass silently.)
 
 ### A4. Emit the sync-report (required — the gate reads this)
 Write `docs/context/.sync-report.md`:

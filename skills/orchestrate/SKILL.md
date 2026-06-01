@@ -499,7 +499,7 @@ Agent(model="sonnet", prompt="
 
 ### Stage 5: Verify & Finalize
 
-Single consolidated sub-agent that runs functional verification, quality gate, syncs docs, and captures learnings.
+Single consolidated sub-agent that runs functional verification, syncs the context map, the quality gate, syncs inline docs, and captures learnings. The context-map sync runs BEFORE the gate so Check 10 reads a fresh report.
 
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status verify-finalize running")`
 
@@ -526,18 +526,25 @@ Agent(model="sonnet", prompt="
      If FAILED: stop entirely, return failure with which scenarios failed and why.
      Evidence is saved to docs/spec/<SPEC_NAME>/verification/ — do NOT delete it.
 
-  2. QUALITY GATE: Invoke quality-gate skill.
+  2. SYNC CONTEXT MAP (must run BEFORE the quality gate — Check 10 reads its report):
+     If docs/context/ exists, invoke the context-map skill scoped to this run's changed files:
+     `context-map <changed file paths>` (collect via `git diff --name-only <BASE_BRANCH>..HEAD`).
+     This refreshes the affected PACKAGE.md / standards and rewrites docs/context/.sync-report.md so the
+     gate's Check 10 reads a report THIS run produced. Scoped sync still re-checks cross-package
+     DATAFLOW/DECISIONS dangling refs (context-map A3). If docs/context/ does not exist, skip this step.
+
+  3. QUALITY GATE: Invoke quality-gate skill.
      Baseline: .harness/<SPEC_NAME>/baseline.json. Spec dir: docs/spec/<SPEC_NAME>/. Harness dir: .harness/<SPEC_NAME>/. Stage: post-tdd.
      Write dashboard report following 'Quality Gate Report' format in
      references/dashboard-report-formats.md.
      If BLOCKED or STAGNATION: stop entire pipeline, return verdict + failure details.
 
-  3. SYNC DOCS: Invoke sync-docs skill.
+  4. SYNC DOCS: Invoke sync-docs skill.
      Spec dir: docs/spec/<SPEC_NAME>/. Harness dir: .harness/<SPEC_NAME>/ (phase-*.md).
      Write dashboard report following 'Sync Docs Report' format in
      references/dashboard-report-formats.md.
 
-  4. CAPTURE LEARNINGS: Invoke learn skill.
+  5. CAPTURE LEARNINGS: Invoke learn skill.
      Focus on pipeline friction — stalls, wrong assumptions, retries.
      Spec dir: docs/spec/<SPEC_NAME>/ (task-specific learnings land in learnings.md; reusable patterns
      still go to docs/solutions/<category>/). If nothing went wrong, skip.
@@ -641,7 +648,12 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' final
 
 - If any sub-agent fails or returns an error, **stop the pipeline** and report which stage failed and why
 - If functional verification fails (any scenario), **stop the pipeline** — the feature doesn't work as specified
-- If the review pass 2 still returns `REQUEST CHANGES` after its own fix attempt, **log a warning but proceed** to Stage 5 — verification and gate catch remaining violations
+- If the review pass 2 still returns `REQUEST CHANGES` after its own fix attempt:
+  - Grep pass-2.md for an unresolved `S-VIOLATION:<id>` token (an uncited `enforced_by: convention`
+    standards violation). If present → **stop the pipeline** — a declared project standard was broken
+    with no cited reason; report the `S-*` id + `file:line`. This is a hard standards gate.
+  - Otherwise (subjective Critical/Important defects, no `S-VIOLATION`) → **log a warning but proceed**
+    to Stage 5 — verification and gate catch remaining violations.
 - If a review agent fails, **stop the pipeline** — do not continue
 - If the quality gate returns BLOCKED, **stop the pipeline** and report what failed
 - If the quality gate returns STAGNATION, **stop the pipeline entirely** — do not retry. Report which check stagnated, the repeated error signature, and that manual intervention is required

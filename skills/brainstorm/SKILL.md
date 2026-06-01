@@ -65,6 +65,12 @@ talk to each other" is.
 
 Review relevant files, docs, and recent changes. Build a mental model.
 
+**Context map** — if `docs/context/` exists, read `ARCHITECTURE.md` (system shape, boundaries),
+`DECISIONS.md` (`D-*` — prior cross-cutting choices the design must not silently contradict), and
+`GLOSSARY.md` (domain vocabulary). This keeps the design consistent with the existing product shape and
+stops it re-proposing something a decision already ruled out. Advisory — verify against code; no
+`docs/context/` → skip.
+
 **Scope decomposition check** — if the request spans multiple independent subsystems
 (own data model + API + auth/contract, each independently shippable), flag it. Each
 sub-project gets its own design cycle. Tells: title contains "system"/"platform"/"overhaul";
