@@ -69,6 +69,12 @@ const run = async () => {
   const std = standardsHeadlines(contextRoot);
   if (std) blocks.push({ ref: "docs/context/standards/", text: `## Project standards\n${std}` });
 
+  // Root DECISIONS.md is already tiered: it holds the D-*→file index for ALL decisions
+  // plus the full bodies for cross-package ones only. Inject it whole — package-local
+  // decision bodies arrive later with their PACKAGE.md, resolvable via the index.
+  const decisions = readText(join(contextRoot, "DECISIONS.md"));
+  if (decisions) blocks.push({ ref: "docs/context/DECISIONS.md", text: readFrontmatter(decisions).body.trim() });
+
   if (verdict) lead.push(`Context map ${verdict}`);
 
   if (!lead.length && !blocks.length) return;
