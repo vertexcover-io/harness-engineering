@@ -324,13 +324,15 @@ The trust gate. Runs *before* spec generation so verified probes can be folded i
 ### Stage 2: Planner (Main Conversation)
 
 1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status planning running")`
-2. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally
-3. Planner explores codebase, asks interactive questions, designs phases
-4. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
-5. Output: `docs/spec/<SPEC_NAME>/plan.md` (committed) + `.harness/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH=docs/spec/<SPEC_NAME>/plan.md` and `PHASE_DIR=.harness/<SPEC_NAME>/`
-6. Add phase DAG nodes as children of `coder`, mark planning done:
+2. **Resolve + inject context-map pointers (if `docs/context/` exists).** Before invoking the planner, resolve the map files covering the packages this feature touches — the same pointers-not-content resolution the coder dispatch uses: the owning `docs/context/packages/<pkg>/**/PACKAGE.md` for each touched package, plus `ARCHITECTURE.md`, `DECISIONS.md`, and the matching `docs/context/standards/*.md`. Pass them to the planning skill as an explicit **"READ THESE FIRST"** block (paths, not bodies) and **log** `context paths: N docs, M standards`. Map consumption at plan time is NOT the planner's discretion — the plan must reason over structure/decisions/standards before drafting phases. No `docs/context/` → skip and note it.
+3. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally, and reads the injected context-map pointers FIRST (planning Step 2.0) before exploring code
+4. Planner explores codebase, asks interactive questions, designs phases
+5. **Verify the gate ran:** plan.md's Codebase Context section must record `Context map read: …` with the `D-*`/`S-*` ids honored (or `Context map: none`). If `docs/context/` exists but the plan omits this, the planner skipped the map — send it back before the approval gate.
+6. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
+7. Output: `docs/spec/<SPEC_NAME>/plan.md` (committed) + `.harness/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH=docs/spec/<SPEC_NAME>/plan.md` and `PHASE_DIR=.harness/<SPEC_NAME>/`
+8. Add phase DAG nodes as children of `coder`, mark planning done:
    `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status planning done")`
-7. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && node '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
+9. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && node '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
 
 **Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count
 
