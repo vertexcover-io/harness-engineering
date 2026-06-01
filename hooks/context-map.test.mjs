@@ -16,6 +16,7 @@ import {
   matchStandards,
   extractFlowTrace,
   cap,
+  packSections,
   buildPhaseContext,
 } from "./_lib/context-map.mjs";
 
@@ -131,6 +132,24 @@ test("extractFlowTrace narrows to a single fn block", () => {
 test("cap truncates with marker", () => {
   assert.equal(cap("abc", 10), "abc");
   assert.match(cap("abcdefghij", 3), /…\[truncated\]$/);
+});
+
+test("packSections keeps whole blocks and points at dropped ones", () => {
+  const blocks = [
+    { ref: "a.md", text: "AAAA" },
+    { ref: "b.md", text: "BBBB" },
+    { ref: "c.md", text: "CCCC" },
+  ];
+  // budget fits only the first block; the rest degrade to a pointer (never cut)
+  const out = packSections(blocks, 5, "docs");
+  assert.match(out, /AAAA/);
+  assert.ok(!out.includes("BBBB"));
+  assert.match(out, /…2 more docs apply — read in full: b\.md, c\.md/);
+  // no block is ever sliced mid-content
+  assert.ok(!/AA…|BB…/.test(out));
+  // disabled budget includes everything
+  assert.equal(packSections(blocks, 0, "docs"), "AAAA\n\nBBBB\n\nCCCC");
+  assert.equal(packSections([], 5, "docs"), "");
 });
 
 test("buildPhaseContext dedupes and includes standards + package", () => {

@@ -190,6 +190,33 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export const cap = (text, maxChars) =>
   text.length <= maxChars ? text : text.slice(0, maxChars) + "\n…[truncated]";
 
+// Pack whole blocks under a budget. Include each block until the next would
+// overflow; never cut inside a block. For anything dropped, append an explicit
+// pointer to its source path so the reader can open it — degrade to a link,
+// never to a silent truncation. `ref` is the doc path shown in the pointer.
+// maxChars <= 0 disables the budget (include everything).
+export const packSections = (blocks, maxChars, pointerLabel) => {
+  if (!blocks.length) return "";
+  if (!(maxChars > 0)) return blocks.map((b) => b.text).join("\n\n");
+  const kept = [];
+  const dropped = [];
+  let used = 0;
+  for (const b of blocks) {
+    const cost = b.text.length + (kept.length ? 2 : 0);
+    if (kept.length && used + cost > maxChars) dropped.push(b);
+    else {
+      kept.push(b.text);
+      used += cost;
+    }
+  }
+  let out = kept.join("\n\n");
+  if (dropped.length) {
+    const refs = dropped.map((b) => b.ref).filter(Boolean);
+    out += `\n\n…${dropped.length} more ${pointerLabel} apply — read in full: ${refs.join(", ")}`;
+  }
+  return out;
+};
+
 export const buildPhaseContext = (filePaths, contextRoot, repoRoot, opts = {}) => {
   const capChars = opts.capChars ?? 5000;
   const seenDocs = new Set();
@@ -201,28 +228,40 @@ export const buildPhaseContext = (filePaths, contextRoot, repoRoot, opts = {}) =
     const doc = resolveOwningDoc(filePath, contextRoot, repoRoot);
     if (doc && !seenDocs.has(doc.docPath)) {
       seenDocs.add(doc.docPath);
+      const ref = toPosix(relative(contextRoot, doc.docPath));
       const purpose = extractSection(doc.body, "Purpose");
       const flows = extractSection(doc.body, "Data flows");
       const gotchas = extractSection(doc.body, "Gotchas");
-      const parts = [`### ${toPosix(relative(contextRoot, doc.docPath))}`];
+      const parts = [`### ${ref}`];
       if (purpose) parts.push(`**Purpose:** ${purpose}`);
       if (flows) parts.push(`**Data flows:**\n${flows}`);
       if (gotchas) parts.push(`**Gotchas:**\n${gotchas}`);
-      docBlocks.push(parts.join("\n"));
+      docBlocks.push({ ref, text: parts.join("\n") });
     }
     for (const std of matchStandards(filePath, contextRoot, repoRoot)) {
       if (seenStandards.has(std.docPath)) continue;
       seenStandards.add(std.docPath);
+      const ref = toPosix(relative(contextRoot, std.docPath));
       const enforced = std.frontmatter.enforced_by ? ` (enforced_by: ${std.frontmatter.enforced_by})` : "";
-      stdBlocks.push(`### ${toPosix(relative(contextRoot, std.docPath))}${enforced}\n${std.body.trim()}`);
+      stdBlocks.push({ ref, text: `### ${ref}${enforced}\n${std.body.trim()}` });
     }
   }
 
   if (!docBlocks.length && !stdBlocks.length) return "";
+  // Budget split: standards are smaller + higher-priority (CI-backed rules), so
+  // give them a guaranteed slice and let package context take the remainder.
+  const stdBudget = capChars > 0 ? Math.round(capChars * 0.4) : 0;
   const sections = [];
-  if (stdBlocks.length) sections.push(`## Standards that apply\n${stdBlocks.join("\n\n")}`);
-  if (docBlocks.length) sections.push(`## Package context\n${docBlocks.join("\n\n")}`);
-  return cap(sections.join("\n\n"), capChars);
+  if (stdBlocks.length) {
+    const packed = packSections(stdBlocks, stdBudget, "standards shards");
+    sections.push(`## Standards that apply\n${packed}`);
+  }
+  if (docBlocks.length) {
+    const docBudget = capChars > 0 ? Math.max(0, capChars - (sections[0]?.length ?? 0)) : 0;
+    const packed = packSections(docBlocks, docBudget, "package docs");
+    sections.push(`## Package context\n${packed}`);
+  }
+  return sections.join("\n\n");
 };
 
 const main = (argv) => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { findContextRoot, readFrontmatter, extractSection, cap } from "./_lib/context-map.mjs";
+import { findContextRoot, readFrontmatter, extractSection, packSections } from "./_lib/context-map.mjs";
 
 const CAP = 6000;
 
@@ -46,33 +46,43 @@ const run = async () => {
   const contextRoot = findContextRoot(cwd);
   if (!contextRoot) return;
 
-  const parts = [];
+  // Always-include lead (verdict warning) is exempt from the budget — it's tiny
+  // and load-bearing. The body sections (INDEX, ARCHITECTURE, standards) are
+  // packed whole; an oversized one degrades to a pointer, never a mid-cut.
+  const lead = [];
+  const blocks = [];
   const verdict = syncVerdict(contextRoot);
   if (verdict && /fail/i.test(verdict)) {
-    parts.push("⚠ context map verdict: FAIL — trust code over docs");
+    lead.push("⚠ context map verdict: FAIL — trust code over docs");
   }
 
   const index = readText(join(contextRoot, "INDEX.md"));
-  if (index) parts.push(readFrontmatter(index).body.trim());
+  if (index) blocks.push({ ref: "docs/context/INDEX.md", text: readFrontmatter(index).body.trim() });
 
   const arch = readText(join(contextRoot, "ARCHITECTURE.md"));
   if (arch) {
     const body = readFrontmatter(arch).body;
     const shape = body.split(/^##\s+/m).slice(0, 2).join("## ").trim();
-    if (shape) parts.push(`## Architecture\n${shape}`);
+    if (shape) blocks.push({ ref: "docs/context/ARCHITECTURE.md", text: `## Architecture\n${shape}` });
   }
 
   const std = standardsHeadlines(contextRoot);
-  if (std) parts.push(`## Project standards\n${std}`);
+  if (std) blocks.push({ ref: "docs/context/standards/", text: `## Project standards\n${std}` });
 
-  if (verdict) parts.push(`Context map ${verdict}`);
+  if (verdict) lead.push(`Context map ${verdict}`);
 
-  if (!parts.length) return;
+  if (!lead.length && !blocks.length) return;
 
-  const block = cap(
-    `# Project context map (auto-injected)\nAdvisory: code is authoritative. Full map under docs/context/.\n\n${parts.join("\n\n")}`,
-    CAP
-  );
+  const packed = packSections(blocks, CAP, "context docs");
+  const block = [
+    "# Project context map (auto-injected)",
+    "Advisory: code is authoritative. Full map under docs/context/.",
+    "",
+    ...lead,
+    packed,
+  ]
+    .filter((s) => s !== undefined)
+    .join("\n");
 
   process.stdout.write(
     JSON.stringify({
