@@ -45,6 +45,17 @@ silent-data-loss landmine easy to reintroduce (e.g. an escaping order). Never mi
 **Slop guard:** a package/sub-package with no non-obvious intent gets a *thin* PACKAGE.md (purpose +
 surface + data-flow only) — never padded. A mundane file gets NO `files/` doc. Absence is valid.
 
+**Per-doc rules** (the literal templates live in `references/doc-formats.md` — read it before writing any doc):
+- `## Data flows` = flow-trace grammar (below), one trace per `flow_fns` entry. Root doc *with* sub-packages
+  = spine + link; root doc with *no* sub-packages = full traces live in it.
+- `DATAFLOW.md` = cross-package spine (link to sub-package traces, don't duplicate). `ARCHITECTURE.md` =
+  shape block + boundaries + layer-descent traces.
+- `D-*` decisions tiered by `Governs` span: cross-package/system-wide → root `DECISIONS.md` (which also
+  holds a `D-*→file` index for ALL ids); single-package → that `PACKAGE.md ## Decisions`. IDs global +
+  stable; each body Why/Tradeoff/Governs; reference by id, never copy a body.
+- `standards/<shard>.md` = `S-*` rules with `applies_to` globs + `enforced_by` (`eslint`/`tsconfig` fail
+  CI = hard; `convention` = advisory, must be labelled).
+
 ---
 
 ## Mode select (first thing, always)
@@ -81,23 +92,6 @@ Rules:
 - One trace **per flow-bearing function only** — a function with branching, a multi-step transform, or a
   boundary crossing (DB/Redis/queue/HTTP/another package). Pure getters / thin CRUD / passthroughs get a
   single `## Public surface` line, NOT a trace (slop guard).
-
-## Formats (both modes produce exactly these)
-
-The **literal templates** for every doc — Root/Sub `PACKAGE.md`, `files/` exception, `DATAFLOW.md`,
-`ARCHITECTURE.md`, `DECISIONS.md` (+ index), `standards/<shard>.md`, `INDEX`/`GLOSSARY` — live in
-**`references/doc-formats.md`**. **Read it before writing or updating any doc; copy the matching block.**
-The format **rules** the procedure relies on stay here:
-- **PACKAGE.md is the default tier**; `files/` is the rare exception (slop guard); `## Data flows` is the
-  flow-trace grammar, one trace per `flow_fns` entry — root doc *with* sub-packages = spine + link, root
-  doc with *no* sub-packages = full traces live in it.
-- **`DATAFLOW.md`** = cross-package spine (link to sub-package traces, don't duplicate); **`ARCHITECTURE.md`**
-  = shape block + boundaries + layer-descent traces.
-- **`D-*` decisions are tiered by `Governs` span** — cross-package/system-wide → root `DECISIONS.md` (which
-  also holds a `D-*→file` index for ALL ids); single-package → that `PACKAGE.md ## Decisions`. IDs global +
-  stable. Each body: Why / Tradeoff / Governs; reference by id, never copy a body.
-- **`standards/<shard>.md`** = `S-*` prescriptive rules with `applies_to` globs + `enforced_by`
-  (`eslint`/`tsconfig` fail CI = hard; `convention` = advisory, must be labelled).
 
 ---
 
@@ -145,8 +139,9 @@ When creating or updating any doc, consult `references/doc-formats.md` for the e
   trace in `DATAFLOW.md` / module trace in `ARCHITECTURE.md`.
 - A file gained a file-specific silent landmine → add a `files/` exception doc (rare).
 - **Standards re-derive** → if the package's `eslint.config.*`/`tsconfig`/`pyproject` changed, or a
-  layering boundary shifted, re-run step 6b for it and update the matching `standards/*.md` shard (rules,
-  `applies_to`, `enforced_by`). A newly-mapped package gets its `standards/<pkg>.md` created.
+  layering boundary shifted, re-derive its standards (the B2 standards-derivation rule) and update the
+  matching `standards/*.md` shard (rules, `applies_to`, `enforced_by`). A newly-mapped package gets its
+  `standards/<pkg>.md` created.
 
 #### Decision sources — transcribe the recorded *why*, don't re-derive it
 The rationale is *already written* in `docs/spec/<name>/design.md` (+ `plan.md`) — ingest it, don't
@@ -219,24 +214,23 @@ slice; record the partition so coverage is auditable. **No package may be skippe
 has files, it gets an agent.
 
 ### B2. Dispatch exploration agents in parallel (one per package)
-Each agent gets: its package root, **`references/doc-formats.md` (it MUST read this for the literal doc
-templates)**, the flow-trace grammar, the slop guard, and
-the rule that PACKAGE.md is the default. Give it the **package root, not a fixed file list** — the agent
-re-runs `git ls-files <pkg>` itself so a stale or partial list can't cause it to miss files. Each agent MUST:
+Give each agent the **package root, not a fixed file list** (it re-runs `git ls-files <pkg>` itself so a
+stale list can't make it miss files), plus the per-doc rules + flow-trace grammar above and
+**`references/doc-formats.md` (it MUST read this for the literal templates)**. Each agent MUST:
 1. **Discover and read every code file in its package** (`git ls-files`), skim mundane, study
    logic/decision-bearing ones. **Never describe or claim a fact about a file you did not open** — if a
    trace or gotcha depends on a helper in another file, open that file or hedge the claim explicitly.
-2. Produce **one `PACKAGE.md` for the package** + one per sub-package with distinct intent (per the
-   Formats section above).
+2. Produce **one `PACKAGE.md` for the package** + one per sub-package with distinct intent (templates in
+   `references/doc-formats.md`).
 3. **Trace the flow-bearing fns INSIDE the PACKAGE.md body** — grammar traces in the doc's `## Data flows`
    section (NOT prose/numbered, NOT the top-level `flows[]`), one per fn, each listed in `flow_fns:`.
    `flow_fns` ↔ `## Data flows` must agree. Pure getters/CRUD get a `## Public surface` line, not a trace.
-   Trace from real code, not a guess. In-package flows stay here even if `flows[]` (step 7) is empty.
+   Trace from real code, not a guess. In-package flows stay here even if `flows[]` (step 8) is empty.
 4. Account for **every file**: each is either reflected in a PACKAGE.md's `key_files`/surface, or
    listed in `skipped: [{path, reason}]` (mundane) — so coverage is provable.
 5. Propose only a `files/` exception doc where a single file has a non-generalizable silent landmine.
 6. Surface cross-cutting decisions as candidate `D-*` (id, title, why, tradeoff, governs).
-6b. **Derive prescriptive standards (`S-*`) — from what the repo ENFORCES, never invent.** In priority order:
+7. **Derive prescriptive standards (`S-*`) — from what the repo ENFORCES, never invent.** In priority order:
    (1) **Config as ground truth — but verify it actually fails CI.** Read `eslint.config.*`
    (`no-restricted-imports` blocks, custom rules), `tsconfig` strict flags, `pyproject`/pyright. A rule
    only earns `enforced_by: eslint|tsconfig` if its **severity is `error`** (a `warn` rule does NOT fail
@@ -248,7 +242,7 @@ re-runs `git ls-files <pkg>` itself so a stale or partial list can't cause it to
    *points at the code-quality skill ref*, never restating it. Give each candidate an `applies_to` glob
    set scoped to where it holds, and cite any underlying `D-*` in `decisions`. When unsure a rule is real,
    drop it — a wrong "standard" misleads every future agent.
-7. Return in top-level `flows[]` **ONLY cross-package flows** — a flow that starts in this package and
+8. Return in top-level `flows[]` **ONLY cross-package flows** — a flow that starts in this package and
    crosses into another package (route → service → repo → table → queue → other-package worker), as a
    function-level trace for `DATAFLOW.md`. **If every flow in this package stays inside the package
    (lint-time rules, standalone scripts, pure utilities), return `flows: []`** — those traces already
@@ -265,7 +259,7 @@ Return shape per agent (structured):
   skipped: [{path, reason}],                # every file not in a doc's surface/key_files, with reason
   decisions: [{title, why, tradeoff, governs}],
   standards: [{applies_to:[glob], enforced_by, decisions:[D-id], rules:[{title, rule, why, smell}]}],
-                            #   derived from config/observed (step 6b); applies_to scopes where it holds
+                            #   derived from config/observed (step 7); applies_to scopes where it holds
   flows: [{name, trace}],   # CROSS-PACKAGE flows ONLY (this pkg → another pkg), for DATAFLOW.md.
                             #   EMPTY ([]) if all flows stay in-package — do NOT put in-package traces
                             #   here; they belong in package_docs[].md_body `## Data flows`.
