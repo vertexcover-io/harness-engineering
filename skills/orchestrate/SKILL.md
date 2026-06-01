@@ -156,33 +156,47 @@ Every sub-agent prompt MUST start with this preamble (referred to as `[PREAMBLE]
 ```
 You are working in the worktree at <WORKTREE_PATH>.
 Your working directory is <WORKTREE_PATH>.
-<CONTEXT_MAP_BLOCK>
+<CONTEXT_MAP_AWARENESS>
+<CONTEXT_MAP_PATHS>
 ```
 
-**`<CONTEXT_MAP_BLOCK>` (dispatch-time context injection).** Before dispatching a coder/tdd sub-agent,
-resolve the phase's context-map slice and paste it in. The resolver path is captured at skill-load (the
-plugin-root var is only expanded reliably inside hooks, NOT in arbitrary Bash):
+We pass **pointers, not content**: the dispatch tells the sub-agent which context docs to read and that
+the map exists; the agent `Read`s them itself, on demand, into its own window. This keeps the preamble
+tiny and lets the agent pull anything else it touches.
+
+**`<CONTEXT_MAP_AWARENESS>` — goes in EVERY sub-agent (coder, explore, review, verify).** Include this
+line verbatim **only if `docs/context/` exists** in the worktree (else omit):
+```
+A context map exists at docs/context/ — the WHY behind this codebase: ARCHITECTURE.md, DATAFLOW.md,
+DECISIONS.md (D-*), GLOSSARY.md, per-package docs/context/packages/<pkg>/**/PACKAGE.md (purpose, data-flow
+traces, gotchas), and prescriptive rules in docs/context/standards/*.md (S-*, with enforced_by). Code is
+authoritative; these docs are advisory. You MAY Read any of them for anything you touch.
+```
+
+**`<CONTEXT_MAP_PATHS>` — coder/tdd dispatch ONLY (where the phase files are known).** Resolve the docs
+for this phase's files and pass the PATH LIST as a MUST-read. The resolver path is captured at skill-load
+(the plugin-root var only expands reliably inside hooks, NOT arbitrary Bash):
 !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/_lib/context-map.mjs"`
 
 Collect the `**Files:**` paths from `.harness/<SPEC_NAME>/phase-<PHASE_N>.md`, then run **in the worktree**
-(stdout = the block; stderr = a status marker — capture BOTH):
+(stdout = the path list; stderr = a status marker — capture BOTH):
 ```
-node '<CONTEXT_MAP_SCRIPT>' phase-context <file1> <file2> ...   2>/tmp/ctxmap.err; cat /tmp/ctxmap.err
+node '<CONTEXT_MAP_SCRIPT>' phase-paths <file1> <file2> ...   2>/tmp/ctxmap.err; cat /tmp/ctxmap.err
 ```
-The stderr marker tells you which of three states occurred — do NOT conflate them:
-- `CONTEXT_MAP:INJECTED docs=N standards=M` → prepend stdout under `## Context map for this phase
-  (advisory; code is authoritative)`, and **log** `context injected: N docs, M standards` so the
-  transcript proves it happened.
-- `CONTEXT_MAP:EMPTY` → a map exists but nothing matched these files; omit the block, but **log** it
-  (the phase's files may be outside the mapped packages — worth noticing).
-- `CONTEXT_MAP:NONE` → no `docs/context/` map at all; omit the block silently.
+Act on the stderr marker — do NOT conflate the three states:
+- `CONTEXT_MAP:INJECTED docs=N standards=M` → paste stdout under this header and **log** `context paths: N docs, M standards`:
+  ```
+  ## Context for this phase — READ THESE FIRST (code is authoritative; docs advisory)
+  Before writing code, Read each listed doc. You MAY Read other docs/context/ files for anything you touch.
+  <the path list from stdout>
+  ```
+- `CONTEXT_MAP:EMPTY` → a map exists but nothing matched these files; omit the path list (keep the
+  awareness line), and **log** it (the phase's files may be outside the mapped packages).
+- `CONTEXT_MAP:NONE` → no map; omit both `<CONTEXT_MAP_AWARENESS>` and `<CONTEXT_MAP_PATHS>` silently.
 
-If the command itself errors (no stdout, no marker) the resolver path is wrong — fix it; do **not**
-silently proceed, that is the failure that makes this feature a no-op. This gives the freshly-spawned,
-isolated coder its owning `PACKAGE.md` (purpose + flow traces + gotchas) and the `standards/*.md` rules
-matching its files — resolved once, deterministically, from the planned file list. When the coder
-discovers it must touch files the plan never listed, re-run with `diff <START_SHA>` to pull context for
-the actually-changed files.
+If the command errors (no stdout, no marker) the resolver path is wrong — fix it; do **not** silently
+proceed. When the coder discovers it must touch files the plan never listed, re-run with
+`phase-paths` via `diff <START_SHA> --paths` to get the docs for the actually-changed files.
 
 ### Stages 0-2 Run in Main Conversation
 
