@@ -529,9 +529,12 @@ Agent(model="sonnet", prompt="
   2. SYNC CONTEXT MAP (must run BEFORE the quality gate — Check 10 reads its report):
      If docs/context/ exists, invoke the context-map skill scoped to this run's changed files:
      `context-map <changed file paths>` (collect via `git diff --name-only <BASE_BRANCH>..HEAD`).
-     This refreshes the affected PACKAGE.md / standards and rewrites docs/context/.sync-report.md so the
-     gate's Check 10 reads a report THIS run produced. Scoped sync still re-checks cross-package
-     DATAFLOW/DECISIONS dangling refs (context-map A3). If docs/context/ does not exist, skip this step.
+     ALSO tell it the spec dir for this run — `docs/spec/<SPEC_NAME>/` — so it ingests the recorded
+     decisions from design.md/plan.md into DECISIONS.md (transcribe the why+tradeoff, route each D-* by
+     Governs: cross-package → root DECISIONS.md, single-package → that PACKAGE.md ## Decisions; keep the
+     root D-*→file index current). This refreshes affected PACKAGE.md / standards / decisions and rewrites
+     docs/context/.sync-report.md so the gate's Check 10 reads a report THIS run produced. Scoped sync
+     still re-checks cross-package DATAFLOW/DECISIONS dangling refs (context-map A3). No docs/context/ → skip.
 
   3. QUALITY GATE: Invoke quality-gate skill.
      Baseline: .harness/<SPEC_NAME>/baseline.json. Spec dir: docs/spec/<SPEC_NAME>/. Harness dir: .harness/<SPEC_NAME>/. Stage: post-tdd.

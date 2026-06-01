@@ -32,7 +32,7 @@ code wins and the doc is flagged stale — never the reverse.
 | `INDEX.md` | root | read-order + package map | 1 |
 | `ARCHITECTURE.md` | root | system shape, package boundaries, system contracts | 1 |
 | `DATAFLOW.md` | root | named flows across packages; links into each hop's `§ Data in → out` | 1 |
-| `DECISIONS.md` | root | append-only `D-*` cross-cutting why/tradeoff/landmine log | 1 |
+| `DECISIONS.md` | root | a `D-* → file` index for ALL decisions + full bodies for **cross-package** ones only | 1 |
 | `standards/<shard>.md` | root | self-routing `S-*` prescriptive rules (how code MUST be written), each with `applies_to` globs | ~1/scope |
 | `GLOSSARY.md` | root | domain vocabulary | 1 |
 | `packages/<pkg>/PACKAGE.md` | tier-2 (**default**) | per package; index of sub-packages | ~1/pkg |
@@ -171,8 +171,38 @@ don't duplicate. The cross-package trace shows the SPINE; the sub-package trace 
   `request → app.ts gate → route handler → service::fn → repository::fn → Postgres → response`,
   branching on the gate / public-vs-admin / live-vs-terminal splits. Function granularity, not prose.
 
-### `DECISIONS.md` — `D-*` entries
-Each: **Why**, **Tradeoff**, **Governs** (file/dir list). Referenced by id; never copied into a doc.
+### `DECISIONS.md` + distributed `D-*` entries (tiered, like PACKAGE.md)
+A single growing log bloats and gets loaded wholesale at SessionStart. So decisions are **tiered by where
+they apply**, routed deterministically by `Governs` span (same longest-prefix logic as `resolveOwningDoc`):
+
+- **Cross-package decision** (`Governs` spans >1 package, or is a system-wide policy with no single owner)
+  → full body lives in the **root `DECISIONS.md`**. These are the "start here" decisions.
+- **Single-package decision** (`Governs` contained within one package) → full body lives in that package's
+  **`PACKAGE.md` `## Decisions`** section, co-located with the code it governs.
+
+Each `D-*` body (wherever it lives): **Why**, **Tradeoff**, **Governs** (file/dir list). Referenced by id;
+never copy a body into another doc — reference by id only.
+
+**IDs are global and stable.** Assign `D-001`, `D-002`… repo-wide regardless of which file holds the body;
+never per-package-numbered. A decision that later changes scope keeps its id (move the body, keep the id).
+
+**Root `DECISIONS.md` carries a `D-* → file` INDEX for ALL decisions** (so any `(D-xx)` reference resolves
+to its home), then the full bodies for cross-package ones:
+```markdown
+# Decisions index
+| id | title | lives in |
+|----|-------|----------|
+| D-001 | Auth = session cookie + cipher KEK | DECISIONS.md (cross-package) |
+| D-014 | Routes delegate to services | packages/api/PACKAGE.md |
+...
+
+# Cross-package decisions (full bodies)
+## D-001 — Auth = session cookie + cipher KEK
+**Why:** ...  **Tradeoff:** ...  **Governs:** packages/api/src/auth, packages/web/src/lib
+```
+SessionStart injects the index + the cross-package bodies (small, stable). A coder/reviewer already pulls
+the owning `PACKAGE.md`, so the package-local bodies arrive with it. The index makes a distributed `(D-xx)`
+reference resolvable without grepping the whole tree.
 
 ### `standards/<shard>.md` — `S-*` prescriptive, self-routing rules
 DECISIONS answers "why did we choose X *once*" (descriptive, past). STANDARDS answers "how must *all*
@@ -208,9 +238,12 @@ Read-order + package map; domain vocab. See tier table.
 
 ### A0. Resolve scope (default = WHOLE codebase)
 Scope is the set of packages this sync covers. It is independent of git-change detection.
-- **Path argument given** (`$ARGUMENTS` non-empty) → scope = that path's package(s) only.
+- **Path argument(s) given** (`$ARGUMENTS` non-empty) → scope = those paths' package(s) only.
 - **No argument** → scope = **the entire codebase** — every package/sub-package that has code OR a
   `PACKAGE.md`. Do NOT narrow scope to "what git changed" — a no-arg sync must reconcile the full map.
+- **A `docs/spec/<name>/` path among the args** is not a scope — it's a **decision source** (see A2
+  "Decision sources"): read its `design.md`/`plan.md` to transcribe recorded decisions. Code paths set
+  scope; the spec dir sets the rationale source.
 
 ```
 git ls-files '*.ts' '*.tsx' '*.py' '*.go' '*.rs' '*.js' \
@@ -237,14 +270,29 @@ re-trace. Map each changed code file to its **owning package/sub-package** (not 
   dispatch a B2 exploration agent for it and create its docs. This is the common no-arg case after a
   partial bootstrap — sync must close the gap, not silently skip undocumented packages.
 - Sub-package gained non-obvious intent and has no doc → create its `PACKAGE.md`.
-- New cross-cutting decision → add a `D-*` to `DECISIONS.md`; reference it (don't inline the body
-  except as a one-line gotcha).
+- New decision → assign a global `D-*` id and **route by `Governs`**: cross-package/system-wide → full
+  body in root `DECISIONS.md`; single-package → full body in that `PACKAGE.md ## Decisions`. Add a row to
+  the root index either way. **Prefer the recorded rationale over re-derivation** — see "Decision sources"
+  below: if a `docs/spec/<name>/design.md`/`plan.md` is available for this run, transcribe the decision +
+  tradeoff the team actually wrote, rather than guessing the *why* from the diff.
 - A flow changed → re-trace the affected `## Data flows` function(s) and update the cross-package
   trace in `DATAFLOW.md` / module trace in `ARCHITECTURE.md`.
 - A file gained a file-specific silent landmine → add a `files/` exception doc (rare).
 - **Standards re-derive** → if the package's `eslint.config.*`/`tsconfig`/`pyproject` changed, or a
   layering boundary shifted, re-run step 6b for it and update the matching `standards/*.md` shard (rules,
   `applies_to`, `enforced_by`). A newly-mapped package gets its `standards/<pkg>.md` created.
+
+#### Decision sources — transcribe the recorded *why*, don't re-derive it
+Decisions and their rationale are *already written down* during the work that produced the change — the
+map should **ingest** them, not reconstruct them from code (which loses the *why* and the rejected
+alternatives). When a `docs/spec/<name>/` is available for this run (orchestrate passes its path; otherwise
+look for a recently-touched one), read its **`design.md`** (and `plan.md`) and, for each recorded decision
+that is **cross-cutting** (affects >1 file/package — not a local one-off), add/update its `D-*` by
+transcribing the stated **Why/Tradeoff** verbatim-in-spirit and setting **Governs** to what it actually
+touches. Then **verify it against the code** — if the code contradicts the recorded decision, the code wins
+and the decision is flagged stale. Local/single-file choices stay out of the log (slop guard). This makes
+`design.md` authoritative for *why we chose it* and code authoritative for *what shipped*. Absent a spec,
+fall back to deriving cross-cutting decisions from the diff as before (lossy, last resort).
 
 ### A3. Detect orphans & staleness (the safety check)
 - **Orphan**: a `PACKAGE.md` whose `governs:` dir, or a `files/` doc whose `mirrors:` file, no longer
@@ -255,8 +303,10 @@ re-trace. Map each changed code file to its **owning package/sub-package** (not 
   function still exists — re-read that function and re-trace it; if you cannot confirm it this run,
   list it under `trace-needs-review:` in the report. This is a WARNING, not a FAIL (grep can't verify
   internal logic — code stays authoritative).
-- **Dangling refs**: any `D-*` in a doc missing from `DECISIONS.md`; any package named in
-  `DATAFLOW.md` that no longer exists → flag.
+- **Dangling refs**: any `D-*` referenced in a doc that is missing from the root `DECISIONS.md` **index**
+  (the index lists every id and its home file — resolve through it, not by assuming the body is in
+  `DECISIONS.md`); any package named in `DATAFLOW.md` that no longer exists → flag. Also flag an index
+  row whose `lives in` file no longer contains that `D-*` body.
 - **Standard staleness**: an `S-*` with `enforced_by: eslint|tsconfig` whose named rule/flag no longer
   exists in the config → flag stale (config wins, same as orphan). An `S-*` whose `applies_to` dirs no
   longer exist → update or drop.
@@ -374,7 +424,10 @@ you did not open (if a referenced helper wasn't in your file list, hedge it, don
   `flow_fns:` is present and matches the traced fns; `flows[]` contains only package-crossing traces
   (move any in-package trace that leaked into `flows[]` back into the doc's `## Data flows`). A doc with
   a flow-bearing fn but a prose/empty `## Data flows`, or with a missing `flow_fns`, is non-conforming.
-- Assign stable `D-*` ids across all agents; write `DECISIONS.md`.
+- Assign **global stable** `D-*` ids across all agents. **Route each by `Governs` span**: cross-package
+  (or system-wide) → full body in root `DECISIONS.md`; single-package → full body in that package's
+  `PACKAGE.md ## Decisions`. Write the root `DECISIONS.md` with the `D-* → file` index (every id) plus the
+  cross-package bodies; write package-local bodies into their `PACKAGE.md`.
 - **Merge `standards` into `docs/context/standards/*.md`**: group candidate rules by scope into shards
   (`global.md` for `["**/*"]` rules, one `<pkg>.md` per package, layer shards like `routes.md`, language
   shards). Assign stable `S-*` ids (`S-<scope>-NN`), dedupe identical rules across packages, write each

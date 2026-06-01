@@ -53,6 +53,11 @@ const makeFixture = () => {
   );
   write(
     dir,
+    "docs/context/DECISIONS.md",
+    "# Decisions index\n| id | title | lives in |\n|----|-------|----------|\n| D-001 | Auth model | DECISIONS.md |\n| D-014 | Routes delegate | packages/api/PACKAGE.md |\n\n# Cross-package decisions\n## D-001 — Auth model\n**Why:** session cookie.\n"
+  );
+  write(
+    dir,
     "docs/context/packages/api/PACKAGE.md",
     "---\ngoverns: packages/api/src\nstatus: active\n---\n# api\n## Purpose\nHTTP.\n## Data flows\nlistUsers(req) → res:\n  req → repo.findAll → 200\n## Gotchas / landmines\n- 404 empty body.\n"
   );
@@ -300,6 +305,9 @@ test("SessionStart hook injects context and no-ops without a map", () => {
     const parsed = JSON.parse(r.stdout);
     assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(parsed.hookSpecificOutput.additionalContext, /Project standards/);
+    // root DECISIONS.md (index + cross-package bodies) is injected at session start
+    assert.match(parsed.hookSpecificOutput.additionalContext, /Decisions index/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /D-001/);
 
     const noop = spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ hook_event_name: "SessionStart", cwd: tmpdir() }),
