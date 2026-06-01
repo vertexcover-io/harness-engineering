@@ -88,6 +88,7 @@ Rules:
 governs: packages/<pkg>/src/
 last_verified_sha: <short HEAD>
 sub_packages: [a, b, c]
+flow_fns: [file.ts::fnName, ...]   # ONLY if traces live in this doc (no sub-packages) — else omit
 decisions: [D-0xx]
 status: active
 ---
@@ -97,11 +98,17 @@ status: active
 ## Purpose            # what it owns, no code restatement
 ## Public surface     # entry points / key exports + 1-line contract each
 ## Depends on / used by
-## Data flows         # the package's headline flows, 1-line each → link to DATAFLOW.md + sub-pkg traces
+## Data flows         # SEE RULE BELOW
 ## Sub-packages       # index of <sub>/PACKAGE.md
 ## Gotchas / landmines
 ## Decisions          # D-* one-liners
 ```
+**`## Data flows` rule (root doc):**
+- Package **has sub-packages** → spine only: 1 line per headline flow → link to DATAFLOW.md + the
+  `<sub>/PACKAGE.md § Data flows` where the full trace lives. Don't duplicate the trace here.
+- Package **has NO sub-packages** (the root doc IS the workhorse — e.g. eslint-plugin, scripts) → the
+  **full function-level grammar traces live HERE**, one per flow-bearing fn, and `flow_fns:` lists them.
+  There is no sub-package to delegate to, so prose/1-liners are NOT acceptable — write the trees.
 
 ### Sub-package `PACKAGE.md` (the workhorse — richest tier)
 ```markdown
@@ -261,35 +268,59 @@ slice; record the partition so coverage is auditable. **No package may be skippe
 has files, it gets an agent.
 
 ### B2. Dispatch exploration agents in parallel (one per package)
-Each agent gets: its package's file list, the tier formats above, the slop guard, and the rule that
-PACKAGE.md is the default. Each agent MUST:
-1. Read every file in its package (skim mundane, study logic/decision-bearing ones).
+Each agent gets: its package root, the tier formats above, the flow-trace grammar, the slop guard, and
+the rule that PACKAGE.md is the default. Give it the **package root, not a fixed file list** — the agent
+re-runs `git ls-files <pkg>` itself so a stale or partial list can't cause it to miss files. Each agent MUST:
+1. **Discover and read every code file in its package** (`git ls-files`), skim mundane, study
+   logic/decision-bearing ones. **Never describe or claim a fact about a file you did not open** — if a
+   trace or gotcha depends on a helper in another file, open that file or hedge the claim explicitly.
 2. Produce **one `PACKAGE.md` for the package** + a `PACKAGE.md` for each sub-package that has
    distinct intent (deps, public surface, gotchas).
-3. **Trace the flow-bearing functions** — for each function with branching / multi-step transform /
-   boundary crossing, write a `## Data flows` trace in the flow-trace grammar (function-level, branches
-   as a tree, stores named, `D-*` inline). List the traced fns in `flow_fns:`. Pure getters/CRUD do NOT
-   get traced. Trace from the real code, not a guess.
+3. **Trace the flow-bearing functions INSIDE the PACKAGE.md body.** For each function with branching /
+   multi-step transform / boundary crossing, write a trace in the flow-trace grammar (function-level,
+   branches as a tree with `├─`/`└─`/`→`, stores named, `D-*` inline) **into that doc's `## Data flows`
+   section of `md_body`** — NOT as prose, NOT a numbered list, and NOT in the top-level `flows[]` array.
+   The `## Data flows` section is a sequence of grammar traces, one per flow-bearing fn. Then list every
+   traced fn in the doc's `flow_fns:` frontmatter as `file.ts::fnName`. Pure getters/CRUD do NOT get
+   traced (they get one `## Public surface` line). Trace from the real code, not a guess.
+   **`flow_fns` and the `## Data flows` traces must agree** — every fn in `flow_fns` has a trace and vice
+   versa. A package whose only flows are in-package still puts them here; `flows[]` (step 7) stays empty.
 4. Account for **every file**: each is either reflected in a PACKAGE.md's `key_files`/surface, or
    listed in `skipped: [{path, reason}]` (mundane) — so coverage is provable.
 5. Propose only a `files/` exception doc where a single file has a non-generalizable silent landmine.
 6. Surface cross-cutting decisions as candidate `D-*` (id, title, why, tradeoff, governs).
-7. Return the cross-package flows this package participates in as **function-level traces** (entry fn →
-   each hop fn/store → output, with branches) for `DATAFLOW.md`; a 2–4 line summary + the layer-descent
-   trace for `ARCHITECTURE.md`; and any domain terms for `GLOSSARY.md`.
+7. Return in top-level `flows[]` **ONLY cross-package flows** — a flow that starts in this package and
+   crosses into another package (route → service → repo → table → queue → other-package worker), as a
+   function-level trace for `DATAFLOW.md`. **If every flow in this package stays inside the package
+   (lint-time rules, standalone scripts, pure utilities), return `flows: []`** — those traces already
+   live in the PACKAGE.md `## Data flows` (step 3) and must NOT be duplicated here. Also return a 2–4
+   line summary + the layer-descent trace for `ARCHITECTURE.md`; and any domain terms for `GLOSSARY.md`.
 
 Return shape per agent (structured):
 ```
 { package, files_total,
-  package_docs: [{path, md_body}],          # PACKAGE.md (package + sub-packages)
-  file_exceptions: [{path, md_body}],       # rare
-  skipped: [{path, reason}],
+  package_docs: [{path, md_body}],   # PACKAGE.md (package + sub-pkgs). md_body MUST contain the
+                                     #   `## Data flows` grammar traces AND a `flow_fns:` frontmatter
+                                     #   listing them. This is where ALL in-package traces live.
+  file_exceptions: [{path, md_body}],       # rare — single-file silent landmine only
+  skipped: [{path, reason}],                # every file not in a doc's surface/key_files, with reason
   decisions: [{title, why, tradeoff, governs}],
-  flows: [{name, trace}],          # trace = function-level flow-trace-grammar string, entry→hops→output
+  flows: [{name, trace}],   # CROSS-PACKAGE flows ONLY (this pkg → another pkg), for DATAFLOW.md.
+                            #   EMPTY ([]) if all flows stay in-package — do NOT put in-package traces
+                            #   here; they belong in package_docs[].md_body `## Data flows`.
   arch_trace, arch_summary, glossary_terms }
 ```
+**Self-check before returning:** (a) every flow-bearing fn has a grammar trace in its PACKAGE.md
+`## Data flows` and an entry in `flow_fns:`; (b) `flows[]` holds only package-crossing flows (else `[]`);
+(c) `documented ∪ skipped == every file you were given` — nothing dropped; (d) no claim about a file
+you did not open (if a referenced helper wasn't in your file list, hedge it, don't assert it).
 
 ### B3. Merge & write the tree
+- **Validate each returned doc before writing** (repair or re-dispatch the agent if it fails): the
+  `## Data flows` section is grammar traces (has `→` and tree branches), NOT prose or numbered lists;
+  `flow_fns:` is present and matches the traced fns; `flows[]` contains only package-crossing traces
+  (move any in-package trace that leaked into `flows[]` back into the doc's `## Data flows`). A doc with
+  a flow-bearing fn but a prose/empty `## Data flows`, or with a missing `flow_fns`, is non-conforming.
 - Assign stable `D-*` ids across all agents; write `DECISIONS.md`.
 - Write every `package_docs[].md_body` to `docs/context/packages/<...>/PACKAGE.md`, rewriting `D-*`
   refs to the assigned ids; ensure each sub-package doc's `## Data flows` traces and `flow_fns:` are present.
@@ -322,8 +353,13 @@ Then run one A3/A4 pass so the map ships with a clean sync-report.
   (a one-line inline gotcha for safety is fine).
 - Don't duplicate a hop's interior into `DATAFLOW.md` — the cross-package trace is the spine; link to
   the sub-package `## Data flows` for the inside of a hop.
-- Don't write flat In/Out/contract lists for data flow — use function-level traces in the flow-trace
-  grammar (the tree IS the information). Don't use ASCII box-art (one small shape block in ARCHITECTURE excepted).
+- Don't write flat In/Out/contract lists or prose/numbered steps for data flow — use function-level
+  traces in the flow-trace grammar (the tree IS the information). Don't use ASCII box-art (one small
+  shape block in ARCHITECTURE excepted).
+- Don't put in-package traces in the agent's `flows[]` — that field is cross-package ONLY; in-package
+  traces live in the PACKAGE.md `## Data flows` body. Don't write a `## Data flows` trace without also
+  listing the fn in `flow_fns:`.
+- Don't claim anything about a file the agent didn't open — open it or hedge (code is authoritative).
 - Don't trace pure getters / thin CRUD / passthroughs — only flow-bearing functions (slop guard).
 - Don't let a context doc override code — on conflict, code wins, flag the doc.
 - Don't skip a package or leave any code file unaccounted (documented or explicitly skipped).
