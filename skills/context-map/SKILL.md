@@ -50,7 +50,8 @@ surface + data-flow only) — never padded. A mundane file gets NO `files/` doc.
 ```
 test -d docs/context && ls docs/context/*.md >/dev/null 2>&1
 ```
-- Map exists → **SYNC MODE** (Part A).
+- Map exists (even partial — e.g. only one package mapped) → **SYNC MODE** (Part A). A no-arg sync
+  covers the WHOLE codebase (A0) and bootstraps any package that has code but no doc yet.
 - No `docs/context/` or empty → **BOOTSTRAP MODE** (Part B), then one SYNC pass.
 
 This skill always runs when invoked. If nothing needs changing it still emits a sync-report and
@@ -171,13 +172,36 @@ Read-order + package map; domain vocab. See tier table.
 
 ## Part A — SYNC MODE
 
-### A1. Find changed code
-`git diff --name-only HEAD` (or base branch). Keep code files only. Map each to its **owning
-package/sub-package** (not a per-file doc).
+### A0. Resolve scope (default = WHOLE codebase)
+Scope is the set of packages this sync covers. It is independent of git-change detection.
+- **Path argument given** (`$ARGUMENTS` non-empty) → scope = that path's package(s) only.
+- **No argument** → scope = **the entire codebase** — every package/sub-package that has code OR a
+  `PACKAGE.md`. Do NOT narrow scope to "what git changed" — a no-arg sync must reconcile the full map.
 
-### A2. Reconcile each touched package against its `PACKAGE.md`
+```
+git ls-files '*.ts' '*.tsx' '*.py' '*.go' '*.rs' '*.js' \
+  | grep -vE '__tests__|\.test\.|\.spec\.|node_modules|dist|build'
+```
+Group the result by package/sub-package = the in-scope units. Also include any existing `PACKAGE.md`
+whose `governs:` dir still has code. **A package with code but no doc is in scope** (its doc is missing
+and must be created — same as a partial prior run that only mapped one package).
+
+If the in-scope set is large and the map is partial (some packages have code but no `PACKAGE.md`),
+dispatch **one agent per undocumented package** exactly as BOOTSTRAP B2 does — bootstrap is just sync
+over packages whose docs don't exist yet. Documented packages are reconciled in-line per A2.
+
+### A1. Within scope, find what to re-verify
+For documented packages, use `git diff --name-only <doc's last_verified_sha>..HEAD` (per doc, falling
+back to `HEAD` working-tree diff) to find files changed since each doc was last verified — these get a
+full re-read. Files unchanged since `last_verified_sha` need only an existence/orphan check, not a
+re-trace. Map each changed code file to its **owning package/sub-package** (not a per-file doc).
+
+### A2. Reconcile each in-scope package against its `PACKAGE.md`
 - Doc exists → re-read the changed files. Update Purpose/surface/data-flow/gotchas/decisions only if
   the *why* changed. Refresh `key_files`, `last_verified_sha`.
+- **In-scope package has code but NO `PACKAGE.md`** (e.g. a prior run only mapped one package) →
+  dispatch a B2 exploration agent for it and create its docs. This is the common no-arg case after a
+  partial bootstrap — sync must close the gap, not silently skip undocumented packages.
 - Sub-package gained non-obvious intent and has no doc → create its `PACKAGE.md`.
 - New cross-cutting decision → add a `D-*` to `DECISIONS.md`; reference it (don't inline the body
   except as a one-line gotcha).
@@ -197,11 +221,16 @@ package/sub-package** (not a per-file doc).
 - **Dangling refs**: any `D-*` in a doc missing from `DECISIONS.md`; any package named in
   `DATAFLOW.md` that no longer exists → flag.
 - **Drifted roots**: packages/boundaries changed → update `ARCHITECTURE.md`/`INDEX.md`.
+- **Scope coverage (no-arg sync)**: every in-scope package with code now has a `PACKAGE.md`. Any
+  package with code and still no doc is a FAIL (it was skipped) — list it. A scoped (path-arg) sync
+  only asserts coverage for the given path.
 
 ### A4. Emit the sync-report (required — the gate reads this)
 Write `docs/context/.sync-report.md`:
 ```
 context-map sync @ <sha>
+- scope: whole codebase   (or: packages/api — scoped to argument)
+- packages in scope: 4    (documented: 4, newly mapped this run: 0, uncovered: 0)
 - updated: packages/pipeline/social/PACKAGE.md (LTF gotcha + key_files)
 - created: packages/api/routes/PACKAGE.md
 - dataflow: updated "daily digest" (new publish hop)
@@ -209,10 +238,11 @@ context-map sync @ <sha>
 - stale-refs: 0
 - trace-needs-review: 1 (services.ts::buildRunObservability changed — re-traced)
 - no-change: 3 packages reviewed
-verdict: PASS   (no unresolved orphans, stale symbols, or dangling refs)
+verdict: PASS   (no unresolved orphans, stale symbols, dangling refs, or uncovered in-scope packages)
 ```
-Verdict is `FAIL` on any unresolved orphan / stale symbol / dangling ref. `trace-needs-review` is a
-WARNING (does not fail the gate). **Quality-gate must block on a missing report or a FAIL verdict.**
+Verdict is `FAIL` on any unresolved orphan / stale symbol / dangling ref / **in-scope package with code
+but no doc**. `trace-needs-review` is a WARNING (does not fail the gate). **Quality-gate must block on a
+missing report or a FAIL verdict.**
 
 ---
 
