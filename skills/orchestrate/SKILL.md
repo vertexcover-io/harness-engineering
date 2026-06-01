@@ -156,7 +156,19 @@ Every sub-agent prompt MUST start with this preamble (referred to as `[PREAMBLE]
 ```
 You are working in the worktree at <WORKTREE_PATH>.
 Your working directory is <WORKTREE_PATH>.
+<CONTEXT_MAP_BLOCK>
 ```
+
+**`<CONTEXT_MAP_BLOCK>` (dispatch-time context injection).** Before dispatching a coder/tdd sub-agent,
+resolve the phase's context-map slice and paste it in. Collect the `**Files:**` paths from
+`.harness/<SPEC_NAME>/phase-<PHASE_N>.md`, then run (in the worktree):
+```
+node "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/context-map.mjs" phase-context <file1> <file2> ...
+```
+If it prints a block, prepend it under a header `## Context map for this phase (advisory; code is authoritative)`.
+If it prints nothing (no `docs/context/` map) → omit `<CONTEXT_MAP_BLOCK>` entirely. This gives the
+freshly-spawned, isolated coder its owning `PACKAGE.md` (purpose + flow traces + gotchas) and the
+`standards/*.md` rules matching its files — resolved once, deterministically, from the planned file list.
 
 ### Stages 0-2 Run in Main Conversation
 

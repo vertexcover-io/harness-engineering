@@ -185,15 +185,27 @@ Detect project tooling in this order:
 - **Fail:** `failed` > 0, or coverage empty, or REQ IDs don't match spec, or file missing for user-facing task
 - Report: failed count, coverage count, gap count, REQ ID validation results
 
+### Check 10: Context Map Freshness
+
+- If `docs/context/` does not exist → `NOT_APPLICABLE` (project never adopted the context map).
+- Else read `docs/context/.sync-report.md`:
+  - File missing → **BLOCKED**: "context map exists but was never synced — run context-map before the gate."
+  - `verdict: FAIL` → **BLOCKED**: surface the report's stale-refs / uncovered / orphan lines.
+  - `verdict: PASS` → **PASS** (a `trace-needs-review` warning does not block — it is advisory).
+- **Why:** the map is injected into every coder sub-agent; a stale map propagates wrong context into
+  generated code. This wires the rule the context-map skill already states ("must block on a missing
+  report or a FAIL verdict").
+- Report: verdict, stale/uncovered/standards-stale counts.
+
 ---
 
 ## When Gates Run
 
 | Stage | Checks Run | Trigger |
 |-------|-----------|---------|
-| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 always (verifies e2e-report artifact) | Implementation complete |
+| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 always + Check 10 (context map) | Implementation complete |
 | After Refactor (`post-refactor`) | Checks 1-4 (no scope/plan/ignore/smoke/e2e check) | Refactoring should not change scope |
-| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 always (verifies e2e-report artifact) | Final audit before commit |
+| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 always + Check 10 (context map) | Final audit before commit |
 
 If any gate returns **BLOCKED**, the pipeline stops at that point. The orchestrator reports what failed and does not proceed to the next stage.
 
@@ -229,6 +241,7 @@ Written to `.harness/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `gate-repo
 | 7 | Ignore Comment Audit | — | 0 new ignore comments | PASS |
 | 8 | Smoke Test | — | 2/2 passed | PASS |
 | 9 | E2E Tests | — | 12 passed, 0 failed | PASS |
+| 10 | Context Map Freshness | — | verdict: PASS, 0 stale | PASS |
 
 <!-- QG:VERDICT:PASS -->
 **Verdict: PASS**
@@ -268,7 +281,7 @@ Machine-parseable markers: `<!-- QG:VERDICT:PASS -->` and `<!-- QG:CHECK:N:PASS 
 
 Binary verdicts — no WARN tier:
 
-- **`PASS`** — all mandatory checks pass (Checks 1-8, plus Check 9 when e2e is detected)
+- **`PASS`** — all mandatory checks pass (Checks 1-8, Check 9 when e2e is detected, Check 10 when a context map exists)
 - **`BLOCKED`** — any mandatory check fails (with specific reasons listed)
 - **`STAGNATION`** — same check failed 3 consecutive times across gate runs (special signal: stop entirely, don't retry)
 
