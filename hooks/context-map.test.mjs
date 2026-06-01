@@ -18,6 +18,7 @@ import {
   cap,
   packSections,
   buildPhaseContext,
+  resolvePhasePaths,
 } from "./_lib/context-map.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -231,6 +232,43 @@ test("diff mode resolves untracked (newly-created) files", () => {
     const r = spawnSync(process.execPath, [LIB, "diff", sha], { cwd: dir, encoding: "utf8" });
     assert.match(r.stdout, /S-api-01/);
     assert.match(r.stderr, /CONTEXT_MAP:INJECTED/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resolvePhasePaths returns repo-relative doc + standards paths, deduped", () => {
+  const dir = makeFixture();
+  const root = join(dir, "docs", "context");
+  try {
+    const r = resolvePhasePaths(
+      [join(dir, "packages/api/src/routes/users.ts"), join(dir, "packages/api/src/routes/posts.ts")],
+      root,
+      dir
+    );
+    assert.deepEqual(r.docs, ["docs/context/packages/api/src/routes/PACKAGE.md"]); // deduped to one
+    assert.ok(r.standards.some((s) => s.endsWith("standards/api.md")));
+    assert.ok(r.standards.some((s) => s.endsWith("standards/global.md")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("phase-paths CLI lists paths on stdout + INJECTED marker", () => {
+  const dir = makeFixture();
+  try {
+    const r = spawnSync(process.execPath, [LIB, "phase-paths", "packages/api/src/routes/users.ts"], {
+      cwd: dir,
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Package docs:/);
+    assert.match(r.stdout, /routes\/PACKAGE\.md/);
+    assert.match(r.stdout, /Standards:/);
+    assert.match(r.stdout, /standards\/api\.md/);
+    // pointer mode does NOT paste bodies
+    assert.ok(!r.stdout.includes("createUser"));
+    assert.match(r.stderr, /CONTEXT_MAP:INJECTED docs=1 standards=2/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

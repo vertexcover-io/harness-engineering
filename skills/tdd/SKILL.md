@@ -19,17 +19,18 @@ description: >
 
 User-provided guidelines take precedence on conflicts with defaults.
 
-**Context map (if present).** When given a phase file with a `**Files:**` list, resolve the context-map
-slice for those files and read it before writing code (the plugin-root var only expands inside hooks, so
-resolve the path at load):
+**Context map (if present).** When given a phase file with a `**Files:**` list, resolve which context
+docs to read, then **Read them before writing code** (pointers, not paste — you pull them into your own
+window). The plugin-root var only expands inside hooks, so resolve the path at load:
 ```
 SCRIPT=$(echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/_lib/context-map.mjs")
-node "$SCRIPT" phase-context <files...>     # stdout = block; stderr = CONTEXT_MAP:{INJECTED|EMPTY|NONE}
+node "$SCRIPT" phase-paths <files...>   # stdout = doc paths to Read; stderr = CONTEXT_MAP:{INJECTED|EMPTY|NONE}
 ```
-If stdout has a block, it carries the owning `PACKAGE.md` (purpose + flow traces + gotchas) and the
-`standards/*.md` rules that apply — follow them (code is authoritative; the block is advisory). Stderr
-`CONTEXT_MAP:NONE`/`EMPTY` → no applicable map, proceed normally. (When dispatched by orchestrate this is
-already injected into the preamble; do it yourself only when invoked standalone.)
+On `CONTEXT_MAP:INJECTED`, **Read each listed `PACKAGE.md` (purpose, flow traces, gotchas) and
+`standards/*.md` (S-* rules, enforced_by) before coding** — and you MAY Read any other `docs/context/`
+file for anything you touch (code is authoritative; docs advisory). `CONTEXT_MAP:NONE`/`EMPTY` → no
+applicable map, proceed normally. (When dispatched by orchestrate the path list is already in your
+preamble; resolve it yourself only when invoked standalone.)
 
 
 # Test-Driven Development

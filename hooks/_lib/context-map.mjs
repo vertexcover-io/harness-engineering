@@ -266,20 +266,43 @@ export const buildPhaseContext = (filePaths, contextRoot, repoRoot, opts = {}) =
   return opts.withStats ? { block, docs: docBlocks.length, standards: stdBlocks.length } : block;
 };
 
+// Pointer mode: resolve the files to the context-doc PATHS the agent should read
+// itself (owning PACKAGE.md per file + matching standards shards), repo-relative,
+// deduped. No body extraction, no packing — the agent Reads these on demand. This
+// keeps the dispatch preamble tiny and lets the agent pull only what it opens.
+export const resolvePhasePaths = (filePaths, contextRoot, repoRoot) => {
+  const docs = new Set();
+  const standards = new Set();
+  for (const filePath of filePaths) {
+    const doc = resolveOwningDoc(filePath, contextRoot, repoRoot);
+    if (doc) docs.add(toPosix(relative(repoRoot, doc.docPath)));
+    for (const std of matchStandards(filePath, contextRoot, repoRoot)) {
+      standards.add(toPosix(relative(repoRoot, std.docPath)));
+    }
+  }
+  return { docs: [...docs], standards: [...standards] };
+};
+
 // Stderr markers let the caller (and the transcript) tell apart three states that
 // otherwise all look like "no output": map absent, map present but nothing matched,
 // and a real injection. Stdout carries ONLY the block (safe to paste into a prompt).
+// Commands:
+//   phase-paths <files...>     → list the doc PATHS the agent must read (pointer mode, default)
+//   phase-context <files...>   → emit the assembled content block (push mode, e.g. SessionStart)
+//   diff <sha> [--paths]       → same, but resolve files from the working-tree diff since <sha>
+// Stderr markers (NONE | EMPTY | INJECTED) tell the three states apart in every mode.
 const main = (argv) => {
-  const [cmd, ...rest] = argv;
+  let [cmd, ...rest] = argv;
   const cwd = process.cwd();
+  const pathsMode = cmd === "phase-paths" || rest.includes("--paths");
+  rest = rest.filter((a) => a !== "--paths");
 
   let files = rest;
   if (cmd === "diff") {
-    // Resolve files from the working tree's git diff since <sha> — for context on
-    // files the coder discovered that the planner's **Files:** list never named.
+    // Files the coder discovered that the planner's **Files:** list never named.
     const root = repoRoot(cwd) ?? cwd;
     files = diffNamesSince(rest[0] ?? "HEAD", cwd).map((f) => join(root, f));
-  } else if (cmd !== "phase-context") {
+  } else if (cmd !== "phase-context" && cmd !== "phase-paths") {
     return;
   }
 
@@ -288,6 +311,21 @@ const main = (argv) => {
     process.stderr.write("CONTEXT_MAP:NONE (no docs/context found)\n");
     return;
   }
+
+  if (pathsMode) {
+    const { docs, standards } = resolvePhasePaths(files, contextRoot, repoRoot(cwd) ?? cwd);
+    if (!docs.length && !standards.length) {
+      process.stderr.write("CONTEXT_MAP:EMPTY (map present, nothing matched these files)\n");
+      return;
+    }
+    const lines = [];
+    if (docs.length) lines.push("Package docs:", ...docs.map((d) => `  - ${d}`));
+    if (standards.length) lines.push("Standards:", ...standards.map((s) => `  - ${s}`));
+    process.stdout.write(lines.join("\n") + "\n");
+    process.stderr.write(`CONTEXT_MAP:INJECTED docs=${docs.length} standards=${standards.length}\n`);
+    return;
+  }
+
   const { block, docs, standards } = buildPhaseContext(files, contextRoot, cwd, {
     capChars: 5000,
     withStats: true,
