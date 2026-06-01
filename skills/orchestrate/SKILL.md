@@ -160,15 +160,29 @@ Your working directory is <WORKTREE_PATH>.
 ```
 
 **`<CONTEXT_MAP_BLOCK>` (dispatch-time context injection).** Before dispatching a coder/tdd sub-agent,
-resolve the phase's context-map slice and paste it in. Collect the `**Files:**` paths from
-`.harness/<SPEC_NAME>/phase-<PHASE_N>.md`, then run (in the worktree):
+resolve the phase's context-map slice and paste it in. The resolver path is captured at skill-load (the
+plugin-root var is only expanded reliably inside hooks, NOT in arbitrary Bash):
+!`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/_lib/context-map.mjs"`
+
+Collect the `**Files:**` paths from `.harness/<SPEC_NAME>/phase-<PHASE_N>.md`, then run **in the worktree**
+(stdout = the block; stderr = a status marker — capture BOTH):
 ```
-node "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/context-map.mjs" phase-context <file1> <file2> ...
+node '<CONTEXT_MAP_SCRIPT>' phase-context <file1> <file2> ...   2>/tmp/ctxmap.err; cat /tmp/ctxmap.err
 ```
-If it prints a block, prepend it under a header `## Context map for this phase (advisory; code is authoritative)`.
-If it prints nothing (no `docs/context/` map) → omit `<CONTEXT_MAP_BLOCK>` entirely. This gives the
-freshly-spawned, isolated coder its owning `PACKAGE.md` (purpose + flow traces + gotchas) and the
-`standards/*.md` rules matching its files — resolved once, deterministically, from the planned file list.
+The stderr marker tells you which of three states occurred — do NOT conflate them:
+- `CONTEXT_MAP:INJECTED docs=N standards=M` → prepend stdout under `## Context map for this phase
+  (advisory; code is authoritative)`, and **log** `context injected: N docs, M standards` so the
+  transcript proves it happened.
+- `CONTEXT_MAP:EMPTY` → a map exists but nothing matched these files; omit the block, but **log** it
+  (the phase's files may be outside the mapped packages — worth noticing).
+- `CONTEXT_MAP:NONE` → no `docs/context/` map at all; omit the block silently.
+
+If the command itself errors (no stdout, no marker) the resolver path is wrong — fix it; do **not**
+silently proceed, that is the failure that makes this feature a no-op. This gives the freshly-spawned,
+isolated coder its owning `PACKAGE.md` (purpose + flow traces + gotchas) and the `standards/*.md` rules
+matching its files — resolved once, deterministically, from the planned file list. When the coder
+discovers it must touch files the plan never listed, re-run with `diff <START_SHA>` to pull context for
+the actually-changed files.
 
 ### Stages 0-2 Run in Main Conversation
 

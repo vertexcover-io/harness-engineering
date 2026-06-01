@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, relative, sep } from "node:path";
+import { repoRoot, diffNamesSince } from "./git.mjs";
 
 const toPosix = (p) => p.split(sep).join("/");
 
@@ -261,17 +262,42 @@ export const buildPhaseContext = (filePaths, contextRoot, repoRoot, opts = {}) =
     const packed = packSections(docBlocks, docBudget, "package docs");
     sections.push(`## Package context\n${packed}`);
   }
-  return sections.join("\n\n");
+  const block = sections.join("\n\n");
+  return opts.withStats ? { block, docs: docBlocks.length, standards: stdBlocks.length } : block;
 };
 
+// Stderr markers let the caller (and the transcript) tell apart three states that
+// otherwise all look like "no output": map absent, map present but nothing matched,
+// and a real injection. Stdout carries ONLY the block (safe to paste into a prompt).
 const main = (argv) => {
   const [cmd, ...rest] = argv;
-  if (cmd !== "phase-context") return;
   const cwd = process.cwd();
+
+  let files = rest;
+  if (cmd === "diff") {
+    // Resolve files from the working tree's git diff since <sha> — for context on
+    // files the coder discovered that the planner's **Files:** list never named.
+    const root = repoRoot(cwd) ?? cwd;
+    files = diffNamesSince(rest[0] ?? "HEAD", cwd).map((f) => join(root, f));
+  } else if (cmd !== "phase-context") {
+    return;
+  }
+
   const contextRoot = findContextRoot(cwd);
-  if (!contextRoot) return;
-  const block = buildPhaseContext(rest, contextRoot, cwd, { capChars: 5000 });
-  if (block) process.stdout.write(block + "\n");
+  if (!contextRoot) {
+    process.stderr.write("CONTEXT_MAP:NONE (no docs/context found)\n");
+    return;
+  }
+  const { block, docs, standards } = buildPhaseContext(files, contextRoot, cwd, {
+    capChars: 5000,
+    withStats: true,
+  });
+  if (block) {
+    process.stdout.write(block + "\n");
+    process.stderr.write(`CONTEXT_MAP:INJECTED docs=${docs} standards=${standards}\n`);
+  } else {
+    process.stderr.write("CONTEXT_MAP:EMPTY (map present, nothing matched these files)\n");
+  }
 };
 
 if (import.meta.url === `file://${process.argv[1]}`) {

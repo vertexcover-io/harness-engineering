@@ -20,12 +20,16 @@ description: >
 User-provided guidelines take precedence on conflicts with defaults.
 
 **Context map (if present).** When given a phase file with a `**Files:**` list, resolve the context-map
-slice for those files and read it before writing code:
-`node "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/context-map.mjs" phase-context <files...>`. If it prints a block,
-it carries the owning `PACKAGE.md` (purpose + flow traces + gotchas) and the `standards/*.md` rules that
-apply to those files — follow them (code is authoritative; the block is advisory). If it prints nothing,
-no map exists — proceed normally. (When dispatched by orchestrate this is already injected into the
-preamble; do it yourself only when invoked standalone.)
+slice for those files and read it before writing code (the plugin-root var only expands inside hooks, so
+resolve the path at load):
+```
+SCRIPT=$(echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/_lib/context-map.mjs")
+node "$SCRIPT" phase-context <files...>     # stdout = block; stderr = CONTEXT_MAP:{INJECTED|EMPTY|NONE}
+```
+If stdout has a block, it carries the owning `PACKAGE.md` (purpose + flow traces + gotchas) and the
+`standards/*.md` rules that apply — follow them (code is authoritative; the block is advisory). Stderr
+`CONTEXT_MAP:NONE`/`EMPTY` → no applicable map, proceed normally. (When dispatched by orchestrate this is
+already injected into the preamble; do it yourself only when invoked standalone.)
 
 
 # Test-Driven Development

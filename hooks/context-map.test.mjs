@@ -176,7 +176,7 @@ test("buildPhaseContext dedupes and includes standards + package", () => {
   }
 });
 
-test("phase-context CLI prints block in fixture, empty when no map", () => {
+test("phase-context CLI: block on stdout, INJECTED marker on stderr", () => {
   const dir = makeFixture();
   try {
     const r = spawnSync(process.execPath, [LIB, "phase-context", "packages/api/src/routes/users.ts"], {
@@ -185,13 +185,67 @@ test("phase-context CLI prints block in fixture, empty when no map", () => {
     });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /S-api-01/);
+    assert.match(r.stderr, /CONTEXT_MAP:INJECTED docs=\d+ standards=\d+/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
-    const empty = spawnSync(process.execPath, [LIB, "phase-context", "a.ts"], {
-      cwd: tmpdir(),
+test("phase-context CLI markers distinguish NONE vs EMPTY", () => {
+  const none = spawnSync(process.execPath, [LIB, "phase-context", "a.ts"], {
+    cwd: tmpdir(),
+    encoding: "utf8",
+  });
+  assert.equal(none.status, 0);
+  assert.equal(none.stdout.trim(), "");
+  assert.match(none.stderr, /CONTEXT_MAP:NONE/);
+
+  // map exists but file matches no package and no standards → EMPTY
+  const dir = mkdtempSync(join(tmpdir(), "ctx-empty-"));
+  write(dir, "docs/context/INDEX.md", "---\n---\n# x\n");
+  write(dir, "docs/context/packages/api/PACKAGE.md", "---\ngoverns: packages/api/src\n---\n# api\n");
+  try {
+    const empty = spawnSync(process.execPath, [LIB, "phase-context", "totally/unrelated.ts"], {
+      cwd: dir,
       encoding: "utf8",
     });
-    assert.equal(empty.status, 0);
     assert.equal(empty.stdout.trim(), "");
+    assert.match(empty.stderr, /CONTEXT_MAP:EMPTY/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("diff mode resolves untracked (newly-created) files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-diff-"));
+  const sh = (args) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+  try {
+    write(dir, "docs/context/standards/api.md", "---\napplies_to: [\"**/routes/**\"]\nenforced_by: eslint\n---\n# API\n## S-api-01 — thin\n");
+    sh(["init", "-q"]);
+    sh(["config", "user.email", "t@t"]);
+    sh(["config", "user.name", "t"]);
+    sh(["add", "-A"]);
+    sh(["commit", "-qm", "init"]);
+    const sha = sh(["rev-parse", "HEAD"]).stdout.trim();
+    write(dir, "packages/api/src/routes/new.ts", "export const x = 1\n"); // untracked
+    const r = spawnSync(process.execPath, [LIB, "diff", sha], { cwd: dir, encoding: "utf8" });
+    assert.match(r.stdout, /S-api-01/);
+    assert.match(r.stderr, /CONTEXT_MAP:INJECTED/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("buildPhaseContext withStats returns counts", () => {
+  const dir = makeFixture();
+  const root = join(dir, "docs", "context");
+  try {
+    const r = buildPhaseContext([join(dir, "packages/api/src/routes/users.ts")], root, dir, {
+      withStats: true,
+    });
+    assert.ok(r.block.length > 0);
+    assert.equal(r.docs, 1);
+    assert.ok(r.standards >= 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

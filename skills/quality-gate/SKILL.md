@@ -187,10 +187,16 @@ Detect project tooling in this order:
 
 ### Check 10: Context Map Freshness
 
+**Ordering (critical):** Stage 5 runs context-map **sync before** this gate, so the gate reads a
+report the same run just produced. If `docs/context/` exists but `.sync-report.md` is absent, first
+**trigger a context-map sync, then re-read** — only treat a *still-missing* report as a problem. This
+avoids deadlocking the first adopter (hand-made map, no report yet).
+
 - If `docs/context/` does not exist → `NOT_APPLICABLE` (project never adopted the context map).
 - Else read `docs/context/.sync-report.md`:
-  - File missing → **BLOCKED**: "context map exists but was never synced — run context-map before the gate."
-  - `verdict: FAIL` → **BLOCKED**: surface the report's stale-refs / uncovered / orphan lines.
+  - File missing → run context-map sync, then re-read. Still missing after sync → **BLOCKED** (sync
+    itself is failing — that needs fixing). Present after sync → evaluate its verdict below.
+  - `verdict: FAIL` → **BLOCKED**: surface the report's stale-refs / uncovered / orphan / standards-stale lines.
   - `verdict: PASS` → **PASS** (a `trace-needs-review` warning does not block — it is advisory).
 - **Why:** the map is injected into every coder sub-agent; a stale map propagates wrong context into
   generated code. This wires the rule the context-map skill already states ("must block on a missing

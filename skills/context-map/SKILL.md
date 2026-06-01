@@ -324,9 +324,12 @@ re-runs `git ls-files <pkg>` itself so a stale or partial list can't cause it to
 5. Propose only a `files/` exception doc where a single file has a non-generalizable silent landmine.
 6. Surface cross-cutting decisions as candidate `D-*` (id, title, why, tradeoff, governs).
 6b. **Derive prescriptive standards (`S-*`) — from what the repo ENFORCES, never invent.** In priority order:
-   (1) **Config as ground truth** — read `eslint.config.*` (`no-restricted-imports` blocks, custom rules),
-   `tsconfig` strict flags, `pyproject`/pyright. Each becomes an `S-*` with `enforced_by: eslint|tsconfig`
-   and the real rule name in **Enforced by**. (2) **Observed invariants** that hold across the *whole*
+   (1) **Config as ground truth — but verify it actually fails CI.** Read `eslint.config.*`
+   (`no-restricted-imports` blocks, custom rules), `tsconfig` strict flags, `pyproject`/pyright. A rule
+   only earns `enforced_by: eslint|tsconfig` if its **severity is `error`** (a `warn` rule does NOT fail
+   CI → mark it `convention`) AND lint/typecheck actually runs in CI (check the CI workflow / lint script
+   exists). If you cannot confirm CI runs it, downgrade to `convention` — never claim "fails CI" on faith.
+   Put the real rule name + severity in **Enforced by**. (2) **Observed invariants** that hold across the *whole*
    package (every route delegates to a service; every repo returns a typed result) → `enforced_by:
    convention`, explicitly labelled "not linted." (3) **Language strictness** → a single `S-*` that
    *points at the code-quality skill ref*, never restating it. Give each candidate an `applies_to` glob
