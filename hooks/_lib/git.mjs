@@ -19,8 +19,10 @@ export const repoRoot = (cwd) => {
 export const diffNamesSince = (sha, cwd) => {
   const a = run(["diff", "--name-only", `${sha}..HEAD`], cwd) ?? "";
   const b = run(["diff", "--name-only", sha], cwd) ?? "";
+  // Untracked files (new files a coder just created) don't show in `git diff`.
+  const c = run(["ls-files", "--others", "--exclude-standard"], cwd) ?? "";
   const seen = new Set();
-  for (const line of (a + b).split("\n")) {
+  for (const line of (a + b + c).split("\n")) {
     const t = line.trim();
     if (t) seen.add(t);
   }

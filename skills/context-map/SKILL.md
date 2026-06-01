@@ -3,7 +3,8 @@ name: context-map
 description: >
   Maintains docs/context/ — a tiered map of WHY the codebase is shaped as it is: architecture,
   cross-package data flows, per-package intent (deps, public surface, data in→out, inline gotchas),
-  and a decisions log. Data flow is captured as function-level traces (indented branching trees), in
+  a decisions log, and self-routing prescriptive standards (S-* shards with applies_to globs, derived
+  from what the repo enforces). Data flow is captured as function-level traces (indented branching trees), in
   both DATAFLOW.md (cross-package) and each sub-package. Use when the user says "sync context",
   "update context map", "generate context docs", or as the mandatory pre-quality-gate sync step. If no
   map exists, fans out one exploration agent per package to map the whole codebase. Code is
@@ -32,6 +33,7 @@ code wins and the doc is flagged stale — never the reverse.
 | `ARCHITECTURE.md` | root | system shape, package boundaries, system contracts | 1 |
 | `DATAFLOW.md` | root | named flows across packages; links into each hop's `§ Data in → out` | 1 |
 | `DECISIONS.md` | root | append-only `D-*` cross-cutting why/tradeoff/landmine log | 1 |
+| `standards/<shard>.md` | root | self-routing `S-*` prescriptive rules (how code MUST be written), each with `applies_to` globs | ~1/scope |
 | `GLOSSARY.md` | root | domain vocabulary | 1 |
 | `packages/<pkg>/PACKAGE.md` | tier-2 (**default**) | per package; index of sub-packages | ~1/pkg |
 | `packages/<pkg>/<sub>/PACKAGE.md` | tier-2 (**default**) | the workhorse — deps, public surface, deep data in→out, inline gotchas | where intent differs |
@@ -172,6 +174,31 @@ don't duplicate. The cross-package trace shows the SPINE; the sub-package trace 
 ### `DECISIONS.md` — `D-*` entries
 Each: **Why**, **Tradeoff**, **Governs** (file/dir list). Referenced by id; never copied into a doc.
 
+### `standards/<shard>.md` — `S-*` prescriptive, self-routing rules
+DECISIONS answers "why did we choose X *once*" (descriptive, past). STANDARDS answers "how must *all*
+code be written" (prescriptive, future). A standard may cite the decision behind it via `decisions:` —
+link, never copy the `D-*` body. Shard by scope so injection can route by file: `global.md`
+(`["**/*"]`), one per package (`["packages/<pkg>/src/**"]`), per layer (`["**/routes/**"]`), per language
+(`["**/*.py","**/*.pyi"]` — mostly a pointer to the code-quality skill, do NOT restate it).
+```markdown
+---
+id: S-<scope>
+applies_to: ["packages/api/src/**", "**/routes/**"]   # globs; the injector matches the edited file against these
+enforced_by: eslint                                    # eslint | tsconfig | convention
+decisions: [D-0xx]                                     # underlying D-* if any (link, don't duplicate)
+last_verified_sha: <short HEAD>
+status: active
+---
+# <scope> standards
+## S-<scope>-01 — <rule title>
+**Rule:** <the constraint, imperative>
+**Why:** <one line, or → (D-0xx)>
+**Enforced by:** <eslint rule name (fails CI) | tsconfig flag | convention (not linted)>
+**Smell:** <the anti-pattern to grep for>
+```
+`enforced_by` is the priority signal: `eslint`/`tsconfig` rules fail CI (hard); `convention` rules are
+advisory (soft) and MUST be labelled so an agent never treats a habit as a law.
+
 ### `INDEX.md`, `GLOSSARY.md`
 Read-order + package map; domain vocab. See tier table.
 
@@ -215,6 +242,9 @@ re-trace. Map each changed code file to its **owning package/sub-package** (not 
 - A flow changed → re-trace the affected `## Data flows` function(s) and update the cross-package
   trace in `DATAFLOW.md` / module trace in `ARCHITECTURE.md`.
 - A file gained a file-specific silent landmine → add a `files/` exception doc (rare).
+- **Standards re-derive** → if the package's `eslint.config.*`/`tsconfig`/`pyproject` changed, or a
+  layering boundary shifted, re-run step 6b for it and update the matching `standards/*.md` shard (rules,
+  `applies_to`, `enforced_by`). A newly-mapped package gets its `standards/<pkg>.md` created.
 
 ### A3. Detect orphans & staleness (the safety check)
 - **Orphan**: a `PACKAGE.md` whose `governs:` dir, or a `files/` doc whose `mirrors:` file, no longer
@@ -227,6 +257,9 @@ re-trace. Map each changed code file to its **owning package/sub-package** (not 
   internal logic — code stays authoritative).
 - **Dangling refs**: any `D-*` in a doc missing from `DECISIONS.md`; any package named in
   `DATAFLOW.md` that no longer exists → flag.
+- **Standard staleness**: an `S-*` with `enforced_by: eslint|tsconfig` whose named rule/flag no longer
+  exists in the config → flag stale (config wins, same as orphan). An `S-*` whose `applies_to` dirs no
+  longer exist → update or drop.
 - **Drifted roots**: packages/boundaries changed → update `ARCHITECTURE.md`/`INDEX.md`.
 - **Scope coverage (no-arg sync)**: every in-scope package with code now has a `PACKAGE.md`. Any
   package with code and still no doc is a FAIL (it was skipped) — list it. A scoped (path-arg) sync
@@ -242,6 +275,7 @@ context-map sync @ <sha>
 - created: packages/api/routes/PACKAGE.md
 - dataflow: updated "daily digest" (new publish hop)
 - orphan-fixed: 1 (sub-package renamed)
+- standards: created 1 (standards/web.md), updated 1 (standards/api.md — new eslint rule), stale 0
 - stale-refs: 0
 - trace-needs-review: 1 (services.ts::buildRunObservability changed — re-traced)
 - no-change: 3 packages reviewed
@@ -289,6 +323,18 @@ re-runs `git ls-files <pkg>` itself so a stale or partial list can't cause it to
    listed in `skipped: [{path, reason}]` (mundane) — so coverage is provable.
 5. Propose only a `files/` exception doc where a single file has a non-generalizable silent landmine.
 6. Surface cross-cutting decisions as candidate `D-*` (id, title, why, tradeoff, governs).
+6b. **Derive prescriptive standards (`S-*`) — from what the repo ENFORCES, never invent.** In priority order:
+   (1) **Config as ground truth — but verify it actually fails CI.** Read `eslint.config.*`
+   (`no-restricted-imports` blocks, custom rules), `tsconfig` strict flags, `pyproject`/pyright. A rule
+   only earns `enforced_by: eslint|tsconfig` if its **severity is `error`** (a `warn` rule does NOT fail
+   CI → mark it `convention`) AND lint/typecheck actually runs in CI (check the CI workflow / lint script
+   exists). If you cannot confirm CI runs it, downgrade to `convention` — never claim "fails CI" on faith.
+   Put the real rule name + severity in **Enforced by**. (2) **Observed invariants** that hold across the *whole*
+   package (every route delegates to a service; every repo returns a typed result) → `enforced_by:
+   convention`, explicitly labelled "not linted." (3) **Language strictness** → a single `S-*` that
+   *points at the code-quality skill ref*, never restating it. Give each candidate an `applies_to` glob
+   set scoped to where it holds, and cite any underlying `D-*` in `decisions`. When unsure a rule is real,
+   drop it — a wrong "standard" misleads every future agent.
 7. Return in top-level `flows[]` **ONLY cross-package flows** — a flow that starts in this package and
    crosses into another package (route → service → repo → table → queue → other-package worker), as a
    function-level trace for `DATAFLOW.md`. **If every flow in this package stays inside the package
@@ -305,6 +351,8 @@ Return shape per agent (structured):
   file_exceptions: [{path, md_body}],       # rare — single-file silent landmine only
   skipped: [{path, reason}],                # every file not in a doc's surface/key_files, with reason
   decisions: [{title, why, tradeoff, governs}],
+  standards: [{applies_to:[glob], enforced_by, decisions:[D-id], rules:[{title, rule, why, smell}]}],
+                            #   derived from config/observed (step 6b); applies_to scopes where it holds
   flows: [{name, trace}],   # CROSS-PACKAGE flows ONLY (this pkg → another pkg), for DATAFLOW.md.
                             #   EMPTY ([]) if all flows stay in-package — do NOT put in-package traces
                             #   here; they belong in package_docs[].md_body `## Data flows`.
@@ -322,6 +370,11 @@ you did not open (if a referenced helper wasn't in your file list, hedge it, don
   (move any in-package trace that leaked into `flows[]` back into the doc's `## Data flows`). A doc with
   a flow-bearing fn but a prose/empty `## Data flows`, or with a missing `flow_fns`, is non-conforming.
 - Assign stable `D-*` ids across all agents; write `DECISIONS.md`.
+- **Merge `standards` into `docs/context/standards/*.md`**: group candidate rules by scope into shards
+  (`global.md` for `["**/*"]` rules, one `<pkg>.md` per package, layer shards like `routes.md`, language
+  shards). Assign stable `S-*` ids (`S-<scope>-NN`), dedupe identical rules across packages, write each
+  shard with its `applies_to`/`enforced_by` frontmatter, cross-link `decisions:`. A shard with no real
+  rules is not written (no empty slop).
 - Write every `package_docs[].md_body` to `docs/context/packages/<...>/PACKAGE.md`, rewriting `D-*`
   refs to the assigned ids; ensure each sub-package doc's `## Data flows` traces and `flow_fns:` are present.
 - Write `file_exceptions` to `docs/context/files/<mirrored/path>.md`.
@@ -330,7 +383,8 @@ you did not open (if a referenced helper wasn't in your file list, hedge it, don
   links into the sub-package `## Data flows`. Link, don't duplicate the per-hop interior.
 - Compose `ARCHITECTURE.md` (small shape block + boundaries + the layer-descent `arch_trace`s),
   `INDEX.md` (read-order + map), `GLOSSARY.md` (merged terms).
-- Stamp every doc: `last_verified_sha` = current HEAD; populate `key_files`/`symbols`/`flow_fns`.
+- Stamp every doc (incl. `standards/*.md`): `last_verified_sha` = current HEAD; populate
+  `key_files`/`symbols`/`flow_fns`/`applies_to`.
 
 ### B4. Coverage assertion (no package, no file left behind)
 Assert: every package with code has ≥1 PACKAGE.md; `documented ∪ skipped == all code files`. Report
@@ -344,11 +398,19 @@ Then run one A3/A4 pass so the map ships with a clean sync-report.
 
 ## Output
 - **Sync:** `.sync-report.md` contents + one-line verdict.
-- **Bootstrap:** the coverage assertion + counts (PACKAGE.md, exceptions, decisions, flows), then the
-  sync verdict.
+- **Bootstrap:** the coverage assertion + counts (PACKAGE.md, exceptions, decisions, standards, flows),
+  then the sync verdict.
+
+The map is **consumed at runtime**: a `SessionStart` hook injects the roots' headlines, and the
+orchestrate/tdd coder dispatch injects each phase's owning `PACKAGE.md` + the `standards/*.md` shards
+whose `applies_to` matches the phase's files. A clean `.sync-report.md` verdict directly improves the
+context every coder sub-agent starts with — staleness here propagates into generated code.
 
 ## What NOT to do
 - Don't mirror files 1:1 — PACKAGE.md is the default; per-file docs are rare exceptions.
+- Don't invent a "standard" from a habit — derive `S-*` from config (eslint/tsconfig) or a whole-package
+  invariant; mark anything not linted `enforced_by: convention`; drop it when unsure. Don't restate the
+  code-quality skill or CLAUDE.md universals; don't copy a `D-*` body into a standard (link by id).
 - Don't copy a decision body into multiple docs — define once in `DECISIONS.md`, reference by id
   (a one-line inline gotcha for safety is fine).
 - Don't duplicate a hop's interior into `DATAFLOW.md` — the cross-package trace is the spine; link to
