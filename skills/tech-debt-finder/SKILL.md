@@ -79,8 +79,8 @@ auto_fixable, fallow_action}` using the contract's tables (e.g. `unused_exports[
 `unused-export`/code-smell/Low, `circular_dependencies[]` → `circular-dependency`/dependency/Medium,
 `health.findings[]` with `cyclomatic >= 16` → `high-cyclomatic-complexity`/complexity/High). Set
 `auto_fixable`/`fallow_action` from the finding's `actions[]` per the contract's auto-fixable rule
-(a remediation action like `remove-dependency`/`delete-file`/`remove-export` → `true`; suppression-only
-actions → `false`). Preserve these structured fields — do not collapse findings to bare counts; you
+(a remediation action fallow itself marks `auto_fixable: true`, e.g. `remove-export` → `true`;
+suppression actions and remediations fallow leaves `auto_fixable: false` such as `delete-file` → `false`). Preserve these structured fields — do not collapse findings to bare counts; you
 persist the full list in Step 4.5 and it is the source of truth for the automated fix pass. Don't dump
 raw fallow JSON into the report. If fallow skips (offline / exit 2 / no TS-JS), record the skip note and
 treat TS/JS as **pattern-only** for the coverage label. Radon (Python complexity) remains in
@@ -281,11 +281,11 @@ Manifest entry shape:
 
 ```json
 {
-  "id": "code-smell:unused-file:packages/web/src/components/ui/form.tsx:1",
-  "category": "code-smell", "rule": "unused-file",
-  "file": "packages/web/src/components/ui/form.tsx", "line": 1,
+  "id": "code-smell:unused-export:packages/web/src/lib/format.ts:42",
+  "category": "code-smell", "rule": "unused-export",
+  "file": "packages/web/src/lib/format.ts", "line": 42,
   "severity": "Low", "detail": "...", "fix_hint": "...",
-  "auto_fixable": true, "fallow_action": "delete-file",
+  "auto_fixable": true, "fallow_action": "remove-export",
   "source": "fallow", "issue_number": null, "disposition": "pending"
 }
 ```

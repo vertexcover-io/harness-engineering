@@ -30,16 +30,16 @@ Each manifest entry has the shape:
 
 ```json
 {
-  "id": "code-smell:unused-file:packages/web/src/components/ui/form.tsx:1",
+  "id": "code-smell:unused-export:packages/web/src/lib/format.ts:42",
   "category": "code-smell",
-  "rule": "unused-file",
-  "file": "packages/web/src/components/ui/form.tsx",
-  "line": 1,
+  "rule": "unused-export",
+  "file": "packages/web/src/lib/format.ts",
+  "line": 42,
   "severity": "Low",
   "detail": "...",
   "fix_hint": "...",
   "auto_fixable": true,
-  "fallow_action": "delete-file",
+  "fallow_action": "remove-export",
   "source": "fallow",
   "issue_number": 239,
   "disposition": "pending"
