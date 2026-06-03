@@ -3,10 +3,10 @@ name: code-review
 description: >
   Deep code review that hunts for subtle bugs and, when a plan/design document is
   provided, verifies the change actually accomplishes what the plan describes.
-  Invoke explicitly with /code-review — this skill never triggers automatically.
+  Invoke with /code-review, or programmatically from a sub-agent (the orchestrate
+  pipeline's two-pass review stage invokes it with --commits <range> --output <path>).
   Use when the user says "/code-review", "review my code", "review this change",
   or "review against the plan".
-disable-model-invocation: true
 ---
 
 ## Project-Specific Guidelines
@@ -122,6 +122,23 @@ Handle these cases explicitly — never improvise on error recovery:
 6. **Identify languages.** Note the primary language(s) of the changed files. You will
    apply language-specific bug patterns in Step 2.
 
+7. **Structural grounding for TS/JS diffs (fallow).** If the diff changes any TS/JS file
+   (`*.ts/*.tsx/*.js/*.jsx/*.mjs/*.cjs`), run `fallow audit` per the shared contract
+   (`../_shared/fallow.md (relative to this skill dir)` — read it for the invocation,
+   exit-code/skip handling, and base-ref derivation):
+
+   ```bash
+   FALLOW_AGENT_SOURCE=claude_code npx --yes fallow@2.86.0 audit --base <ref> --format json --quiet 2>/dev/null || true
+   ```
+
+   Derive `<ref>` from scope: `--pr N` → `git merge-base` of the PR branch with its target;
+   `--commits A..B` → `A`; working tree → `HEAD`. This is **grounding context**, not a
+   verdict: use only findings with `introduced: true` (debt this change added; ignore
+   inherited). Hold the fallow `verdict` (`pass|warn|fail`) for a one-line context note in
+   the review. If fallow skips (no TS/JS, offline, exit 2, base-ref unresolved), note the
+   skip and proceed with pure-LLM review — never block on it. **Do not** let fallow turn this
+   review into a linter; see "How to use fallow findings" in Step 2.
+
 ### Step 2 — Analyze
 
 Work through the applicable review dimensions. For each, think carefully before noting
@@ -201,6 +218,28 @@ Apply language-specific patterns relevant to the files being reviewed.
 For changes to CI pipelines, `pyproject.toml`, `package.json`, Docker files, or
 environment configs: verify correctness of paths, environment variable names, version
 constraints, and consistency with the code changes.
+
+#### How to use fallow findings (TS/JS grounding, only when the audit ran)
+
+Fallow gives deterministic structural truth so you neither invent nor miss these facts. Use
+it with restraint — you are still **not a linter**:
+
+- **Ground yourself first.** Before asserting anything structural ("this export is unused",
+  "this adds a cycle"), check the fallow `introduced: true` set. Do not claim a structural
+  problem fallow did not report, and do not contradict it.
+- **Promote ONLY high-signal introduced findings to defects:** a **new circular dependency**,
+  a **new architecture boundary violation**, or **substantial new code duplication** (a
+  `code-duplication` clone group whose instances include the changed files). Raise these in
+  the Defects table at **`Important`** severity, tagged `[confirmed]` (fallow verified them),
+  with the `file:line` fallow reported. Never raise them as `Critical`, and never attach an
+  `S-VIOLATION` token — these are quality concerns, not plan/standards hard-stops, so they do
+  not force `REQUEST CHANGES` on their own.
+- **Do NOT raise** unused exports/files/types, unused dependencies, or any lint-tier nit as a
+  defect. Fallow is syntactic (no TS compiler), so dynamic `import()` can make a used export
+  look unused — another reason these stay out of the Defects table.
+- **Verdict note.** Add a single line under the verdict: `Structural grounding: fallow
+  verdict=<pass|warn|fail> (<n> introduced findings)` — or `fallow skipped — <reason>`.
+  This is context for the author; it does not override your APPROVE/REQUEST-CHANGES decision.
 
 #### Test Quality (always, when test files are in the diff)
 
@@ -284,6 +323,10 @@ For each loaded standard, check the diff against its rule. Act by `enforced_by`:
 
 [1-2 sentence overall assessment]
 
+[Structural grounding line — only if the fallow audit ran on a TS/JS diff:
+`Structural grounding: fallow verdict=<pass|warn|fail> (<n> introduced findings)`,
+or `fallow skipped — <reason>`. Omit this line entirely for non-TS/JS diffs.]
+
 ## Plan Compliance
 
 ### Implemented
@@ -337,6 +380,10 @@ so the author can confirm or correct your understanding.]
 [APPROVE | APPROVE WITH SUGGESTIONS | REQUEST CHANGES]
 
 [1-2 sentence overall assessment]
+
+[Structural grounding line — only if the fallow audit ran on a TS/JS diff:
+`Structural grounding: fallow verdict=<pass|warn|fail> (<n> introduced findings)`,
+or `fallow skipped — <reason>`. Omit this line entirely for non-TS/JS diffs.]
 
 ## Defects
 

@@ -41,12 +41,56 @@ Scans the codebase for architectural and code-level technical debt, producing a 
 Parse `$ARGUMENTS`:
 - If a path is provided, scope all scans to that directory
 - If empty or `full`, scan from repo root
-- Identify all Python packages (look for `pyproject.toml` or `src/` dirs)
 - Exclude: `node_modules/`, `.venv/`, `__pycache__/`, `build/`, `dist/`, `.git/`
 
-### Step 2: Dispatch Parallel Scanners
+**Detect languages in scope** and classify coverage (drives Step 2 and the report label):
+
+- **Python** (`pyproject.toml`, `setup.py`, or `*.py` files) → deterministic backend = radon
+  (+ pip-audit). Identify all Python packages.
+- **TS/JS** (`package.json`, `tsconfig.json`, or `*.ts/*.tsx/*.js/*.jsx/*.mjs/*.cjs`) →
+  deterministic backend = **fallow** (see `../_shared/fallow.md (relative to this skill dir)`).
+- **Other** (Go, Rust, Java, Ruby, C#, …) → no deterministic backend; the language-agnostic
+  LLM pattern scanner (Agent C) runs best-effort.
+
+**Do NOT hard-stop just because there are no Python files** (this is the F9 behavior). Stop
+ONLY when the scope is empty or does not exist. Track three coverage buckets for the report:
+**deterministically scanned**, **pattern-only**, **skipped (empty)**.
+
+### Step 2: Run Scanners
+
+Two kinds of scanners run and their findings merge in Step 3: a **deterministic backend pass**
+(fast tools, run via Bash) and **3 parallel LLM pattern agents**.
+
+#### Step 2a: Deterministic backend pass (fallow, TS/JS)
+
+If the scope contains TS/JS (Step 1), run fallow per the shared contract
+(`../_shared/fallow.md (relative to this skill dir)`) — read it for the exact invocation,
+TS/JS gate, exit-code handling, skip-with-note protocol, and the full envelope→finding +
+severity + rule-name mapping. Run all three from the scope root:
+
+```bash
+FALLOW_AGENT_SOURCE=claude_code npx --yes fallow@2.86.0 dead-code --format json --quiet 2>/dev/null || true
+FALLOW_AGENT_SOURCE=claude_code npx --yes fallow@2.86.0 dupes     --format json --quiet 2>/dev/null || true
+FALLOW_AGENT_SOURCE=claude_code npx --yes fallow@2.86.0 health    --format json --quiet 2>/dev/null || true
+```
+
+Map each finding into `{category, rule, item, severity, detail, fix_hint, file, line}` using
+the contract's tables (e.g. `unused_exports[]` → `unused-export`/code-smell/Low,
+`circular_dependencies[]` → `circular-dependency`/dependency/Medium, `health.findings[]` with
+`cyclomatic >= 16` → `high-cyclomatic-complexity`/complexity/High). Parse to counts + findings;
+do not dump raw JSON. If fallow skips (offline / exit 2 / no TS-JS), record the skip note and
+treat TS/JS as **pattern-only** for the coverage label. Radon (Python complexity) remains in
+Agent B below.
+
+#### Step 2b: Dispatch Parallel Scanners
 
 Launch **3 agents in parallel** (Claude Code: `Agent` tool; Codex: invoke the `worker` agent at `.codex/agents/worker.toml` — see `references/codex-tools.md`). Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, fix_hint, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`).
+
+**For TS/JS files, the deterministic fallow pass (2a) owns dead code, duplication, and
+cyclomatic complexity** — the LLM agents should NOT re-report those for TS/JS (fallow is
+authoritative; dedup in Step 3 would drop overlaps anyway). The agents still apply their
+error-handling, async, and code-smell pattern checks to every language, including TS/JS and
+languages with no deterministic backend.
 
 The `fix_hint` field is a one-liner describing why the finding matters and a suggested fix direction (e.g., "Re-raise or log with context before continuing"). If a finding has no clear fix direction, omit `fix_hint`.
 
@@ -133,7 +177,8 @@ Return findings with their respective categories. Include a `fix_hint` for each 
 
 ### Step 3: Collect & Classify
 
-Merge all agent results into a single list. Classify by severity:
+Merge the deterministic backend findings (Step 2a) and all LLM agent results (Step 2b) into a
+single list. Classify by severity:
 
 | Severity     | Criteria                                                                  |
 |-------------|---------------------------------------------------------------------------|
@@ -164,6 +209,7 @@ Output the report directly to the user:
 ```
 ## Tech Debt Report — {scope}
 **Scanned:** {file_count} files | **Date:** {YYYY-MM-DD}
+**Coverage:** deterministic: {Python via radon, TS/JS via fallow — list what ran} | pattern-only: {languages with no deterministic backend, e.g. Go, Rust} | {fallow skip note if any}
 **Findings:** {critical} critical, {high} high, {medium} medium, {low} low
 
 ### Critical ({count})
@@ -310,8 +356,10 @@ If the sub-issue API call fails (e.g., feature not available on the repo), fall 
 |----------|--------|
 | `radon` not installed | Install with `pip install radon` and retry. If install fails, skip complexity checks. Note in report: "Complexity checks skipped — radon install failed" |
 | `pip-audit` not installed | Skip CVE checks. Note in report: "CVE checks skipped — install `pip-audit`" |
+| `fallow` unavailable (offline / npx fails / exit 2 / `{"error":true}`) | Skip the fallow pass per the shared contract's skip-with-note protocol; treat TS/JS as pattern-only. Never fail the run. |
 | Scope path doesn't exist | Report error and **stop** |
-| No Python files in scope | Report "no files to scan" and **stop** |
+| Scope is empty (no source files at all) | Report "no files to scan" and **stop** |
+| Scope has files but none in a deterministic-backend language (e.g. only Go/Rust) | Do NOT stop. Run the LLM pattern scanner best-effort, label all such files "pattern-only" in the Coverage line (F9) |
 | An agent fails | Report partial results from successful agents. Note which scanner failed and why |
 | `gh` not authenticated | Print report to terminal. Warn: "GitHub issue creation skipped — run `gh auth login`" |
 | Code snippet read fails | Skip snippet for that finding, use `file:line` only |
@@ -327,6 +375,9 @@ If the sub-issue API call fails (e.g., feature not available on the repo), fall 
 
 - Does not fix debt — use `/refactor` or `/orchestrate` for that
 - Does not replace `ruff` or `pyright` — complements them with higher-level analysis
+- Deterministic backends cover Python (radon) and TS/JS (fallow) only. Other languages
+  (Go, Rust, Java, Ruby, …) get best-effort LLM pattern scanning, not tool-backed
+  dead-code/complexity/duplication. Adding such backends is future work.
 - Does not run tests or measure coverage — use `/coverage-guard` for that
 - Does not modify any source files
 - Does not track debt over time — each run is a fresh scan

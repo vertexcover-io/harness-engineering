@@ -56,6 +56,8 @@ providers/legacy.py:*
 | `god-module` | architecture | God module findings |
 | `business-logic-leakage` | architecture | Business logic in wrong layer |
 | `import-direction-violation` | architecture | Lower layer importing from higher |
+| `boundary-violation` | architecture | Import crossing an architecture zone boundary (fallow, TS/JS) |
+| `re-export-cycle` | architecture | Barrel files re-exporting in a loop (fallow, TS/JS) |
 | `high-cyclomatic-complexity` | complexity | CC >= 16 |
 | `moderate-cyclomatic-complexity` | complexity | CC 11–15 |
 | `deep-nesting` | complexity | Nesting beyond threshold |
@@ -69,10 +71,13 @@ providers/legacy.py:*
 | `magic-number` | code-smell | Undocumented numeric literals |
 | `dead-code` | code-smell | Commented-out code |
 | `global-mutable-state` | code-smell | Module-level mutable collections |
+| `unused-export` | code-smell | Exported symbol never imported (fallow, TS/JS) |
+| `unused-file` | code-smell | File unreachable from entry points (fallow, TS/JS) |
+| `unused-type` | code-smell | Type alias/interface never used (fallow, TS/JS) |
 | `known-cve` | dependency | Published security vulnerability |
 | `outdated-dependency` | dependency | Package behind latest |
-| `unused-dependency` | dependency | Declared but never imported |
-| `circular-dependency` | dependency | TYPE_CHECKING workarounds |
+| `unused-dependency` | dependency | Declared but never imported (Python or fallow TS/JS) |
+| `circular-dependency` | dependency | Import cycle: Python `TYPE_CHECKING` workarounds or fallow TS/JS cycles |
 | `pinning-gap` | dependency | No upper bound on major version |
 
 ---

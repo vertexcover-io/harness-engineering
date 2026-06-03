@@ -188,13 +188,19 @@ Three standalone tools — run any of them independently:
 /tech-debt-finder full    # scan entire repo
 ```
 
-Three parallel agents scan simultaneously:
+A deterministic backend pass plus three parallel LLM agents scan simultaneously:
 
 | Scanner | Looks for |
 |---------|-----------|
+| **Deterministic backend** | Python via `radon`; **TS/JS via [fallow](https://fallow.tools)** — unused exports/files/types, unused & circular deps, boundary violations, duplication, cyclomatic complexity |
 | **Dependency & Environment** | Known CVEs, outdated packages, unused dependencies, circular imports, pinning gaps |
 | **Structural & Complexity** | God modules, high cyclomatic complexity, deep nesting, layer violations, code duplication |
 | **Code Patterns** | Bare except, swallowed exceptions, `Any` overuse, blocking calls in async, mutable defaults, magic numbers, dead code |
+
+Polyglot: Python and TS/JS get deterministic, tool-backed findings; other languages (Go,
+Rust, Java, …) get best-effort pattern scanning, labeled as such in the report. `fallow` runs
+via `npx` and is skipped gracefully when offline. Code review also uses `fallow audit` to
+ground TS/JS reviews in structural truth.
 
 Output: terminal report by severity + GitHub issues with code snippets and permalinks.
 
@@ -225,6 +231,16 @@ utils.py:*                        # suppress all rules for a file
 | **AI slop** | "Additionally", "leverage", "seamlessly", promotional language, filler phrases, em dash overuse, chatbot tone |
 
 Findings are classified by severity, then a fix spec is generated and handed off to `/orchestrate` for automated remediation.
+
+**Optional — fallow as a standalone skill.** `tech-debt-finder` and `code-review` call the
+[fallow](https://fallow.tools) CLI directly (via `npx`), so no extra install is required. For
+ad-hoc fallow use, you can also install the official skill (third-party — not bundled in this
+marketplace):
+
+```
+/install fallow-rs/fallow-skills      # Claude Code
+npx skills add fallow-rs/fallow-skills # any agent
+```
 
 ---
 
