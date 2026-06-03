@@ -64,6 +64,29 @@ test("no breadcrumb is no-op", () => {
   } finally { cleanup(dir); }
 });
 
+test("absolute breadcrumb makes gate cwd-independent", () => {
+  const dir = makeSandbox();
+  const elsewhere = mkdtempSync(join(tmpdir(), "coder-e2e-gate-cwd-"));
+  try {
+    writeBreadcrumb(dir, "myspec", 1, headSha(dir));
+    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
+    writeClaims(
+      dir, "myspec", 1,
+      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":"' +
+        join(dir, ".harness", "myspec", "run.json") +
+        '"},"claims":[]}',
+    );
+    // Run from an unrelated cwd; point at the breadcrumb by absolute path.
+    const r = spawnSync(process.execPath, [HOOK], {
+      cwd: elsewhere,
+      encoding: "utf8",
+      env: { ...process.env, HARNESS_CURRENT_PHASE_FILE: join(dir, ".harness", "current-phase") },
+    });
+    expect((r.stdout || "") + (r.stderr || ""), r.status ?? 1, 0, "e2e gate OK");
+  } finally { cleanup(dir); cleanup(elsewhere); }
+});
+
 test("missing claims file blocks", () => {
   const dir = makeSandbox();
   try {

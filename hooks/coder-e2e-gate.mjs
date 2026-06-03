@@ -4,9 +4,11 @@
 // Exit 0 = OK, exit 2 = block (with CODER_E2E_GATE:BLOCK token on stdout).
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { diffNamesSince, gitAvailable } from "./_lib/git.mjs";
 
+// Set HARNESS_CURRENT_PHASE_FILE to an absolute path to make the gate cwd-independent.
+// Default is cwd-relative, which is correct when the hook runs in the worktree.
 const BREADCRUMB = process.env.HARNESS_CURRENT_PHASE_FILE || ".harness/current-phase";
 
 const emitBlock = (msg) => {
@@ -37,7 +39,9 @@ if (!SPEC_NAME) emitBlock("breadcrumb missing SPEC_NAME");
 if (!PHASE_N) emitBlock("breadcrumb missing PHASE_N");
 if (!START_SHA) emitBlock("breadcrumb missing START_SHA");
 
-const HARNESS_DIR = join(".harness", SPEC_NAME);
+// Co-locate claims with the active-phase breadcrumb so they resolve from the same
+// .harness tree regardless of cwd; honor an explicit HARNESS_DIR override if set.
+const HARNESS_DIR = process.env.HARNESS_DIR || join(dirname(BREADCRUMB), SPEC_NAME);
 const CLAIMS_FILE = join(HARNESS_DIR, `phase-${PHASE_N}-claims.json`);
 
 if (!existsSync(CLAIMS_FILE)) emitBlock(`MISSING_PHASE_CLAIMS expected ${CLAIMS_FILE}`);

@@ -77,6 +77,30 @@ Record in baseline.json alongside the other metrics:
 
 If no e2e infrastructure is found, record `"e2e": { "detected": false }`. Do not fail — not every project has e2e tests.
 
+### 3c. Classify Test Runner + Derive Scoped Commands
+
+Downstream coders re-run tests on every RED/GREEN iteration. If they only get a whole-package
+command they default to running the entire suite (slow) or guess the wrong file-filter flag. Record
+the runner and a **single-file** command so each iteration stays scoped.
+
+1. Classify the unit-test **runner** from the package's `test`/`test:unit` script (and config files):
+   `vitest` | `jest` | `node-test` (`node --test`) | `pytest` | `go` | `cargo` | `unknown`.
+2. Emit the runner-correct single-file syntax into `commands.test_file` (with a literal `{FILE}`
+   placeholder the coder substitutes):
+
+   | runner | `test_file` template | scoping? |
+   |--------|----------------------|----------|
+   | vitest | `<test_all> -- --run {FILE}` | yes |
+   | jest | `<test_all> --testPathPattern={FILE}` | yes |
+   | node-test | `node --test {FILE}` | yes |
+   | pytest | `pytest {FILE}` | yes |
+   | go | `go test ./$(dirname {FILE})/...` (scopes by package) | yes |
+   | cargo | `<test_all>` (cargo filters by name, not file) | no |
+   | unknown | `<test_all>` | no |
+
+3. Derive `lint_file` the same way when the linter supports a path arg (e.g. `eslint {FILE}`,
+   `ruff check {FILE}`); else `null`.
+
 ### 4. Create Spec + Harness Directories
 
 Artifacts are split across two trees:
@@ -97,9 +121,23 @@ Steps:
   "lint": { "exit": 0, "warnings": 3 },
   "test": { "exit": 0, "passed": 42, "failed": 0, "skipped": 2 },
   "coverage": { "percent": 85.5 },
+  "commands": {
+    "runner": "vitest",
+    "runner_supports_file_scoping": true,
+    "typecheck": "pnpm typecheck",
+    "lint": "pnpm eslint .",
+    "lint_file": "pnpm eslint {FILE}",
+    "build": "pnpm build",
+    "test_all": "pnpm vitest run",
+    "test_file": "pnpm vitest run -- --run {FILE}"
+  },
   "timestamp": "2026-03-13T..."
 }
 ```
+
+`{FILE}` is a literal placeholder downstream stages substitute with the test path. Set any undetected
+command to `null`. When `runner_supports_file_scoping` is false, set `test_file` equal to `test_all`.
+The existing `type_check`/`lint`/`test`/`coverage` result keys are unchanged — `commands` is additive.
 
 5. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
 
