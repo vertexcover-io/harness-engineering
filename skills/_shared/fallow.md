@@ -150,6 +150,21 @@ types using the `dead-code`/`health`/`dupes` rules above.
 - `fix_hint` = the first `actions[].description` on the finding (omit if no actions).
 - Every finding carries `actions[]`; some have `auto_fixable: true` and a suppression
   `comment` (e.g. `// fallow-ignore-next-line unused-export`).
+
+### `auto_fixable` / `fallow_action` extraction
+
+A finding is **auto-fixable** only when it carries an action that *removes the debt from the
+code*. Set `auto_fixable: true` and `fallow_action` to that action's `type` when `actions[]`
+contains an entry with `auto_fixable: true` whose `type` is a **remediation** —
+`remove-dependency`, `delete-file`, `remove-file`, `remove-export`, `remove-unused-import`, or
+similar code-changing fixes.
+
+Do NOT count **suppression** actions as auto-fixable, even when fallow marks them
+`auto_fixable: true`: `add-to-config`, `suppress-line`, and `ignore-*` hide a finding rather
+than fix it. If a finding's only auto-fixable actions are suppressions (or it has no remediation
+action — e.g. `duplicate-export`'s `remove-duplicate` is `auto_fixable: false`), set
+`auto_fixable: false`. This flag is the deterministic eligibility gate for the automated fix
+pass (see `tech-debt-finder/references/auto-fix-handoff.md`).
 - Syntactic analysis only (no TS compiler): dynamic `import(variable)` is unresolved, so a
   used export can appear unused. Consumers must account for this (tech-debt-finder lands these
   at Low + suppressible; code-review never raises unused-export as a defect).

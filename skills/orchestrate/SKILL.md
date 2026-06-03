@@ -34,6 +34,13 @@ The argument is either an **inline prompt** or a **spec file path**.
 3. If file exists → read its contents as the task spec
 4. If not a file → treat the argument as an inline task prompt
 5. Store the resolved input as `TASK_CONTEXT` — this is passed to every stage.
+6. **Tech-debt manifest mode.** If the input is (or points to) a `findings.json` produced by
+   `tech-debt-finder`, do NOT re-summarize it into a prose spec from memory. Read the manifest
+   directly and follow `tech-debt-finder/references/auto-fix-handoff.md`: fix only
+   `auto_fixable: true` findings, and before Stage 6 write `fix-manifest.json` giving every finding
+   a terminal disposition (`fixed`/`issue`/`suppressed`/`dropped`, reason required for `dropped`).
+   Reconcile and BLOCK the commit if any `auto_fixable` finding was dropped without a reason. Include
+   the disposition table in the commit/PR body.
 
 When `AUTO_MODE=true`:
 - **Skip all AskUserQuestion calls** — Claude decides autonomously, auto-approves designs and plans

@@ -23,7 +23,8 @@
         "Report output follows the specified format: severity-grouped tables with File, Line, Finding, Category columns",
         "Report includes a Summary table broken down by category and severity",
         "Report includes a Hotspots section showing files with 3+ findings",
-        "Creates GitHub sub-issues per category and a parent issue linking them"
+        "Creates GitHub sub-issues per category and a parent issue linking them",
+        "Persists a structured findings manifest (findings.json under .harness/tech-debt/<date>/) where every finding has a stable id and a disposition (pending/issue/suppressed)"
       ],
       "anti_expectations": [
         "Does not modify any source files in the scanned scope",
