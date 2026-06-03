@@ -74,17 +74,21 @@ FALLOW_AGENT_SOURCE=claude_code npx --yes fallow@2.86.0 dupes     --format json 
 FALLOW_AGENT_SOURCE=claude_code npx --yes fallow@2.86.0 health    --format json --quiet 2>/dev/null || true
 ```
 
-Map each finding into `{category, rule, item, severity, detail, fix_hint, file, line}` using
-the contract's tables (e.g. `unused_exports[]` → `unused-export`/code-smell/Low,
-`circular_dependencies[]` → `circular-dependency`/dependency/Medium, `health.findings[]` with
-`cyclomatic >= 16` → `high-cyclomatic-complexity`/complexity/High). Parse to counts + findings;
-do not dump raw JSON. If fallow skips (offline / exit 2 / no TS-JS), record the skip note and
+Map each finding into `{category, rule, item, severity, detail, fix_hint, file, line,
+auto_fixable, fallow_action}` using the contract's tables (e.g. `unused_exports[]` →
+`unused-export`/code-smell/Low, `circular_dependencies[]` → `circular-dependency`/dependency/Medium,
+`health.findings[]` with `cyclomatic >= 16` → `high-cyclomatic-complexity`/complexity/High). Set
+`auto_fixable`/`fallow_action` from the finding's `actions[]` per the contract's auto-fixable rule
+(a remediation action like `remove-dependency`/`delete-file`/`remove-export` → `true`; suppression-only
+actions → `false`). Preserve these structured fields — do not collapse findings to bare counts; you
+persist the full list in Step 4.5 and it is the source of truth for the automated fix pass. Don't dump
+raw fallow JSON into the report. If fallow skips (offline / exit 2 / no TS-JS), record the skip note and
 treat TS/JS as **pattern-only** for the coverage label. Radon (Python complexity) remains in
 Agent B below.
 
 #### Step 2b: Dispatch Parallel Scanners
 
-Launch **3 agents in parallel** (Claude Code: `Agent` tool; Codex: invoke the `worker` agent at `.codex/agents/worker.toml` — see `references/codex-tools.md`). Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, fix_hint, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`).
+Launch **3 agents in parallel** (Claude Code: `Agent` tool; Codex: invoke the `worker` agent at `.codex/agents/worker.toml` — see `references/codex-tools.md`). Each agent receives the resolved scope path and configuration. Each agent returns structured findings as a list of `{category, rule, item, severity, detail, fix_hint, file, line}`. The `rule` field is the hyphenated rule name from `references/suppression-rules.md` (e.g., `god-module`, `high-cyclomatic-complexity`, `swallowed-exception`). LLM-agent findings are always `auto_fixable: false` (no deterministic remediation) — they are tracked as issues, never auto-fixed.
 
 **For TS/JS files, the deterministic fallow pass (2a) owns dead code, duplication, and
 cyclomatic complexity** — the LLM agents should NOT re-report those for TS/JS (fallow is
@@ -191,13 +195,17 @@ single list. Classify by severity:
 
 **Sorting:** Within each severity group, sort by file path then line number.
 
+**Stable IDs:** Assign each finding a stable `id` of `{category}:{rule}:{file}:{line}`. This id is
+how the automated fix pass tracks the finding to a terminal disposition (Step 4.5, Step 6), so it
+must be deterministic across runs and survive into the manifest unchanged.
+
 **Suppression filtering:**
 
 After deduplication and sorting, check if `.claude/harness/tech-debt-ignore.md` exists in the project root. If it does, read `references/suppression-rules.md` for the full pattern matching specification, then:
 
 1. Parse all suppression rules from the ignore file
 2. For each finding, check if any rule matches (using the finding's `file` and `rule` fields against the suppression patterns)
-3. Remove matching findings from the list
+3. Mark matching findings `disposition: "suppressed"` (record the matched rule) and exclude them from the report tables and GitHub issues — but **keep them in the findings manifest** (Step 4.5) so they stay counted, not silently dropped
 4. Track the suppression count for the Notes section
 
 If any suppression rules reference unknown rule names or categories, skip them and note in the report: "Warning: {N} invalid suppression rules skipped."
@@ -250,6 +258,40 @@ Output the report directly to the user:
 |------|----------|------------------|
 | ... | ... | ... |
 ```
+
+### Step 4.5: Persist the structured findings manifest
+
+Before creating issues, write the full normalized finding list — including suppressed findings —
+to a machine-readable manifest. This is the source of truth that any downstream automated fix pass
+consumes (see `references/auto-fix-handoff.md`); it is what stops findings from silently vanishing
+between scan and PR.
+
+```bash
+mkdir -p .harness/tech-debt/{YYYY-MM-DD}
+# write the array of findings (with id, auto_fixable, fallow_action, disposition) to:
+#   .harness/tech-debt/{YYYY-MM-DD}/findings.json
+```
+
+Each entry carries the fields assigned across Steps 2–3 plus a starting `disposition`:
+
+- `disposition: "suppressed"` for findings filtered in Step 3,
+- `disposition: "pending"` for everything else (Step 5 updates these to `"issue"` once filed).
+
+Manifest entry shape:
+
+```json
+{
+  "id": "code-smell:unused-file:packages/web/src/components/ui/form.tsx:1",
+  "category": "code-smell", "rule": "unused-file",
+  "file": "packages/web/src/components/ui/form.tsx", "line": 1,
+  "severity": "Low", "detail": "...", "fix_hint": "...",
+  "auto_fixable": true, "fallow_action": "delete-file",
+  "source": "fallow", "issue_number": null, "disposition": "pending"
+}
+```
+
+Print the manifest path after writing it. If `.harness/` is gitignored in the host repo, that is
+fine — the fix pass reads it from the same checkout within the same run.
 
 ### Step 5: Create GitHub Issues
 
@@ -348,6 +390,27 @@ If the sub-issue API call fails (e.g., feature not available on the repo), fall 
 
 **5h. Print the parent issue URL** to the user after creation.
 
+**5i. Write dispositions back to the manifest.** For every finding that went into a sub-issue, set
+its `issue_number` to that sub-issue's number and its `disposition` to `"issue"` in
+`.harness/tech-debt/{YYYY-MM-DD}/findings.json`. Suppressed findings keep `disposition: "suppressed"`.
+After this step no finding is left `pending` — every finding is either `issue` or `suppressed`, ready
+for the fix pass to take over.
+
+---
+
+## Step 6: Automated-fix hand-off (CI / `--auto` only)
+
+When `tech-debt-finder` runs as the scan half of an automated fix pipeline (e.g. the CI "Code
+Health" job that then calls `orchestrate --auto` to open a PR), the fix half MUST follow
+`references/auto-fix-handoff.md`. In short: the fixer reads `findings.json` directly (never
+re-derives the fix list from the report prose), fixes only `auto_fixable: true` findings, and writes
+a `fix-manifest.json` giving **every** finding a terminal disposition (`fixed` / `issue` /
+`suppressed` / `dropped`, with a reason required for `dropped`). It then reconciles and fails loudly if
+any `auto_fixable` finding was dropped without justification. Read that contract before driving any
+automated fix from this scan.
+
+When run interactively for a human (the default), stop after Step 5 — do not fix anything.
+
 ---
 
 ## Error Handling
@@ -368,12 +431,15 @@ If the sub-issue API call fails (e.g., feature not available on the repo), fall 
 | Sub-issue creation fails | Skip it, note in parent's Notes section |
 | Parent creation fails | Print all sub-issue URLs directly to terminal |
 | Sub-issue API linking fails | Fall back to editing sub-issue body with `**Parent issue:** #{parent_number}` |
+| `.harness/` not writable | Write the manifest under the system temp dir instead and print its path; never skip persisting it — the fix pass requires it |
+| Issue creation skipped (`gh` unauthenticated) | Still write `findings.json` (Step 4.5) with `disposition: "pending"`; the manifest does not depend on GitHub |
 
 ---
 
 ## What This Skill Does NOT Do
 
-- Does not fix debt — use `/refactor` or `/orchestrate` for that
+- Does not fix debt itself — it persists a structured `findings.json` and files issues; the fix is
+  done by `/orchestrate` (or `/refactor`) consuming that manifest per `references/auto-fix-handoff.md`
 - Does not replace `ruff` or `pyright` — complements them with higher-level analysis
 - Deterministic backends cover Python (radon) and TS/JS (fallow) only. Other languages
   (Go, Rust, Java, Ruby, …) get best-effort LLM pattern scanning, not tool-backed
