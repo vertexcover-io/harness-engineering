@@ -220,8 +220,10 @@ never rediscovers the test runner or guesses a wrong file-filter flag. Omit the 
 - test (all):  <commands.test_all>
 - test (one file): <commands.test_file>   (substitute {FILE} with the test's path)
 Discipline: run the scoped **test_file** on EVERY RED/GREEN iteration; run **test_all** AT MOST ONCE,
-only to confirm green before declaring the phase done. Use **lint_file** while iterating; run full
-**lint** once at the end. Never pipe the whole-package suite through grep to find one test.
+only to confirm green before declaring the phase done — and in a monorepo that once-only run is the
+CHANGED package's suite (the `--filter <pkg>` form), not the whole repo. Use **lint_file** while
+iterating; run full **lint** once at the end. Never pipe the whole-package suite through grep to find
+one test. Downstream review/verify/quality-gate do NOT re-run a green suite — don't pre-empt them.
 ```
 
 ### Stages 0-2 Run in Main Conversation
@@ -501,8 +503,12 @@ Agent(model="sonnet", prompt="
 
   After completing the review:
   — If verdict is APPROVE or APPROVE WITH SUGGESTIONS: skip fixing, just write the review report.
+    Do NOT run tests, lint, or typecheck — the coder already proved the suite green; re-running it
+    here is wasted time.
   — If verdict is REQUEST CHANGES: FIX all Critical and Important defects you found.
-    Invoke tdd skill. Run tests after each fix. Then write a combined review+fix report
+    Invoke tdd skill. After each fix run only the SCOPED test_file for the file you touched (from the
+    tooling-commands block), not the whole suite; run full test_all + lint ONCE at the end, only because
+    you changed code. Then write a combined review+fix report
     and append the list of fixed defects to .harness/<SPEC_NAME>/review/fixes-applied.md.
 
   Write dashboard reports following 'Code Review Report' and 'Fix Report' formats in
@@ -522,7 +528,9 @@ Agent(model="sonnet", prompt="
   Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/<SPEC_NAME>/review/pass-2.md.
   This is the FINAL review pass.
 
-  If verdict is REQUEST CHANGES: fix any remaining Critical/Important defects yourself.
+  If verdict is APPROVE / APPROVE WITH SUGGESTIONS: do NOT run tests, lint, or typecheck.
+  If verdict is REQUEST CHANGES: fix any remaining Critical/Important defects yourself, running only the
+  scoped test_file for files you touch; run full test_all + lint ONCE at the end if you changed code.
   Then re-review the fix. Your output is the definitive verdict.
 
   Write dashboard report following 'Code Review Report' format in

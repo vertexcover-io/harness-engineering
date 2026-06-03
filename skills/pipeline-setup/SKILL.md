@@ -123,21 +123,32 @@ Steps:
   "coverage": { "percent": 85.5 },
   "commands": {
     "runner": "vitest",
+    "monorepo": "turborepo",
     "runner_supports_file_scoping": true,
     "typecheck": "pnpm typecheck",
     "lint": "pnpm eslint .",
     "lint_file": "pnpm eslint {FILE}",
     "build": "pnpm build",
     "test_all": "pnpm vitest run",
-    "test_file": "pnpm vitest run -- --run {FILE}"
+    "test_file": "pnpm vitest run -- --run {FILE}",
+    "coverage_all": "pnpm vitest run --coverage",
+    "test_changed": "turbo run test:unit lint typecheck --filter='...[{BASE}]'"
   },
   "timestamp": "2026-03-13T..."
 }
 ```
 
-`{FILE}` is a literal placeholder downstream stages substitute with the test path. Set any undetected
-command to `null`. When `runner_supports_file_scoping` is false, set `test_file` equal to `test_all`.
-The existing `type_check`/`lint`/`test`/`coverage` result keys are unchanged — `commands` is additive.
+`{FILE}`/`{BASE}` are literal placeholders downstream stages substitute (test path; base ref like the
+merge-base or `<BASE_BRANCH>`). Set any undetected command to `null`. When `runner_supports_file_scoping`
+is false, set `test_file` equal to `test_all`. The existing `type_check`/`lint`/`test`/`coverage` result
+keys are unchanged — `commands` is additive.
+
+- **`coverage_all`** runs the suite once **with coverage** — quality-gate uses it for both its test and
+  coverage checks instead of running the suite twice.
+- **`monorepo` + `test_changed`** let downstream gates run only **changed packages and their dependents**
+  (turbo's `...[base]` graph) rather than the whole repo; unchanged packages are cache hits. Set
+  `monorepo`/`test_changed` to `null` for single-package repos, where the whole-project commands already
+  cover everything.
 
 5. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
 

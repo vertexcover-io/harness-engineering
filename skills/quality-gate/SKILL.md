@@ -93,6 +93,14 @@ Detect project tooling in this order:
    - `NOT_APPLICABLE` — justified skip (e.g., all changed files are `.md`). Must include justification.
    - `MISSING` — tool not found for a project with source files → **this is a BLOCKED verdict**
 
+5. **Scope to changed packages (monorepos).** If `baseline.json`'s `commands.monorepo` is set
+   (turborepo/nx), use `commands.test_changed` (substitute `{BASE}` with `<BASE_BRANCH>`) to run
+   typecheck/lint/test against only the **changed packages and their dependents**, not the whole repo —
+   e.g. `turbo run test:unit lint typecheck --filter='...[<BASE_BRANCH>]'`. Turbo's `...[base]` filter
+   includes downstream dependents, so regressions in affected packages are still caught, and unchanged
+   packages become cache hits (near-zero time). Single-package repos (`monorepo: null`) run the whole
+   project via the plain `commands` as before.
+
 ---
 
 ## Gate Checks
@@ -111,17 +119,19 @@ Detect project tooling in this order:
 - **Fail:** New warnings introduced (count > baseline)
 - Report: exit code, warning count, delta from baseline
 
-### Check 3: Test Suite
+### Check 3: Test Suite + Coverage (ONE run, feeds both Check 3 and Check 4)
 
-- Run the detected test command
+- Run the test suite **with coverage enabled** in a SINGLE invocation — prefer `baseline.json`'s
+  `commands.coverage_all` (e.g. `vitest run --coverage`, `pytest --cov`, `go test -cover ./...`).
+  Coverage runs the tests, so a plain test run followed by a separate coverage run executes the whole
+  suite twice — do NOT do that. This one invocation feeds both Check 3 (pass/fail) and Check 4 (coverage).
 - **Pass:** Exit code 0 AND test count >= baseline test count (no deleted tests)
 - **Fail:** Non-zero exit code OR test count < baseline (tests were deleted)
 - Report: exit code, pass/fail/skip counts, delta from baseline
 
-### Check 4: Coverage
+### Check 4: Coverage (parsed from the Check 3 run — do NOT re-run the suite)
 
-- Run the detected coverage command
-- Parse coverage percentage from output
+- Parse the coverage percentage from the Check 3 run's output. Do not invoke the suite again.
 - **Pass:** Coverage meets threshold (default 100% for new code, configurable via CLAUDE.md)
 - **Fail:** Coverage below threshold
 - **MISSING:** No coverage tool detected but tests exist → BLOCKED
