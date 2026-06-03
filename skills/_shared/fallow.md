@@ -157,7 +157,9 @@ A finding is **auto-fixable** only when it carries an action that *removes the d
 code*. Set `auto_fixable: true` and `fallow_action` to that action's `type` when `actions[]`
 contains an entry with `auto_fixable: true` whose `type` is a **remediation** —
 `remove-dependency`, `delete-file`, `remove-file`, `remove-export`, `remove-unused-import`, or
-similar code-changing fixes.
+similar code-changing fixes. Gate on fallow's per-action `auto_fixable` flag, never on the `type`
+alone: in 2.86.0 `remove-export` is emitted `auto_fixable: true`, but `delete-file` (unused-file
+remediation) is emitted `auto_fixable: false`, so an unused-file finding is NOT auto-fixable.
 
 Do NOT count **suppression** actions as auto-fixable, even when fallow marks them
 `auto_fixable: true`: `add-to-config`, `suppress-line`, and `ignore-*` hide a finding rather
