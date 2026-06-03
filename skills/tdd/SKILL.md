@@ -32,6 +32,15 @@ file for anything you touch (code is authoritative; docs advisory). `CONTEXT_MAP
 applicable map, proceed normally. (When dispatched by orchestrate the path list is already in your
 preamble; resolve it yourself only when invoked standalone.)
 
+**Tooling commands (if present).** When dispatched by orchestrate, your preamble carries a
+`## Tooling commands` block. Use the **scoped `test_file`** (substitute `{FILE}`) on every RED/GREEN
+iteration and run the full `test_all` at most once, only to confirm green before declaring the phase
+done — never pipe the whole-package suite through grep to find one test. For lint, fix ALL findings in
+a single pass then run full `lint` ONCE; use the scoped `lint_file` while iterating. If a strict lint
+rule is noisy on test files, follow the project's eslint config — do not restructure working tests to
+satisfy it. (Relaxing rules for test files is the project's eslint-config concern, not handled here.)
+Standalone (no injected commands) → use the project's documented runner.
+
 
 # Test-Driven Development
 
@@ -53,8 +62,8 @@ Write one minimal test describing the behavior you want. Run it. Watch it fail.
 - If working from a spec with REQ/EDGE IDs, reference the ID in the test name or a comment
 
 ```
-# Run the test
-$ <test-runner> path/to/test
+# Run ONLY this test's file — use the scoped `test_file` command (substitute {FILE})
+$ <test_file with {FILE} = path/to/this.test.ext>
 
 # Confirm:
 # - Test FAILS (not errors)
@@ -77,14 +86,16 @@ Write the simplest code that makes the test pass. Nothing more.
 - Don't anticipate future needs
 
 ```
-# Run the test again
-$ <test-runner> path/to/test
+# Run the scoped test_file again (NOT the whole package suite)
+$ <test_file with {FILE} = path/to/this.test.ext>
 
 # Confirm:
 # - Test passes
-# - ALL other tests still pass
 # - Output is clean (no errors, warnings)
 ```
+
+Run the full suite (`test_all`) **once**, only when the phase's behaviors are all green — to confirm
+nothing else broke before declaring the phase done. Do not run `test_all` after every iteration.
 
 **Test still fails?** Fix the implementation code, not the test.
 **Other tests broke?** Fix them now before continuing.
@@ -106,6 +117,7 @@ Refactoring is not mandatory after every green. Assess whether it adds value:
 - All tests must stay green throughout
 - Don't add new behavior
 - Don't add new tests (that's the next RED)
+- Fix lint findings in a single pass (use the scoped `lint_file`), then run full `lint` ONCE — don't re-run the whole-package linter after every individual fix
 
 For detailed refactoring methodology, load the `refactor` skill.
 

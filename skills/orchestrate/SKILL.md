@@ -17,9 +17,9 @@ Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & 
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
-**CRITICAL: Do NOT explore the codebase, read project files, or fetch URLs before completing the Initialization steps below. The very first actions are: detect input, check for auto mode, then start the dashboard. No exceptions.**
+**CRITICAL: Do NOT explore the codebase, read project files, or fetch URLs before completing the Initialization steps below. The very first actions are: detect input, check for auto mode, then create the worktree and start the dashboard inside it. No exceptions.**
 
-**CRITICAL: Do NOT stop, pause, or present a summary until ALL pipeline stages (0-6) have completed or a stage has explicitly failed/blocked. Each stage flows directly into the next. The only permitted pause is the plan approval gate after Stage 2.**
+**CRITICAL: There is exactly ONE pause in this pipeline — the plan-approval gate after Stage 2. After the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back WITHOUT stopping, pausing, asking the user anything, or emitting any interim summary. Internal corrective re-dispatches (e.g. planner context-map loopback, context-consumption retry, LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going. Halt before Stage 6 completes ONLY on a genuine BLOCK/FAIL (functional verification FAILED, quality gate BLOCKED/STAGNATION, review hard-standards failure, library-probe BLOCKED, or a sub-agent error) — and when you halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.**
 
 ---
 
@@ -49,15 +49,18 @@ When `AUTO_MODE=true`:
 - **Skip PR creation in Stage 6** — only commit and push; caller handles PR interaction
 - **All artifacts still produced** (design docs, specs, plans) for auditability
 
-### Step 2: DAG Dashboard Bootstrap
+### Step 2: Create Worktree, then Bootstrap the DAG Dashboard
 
 The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs"`
 Store the path above as `DAG_SCRIPT`. All Bash calls below invoke it via `node` (cross-platform: works on Linux, macOS, and Windows).
 
-Start the dashboard immediately. Do NOT read files, explore the codebase, or invoke any Skill or Agent before this.
+**Create the worktree FIRST, then start the dashboard from inside it.** `dag-update init` writes `.harness/<SPEC_NAME>/` (dag.json, server.*, reports/) relative to the current directory — so it MUST run with the worktree as cwd, otherwise the dashboard lands in the main checkout while claims/phase files land in the worktree (split-brain). The ONLY Skill you may invoke before the dashboard is `using-git-worktrees`; do NOT read files, explore the codebase, or invoke any other Skill or Agent before the dashboard is serving.
+
+(In `--auto` mode, skip this whole step — no worktree is created (the caller's cwd is used) and no dashboard runs.)
 
 1. Generate a spec name from the task prompt: lowercase, replace spaces with hyphens, truncate to 30 chars. Example: `"Add user auth system"` → `"add-user-auth-system"`
-2. Initialize the DAG and start the dashboard:
+2. **Create the worktree first.** Invoke the `using-git-worktrees` skill via the `Skill` tool, then `cd` into the worktree. Store `WORKTREE_PATH` and `BRANCH_NAME`. (This is Stage 0's worktree sub-step, pulled forward so the dashboard's `.harness/` colocates with every other artifact.)
+3. **From inside the worktree**, initialize the DAG (cwd is the worktree, so `HARNESS_DIR` resolves to `<WORKTREE_PATH>/.harness/<SPEC_NAME>`):
    ```
    Bash("
      export HARNESS_DIR=$(node '<DAG_SCRIPT>' init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
@@ -72,11 +75,17 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
      node '<DAG_SCRIPT>' add-node code-review 'Code Review' --depends-on coder
      node '<DAG_SCRIPT>' add-node verify-finalize 'Verify & Finalize' --depends-on code-review
      node '<DAG_SCRIPT>' add-node commit-pr 'Commit & PR' --depends-on verify-finalize
-     node '<DAG_SCRIPT>' serve
+     echo \"$HARNESS_DIR\"
    ")
    ```
    Note: Phase nodes are added as children of `coder` after planning (Stage 2) when phases are known.
-3. Store `HARNESS_DIR` for use in all subsequent `dag-update` calls.
+4. Store the `HARNESS_DIR` printed above — the absolute `<WORKTREE_PATH>/.harness/<SPEC_NAME>` — for all subsequent `dag-update` calls.
+5. Start the dashboard server **as a background job** (`run_in_background: true`). `serve` is long-running (it keeps an HTTP server alive until finalize), so running it in the foreground would block the pipeline; it MUST be a separate, backgrounded Bash call:
+   ```
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve", run_in_background=true)
+   ```
+6. The worktree already exists, so record it on the dashboard right away:
+   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status setup running && node '<DAG_SCRIPT>' write-report worktree '# Worktree\n- **Path:** <WORKTREE_PATH>\n- **Branch:** <BRANCH_NAME>' && node '<DAG_SCRIPT>' set-status worktree done")`
 
 **DAG command pattern:** Invoke `dag-update.mjs` via `node` directly instead of storing the command in a shell string. This works in bash, zsh, and PowerShell:
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' <command> <args>")`
@@ -152,7 +161,7 @@ For each skipped stage:
 
 **Every question to the user MUST use the `AskUserQuestion` tool — never output questions as plain text.** In auto mode, skip all `AskUserQuestion` calls entirely.
 
-**Single approval gate:** The only approval gate in the pipeline is after Stage 2 (Planner). Present the plan and wait for user approval before proceeding to Stage 3. All other stages flow without approval gates.
+**Single approval gate:** The only approval gate in the pipeline is after Stage 2 (Planner). Present the plan and wait for user approval before proceeding to Stage 3. All other stages flow without approval gates — and without interim summaries between them.
 
 **Waiting status:** A PreToolUse/PostToolUse hook automatically sets the current running node to `waiting` (purple) before any `AskUserQuestion` call, and back to `running` after the user responds. No manual dag-update calls needed for this.
 
@@ -165,6 +174,7 @@ You are working in the worktree at <WORKTREE_PATH>.
 Your working directory is <WORKTREE_PATH>.
 <CONTEXT_MAP_AWARENESS>
 <CONTEXT_MAP_PATHS>
+<TOOLING_COMMANDS>
 ```
 
 We pass **pointers, not content**: the dispatch tells the sub-agent which context docs to read and that
@@ -204,6 +214,24 @@ Act on the stderr marker — do NOT conflate the three states:
 If the command errors (no stdout, no marker) the resolver path is wrong — fix it; do **not** silently
 proceed. When the coder discovers it must touch files the plan never listed, re-run with
 `phase-paths` via `diff <START_SHA> --paths` to get the docs for the actually-changed files.
+
+**`<TOOLING_COMMANDS>` — goes in EVERY sub-agent (coder, review, verify).** Read the `commands` block
+from `<HARNESS_DIR>/baseline.json` (recorded by pipeline-setup) and paste it verbatim so the agent
+never rediscovers the test runner or guesses a wrong file-filter flag. Omit the block only if
+`baseline.json` has no `commands` block (older runs). Format:
+```
+## Tooling commands (use these exact invocations — do NOT rediscover the runner)
+- typecheck:   <commands.typecheck>
+- lint (full): <commands.lint>     lint (one file): <commands.lint_file>
+- build:       <commands.build>
+- test (all):  <commands.test_all>
+- test (one file): <commands.test_file>   (substitute {FILE} with the test's path)
+Discipline: run the scoped **test_file** on EVERY RED/GREEN iteration; run **test_all** AT MOST ONCE,
+only to confirm green before declaring the phase done — and in a monorepo that once-only run is the
+CHANGED package's suite (the `--filter <pkg>` form), not the whole repo. Use **lint_file** while
+iterating; run full **lint** once at the end. Never pipe the whole-package suite through grep to find
+one test. Downstream review/verify/quality-gate do NOT re-run a green suite — don't pre-empt them.
+```
 
 ### Stages 0-2 Run in Main Conversation
 
@@ -283,11 +311,7 @@ The local skill is loaded and followed exactly in place of the global one. The l
 
 ### Stage 0: Setup (Main Conversation)
 
-**Worktree sub-step:**
-1. Run FIRST: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status setup running && node '<DAG_SCRIPT>' set-status worktree running")`
-2. Invoke the `using-git-worktrees` skill via `Skill` tool to create the worktree
-3. `cd` into worktree. Store: `WORKTREE_PATH`, `BRANCH_NAME`
-4. After worktree ready: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' write-report worktree '# Worktree\n- **Path:** <WORKTREE_PATH>\n- **Branch:** <BRANCH_NAME>' && node '<DAG_SCRIPT>' set-status worktree done")`
+**Worktree sub-step:** Already done in Step 2 — the worktree was created (and `cd`'d into) and the `setup`/`worktree` nodes recorded there so the dashboard could be bootstrapped inside the worktree. `WORKTREE_PATH` and `BRANCH_NAME` are already stored. (In `--auto` mode no worktree exists; the caller's cwd is used.)
 
 **Baseline sub-step:**
 5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status baseline running")`
@@ -334,7 +358,7 @@ The trust gate. Runs *before* spec generation so verified probes can be folded i
 2. **Resolve + inject context-map pointers (if `docs/context/` exists).** Before invoking the planner, resolve the map files covering the packages this feature touches — the same pointers-not-content resolution the coder dispatch uses: the owning `docs/context/packages/<pkg>/**/PACKAGE.md` for each touched package, plus `ARCHITECTURE.md`, `DECISIONS.md`, and the matching `docs/context/standards/*.md`. Pass them to the planning skill as an explicit **"READ THESE FIRST"** block (paths, not bodies) and **log** `context paths: N docs, M standards`. Map consumption at plan time is NOT the planner's discretion — the plan must reason over structure/decisions/standards before drafting phases. No `docs/context/` → skip and note it.
 3. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally, and reads the injected context-map pointers FIRST (planning Step 2.0) before exploring code
 4. Planner explores codebase, asks interactive questions, designs phases
-5. **Verify the gate ran:** plan.md's Codebase Context section must record `Context map read: …` with the `D-*`/`S-*` ids honored (or `Context map: none`). If `docs/context/` exists but the plan omits this, the planner skipped the map — send it back before the approval gate.
+5. **Verify the gate ran:** plan.md's Codebase Context section must record `Context map read: …` with the `D-*`/`S-*` ids honored (or `Context map: none`). If `docs/context/` exists but the plan omits this, the planner skipped the map — **automatically re-invoke the `planning` skill ONCE** (same inputs, with an explicit instruction to record `Context map read: …`; track a one-shot `PLAN_CONTEXT_REDISPATCH` flag) before presenting the approval gate. This is an internal re-dispatch, NOT a user pause. If the second attempt still omits it, proceed to the gate and note the omission in the plan summary.
 6. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
 7. Output: `docs/spec/<SPEC_NAME>/plan.md` (committed) + `.harness/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH=docs/spec/<SPEC_NAME>/plan.md` and `PHASE_DIR=.harness/<SPEC_NAME>/`
 8. Add phase DAG nodes as children of `coder`, mark planning done:
@@ -386,6 +410,20 @@ Aggregate every `.harness/<SPEC_NAME>/phase-*-claims.json` into a single
 command live in `references/claims-aggregation-format.md` — invoke it verbatim.
 If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated
 `claims.json` is what verify reads; phase files are kept for audit.
+
+### Context-consumption check (per coder phase)
+
+After a coder phase whose dispatch emitted `CONTEXT_MAP:INJECTED` returns, read its
+`<HARNESS_DIR>/phase-<PHASE_N>-claims.json` and inspect `context_consulted`. If it is missing, or both
+`docs` and `standards` are empty, the agent ignored the injected pointers — **automatically re-dispatch
+that phase ONCE** (track a per-phase `CONTEXT_REDISPATCH` flag so this fires at most once) with this line
+appended to the preamble:
+> You did not record `context_consulted` last run. Read the injected `## Context for this phase` docs/standards
+> BEFORE writing code, and populate `context_consulted` in the phase claims.
+
+This is an internal re-dispatch, **not** a user pause. If it is still empty after the single retry, **log a
+warning and continue** — the context map is advisory, so do not block the pipeline on it. Phases dispatched
+with `CONTEXT_MAP:EMPTY`/`NONE` are exempt.
 
 ### LIB_SUSPECT Loopback (from Stage 3 → 1.5)
 
@@ -472,8 +510,12 @@ Agent(model="sonnet", prompt="
 
   After completing the review:
   — If verdict is APPROVE or APPROVE WITH SUGGESTIONS: skip fixing, just write the review report.
+    Do NOT run tests, lint, or typecheck — the coder already proved the suite green; re-running it
+    here is wasted time.
   — If verdict is REQUEST CHANGES: FIX all Critical and Important defects you found.
-    Invoke tdd skill. Run tests after each fix. Then write a combined review+fix report
+    Invoke tdd skill. After each fix run only the SCOPED test_file for the file you touched (from the
+    tooling-commands block), not the whole suite; run full test_all + lint ONCE at the end, only because
+    you changed code. Then write a combined review+fix report
     and append the list of fixed defects to .harness/<SPEC_NAME>/review/fixes-applied.md.
 
   Write dashboard reports following 'Code Review Report' and 'Fix Report' formats in
@@ -493,7 +535,9 @@ Agent(model="sonnet", prompt="
   Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/<SPEC_NAME>/review/pass-2.md.
   This is the FINAL review pass.
 
-  If verdict is REQUEST CHANGES: fix any remaining Critical/Important defects yourself.
+  If verdict is APPROVE / APPROVE WITH SUGGESTIONS: do NOT run tests, lint, or typecheck.
+  If verdict is REQUEST CHANGES: fix any remaining Critical/Important defects yourself, running only the
+  scoped test_file for files you touch; run full test_all + lint ONCE at the end if you changed code.
   Then re-review the fix. Your output is the definitive verdict.
 
   Write dashboard report following 'Code Review Report' format in
@@ -631,7 +675,7 @@ Do these directly (no sub-agent):
 
 ## Summary
 
-After all stages complete, present a compact summary:
+Present this summary ONLY after Stage 6 (commit + PR) completes, or after a genuine BLOCK/FAIL halt — never between stages. After all stages complete, present a compact summary:
 
 ```markdown
 ## Pipeline Complete
