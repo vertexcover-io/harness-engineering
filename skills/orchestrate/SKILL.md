@@ -50,7 +50,7 @@ Store the path above as `DAG_SCRIPT`. All Bash calls below invoke it via `node` 
 Start the dashboard immediately. Do NOT read files, explore the codebase, or invoke any Skill or Agent before this.
 
 1. Generate a spec name from the task prompt: lowercase, replace spaces with hyphens, truncate to 30 chars. Example: `"Add user auth system"` → `"add-user-auth-system"`
-2. Initialize the DAG and start the dashboard:
+2. Initialize the DAG (foreground — these are all fast, one-shot commands):
    ```
    Bash("
      export HARNESS_DIR=$(node '<DAG_SCRIPT>' init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
@@ -65,11 +65,15 @@ Start the dashboard immediately. Do NOT read files, explore the codebase, or inv
      node '<DAG_SCRIPT>' add-node code-review 'Code Review' --depends-on coder
      node '<DAG_SCRIPT>' add-node verify-finalize 'Verify & Finalize' --depends-on code-review
      node '<DAG_SCRIPT>' add-node commit-pr 'Commit & PR' --depends-on verify-finalize
-     node '<DAG_SCRIPT>' serve
+     echo \"$HARNESS_DIR\"
    ")
    ```
    Note: Phase nodes are added as children of `coder` after planning (Stage 2) when phases are known.
-3. Store `HARNESS_DIR` for use in all subsequent `dag-update` calls.
+3. Store the `HARNESS_DIR` printed by the block above — it is needed for all subsequent `dag-update` calls.
+4. Start the dashboard server **as a background job** (`run_in_background: true`). The `serve` command is long-running — it starts an HTTP server and keeps the Node event loop alive until finalize kills it via `server.pid`. Running it in the foreground would block the orchestrator forever, so it MUST be backgrounded and MUST be a separate Bash call from the init block above:
+   ```
+   Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve", run_in_background=true)
+   ```
 
 **DAG command pattern:** Invoke `dag-update.mjs` via `node` directly instead of storing the command in a shell string. This works in bash, zsh, and PowerShell:
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' <command> <args>")`
