@@ -111,6 +111,9 @@ Map the full problem space and discover what's needed. Requirements rarely arriv
   maintainability.
 - **Edge cases:** boundaries, dependency failures, unexpected user behavior, time/version
   evolution.
+- **Product framing (user-facing features only):** capture personas and explicit
+  non-goals while questioning — 1-2 targeted questions at most; this feeds the PRD
+  section, it is not a new interrogation round. Skip for internal-facing changes.
 
 Switch to **one question at a time** for deeper exploration. Multiple-choice when possible.
 Always via `AskUserQuestion`.
@@ -176,9 +179,14 @@ the right value is genuinely empirical (then defer the value, not the knob).
 `docs/spec/<SPEC_NAME>/design.md` (the orchestrator passes `SPEC_NAME`; if invoked
 standalone without a `SPEC_NAME`, slugify the topic and create `docs/spec/<slug>/design.md`).
 
-Sections: Problem, Context, Requirements (functional + non-functional + edge cases as EARS-style
-IDs: F1, F2, NF1, NF2…), Architectural Decisions, Approaches Considered, Open Questions,
-Risks & Mitigations, Assumptions, External Dependencies & Fallback Chain, What This Does NOT Do.
+Sections (matching `references/design-template.md`): Problem Statement, Context,
+Product Requirements (PRD — always present: personas, goals/non-goals, story→F# table,
+user flows; for internal-facing changes the body is the
+`No PRD — internal-facing change.` sentinel), Requirements (functional + non-functional +
+edge cases as EARS-style IDs: F1, F2, NF1, NF2…), Key Insights (conditional),
+Architectural Challenges, Approaches Considered, Chosen Approach, High-Level Design,
+External Dependencies & Fallback Chain, Open Questions, Risks and Mitigations, Assumptions.
+"What this does NOT do" lives in the PRD's Non-Goals — not a separate section.
 
 **Output rules** (to keep docs tight):
 - **Key Insights section is conditional** — include only when 3-4 genuine reframings exist
@@ -189,6 +197,8 @@ Risks & Mitigations, Assumptions, External Dependencies & Fallback Chain, What T
 - **Code blocks show shapes, not bodies** — interfaces, signatures, data shapes. Bodies
   belong in planning/coding.
 - **Cite, don't re-enumerate** — if a linked artifact covers it, reference the section.
+- **PRD never restates acceptance criteria** — stories reference F# IDs; flows describe
+  observable behavior only (no architecture). F# stays the single source of truth.
 - **Justification budget** — one clause per decision. If more is needed, the decision
   isn't ready.
 
@@ -206,7 +216,11 @@ If the diagram is wrong, the design is wrong. Update diagrams when the design ch
 
 Dispatch a fresh subagent with the design doc + review rubric (NOT session history).
 Rubric covers: completeness vs. the lens list (Phase 7), EARS-style requirement IDs,
-YAGNI pass evidence, no tautological assumptions, contract clarity, missing sections.
+YAGNI pass evidence, no tautological assumptions, contract clarity, missing sections,
+PRD integrity — section always present, with full subsections or (internal-facing only)
+the `No PRD — internal-facing change.` sentinel as its body;
+every user flow's behavior covered by at least one F#; no criteria text duplicated
+between PRD and Requirements.
 Iterate fixes; max 5 iterations, then surface to human.
 
 ### Phase 10 — User Review Gate (configurable)
