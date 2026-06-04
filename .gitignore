@@ -1,7 +1,7 @@
 dot-not-commit
 .DS_Store
 .worktrees/
-.harness/
+.harness/runtime/
 docs/*
 !docs/spec/
 orchestrate-workspace
