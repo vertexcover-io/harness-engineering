@@ -69,9 +69,10 @@ node "<plugin-root>/skills/_shared/knowledge.mjs" verify
 
 - Exit 2 (`.harness/knowledge` gitignored) → **STOP** and surface the fix from the
   envelope — a map written there would be silently uncommitted.
-- Old `docs/context/` exists but `.harness/knowledge/context/` is empty → the repo is
-  unmigrated. Run `node "<plugin-root>/skills/_shared/knowledge.mjs" migrate` first
-  (it moves the existing map with history preserved), then continue.
+- A pre-migration map root exists (the old context dir under the docs tree) but
+  `.harness/knowledge/context/` is empty → the repo is unmigrated. Run
+  `node "<plugin-root>/skills/_shared/knowledge.mjs" migrate` first (it moves the
+  existing map with history preserved), then continue.
 
 ```
 test -d .harness/knowledge/context && ls .harness/knowledge/context/*.md >/dev/null 2>&1
