@@ -30,7 +30,7 @@ Audits documentation for **accuracy** (code-doc sync, staleness) and **tone** (A
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **Scope** | `$ARGUMENTS` or `docs/` + `README.md` files | Directory/files to scan |
-| **Spec output** | `dev-docs/superpowers/specs/YYYY-MM-DD-doc-quality-fixes-spec.md` | Where the fix spec is written |
+| **Spec output** | `dev-.harness/features/YYYY-MM-DD-doc-quality-fixes-spec.md` | Where the fix spec is written |
 
 ---
 
@@ -177,7 +177,7 @@ Merge all agent results into a single list. Classify by severity:
 
 ### Step 5: Generate Fix Spec
 
-Write to `dev-docs/superpowers/specs/YYYY-MM-DD-doc-quality-fixes-spec.md`:
+Write to `dev-.harness/features/YYYY-MM-DD-doc-quality-fixes-spec.md`:
 
 ```markdown
 # Doc Quality Fixes Spec
@@ -214,7 +214,7 @@ Use `AskUserQuestion` to present a summary and ask for approval before proceedin
 ```
 Found {critical} critical, {high} high, {medium} medium, {low} low issues across {file_count} files.
 
-Fix spec written to: dev-docs/superpowers/specs/YYYY-MM-DD-doc-quality-fixes-spec.md
+Fix spec written to: dev-.harness/features/YYYY-MM-DD-doc-quality-fixes-spec.md
 
 Options:
 1. Proceed — run /orchestrate to fix these issues automatically
@@ -237,7 +237,7 @@ Options:
 Hand off to `/orchestrate` with:
 
 ```
-Run the spec at dev-docs/superpowers/specs/YYYY-MM-DD-doc-quality-fixes-spec.md
+Run the spec at dev-.harness/features/YYYY-MM-DD-doc-quality-fixes-spec.md
 
 IMPORTANT: Skip brainstorm, planning, and sync-docs stages — all context, file locations, and per-file fix instructions are already in the spec. This is a doc-fix task so sync-docs is redundant.
 ```

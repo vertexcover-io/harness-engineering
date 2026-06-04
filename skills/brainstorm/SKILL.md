@@ -65,11 +65,11 @@ talk to each other" is.
 
 Review relevant files, docs, and recent changes. Build a mental model.
 
-**Context map** — if `docs/context/` exists, read `ARCHITECTURE.md` (system shape, boundaries),
+**Context map** — if `.harness/knowledge/context/` exists, read `ARCHITECTURE.md` (system shape, boundaries),
 `DECISIONS.md` (`D-*` — prior cross-cutting choices the design must not silently contradict), and
 `GLOSSARY.md` (domain vocabulary). This keeps the design consistent with the existing product shape and
 stops it re-proposing something a decision already ruled out. Advisory — verify against code; no
-`docs/context/` → skip.
+`.harness/knowledge/context/` → skip.
 
 **Scope decomposition check** — if the request spans multiple independent subsystems
 (own data model + API + auth/contract, each independently shippable), flag it. Each
@@ -176,8 +176,8 @@ we hardcode and add it when the need is real?" Hardcode by default. Knobs surviv
 the right value is genuinely empirical (then defer the value, not the knob).
 
 **Then write the doc.** Read `references/design-template.md`. Save to
-`docs/spec/<SPEC_NAME>/design.md` (the orchestrator passes `SPEC_NAME`; if invoked
-standalone without a `SPEC_NAME`, slugify the topic and create `docs/spec/<slug>/design.md`).
+`.harness/features/<SPEC_NAME>/design.md` (the orchestrator passes `SPEC_NAME`; if invoked
+standalone without a `SPEC_NAME`, slugify the topic and create `.harness/features/<slug>/design.md`).
 
 Sections (matching `references/design-template.md`): Problem Statement, Context,
 Product Requirements (PRD — always present: personas, goals/non-goals, story→F# table,

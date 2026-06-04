@@ -20,8 +20,8 @@ before commit. Only touches docs relevant to what changed — does not generate 
 ## Inputs
 
 - **Worktree path** — where the code changes live
-- **Spec directory** — `docs/spec/<SPEC_NAME>/` for context on what was built (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/)
-- **Harness directory** — `.harness/<SPEC_NAME>/phase-*.md` for per-phase delivery breakdowns
+- **Spec directory** — `.harness/features/<SPEC_NAME>/` for context on what was built (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/)
+- **Harness directory** — `.harness/runtime/<SPEC_NAME>/phase-*.md` for per-phase delivery breakdowns
 
 ---
 
@@ -29,10 +29,10 @@ before commit. Only touches docs relevant to what changed — does not generate 
 
 ### Step 0: Sync the context map (if present)
 
-If `docs/context/` exists, invoke the `context-map` skill scoped to the changed files
+If `.harness/knowledge/context/` exists, invoke the `context-map` skill scoped to the changed files
 (`context-map <changed paths>`) **before** the inline-doc sync below. This refreshes the affected
-`PACKAGE.md` / `standards/*.md` and rewrites `docs/context/.sync-report.md`, keeping the WHY-map current
-on every run (and ahead of the quality gate's Check 10). No `docs/context/` → skip. When invoked by
+`PACKAGE.md` / `standards/*.md` and rewrites `.harness/knowledge/context/.sync-report.md`, keeping the WHY-map current
+on every run (and ahead of the quality gate's Check 10). No `.harness/knowledge/context/` → skip. When invoked by
 orchestrate Stage 5 this already ran as a separate step — skip the duplicate; do it here for the
 standalone `/sync-docs` path.
 

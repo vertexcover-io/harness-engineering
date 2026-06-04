@@ -267,9 +267,9 @@ consumes (see `references/auto-fix-handoff.md`); it is what stops findings from 
 between scan and PR.
 
 ```bash
-mkdir -p .harness/tech-debt/{YYYY-MM-DD}
+mkdir -p .harness/runtime/tech-debt/{YYYY-MM-DD}
 # write the array of findings (with id, auto_fixable, fallow_action, disposition) to:
-#   .harness/tech-debt/{YYYY-MM-DD}/findings.json
+#   .harness/runtime/tech-debt/{YYYY-MM-DD}/findings.json
 ```
 
 Each entry carries the fields assigned across Steps 2–3 plus a starting `disposition`:
@@ -290,7 +290,7 @@ Manifest entry shape:
 }
 ```
 
-Print the manifest path after writing it. If `.harness/` is gitignored in the host repo, that is
+Print the manifest path after writing it. `.harness/runtime/` is gitignored, which is
 fine — the fix pass reads it from the same checkout within the same run.
 
 ### Step 5: Create GitHub Issues
@@ -392,7 +392,7 @@ If the sub-issue API call fails (e.g., feature not available on the repo), fall 
 
 **5i. Write dispositions back to the manifest.** For every finding that went into a sub-issue, set
 its `issue_number` to that sub-issue's number and its `disposition` to `"issue"` in
-`.harness/tech-debt/{YYYY-MM-DD}/findings.json`. Suppressed findings keep `disposition: "suppressed"`.
+`.harness/runtime/tech-debt/{YYYY-MM-DD}/findings.json`. Suppressed findings keep `disposition: "suppressed"`.
 After this step no finding is left `pending` — every finding is either `issue` or `suppressed`, ready
 for the fix pass to take over.
 
@@ -431,7 +431,7 @@ When run interactively for a human (the default), stop after Step 5 — do not f
 | Sub-issue creation fails | Skip it, note in parent's Notes section |
 | Parent creation fails | Print all sub-issue URLs directly to terminal |
 | Sub-issue API linking fails | Fall back to editing sub-issue body with `**Parent issue:** #{parent_number}` |
-| `.harness/` not writable | Write the manifest under the system temp dir instead and print its path; never skip persisting it — the fix pass requires it |
+| `.harness/runtime/` not writable | Write the manifest under the system temp dir instead and print its path; never skip persisting it — the fix pass requires it |
 | Issue creation skipped (`gh` unauthenticated) | Still write `findings.json` (Step 4.5) with `disposition: "pending"`; the manifest does not depend on GitHub |
 
 ---

@@ -103,7 +103,7 @@ From the coverage JSON, identify all files below `THRESHOLD` coverage. For each 
 
 ### Step 6: Generate Coverage Gap Spec
 
-Write a spec to `dev-docs/specs/YYYY-MM-DD-coverage-gap-spec.md` with this structure:
+Write a spec to `dev-.harness/features/YYYY-MM-DD-coverage-gap-spec.md` with this structure:
 
 ```markdown
 # Coverage Gap Spec
@@ -166,7 +166,7 @@ Ranked by missing lines (descending):
 Pass the spec to the orchestrate skill:
 
 ```
-/orchestrate dev-docs/specs/YYYY-MM-DD-coverage-gap-spec.md
+/orchestrate dev-.harness/features/YYYY-MM-DD-coverage-gap-spec.md
 ```
 
 The orchestrate pipeline handles: planning, TDD implementation, quality gate, and commit.

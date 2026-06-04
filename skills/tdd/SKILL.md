@@ -27,7 +27,7 @@ SCRIPT=$(echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/_lib/context-ma
 node "$SCRIPT" phase-paths <files...>   # stdout = doc paths to Read; stderr = CONTEXT_MAP:{INJECTED|EMPTY|NONE}
 ```
 On `CONTEXT_MAP:INJECTED`, **Read each listed `PACKAGE.md` (purpose, flow traces, gotchas) and
-`standards/*.md` (S-* rules, enforced_by) before coding** — and you MAY Read any other `docs/context/`
+`standards/*.md` (S-* rules, enforced_by) before coding** — and you MAY Read any other `.harness/knowledge/context/`
 file for anything you touch (code is authoritative; docs advisory). `CONTEXT_MAP:NONE`/`EMPTY` → no
 applicable map, proceed normally. (When dispatched by orchestrate the path list is already in your
 preamble; resolve it yourself only when invoked standalone.)
@@ -233,7 +233,7 @@ Duplicate e2e specs for the same flow are a BLOCKED condition — they double ma
 
 ### E2E Report Artifact (mandatory)
 
-After all E2E tests pass, write `.harness/<SPEC_NAME>/e2e-report.json` (gitignored — pipeline working state consumed by functional-verify and quality-gate):
+After all E2E tests pass, write `.harness/runtime/<SPEC_NAME>/e2e-report.json` (gitignored — pipeline working state consumed by functional-verify and quality-gate):
 
 ```json
 {
@@ -357,7 +357,7 @@ instead of burning iterations on doomed retries.
 
 **Action:**
 1. Stop the TDD loop on this test — do not retry.
-2. Write a short diagnosis to `.harness/<SPEC_NAME>/lib-suspect-<lib>.md`:
+2. Write a short diagnosis to `.harness/runtime/<SPEC_NAME>/lib-suspect-<lib>.md`:
    lib + version, top-3 stack frames, error class, what you tried.
 3. Emit `<!-- LIB_SUSPECT:<library-name>:<error-class> -->` in your report.
 4. Return control. Orchestrate re-invokes `library-probe --lib <name>` to

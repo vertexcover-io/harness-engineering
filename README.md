@@ -119,7 +119,7 @@ Setup → Brainstorm → Planner → Coder → Quality Gate → Sync Docs → Le
 
 Stages 0–2 (Setup, Brainstorm, Planner) run interactively so you stay in control of design decisions. Stages 3–7 run as autonomous sub-agents.
 
-All artifacts land in `docs/spec/<name>/` — spec, plan, phase files, and quality reports.
+All artifacts land in `.harness/features/<name>/` — spec, plan, phase files, and quality reports.
 
 **Live DAG Dashboard**
 
@@ -155,7 +155,7 @@ Run `/orchestrate` with a prompt or spec file. It runs the full pipeline:
 6. **Captures learnings** from the run
 7. **Commits and creates a PR**
 
-All artifacts are saved to `docs/spec/<name>/` for traceability.
+All artifacts are saved to `.harness/features/<name>/` for traceability.
 
 ---
 

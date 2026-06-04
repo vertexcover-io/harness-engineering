@@ -61,14 +61,14 @@ If a closely related doc exists, decide:
 
 | Category | Directory |
 |----------|-----------|
-| design-patterns | `docs/solutions/design-patterns/` |
-| gotchas | `docs/solutions/gotchas/` |
-| debugging | `docs/solutions/debugging/` |
-| architecture | `docs/solutions/architecture/` |
-| performance | `docs/solutions/performance-issues/` |
-| integration | `docs/solutions/integration-issues/` |
-| workflow | `docs/solutions/workflow-issues/` |
-| tooling | `docs/solutions/tooling/` |
+| design-patterns | `.harness/knowledge/lessons/design-patterns/` |
+| gotchas | `.harness/knowledge/lessons/gotchas/` |
+| debugging | `.harness/knowledge/lessons/debugging/` |
+| architecture | `.harness/knowledge/lessons/architecture/` |
+| performance | `.harness/knowledge/lessons/performance-issues/` |
+| integration | `.harness/knowledge/lessons/integration-issues/` |
+| workflow | `.harness/knowledge/lessons/workflow-issues/` |
+| tooling | `.harness/knowledge/lessons/tooling/` |
 
 **Filename**: `<slugified-title>-<YYYYMMDD>.md` if the title is unique enough, or `<slug>-<component>-<YYYYMMDD>.md` if disambiguation helps.
 
@@ -81,23 +81,23 @@ Examples:
 
 Two destinations. Most learnings go to *one* of them; rarely both.
 
-- **Task-specific** — gotchas, decisions, or context that only matter for understanding *this* PR. Write to `docs/spec/<SPEC_NAME>/learnings.md` (committed, lives next to the spec it pertains to). If invoked outside the orchestrate pipeline (no `SPEC_NAME` available), skip this destination.
-- **Globally reusable** — patterns, gotchas, or architectural insights that future work on *any* feature should benefit from. Write to `docs/solutions/<category>/<filename>.md` (gitignored per repo policy, but checked locally and surfaced via CLAUDE.md).
+- **Task-specific** — gotchas, decisions, or context that only matter for understanding *this* PR. Write to `.harness/features/<SPEC_NAME>/learnings.md` (committed, lives next to the spec it pertains to). If invoked outside the orchestrate pipeline (no `SPEC_NAME` available), skip this destination.
+- **Globally reusable** — patterns, gotchas, or architectural insights that future work on *any* feature should benefit from. Write to `.harness/knowledge/lessons/<category>/<filename>.md` (committed — lessons travel with the PR and compound across the team; see `../_shared/knowledge.md`).
 
 Ask: "Would a developer working on an unrelated feature 6 months from now benefit from this?" → if yes, global. If it only makes sense in the context of this spec → task-specific.
 
-If both apply, write the global doc and add a short pointer from `docs/spec/<SPEC_NAME>/learnings.md` referencing it.
+If both apply, write the global doc and add a short pointer from `.harness/features/<SPEC_NAME>/learnings.md` referencing it.
 
 ### Step 5: Write the doc
 
 Create a single markdown file using the template below. Populate it from the subagent's extracted material. The main conversation writes the file — no subagent writes files.
 
-For **task-specific**: append to `docs/spec/<SPEC_NAME>/learnings.md` (create on first learning; subsequent learnings append as new sections).
+For **task-specific**: append to `.harness/features/<SPEC_NAME>/learnings.md` (create on first learning; subsequent learnings append as new sections).
 
 For **globally reusable**:
 
 ```bash
-mkdir -p docs/solutions/<category>/
+mkdir -p .harness/knowledge/lessons/<category>/
 ```
 
 Then write the file.
@@ -174,7 +174,7 @@ If a section would be empty or forced, skip it. A 3-section doc that's all signa
 If the learning is **globally reusable** AND severity is `high` or `critical`, append a one-liner to the "Critical gotchas" list in `CLAUDE.md` (under the `## Prior Learnings` section):
 
 ```markdown
-- `<title>` — see `docs/solutions/<category>/<filename>.md`
+- `<title>` — see `.harness/knowledge/lessons/<category>/<filename>.md`
 ```
 
 This ensures critical mistakes are visible every session without searching. Skip for `low`, `medium`, `design` severity, or task-specific learnings (those live with the spec and are rediscovered via the PR, not CLAUDE.md).
@@ -184,7 +184,7 @@ This ensures critical mistakes are visible every session without searching. Skip
 After writing the file, show the user:
 
 ```
-Done — <path-written>  (e.g. docs/spec/<SPEC_NAME>/learnings.md, or docs/solutions/<category>/<filename>.md)
+Done — <path-written>  (e.g. .harness/features/<SPEC_NAME>/learnings.md, or .harness/knowledge/lessons/<category>/<filename>.md)
 
 <2-sentence summary of what was captured>
 
@@ -203,7 +203,7 @@ Signals of a good doc:
 - First paragraph of Problem gives you the "should I keep reading?" signal
 - Insight section is quotable — you could paste it in a PR review
 - Code examples are copy-pasteable
-- Tags are searchable — someone grepping `docs/solutions/` for "n-plus-one" or "flex-column" finds it
+- Tags are searchable — someone grepping `.harness/knowledge/lessons/` for "n-plus-one" or "flex-column" finds it
 
 Signals of a bad doc:
 - Generic title ("Fixed a bug", "Updated the code")

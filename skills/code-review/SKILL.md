@@ -14,7 +14,7 @@ description: >
 1. **Always load local rules:** Glob `.claude/rules/*` in the project root. If any
    files exist, read all of them. These contain project-wide coding standards,
    conventions, and constraints that apply to every review.
-1b. **Load context-map standards:** if `docs/context/standards/*.md` exists, read every shard.
+1b. **Load context-map standards:** if `.harness/knowledge/context/standards/*.md` exists, read every shard.
    Also read the owning `PACKAGE.md` for the changed files (the doc whose `governs:` is the longest
    prefix of each changed file's dir). These hold the project's prescriptive `S-*` rules; each carries
    an `enforced_by:` field (`eslint` | `tsconfig` | `convention`). See "Standards enforcement" below for
@@ -62,7 +62,7 @@ a linter or formatter would catch. Focus exclusively on correctness and subtle d
 | `plan-path` | No | Path to the plan/design document. If omitted, review proceeds without plan compliance checks. |
 | `--pr NUMBER` | No | Review a PR diff (uses `gh pr diff NUMBER`). |
 | `--commits RANGE` | No | Review a commit range (e.g. `HEAD~3..HEAD`). |
-| `--output PATH` | No | Where to write the review report. Defaults to `./REVIEW.md`. The orchestrator pipeline passes `.harness/<SPEC_NAME>/review/pass-1.md` and `pass-2.md` for its two review passes (gitignored — review trail is pipeline working state, not committed). |
+| `--output PATH` | No | Where to write the review report. Defaults to `./REVIEW.md`. The orchestrator pipeline passes `.harness/runtime/<SPEC_NAME>/review/pass-1.md` and `pass-2.md` for its two review passes (gitignored — review trail is pipeline working state, not committed). |
 
 **Scope resolution** (first match wins):
 1. `--pr NUMBER` → PR diff

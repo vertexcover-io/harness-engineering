@@ -7,6 +7,7 @@ import {
   mkdirSync,
   writeFileSync,
   readFileSync,
+  readdirSync,
   existsSync,
   rmSync,
 } from "node:fs";
@@ -301,6 +302,34 @@ test("reindex lists lessons whose related files no longer exist in {stale}", () 
   } finally {
     cleanup(dir);
   }
+});
+
+// REQ-011: no skill may reference old artifact roots. Exclusions: evals
+// fixtures (may intentionally show old layouts) and the knowledge contract
+// (documents the old→new migration mapping itself).
+test("REQ-011: skills reference only unified .harness paths", () => {
+  const skillsRoot = join(dirname(SCRIPT), "..");
+  const walk = (d, out = []) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory() && e.name !== "evals" && e.name !== "node_modules") walk(p, out);
+      else if (e.isFile() && e.name.endsWith(".md")) out.push(p);
+    }
+    return out;
+  };
+  const OLD_DOCS = /\bdocs\/(spec|specs|context|solutions|superpowers)(\/|\b)/;
+  const OLD_HARNESS = /\.harness\/(?!runtime\/|runtime`|knowledge\/|knowledge`|features\/|features`|README)/;
+  const offenders = [];
+  for (const f of walk(skillsRoot)) {
+    if (f.endsWith(join("_shared", "knowledge.md"))) continue;
+    const text = readFileSync(f, "utf8");
+    for (const [i, line] of text.split("\n").entries()) {
+      if (OLD_DOCS.test(line) || OLD_HARNESS.test(line)) {
+        offenders.push(`${f.slice(skillsRoot.length + 1)}:${i + 1}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], `old-root references:\n${offenders.join("\n")}`);
 });
 
 // REQ-003 / EDGE-003: broad .harness/ gitignore must fail loudly

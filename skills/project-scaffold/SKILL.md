@@ -28,7 +28,7 @@ The argument is a **path to a spec document** (Markdown) that describes:
 - The monorepo structure
 
 Optionally, the user can specify:
-- `--dir <path>` — Directory to scaffold in. Default: **current working directory**. If the directory is not empty (excluding docs/specs), ask the user before proceeding.
+- `--dir <path>` — Directory to scaffold in. Default: **current working directory**. If the directory is not empty (excluding `.harness/features/`), ask the user before proceeding.
 
 The **package manager** is read from the spec document. If the spec doesn't specify one, default to **pnpm**.
 
