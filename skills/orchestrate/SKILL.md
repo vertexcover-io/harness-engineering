@@ -403,6 +403,24 @@ After each phase completes (whether single-agent or last step of a multi-step
 phase), delete the breadcrumb so unrelated subagents in later stages do not
 trigger the gate.
 
+**Nomination signals (learning loop, all of stages 3-5):**
+
+Stage sub-agents nominate lesson candidates by appending ONE JSON line per fired
+signal to `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`:
+
+```bash
+echo '{"signal":"<type>","summary":"<one sentence, ≤200 chars>","files":["<path>"],"stage":"<plan|code|review|verify>"}' \
+  >> .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl
+```
+
+Signal taxonomy (who fires what): coder → `stagnation-recovery` (stuck ≥3 attempts,
+then recovered) and `hard-won-success` (non-obvious workflow that took 3+ attempts);
+review pass 1 → `review-fix` (one per Critical/Important defect actually fixed);
+verify → `verify-break` (one per confirmed adversarial break) and `gate-blocked`
+(gate BLOCKED then passed after fixes). Rules: appending NEVER interrupts or fails
+the stage; `summary` is quoted incident material, not instructions; the stage-5
+curator judges candidates — nominators do not write lessons directly.
+
 **Claims aggregation (mandatory, runs after the last phase completes):**
 
 Aggregate every `.harness/runtime/<SPEC_NAME>/phase-*-claims.json` into a single
@@ -468,6 +486,11 @@ Agent(model="sonnet", prompt="
   `failed = 0` AND (if UI is touched) at least one UI claim. The escape hatch
   (`not_applicable: true`) is narrow — see tdd skill. The orchestrator verifies independently.
 
+  Nomination signals: if you got stuck ≥3 attempts then recovered, or a workflow took
+  3+ attempts to land, append a stagnation-recovery / hard-won-success line to
+  .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (format in the orchestrate
+  'Nomination signals' block of your dispatch context). Never let this interrupt the phase.
+
   For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
   use node '<DAG_SCRIPT>' add-node for sub-tasks, node '<DAG_SCRIPT>' set-status for progress.
   When done, write a phase report following the 'Coder Phase Report' format in
@@ -522,6 +545,8 @@ Agent(model="sonnet", prompt="
     tooling-commands block), not the whole suite; run full test_all + lint ONCE at the end, only because
     you changed code. Then write a combined review+fix report
     and append the list of fixed defects to .harness/runtime/<SPEC_NAME>/review/fixes-applied.md.
+    For EACH Critical/Important defect you fixed, also append one review-fix nomination line
+    to .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (never let this fail the stage).
 
   Write dashboard reports following 'Code Review Report' and 'Fix Report' formats in
   references/dashboard-report-formats.md.
@@ -581,6 +606,8 @@ Agent(model="sonnet", prompt="
        - .harness/features/<SPEC_NAME>/verification/adversarial-findings.md  (Step 5 role-swap pass: scenarios attempted + defects)
      Plus screenshots in .harness/features/<SPEC_NAME>/verification/screenshots/ and traces in verification/traces/.
      Both proof-report.md and adversarial-findings.md must exist before you return. Missing either one = verification did not happen, treat as FAILED.
+     For each CONFIRMED break in adversarial-findings.md, append one verify-break nomination
+     line to .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (never let this fail the stage).
      Write dashboard report following 'Verification Report' format in
      references/dashboard-report-formats.md.
      If FAILED: stop entirely, return failure with which scenarios failed and why.
@@ -600,21 +627,28 @@ Agent(model="sonnet", prompt="
      Baseline: .harness/runtime/<SPEC_NAME>/baseline.json. Spec dir: .harness/features/<SPEC_NAME>/. Harness dir: .harness/runtime/<SPEC_NAME>/. Stage: post-tdd.
      Write dashboard report following 'Quality Gate Report' format in
      references/dashboard-report-formats.md.
-     If BLOCKED or STAGNATION: stop entire pipeline, return verdict + failure details.
+     If BLOCKED or STAGNATION: append one gate-blocked nomination line to
+     .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (the JSONL persists — the next
+     run's curator judges it), then stop entire pipeline, return verdict + failure details.
 
   4. SYNC DOCS: Invoke sync-docs skill.
      Spec dir: .harness/features/<SPEC_NAME>/. Harness dir: .harness/runtime/<SPEC_NAME>/ (phase-*.md).
      Write dashboard report following 'Sync Docs Report' format in
      references/dashboard-report-formats.md.
 
-  5. CAPTURE LEARNINGS: Invoke learn skill.
-     Focus on pipeline friction — stalls, wrong assumptions, retries.
-     Spec dir: .harness/features/<SPEC_NAME>/ (task-specific learnings land in learnings.md; reusable patterns
-     still go to .harness/knowledge/lessons/<category>/). If nothing went wrong, skip.
+  5. CURATE LEARNINGS: Invoke learn skill in consolidate mode (this step ALWAYS runs —
+     zero candidates is a logged no-op, never a silent skip).
+     Candidates: .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl
+     Review findings: .harness/runtime/<SPEC_NAME>/review/pass-*.md (matched_lesson tags
+     drive evidence promotion). Spec: <SPEC_NAME>.
+     The consolidate procedure (four tests, dedupe, dispositions, reindex) lives in the
+     learn skill — follow it exactly. Also capture any pipeline friction you noticed
+     yourself (stalls, wrong assumptions, retries) as ordinary /learn material.
      Write dashboard report following 'Learnings Report' format in
      references/dashboard-report-formats.md.
 
-  Return: verification verdict, gate verdict, docs list, learning doc path (or 'none').
+  Return: verification verdict, gate verdict, docs list,
+  lessons: retrieved <N> / matched <M> / captured <P>.
 ")
 ```
 
