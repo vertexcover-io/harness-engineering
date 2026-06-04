@@ -3,7 +3,6 @@ dot-not-commit
 .worktrees/
 .harness/runtime/
 docs/*
-!docs/spec/
 orchestrate-workspace
 code-review-workspace
 dev-docs
