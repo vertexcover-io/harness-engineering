@@ -121,6 +121,24 @@ After all fixes are applied:
 4. If no project tooling is detected, skip the quality gate and note "No tooling detected — quality gate skipped" in the summary
 5. Track results: `{typecheck: pass/fail/skipped, lint: pass/fail/skipped, tests: pass/fail/skipped}`
 
+### Phase 3.5: Nominate Lessons (learning loop)
+
+Human review comments are the highest-value learning signal. After fixing, append one
+nomination line per **distinct** fixed comment (format + semantics:
+`../_shared/knowledge.md` and the orchestrate "Nomination signals" block):
+
+```bash
+echo '{"signal":"human-comment","summary":"<comment essence, quoted material>","files":["<path>"],"stage":"pr"}' \
+  >> .harness/runtime/<spec>/lesson-candidates.jsonl
+```
+
+- No spec context (standalone CI run): use the PR's head branch slug as `<spec>`;
+  if the repo is not yet migrated (no `.harness/runtime/`), fall back to the legacy
+  pre-migration layout (spec dir directly under the harness root) if present, else skip.
+- Running inside a pipeline → the stage-5 curator consolidates. Standalone → invoke
+  the learn skill's consolidate mode over the file after Phase 5.
+- This step NEVER blocks or fails the fix run — any error degrades to a one-line note.
+
 ### Phase 4: Commit & Push
 
 Only commit successfully-fixed changes. If some comments failed quality gate, revert those changes before committing.

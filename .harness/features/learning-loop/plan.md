@@ -37,7 +37,7 @@ Unify all harness artifacts under `.harness/` (knowledge / features / runtime zo
 
 ### Decisions Resolved at Planning
 - **Zero duplication rule (owner directive)**: no duplicated logic, paths, or contract text anywhere in the implementation — `knowledge.mjs` reuses `hooks/_lib/{git,io}.mjs` (never reimplements); path mappings live in ONE place (`knowledge.mjs` constants) and skills cite the contract doc rather than restating it (the `_shared/fallow.md` consumption pattern); envelope/exit-code rules are written once in `skills/_shared/knowledge.md` and referenced everywhere else; eviction/ranking rules appear only in the script + its tests, never re-explained per skill
-- Delivery: **PR per phase** (4 PRs), minor version bump each (v1.10.0 → v1.13.0)
+- Delivery: ~~PR per phase (4 PRs)~~ **superseded by owner directive during implementation — all 4 phases in one PR, single bump to v1.10.0**
 - Phase 0 **self-migrates this repo** (docs/spec/learning-loop, fallow-integration → `.harness/features/`)
 - `knowledge.mjs` imports `hooks/_lib/{git,io}.mjs` rather than duplicating helpers
 - Repo-local `.claude/hooks/check-proof-report.mjs` is included in the phase-0 path sweep (it reads `docs/spec/` + `.harness/<name>/`)

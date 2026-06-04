@@ -731,7 +731,8 @@ Present this summary ONLY after Stage 6 (commit + PR) completes, or after a genu
 | 2. Plan | <phase_count> phases |
 | 3. Coder | <files> files, <tests> tests |
 | 4. Review | <verdict> (2-pass) |
-| 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated, learnings: <path or none> |
+| 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated |
+| Learning loop | lessons: retrieved <N> / matched <M> / captured <P> (stale: <count or 0>) |
 | 6. PR | <PR_URL> |
 
 **Issues:** <any retries, failures, stagnation, or "None">
