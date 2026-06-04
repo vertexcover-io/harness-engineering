@@ -10,12 +10,12 @@ const CONTEXT_ROOTS = [
   ["docs", "context"],
 ];
 
-export const findContextRoot = (cwd) => {
+const findUp = (cwd, candidates, accept) => {
   let dir = cwd;
   for (let i = 0; i < 40; i++) {
-    for (const parts of CONTEXT_ROOTS) {
+    for (const parts of candidates) {
       const candidate = join(dir, ...parts);
-      if (existsSync(candidate) && safeIsDir(candidate)) return candidate;
+      if (accept(candidate)) return candidate;
     }
     const parent = dirname(dir);
     if (parent === dir) break;
@@ -23,6 +23,20 @@ export const findContextRoot = (cwd) => {
   }
   return null;
 };
+
+export const findContextRoot = (cwd) =>
+  findUp(cwd, CONTEXT_ROOTS, (p) => existsSync(p) && safeIsDir(p));
+
+// The knowledge INDEX (lesson/standard routing rows) — distinct from the
+// context map's INDEX.md read-order doc. Empty file counts as absent.
+export const findKnowledgeIndex = (cwd) =>
+  findUp(cwd, [[".harness", "knowledge", "INDEX.md"]], (p) => {
+    try {
+      return statSync(p).isFile() && statSync(p).size > 0;
+    } catch {
+      return false;
+    }
+  });
 
 const safeIsDir = (p) => {
   try {

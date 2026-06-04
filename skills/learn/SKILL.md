@@ -109,15 +109,16 @@ Then write the file.
 title: "<specific descriptive title>"
 date: <YYYY-MM-DD>
 category: <category>
-tags:
-  - <tag1>
-  - <tag2>
-  - <tag3>
+tags: [<tag1>, <tag2>, <tag3>]
 component: <component>
 severity: <low|medium|high|critical OR design>
 status: <implemented|documented|observed>
-related:
-  - <path/to/related/doc.md>
+applies_to: ["<glob1>", "<glob2>"]
+stage: [<plan|code|review|verify>]
+evidence_count: 1
+last_validated: <YYYY-MM-DD>
+source: <signal>@<spec>
+related: ["<path/to/related/file>"]
 ---
 
 # <Title>
@@ -158,6 +159,18 @@ related:
 - [Link to related doc or file]
 ```
 
+### Routing fields (how lessons get retrieved)
+
+The `applies_to` / `tags` / `stage` / `evidence_count` / `last_validated` / `related`
+fields drive deterministic retrieval — full semantics in `../_shared/knowledge.md`
+(do not restate them here). Two rules that matter while writing:
+
+- **Inline-list syntax is required** (`tags: [a, b]`, `applies_to: ["src/api/**"]`) —
+  multi-line YAML lists parse as absent and the lesson degrades to tag-only routing.
+- `applies_to` globs should be as narrow as the lesson truly is; a glob matching most
+  of the repo gets demoted to tag-only rank at route time. Omit `source` for manual
+  `/learn` captures (the curator sets it).
+
 ### Adapting the template
 
 Not every doc needs every section. Use judgment:
@@ -169,15 +182,18 @@ Not every doc needs every section. Use judgment:
 
 If a section would be empty or forced, skip it. A 3-section doc that's all signal beats a 6-section doc with filler.
 
-### Step 6: Surface critical learnings in CLAUDE.md
+### Step 6: Reindex
 
-If the learning is **globally reusable** AND severity is `high` or `critical`, append a one-liner to the "Critical gotchas" list in `CLAUDE.md` (under the `## Prior Learnings` section):
+After writing any globally reusable lesson, regenerate the knowledge index so the new
+lesson becomes routable (invocation contract: `../_shared/knowledge.md`):
 
-```markdown
-- `<title>` — see `.harness/knowledge/lessons/<category>/<filename>.md`
+```bash
+node "<plugin-root>/skills/_shared/knowledge.mjs" reindex
 ```
 
-This ensures critical mistakes are visible every session without searching. Skip for `low`, `medium`, `design` severity, or task-specific learnings (those live with the spec and are rediscovered via the PR, not CLAUDE.md).
+Script failure → note `knowledge skipped — <reason>` and continue (never block the
+capture). Critical lessons need no CLAUDE.md entry: the SessionStart hook injects the
+INDEX every session, and CLAUDE.md carries exactly one learning-loop pointer line.
 
 ### Step 7: Present result
 

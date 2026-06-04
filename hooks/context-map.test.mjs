@@ -79,6 +79,53 @@ test("findContextRoot walks up to docs/context", () => {
   }
 });
 
+// REQ-036 / F17: SessionStart injects knowledge INDEX even with no context map
+test("SessionStart hook injects .harness/knowledge/INDEX.md content", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-knowledge-"));
+  try {
+    write(
+      dir,
+      ".harness/knowledge/INDEX.md",
+      "# Knowledge Index\n\n- [Pool exhaustion](lessons/gotchas/pool.md) · applies_to: src/api/** · tags: db · ec:3 · 2026-06-01\n",
+    );
+    const r = spawnSync(process.execPath, [HOOK], {
+      cwd: dir,
+      input: JSON.stringify({ cwd: dir }),
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0);
+    const out = JSON.parse(r.stdout);
+    const ctx = out.hookSpecificOutput.additionalContext;
+    assert.ok(ctx.includes("advisory"), "advisory framing present");
+    assert.ok(ctx.includes("Pool exhaustion"), "INDEX row injected");
+    assert.ok(ctx.includes("ec:3"), "row content verbatim");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// REQ-037 / EDGE-015: absent or 0-byte INDEX → no learning-loop output
+test("SessionStart hook no-ops on absent or empty knowledge INDEX", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-knowledge-empty-"));
+  try {
+    // absent
+    let r = spawnSync(process.execPath, [HOOK], {
+      cwd: dir, input: JSON.stringify({ cwd: dir }), encoding: "utf8",
+    });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout.trim(), "", "no output for absent INDEX");
+    // 0-byte
+    write(dir, ".harness/knowledge/INDEX.md", "");
+    r = spawnSync(process.execPath, [HOOK], {
+      cwd: dir, input: JSON.stringify({ cwd: dir }), encoding: "utf8",
+    });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout.trim(), "", "no output for empty INDEX");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Unified layout: .harness/knowledge/context wins; docs/context is the
 // pre-migration fallback (covered by the test above).
 test("findContextRoot prefers .harness/knowledge/context over docs/context", () => {

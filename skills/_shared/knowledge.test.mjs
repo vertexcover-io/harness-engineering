@@ -332,6 +332,112 @@ test("REQ-011: skills reference only unified .harness paths", () => {
   assert.deepEqual(offenders, [], `old-root references:\n${offenders.join("\n")}`);
 });
 
+// REQ-016 / REQ-021 / EDGE-004: route ranks path-matches above tag-only, writes
+// advisory-delimited full text, appends matched standards
+test("route ranks path matches first and writes advisory-wrapped lessons", () => {
+  const dir = makeSandbox();
+  try {
+    runKnowledge(dir, ["verify"]);
+    write(dir, "src/api/handler.js", "// app code\n");
+    write(
+      dir,
+      ".harness/knowledge/lessons/gotchas/path-hit.md",
+      lessonDoc("Path hit", { applies: '["src/api/**"]', tags: "[perf]" }),
+    );
+    write(
+      dir,
+      ".harness/knowledge/lessons/gotchas/tag-hit.md",
+      lessonDoc("Tag hit", { applies: '["scripts/**"]', tags: "[auth]" }),
+    );
+    write(
+      dir,
+      ".harness/knowledge/lessons/gotchas/no-hit.md",
+      lessonDoc("No hit", { applies: '["scripts/**"]', tags: "[css]" }),
+    );
+    write(
+      dir,
+      ".harness/knowledge/context/standards/S-api.md",
+      `---\ntitle: "S-api error shapes"\napplies_to: ["src/api/**"]\n---\n\n# S-api rule body\n`,
+    );
+    const { json } = runKnowledge(dir, [
+      "route", "--spec", "myspec", "--keywords", "auth,retry", "--paths", "src/api/handler.js",
+    ]);
+    assert.equal(json.matched, 3, "2 lessons + 1 standard");
+    const out = readFileSync(join(dir, ".harness/runtime/myspec/relevant-lessons.md"), "utf8");
+    assert.ok(out.includes("advisory-reference"), "advisory delimiter present (REQ-021)");
+    const pathIdx = out.indexOf("## Lesson: Path hit");
+    const tagIdx = out.indexOf("## Lesson: Tag hit");
+    assert.ok(pathIdx !== -1 && tagIdx !== -1 && pathIdx < tagIdx, "path match ranks first");
+    assert.ok(!out.includes("No hit"), "non-matching lesson excluded");
+    assert.ok(out.includes("## Standard: S-api error shapes"), "matched standard appended");
+    assert.ok(out.includes("Body."), "full lesson body included");
+    assert.ok(!out.includes("evidence_count:"), "frontmatter stripped");
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// REQ-017 / EDGE-005: broad globs (>50% of tracked files) demote to tag-only
+test("route demotes ** globs to tag-only and excludes them without a tag match", () => {
+  const dir = makeSandbox();
+  try {
+    runKnowledge(dir, ["verify"]);
+    write(
+      dir,
+      ".harness/knowledge/lessons/gotchas/greedy-no-tag.md",
+      lessonDoc("Greedy no tag", { applies: '["**"]', tags: "[css]" }),
+    );
+    write(
+      dir,
+      ".harness/knowledge/lessons/gotchas/greedy-tagged.md",
+      lessonDoc("Greedy tagged", { applies: '["**"]', tags: "[auth]" }),
+    );
+    write(
+      dir,
+      ".harness/knowledge/lessons/gotchas/specific.md",
+      lessonDoc("Specific", { applies: '["src/api/**"]', tags: "[css]" }),
+    );
+    write(dir, "src/api/handler.js", "// code\n");
+    sh(dir, "git", ["add", "-A"]);
+    sh(dir, "git", ["commit", "-qm", "track files"]);
+    const { json } = runKnowledge(dir, [
+      "route", "--spec", "s", "--keywords", "auth", "--paths", "src/api/handler.js",
+    ]);
+    const out = readFileSync(join(dir, ".harness/runtime/s/relevant-lessons.md"), "utf8");
+    assert.ok(!out.includes("Greedy no tag"), "** with no tag match excluded");
+    const specificIdx = out.indexOf("## Lesson: Specific");
+    const greedyIdx = out.indexOf("## Lesson: Greedy tagged");
+    assert.ok(specificIdx !== -1 && greedyIdx !== -1 && specificIdx < greedyIdx,
+      "** demoted below real path match even though ** matches the path");
+    assert.equal(json.matched, 2);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// REQ-018 / EDGE-014: zero matches → byte-exact sentinel
+test("route writes exact sentinel when nothing matches", () => {
+  const dir = makeSandbox();
+  try {
+    runKnowledge(dir, ["verify"]);
+    write(
+      dir,
+      ".harness/knowledge/lessons/gotchas/x.md",
+      lessonDoc("X", { applies: '["scripts/**"]', tags: "[css]" }),
+    );
+    const { json } = runKnowledge(dir, [
+      "route", "--spec", "empty", "--keywords", "auth", "--paths", "src/api/a.js",
+    ]);
+    assert.equal(json.matched, 0);
+    assert.equal(
+      readFileSync(join(dir, ".harness/runtime/empty/relevant-lessons.md"), "utf8"),
+      "No prior lessons match this spec.\n",
+    );
+  } finally {
+    cleanup(dir);
+  }
+});
+
 // REQ-003 / EDGE-003: broad .harness/ gitignore must fail loudly
 test("verify exits 2 when .harness/knowledge is gitignored", () => {
   const dir = makeSandbox();

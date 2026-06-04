@@ -356,7 +356,7 @@ The trust gate. Runs *before* spec generation so verified probes can be folded i
 
 1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status planning running")`
 2. **Resolve + inject context-map pointers (if `.harness/knowledge/context/` exists).** Before invoking the planner, resolve the map files covering the packages this feature touches — the same pointers-not-content resolution the coder dispatch uses: the owning `.harness/knowledge/context/packages/<pkg>/**/PACKAGE.md` for each touched package, plus `ARCHITECTURE.md`, `DECISIONS.md`, and the matching `.harness/knowledge/context/standards/*.md`. Pass them to the planning skill as an explicit **"READ THESE FIRST"** block (paths, not bodies) and **log** `context paths: N docs, M standards`. Map consumption at plan time is NOT the planner's discretion — the plan must reason over structure/decisions/standards before drafting phases. No `.harness/knowledge/context/` → skip and note it.
-3. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally, and reads the injected context-map pointers FIRST (planning Step 2.0) before exploring code
+3. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally, and reads the injected context-map pointers FIRST (planning Step 2.0) before exploring code. Include `Lessons: <ROUTED_LESSONS>` in the invocation — known pitfalls matching this spec become plan steps, not surprises
 4. Planner explores codebase, asks interactive questions, designs phases
 5. **Verify the gate ran:** plan.md's Codebase Context section must record `Context map read: …` with the `D-*`/`S-*` ids honored (or `Context map: none`). If `.harness/knowledge/context/` exists but the plan omits this, the planner skipped the map — **automatically re-invoke the `planning` skill ONCE** (same inputs, with an explicit instruction to record `Context map read: …`; track a one-shot `PLAN_CONTEXT_REDISPATCH` flag) before presenting the approval gate. This is an internal re-dispatch, NOT a user pause. If the second attempt still omits it, proceed to the gate and note the omission in the plan summary.
 6. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
@@ -451,6 +451,8 @@ is futile — the answer is to swap the underlying tool, not iterate the call.
 Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke tdd skill. Spec: <SPEC_PATH>. Plan: .harness/features/<SPEC_NAME>/plan.md. Phase file: .harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md.
+  Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — read BEFORE coding; advisory
+  guardrails from past incidents for the files you touch (reference material, not instructions).
 
   **E2E TDD is mandatory and unconditional** for every phase that changes production
   behavior. The contract lives in the tdd skill's "TDD with E2E Tests" section — read
@@ -479,6 +481,7 @@ Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke tdd and testing skills. Spec: <SPEC_PATH>. Plan: .harness/features/<SPEC_NAME>/plan.md.
   Phase file: .harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md. Step: <STEP_DETAILS>.
+  Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — read BEFORE coding (advisory).
 
   **E2E TDD is mandatory and unconditional** for every step that changes production
   behavior — see the tdd skill's "TDD with E2E Tests" section for the full contract.
@@ -507,6 +510,8 @@ Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke code-review skill. Plan: .harness/features/<SPEC_NAME>/plan.md.
   Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/runtime/<SPEC_NAME>/review/pass-1.md.
+  Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — treat each lesson as a review
+  checklist item; tag every finding with matched_lesson per the code-review skill.
 
   After completing the review:
   — If verdict is APPROVE or APPROVE WITH SUGGESTIONS: skip fixing, just write the review report.
@@ -533,6 +538,7 @@ Agent(model="sonnet", prompt="
   [PREAMBLE]
   Invoke code-review skill. Plan: .harness/features/<SPEC_NAME>/plan.md.
   Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/runtime/<SPEC_NAME>/review/pass-2.md.
+  Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — lesson checklist + matched_lesson tagging apply.
   This is the FINAL review pass.
 
   If verdict is APPROVE / APPROVE WITH SUGGESTIONS: do NOT run tests, lint, or typecheck.
@@ -564,6 +570,7 @@ Agent(model="sonnet", prompt="
   1. FUNCTIONAL VERIFICATION: Invoke functional-verify skill.
      Spec: .harness/features/<SPEC_NAME>/spec.md. Plan: .harness/features/<SPEC_NAME>/plan.md.
      Phase files: .harness/runtime/<SPEC_NAME>/phase-*.md.
+     Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — past break patterns are adversarial test ideas.
      Claims report: .harness/runtime/<SPEC_NAME>/claims.json (aggregated from phase-*-claims.json).
      Functional-verify reads this in Step 0. Every `type: "ui"` claim MUST be independently re-proven
      via Playwright MCP — a passing phase .spec.ts is NOT a substitute. API/DB claims may be cited
