@@ -5,4 +5,4 @@ export const activeBreadcrumbPath = () =>
   join(tmpdir(), ".claude-harness-active");
 
 export const harnessDir = (cwd, specName) =>
-  join(cwd, ".harness", specName);
+  join(cwd, ".harness", "runtime", specName);

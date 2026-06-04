@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SubagentStop hook. Port of coder-e2e-gate.sh.
-// Activation: no-ops unless .harness/current-phase exists.
+// Activation: no-ops unless .harness/runtime/current-phase exists.
 // Exit 0 = OK, exit 2 = block (with CODER_E2E_GATE:BLOCK token on stdout).
 
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -9,7 +9,7 @@ import { diffNamesSince, gitAvailable } from "./_lib/git.mjs";
 
 // Set HARNESS_CURRENT_PHASE_FILE to an absolute path to make the gate cwd-independent.
 // Default is cwd-relative, which is correct when the hook runs in the worktree.
-const BREADCRUMB = process.env.HARNESS_CURRENT_PHASE_FILE || ".harness/current-phase";
+const BREADCRUMB = process.env.HARNESS_CURRENT_PHASE_FILE || ".harness/runtime/current-phase";
 
 const emitBlock = (msg) => {
   process.stdout.write(`CODER_E2E_GATE:BLOCK ${msg}\n`);

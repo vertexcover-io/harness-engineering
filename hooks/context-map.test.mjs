@@ -79,6 +79,28 @@ test("findContextRoot walks up to docs/context", () => {
   }
 });
 
+// Unified layout: .harness/knowledge/context wins; docs/context is the
+// pre-migration fallback (covered by the test above).
+test("findContextRoot prefers .harness/knowledge/context over docs/context", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-map-new-"));
+  try {
+    write(dir, ".harness/knowledge/context/ARCHITECTURE.md", "# arch\n");
+    assert.equal(
+      findContextRoot(join(dir, "packages", "api")),
+      join(dir, ".harness", "knowledge", "context"),
+      "finds the unified root with no docs/context present",
+    );
+    write(dir, "docs/context/ARCHITECTURE.md", "# old\n");
+    assert.equal(
+      findContextRoot(dir),
+      join(dir, ".harness", "knowledge", "context"),
+      "unified root wins when both exist",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("readFrontmatter parses scalars and lists", () => {
   const { frontmatter, body } = readFrontmatter(
     "---\nid: S-api\napplies_to: [\"a/**\", \"b\"]\nstatus: active\n---\n# Title\nbody\n"

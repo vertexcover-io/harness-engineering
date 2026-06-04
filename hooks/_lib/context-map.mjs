@@ -4,11 +4,19 @@ import { repoRoot, diffNamesSince } from "./git.mjs";
 
 const toPosix = (p) => p.split(sep).join("/");
 
+// Unified layout first; docs/context is the pre-migration fallback.
+const CONTEXT_ROOTS = [
+  [".harness", "knowledge", "context"],
+  ["docs", "context"],
+];
+
 export const findContextRoot = (cwd) => {
   let dir = cwd;
   for (let i = 0; i < 40; i++) {
-    const candidate = join(dir, "docs", "context");
-    if (existsSync(candidate) && safeIsDir(candidate)) return candidate;
+    for (const parts of CONTEXT_ROOTS) {
+      const candidate = join(dir, ...parts);
+      if (existsSync(candidate) && safeIsDir(candidate)) return candidate;
+    }
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
