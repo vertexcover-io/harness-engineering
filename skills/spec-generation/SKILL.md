@@ -74,6 +74,14 @@ Use the EARS (Easy Approach to Requirements Syntax) format for all requirements:
 | REQ-002 | Yes | No | No | No | |
 | EDGE-001 | Yes | No | No | No | |
 
+## Verification Scenarios
+
+<!-- Include when PRD user flows or probe stubs exist; omit otherwise. -->
+
+### VS-1: <flow name>
+[Numbered tester-walkable steps with expected observable outcome per step.
+Derived from PRD User Flows and/or verification-stubs VS-0 entries.]
+
 ## Out of Scope
 
 - [Explicit list of what this feature does NOT do]
@@ -92,6 +100,17 @@ Read the approved design document at the provided path. Identify:
 - Constraints and non-functional requirements
 - Error scenarios mentioned
 - Integration points with existing systems
+
+From the design doc's `## Product Requirements (PRD)` section (always present; when
+its body is the sentinel `No PRD — internal-facing change.`, skip this block):
+- The User Stories table references F# IDs — use those references to anchor REQ-*
+  derivation. Do NOT extract stories as separate requirements; they point at the
+  same behaviors the Requirements section already states.
+- Map each PRD User Flow to a `### VS-N` entry in the spec's `## Verification
+  Scenarios` section (the same section verification-stubs VS-0 entries append to;
+  functional-verify consumes it). Preserve the flow's numbered steps and observable
+  outcomes.
+- Seed the spec's `## Out of Scope` section from the PRD's Non-Goals.
 
 ### Step 2: Extract Requirements → EARS Format
 
