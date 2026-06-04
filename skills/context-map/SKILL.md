@@ -60,6 +60,19 @@ surface + data-flow only) — never padded. A mundane file gets NO `files/` doc.
 
 ## Mode select (first thing, always)
 
+**Step 0 — layout guard** (contract: `../_shared/knowledge.md`). Standalone invocations
+must not write a map into an ignored or pre-migration tree:
+
+```bash
+node "<plugin-root>/skills/_shared/knowledge.mjs" verify
+```
+
+- Exit 2 (`.harness/knowledge` gitignored) → **STOP** and surface the fix from the
+  envelope — a map written there would be silently uncommitted.
+- Old `docs/context/` exists but `.harness/knowledge/context/` is empty → the repo is
+  unmigrated. Run `node "<plugin-root>/skills/_shared/knowledge.mjs" migrate` first
+  (it moves the existing map with history preserved), then continue.
+
 ```
 test -d .harness/knowledge/context && ls .harness/knowledge/context/*.md >/dev/null 2>&1
 ```
