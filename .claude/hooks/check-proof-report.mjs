@@ -39,14 +39,15 @@ const isRecent = (dir) => {
   }
 };
 
-// Design-only specs (no coder stage ran) have nothing to verify yet.
-// Implementation evidence = .harness/<name>/ pipeline state (claims/phase files).
+// Design/planning-only specs (no coder stage ran) have nothing to verify yet.
+// Implementation evidence = coder-produced claims files; planning's phase-N.md
+// breakdowns are NOT evidence.
 const hasImplementationEvidence = (name) => {
   const harnessDir = join(root, ".harness", name);
   if (!existsSync(harnessDir)) return false;
   try {
     return readdirSync(harnessDir).some(
-      (e) => e === "claims.json" || e.startsWith("phase-"),
+      (e) => e === "claims.json" || /^phase-.*-claims\.json$/.test(e),
     );
   } catch {
     return false;
