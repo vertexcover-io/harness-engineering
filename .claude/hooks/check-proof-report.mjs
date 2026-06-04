@@ -39,11 +39,26 @@ const isRecent = (dir) => {
   }
 };
 
+// Design-only specs (no coder stage ran) have nothing to verify yet.
+// Implementation evidence = .harness/<name>/ pipeline state (claims/phase files).
+const hasImplementationEvidence = (name) => {
+  const harnessDir = join(root, ".harness", name);
+  if (!existsSync(harnessDir)) return false;
+  try {
+    return readdirSync(harnessDir).some(
+      (e) => e === "claims.json" || e.startsWith("phase-"),
+    );
+  } catch {
+    return false;
+  }
+};
+
 for (const d of specDirs) {
   const dir = join(specRoot, d.name);
   const specMd = join(dir, "spec.md");
   if (!existsSync(specMd)) continue;
   if (!isRecent(dir)) continue;
+  if (!hasImplementationEvidence(d.name)) continue;
   if (!existsSync(join(dir, "verification", "proof-report.md"))) {
     missing.push(d.name);
   }
