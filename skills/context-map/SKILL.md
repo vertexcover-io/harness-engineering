@@ -211,6 +211,18 @@ Verdict is `FAIL` on any unresolved orphan / stale symbol / dangling ref / **in-
 but no doc**. `trace-needs-review` is a WARNING (does not fail the gate). **Quality-gate must block on a
 missing report or a FAIL verdict.**
 
+### A5. Refresh the knowledge index
+If this run created, updated, or deleted any `standards/*.md` shard, the Tier-0 knowledge index
+(`.harness/knowledge/INDEX.md` — derived from lesson + standards frontmatter, injected at SessionStart,
+read by lesson routing) is now stale. Refresh it (contract: `../_shared/knowledge.md`):
+
+```bash
+node "<plugin-root>/skills/_shared/knowledge.mjs" reindex
+```
+
+Surface its `{stale}` entries as a warning line in the report. On failure, record
+`knowledge skipped — <reason>` and continue — this step never fails the sync.
+
 ---
 
 ## Part B — BOOTSTRAP MODE (no map yet)
