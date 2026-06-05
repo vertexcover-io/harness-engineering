@@ -68,11 +68,15 @@ Use the EARS (Easy Approach to Requirements Syntax) format for all requirements:
 
 ## Verification Matrix
 
-| REQ ID | Unit Test | Integration Test | E2E Test | Manual Test | Notes |
-|--------|-----------|-----------------|----------|-------------|-------|
-| REQ-001 | Yes | Yes | No | No | |
-| REQ-002 | Yes | No | No | No | |
-| EDGE-001 | Yes | No | No | No | |
+Each REQ/EDGE gets exactly ONE test at the LOWEST sufficient level. This matrix is the
+test budget: the coder writes one test per row and writes no tests outside it unless an
+extra row is added stating the unique bug that test would catch.
+
+| REQ/EDGE ID | Test Level | Test Name | Rationale for Level | Notes |
+|-------------|-----------|-----------|---------------------|-------|
+| REQ-001 | unit | test_REQ_001_rejects_negative_amount | pure logic | |
+| REQ-002 | integration | test_REQ_002_persists_order | crosses DB boundary | |
+| EDGE-001 | e2e | test_EDGE_001_checkout_happy_path | critical user journey | |
 
 ## Verification Scenarios
 
@@ -130,11 +134,17 @@ For each requirement, identify edge cases:
 
 ### Step 4: Build Verification Matrix
 
-For each REQ and EDGE ID:
-1. Determine which test types cover it (unit, integration, manual)
-2. At least one test type must be marked for every ID
-3. If a requirement describes a user-visible workflow or a flow crossing multiple services, mark E2E Test as Yes and note the journey and infrastructure needed
+For each REQ and EDGE ID, assign exactly ONE test at ONE level:
+1. Pick the lowest sufficient level:
+   - **unit** — pure logic, in-memory transforms, validation, calculations
+   - **integration** — crosses a DB/API/module/filesystem boundary, or mocking the dependency would hide the very bug the test exists to catch
+   - **e2e** — a critical user-facing journey or a flow crossing multiple services
+2. Give the row a test name following the `test_<ID>_<behavior>` convention (e.g., `test_REQ_003_event_triggers_action`) — the quality gate greps for these IDs
+3. State the rationale for the chosen level in one phrase
 4. Add notes for anything requiring special setup or environment
+
+The matrix is the test budget. The coder writes one test per row and nothing beyond it —
+an extra test requires an extra row stating the unique bug it catches.
 
 ### Step 5: Write spec.md
 
@@ -153,7 +163,7 @@ For each REQ and EDGE ID:
 - [ ] Acceptance criteria are measurable (counts, exit codes, specific outputs)
 - [ ] Every requirement has at least one edge case considered
 - [ ] Out of Scope section is non-empty
-- [ ] Verification matrix covers every REQ and EDGE ID
+- [ ] Verification matrix has exactly one row (one test, one level) for every REQ and EDGE ID
 
 ---
 
@@ -170,5 +180,6 @@ For each REQ and EDGE ID:
 ## Integration Notes
 
 - **Planning** reads the SPEC to map plan phases to specific REQ IDs. Each phase should cover a coherent set of requirements.
-- **TDD** generates tests per REQ ID and EDGE ID. Test names should reference the ID they cover (e.g., `test_REQ_003_event_triggers_action`).
-- **Code Review** validates completeness against the verification matrix — every REQ/EDGE with a test type marked must have a corresponding test.
+- **TDD** writes one test per matrix row at the assigned level and does not exceed the budget. Test names must reference the ID they cover (e.g., `test_REQ_003_event_triggers_action`).
+- **Quality Gate** verifies behavior coverage by grepping test names for every matrix REQ/EDGE ID.
+- **Code Review** validates completeness against the verification matrix — every row must have its corresponding passing test.

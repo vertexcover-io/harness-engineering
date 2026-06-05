@@ -303,7 +303,7 @@ When a local override is found, log:
 
 The local skill is loaded and followed exactly in place of the global one. The local skill is responsible for emitting compatible verdict comments so orchestrate can parse the result:
 - `<!-- QG:VERDICT:PASS -->` or `<!-- QG:VERDICT:BLOCKED -->`
-- `<!-- QG:CHECK:N:PASS -->` or `<!-- QG:CHECK:N:BLOCKED -->` (N = 1–9)
+- `<!-- QG:CHECK:N:PASS -->` or `<!-- QG:CHECK:N:BLOCKED -->` (N = 1–11)
 
 ---
 
@@ -328,7 +328,7 @@ The local skill is loaded and followed exactly in place of the global one. The l
 
 1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status brainstorm running")`
 2. Invoke `brainstorm` skill via `Skill` tool — no approval gate, design flows straight through.
-   The brainstorm skill MUST produce a `## External Dependencies & Fallback Chain` section in the design doc (see brainstorm Phase 2.5). If absent, library-probe will block.
+   The brainstorm skill MUST produce a `## External Dependencies & Fallback Chain` section in the design doc (see brainstorm's "External Dependency Declaration" section). If absent, library-probe will block.
 3. Mark brainstorm done:
    `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' write-report brainstorm '# Brainstorm' && node '<DAG_SCRIPT>' set-status brainstorm done")`
 

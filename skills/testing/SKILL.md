@@ -129,6 +129,27 @@ Test this              Assert this
 
 When coverage is low, the question is never "what line am I missing?" It is always **"what business behavior am I not testing?"**
 
+Behavior coverage means every row of the spec's verification matrix has its one passing test at its assigned level. Line coverage is a diagnostic, never a target.
+
+### Parameterize Input Variations
+
+Input variations of ONE behavior belong in ONE table-driven test, not N copy-pasted functions. Build the case table from equivalence partitions (one representative value per class of inputs that behave the same) plus boundary values (the edges where classes meet — that's where bugs live).
+
+```python
+@pytest.mark.parametrize("amount,expected_error", [
+    (-1, "must be positive"),     # below boundary
+    (0, "must be positive"),      # boundary
+    (1, None),                    # smallest valid
+    (10_000, None),               # largest valid
+    (10_001, "exceeds limit"),    # above boundary
+])
+def test_REQ_004_validates_payment_amount(amount, expected_error):
+    result = validate_payment(make_payment(amount=amount))
+    assert result.error == expected_error
+```
+
+**BLOCKED condition:** N near-identical test functions exercising the same behavior with different inputs. Collapse them into one parameterized test — the reviewer will flag them.
+
 ### Test Boundaries, Not Internals
 
 Focus on:
@@ -261,6 +282,7 @@ When writing or reviewing tests, verify:
 - [ ] Mocks are only used for external dependencies
 - [ ] No assertions on mock behavior (only on outcomes)
 - [ ] Edge cases and error paths are covered, not just happy paths
+- [ ] Input variations of one behavior are collapsed into one parameterized test (equivalence partitions + boundaries)
 - [ ] Tests would survive an internal refactoring of the code under test
 - [ ] Test names describe what the system does in plain language
 - [ ] Hard-to-test code was flagged for refactoring before wrapping it in mocks

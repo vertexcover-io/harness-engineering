@@ -1,10 +1,10 @@
 ---
 name: coverage-guard
 description: >
-  Enforce minimum test coverage threshold for tarash-gateway. Use this skill after writing
-  or modifying code to check that unit test coverage meets the required minimum. If coverage
-  is below threshold, generates a test gap spec and invokes the orchestrate skill to
-  implement missing tests automatically.
+  Coverage diagnostic for tarash-gateway. Use this skill after writing or modifying code
+  to see which code is uncovered and which spec behaviors that maps to. Diagnostic only —
+  reports and asks the user; never generates specs, never invokes orchestrate, never
+  fails a build.
 ---
 
 ## Project-Specific Guidelines
@@ -17,21 +17,21 @@ description: >
 
 User-provided guidelines take precedence on conflicts with defaults.
 
-# Coverage Guard
+# Coverage Guard (Diagnostic)
 
-Enforces a minimum test coverage threshold. When coverage falls below the threshold, generates a spec for missing tests and hands off to the orchestrate pipeline.
+Reports uncovered code mapped to spec behaviors. Line coverage is a diagnostic, never a
+gate — the test budget is the spec's verification matrix, and test quality is enforced by
+the quality-gate's behavior-coverage and mutation checks.
 
-**REQUIRED SUB-SKILL:** Load the `testing` skill before analyzing coverage gaps or generating specs. This ensures all test recommendations follow project testing conventions.
+**REQUIRED SUB-SKILL:** Load the `testing` skill before analyzing coverage gaps. This
+ensures any recommendation follows project testing conventions.
 
 ---
 
 ## Configuration
 
-> **THRESHOLD = 90%** — Edit this single value to change the minimum coverage requirement. All references below use this value.
-
 | Setting | Value |
 |---------|-------|
-| **Threshold** | `THRESHOLD` (see above) |
 | **Package** | `tarash-gateway` |
 | **Test command** | `uv run pytest packages/tarash-gateway/tests/unit --cov=tarash.tarash_gateway --cov-report=json --cov-report=term-missing -q` |
 | **Coverage JSON** | `coverage.json` (repo root) |
@@ -43,7 +43,7 @@ Enforces a minimum test coverage threshold. When coverage falls below the thresh
 
 ### Step 1: Load Testing Skill
 
-Before any analysis, invoke the `testing` skill to load test patterns and conventions. This informs all spec generation decisions.
+Before any analysis, invoke the `testing` skill to load test patterns and conventions.
 
 ### Step 2: Run Coverage
 
@@ -53,7 +53,7 @@ Run the test command:
 uv run pytest packages/tarash-gateway/tests/unit --cov=tarash.tarash_gateway --cov-report=json --cov-report=term-missing -q
 ```
 
-If pytest fails (non-zero exit for reasons other than coverage), report the error and **stop**. Do not generate a spec for broken tests.
+If pytest fails (non-zero exit for reasons other than coverage), report the error and **stop**.
 
 ### Step 3: Parse Results
 
@@ -61,129 +61,55 @@ Read `coverage.json` (written to the repo root by pytest-cov). Extract:
 - `totals.percent_covered` — the overall coverage percentage
 - Per-file breakdown: `files.<path>.summary.percent_covered`, `missing_lines`, `missing_branches`
 
-### Step 4: Decide
+### Step 4: Map Uncovered Code to Behaviors
 
-**IF coverage >= `THRESHOLD`:**
+For each file with uncovered regions:
 
-Print a summary and stop:
+1. Read the source to understand what the uncovered code does
+2. If a spec exists for the current work, map each uncovered region to the verification-matrix
+   behavior(s) it belongs to (by REQ/EDGE ID)
+3. Classify regions with no matching behavior as one of:
+   - **Candidate for the don't-test list** — getters/mappers/pass-throughs/framework behavior
+     (intentionally untested; no action)
+   - **Possible missing REQ** — real logic no spec behavior covers (surface to the user)
 
-```
-## Coverage Report: PASS
+### Step 5: Report and Ask
 
-| Metric | Value |
-|--------|-------|
-| Current coverage | XX.XX% |
-| Threshold | THRESHOLD |
-| Status | PASS |
-
-### Least Covered Files
-
-| File | Coverage | Missing Lines |
-|------|----------|---------------|
-| path/to/file1.py | XX% | N lines |
-| path/to/file2.py | XX% | N lines |
-| path/to/file3.py | XX% | N lines |
-```
-
-No further action needed.
-
-**IF coverage < `THRESHOLD`:**
-
-Proceed to Step 5.
-
-### Step 5: Analyze Coverage Gaps
-
-From the coverage JSON, identify all files below `THRESHOLD` coverage. For each file:
-
-1. Read the source file to understand what the uncovered code does
-2. Identify uncovered functions/methods and their line ranges
-3. Identify uncovered branches (if/else, try/except)
-4. Determine what behavioral tests would cover the gaps (not mechanical line-by-line tests)
-5. Map each uncovered file to its corresponding test file path in `tests/unit/`
-
-### Step 6: Generate Coverage Gap Spec
-
-Write a spec to `dev-.harness/features/YYYY-MM-DD-coverage-gap-spec.md` with this structure:
+Print the diagnostic report:
 
 ```markdown
-# Coverage Gap Spec
-
-## Coverage Summary
+## Coverage Diagnostic
 
 | Metric | Value |
 |--------|-------|
-| Current coverage | XX.XX% |
-| Threshold | THRESHOLD |
-| Gap | X.XX percentage points |
+| Overall coverage | XX.XX% |
 
-## Uncovered Files
+### Uncovered Code by Behavior
 
-Ranked by missing lines (descending):
-
-| File | Coverage | Missing Lines | Missing Branches |
-|------|----------|---------------|------------------|
-| ... | ... | ... | ... |
-
-## Per-File Analysis
-
-### `path/to/file.py` (XX% covered)
-
-**Uncovered functions:**
-- `function_name` (lines X-Y): [description of what it does]
-
-**Uncovered branches:**
-- `function_name` line X: [which branch is missed, e.g., "error handling path"]
-
-**Tests to write:**
-- Test file: `tests/unit/path/to/test_file.py`
-- Behaviors to test:
-  - [behavior description 1]
-  - [behavior description 2]
-- Fixtures needed: [list any fixtures]
-- Edge cases: [list edge cases]
-
-(Repeat for each uncovered file)
-
-## Testing Conventions
-
-- Function-based tests (no classes) — per CLAUDE.md
-- Behavior-driven naming: `test_<behavior_description>`
-- Use fixtures for shared setup
-- asyncio_mode="auto" for async tests
-- Use `uv run pytest` exclusively
-- Follow patterns from the `testing` skill
-
-## Acceptance Criteria
-
-- [ ] Overall coverage meets or exceeds THRESHOLD
-- [ ] All new tests pass
-- [ ] No existing tests broken
-- [ ] Tests follow project conventions (function-based, behavior-driven)
+| File | Coverage | Uncovered Region | Maps To |
+|------|----------|------------------|---------|
+| path/to/file.py | XX% | `handle_retry` lines X-Y | possible missing REQ — retry behavior unspecified |
+| path/to/dto.py | XX% | field mappers | don't-test list (intentional) |
 ```
 
-### Step 7: Invoke Orchestrate
-
-Pass the spec to the orchestrate skill:
-
-```
-/orchestrate dev-.harness/features/YYYY-MM-DD-coverage-gap-spec.md
-```
-
-The orchestrate pipeline handles: planning, TDD implementation, quality gate, and commit.
+Then ask the user: **"Do any of the 'possible missing REQ' regions represent behavior that
+should become a verification-matrix row?"** Let the user decide — do not write tests, specs,
+or matrix rows yourself.
 
 ---
 
 ## Error Handling
 
-- **pytest fails to run:** Report the error (missing dependencies, syntax errors, etc.) and stop. Do not generate a spec.
+- **pytest fails to run:** Report the error (missing dependencies, syntax errors, etc.) and stop.
 - **coverage.json missing or unparseable:** Report the error and stop.
-- **No unit tests exist yet:** Report 0% coverage and generate a spec for initial test coverage.
+- **No unit tests exist yet:** Report 0% coverage and list the source files for the user to triage.
 
 ---
 
 ## What This Skill Does NOT Do
 
-- Does not write tests itself — delegates to orchestrate
-- Does not modify the threshold — edit `THRESHOLD` in the Configuration section above to change it
+- Does not generate specs or test-gap documents
+- Does not invoke orchestrate or write tests
+- Does not enforce a threshold or fail a build — it reports and asks
 - Does not run e2e tests — unit coverage only
 - Does not auto-trigger — Claude invokes based on CLAUDE.md directive

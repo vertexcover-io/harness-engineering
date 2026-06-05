@@ -152,6 +152,46 @@
         "Does not propose architectural rework as a fix without first investigating the root cause",
         "Does not walk through brainstorming phases for a problem whose output should be a root cause and fix"
       ]
+    },
+    {
+      "id": 8,
+      "name": "questioning-discipline",
+      "prompt": "Brainstorm adding webhook delivery to our notification service. The service lives in src/notifications/ and already has an email channel and an in-app channel; channel dispatch is in src/notifications/dispatcher.ts. I want third parties to receive events too.",
+      "expected_output": "A brainstorm session where codebase-answerable questions (existing channel interface, dispatcher shape, retry behavior) are answered by exploring src/notifications/ instead of asking, every question to the user carries a recommended answer, dependent decisions are asked one at a time in dependency order, and questioning ends when the decision branches are resolved.",
+      "files": [],
+      "expectations": [
+        "Checks the context layer (.harness/knowledge/context/ — DECISIONS.md D-* ids, PACKAGE.md, GLOSSARY.md) before asking the user or grepping code, and does not re-ask anything a D-* decision already records",
+        "Explores src/notifications/ to answer questions about the existing channel interface and dispatcher instead of asking the user",
+        "Every AskUserQuestion includes a recommended option listed first and labeled '(Recommended)'",
+        "Questions whose answers depend on an earlier unresolved decision are asked one at a time, after the upstream decision is resolved",
+        "Batches multiple questions in one AskUserQuestion call only for independent context facts",
+        "Questioning stops when identified decision branches are resolved or explicitly parked in Open Questions"
+      ],
+      "anti_expectations": [
+        "Does not ask the user about facts discoverable in the codebase (existing channel interface, dispatch flow)",
+        "Does not ask open-ended questions without offering a recommended answer",
+        "Does not dump a long flat list of questions in a single message regardless of dependencies"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "grill-mode-existing-plan",
+      "prompt": "Grill me on this plan: I want to move our session storage from Postgres to Redis. Plan: (1) add a Redis client wrapper, (2) dual-write sessions to both stores for a week, (3) switch reads to Redis behind a flag, (4) drop the Postgres table. Sessions are read on every authenticated request.",
+      "expected_output": "An interrogation of the user's plan — walking its decision branches one-by-one (TTL/eviction policy, dual-write failure semantics, flag rollback, data migration for live sessions, Redis durability), one question at a time with recommendations, verifying codebase claims by exploration, then stress-testing the plan and capturing the agreed result as a design doc — without proposing a competing from-scratch design.",
+      "files": [],
+      "expectations": [
+        "Recognizes grill mode: interrogates the user's existing plan instead of re-deriving a design from scratch",
+        "Walks the plan's decision branches one-by-one in dependency order, one question at a time",
+        "Each question includes the assistant's recommended answer",
+        "Explores the codebase to verify the plan's claims where possible instead of asking",
+        "Runs stress-test lenses against the user's plan (failure modes, load, adjacent systems)",
+        "Captures the agreed result as a design doc and presents the user review gate"
+      ],
+      "anti_expectations": [
+        "Does not ignore the user's plan and present 2-3 alternative approaches as if greenfield",
+        "Does not ask multiple dependent questions in a single batch",
+        "Does not skip the stress test because the plan came from the user"
+      ]
     }
   ]
 }
