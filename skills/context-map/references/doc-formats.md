@@ -1,6 +1,6 @@
 # Context map — doc format templates
 
-Literal templates for every `docs/context/` doc. **Read this before writing or updating any context-map
+Literal templates for every `.harness/knowledge/context/` doc. **Read this before writing or updating any context-map
 doc, and copy the matching block.** The rules and the full procedure live in `SKILL.md`; this file is just
 the structure to copy. (The flow-trace grammar referenced by the `## Data flows` sections is specified in
 SKILL.md — keep it open alongside this.)

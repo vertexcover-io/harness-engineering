@@ -4,17 +4,39 @@ import { repoRoot, diffNamesSince } from "./git.mjs";
 
 const toPosix = (p) => p.split(sep).join("/");
 
-export const findContextRoot = (cwd) => {
+// Unified layout first; docs/context is the pre-migration fallback.
+const CONTEXT_ROOTS = [
+  [".harness", "knowledge", "context"],
+  ["docs", "context"],
+];
+
+const findUp = (cwd, candidates, accept) => {
   let dir = cwd;
   for (let i = 0; i < 40; i++) {
-    const candidate = join(dir, "docs", "context");
-    if (existsSync(candidate) && safeIsDir(candidate)) return candidate;
+    for (const parts of candidates) {
+      const candidate = join(dir, ...parts);
+      if (accept(candidate)) return candidate;
+    }
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   return null;
 };
+
+export const findContextRoot = (cwd) =>
+  findUp(cwd, CONTEXT_ROOTS, (p) => existsSync(p) && safeIsDir(p));
+
+// The knowledge INDEX (lesson/standard routing rows) — distinct from the
+// context map's INDEX.md read-order doc. Empty file counts as absent.
+export const findKnowledgeIndex = (cwd) =>
+  findUp(cwd, [[".harness", "knowledge", "INDEX.md"]], (p) => {
+    try {
+      return statSync(p).isFile() && statSync(p).size > 0;
+    } catch {
+      return false;
+    }
+  });
 
 const safeIsDir = (p) => {
   try {

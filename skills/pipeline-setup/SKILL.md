@@ -105,15 +105,15 @@ the runner and a **single-file** command so each iteration stays scoped.
 
 Artifacts are split across two trees:
 
-- `docs/spec/<SPEC_NAME>/` — committed, reviewer-facing (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/, README.md)
-- `.harness/<SPEC_NAME>/` — gitignored, pipeline working state (baseline.json, manifest.json, phase-*.md, e2e-report.json, gate-report-*.md, lib-suspect-*.md, review/, probes/)
+- `.harness/features/<SPEC_NAME>/` — committed, reviewer-facing (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/, README.md)
+- `.harness/runtime/<SPEC_NAME>/` — gitignored, pipeline working state (baseline.json, manifest.json, phase-*.md, e2e-report.json, gate-report-*.md, lib-suspect-*.md, review/, probes/)
 
 Steps:
 
 1. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`)
-2. Create `docs/spec/<SPEC_NAME>/` and `docs/spec/<SPEC_NAME>/verification/{screenshots,traces}/`
-3. Create `.harness/<SPEC_NAME>/review/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`)
-4. Write baseline metrics to `.harness/<SPEC_NAME>/baseline.json`:
+2. Create `.harness/features/<SPEC_NAME>/` and `.harness/features/<SPEC_NAME>/verification/{screenshots,traces}/`
+3. Create `.harness/runtime/<SPEC_NAME>/review/` (the DAG dashboard already creates `.harness/runtime/<SPEC_NAME>/reports/`)
+4. Write baseline metrics to `.harness/runtime/<SPEC_NAME>/baseline.json`:
 
 ```json
 {
@@ -150,7 +150,7 @@ keys are unchanged — `commands` is additive.
   `monorepo`/`test_changed` to `null` for single-package repos, where the whole-project commands already
   cover everything.
 
-5. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
+5. Write manifest skeleton to `.harness/runtime/<SPEC_NAME>/manifest.json`:
 
 ```json
 {
@@ -165,7 +165,24 @@ keys are unchanged — `commands` is additive.
 
 Downstream stages append `stages.<stage_name> = { started_at, completed_at, outcome }` entries.
 
-Store: `SPEC_NAME`, `SPEC_DIR` (`docs/spec/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
+6. **Route prior lessons** (learning loop — contract: `../_shared/knowledge.md`):
+
+```bash
+node "<plugin-root>/skills/_shared/knowledge.mjs" verify
+node "<plugin-root>/skills/_shared/knowledge.mjs" migrate   # no-op on migrated repos
+node "<plugin-root>/skills/_shared/knowledge.mjs" route --spec "<SPEC_NAME>" \
+  --keywords "<csv: spec title words + tags>" --paths "<csv: planned/likely touched paths>"
+```
+
+- `verify` exit 2 (gitignored knowledge zone) → **halt the pipeline** with the error —
+  this is the one loud failure.
+- `route`/`migrate` failure or non-JSON output → record `knowledge skipped — <reason>`
+  in the manifest and continue; the learning loop never blocks setup.
+- Keywords come from the task title + spec tags; paths from the task description's
+  named files/dirs (planning refines them later — routing tolerates imprecision).
+- Store the written path as `ROUTED_LESSONS`.
+
+Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/features/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/runtime/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`, `ROUTED_LESSONS`
 
 ---
 
@@ -178,7 +195,8 @@ After completion, the following variables are available for downstream stages:
 | `WORKTREE_PATH` | Absolute path to the git worktree |
 | `BRANCH_NAME` | Name of the worktree branch |
 | `SPEC_NAME` | Slugified task name |
-| `SPEC_DIR` | Path to `docs/spec/<SPEC_NAME>/` (committed artifacts) |
-| `HARNESS_SPEC_DIR` | Path to `.harness/<SPEC_NAME>/` (gitignored working state) |
-| `BASELINE_PATH` | Path to `.harness/<SPEC_NAME>/baseline.json` |
-| `MANIFEST_PATH` | Path to `.harness/<SPEC_NAME>/manifest.json` |
+| `SPEC_DIR` | Path to `.harness/features/<SPEC_NAME>/` (committed artifacts) |
+| `HARNESS_SPEC_DIR` | Path to `.harness/runtime/<SPEC_NAME>/` (gitignored working state) |
+| `BASELINE_PATH` | Path to `.harness/runtime/<SPEC_NAME>/baseline.json` |
+| `MANIFEST_PATH` | Path to `.harness/runtime/<SPEC_NAME>/manifest.json` |
+| `ROUTED_LESSONS` | Path to `.harness/runtime/<SPEC_NAME>/relevant-lessons.md` (routed prior lessons; may contain the no-match sentinel) |

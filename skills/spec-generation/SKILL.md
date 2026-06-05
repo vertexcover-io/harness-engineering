@@ -15,13 +15,13 @@ Reads an approved design document and produces a structured SPEC.md with EARS-fo
 ## Input / Output
 
 **Inputs:**
-- `docs/spec/<SPEC_NAME>/design.md` — the approved brainstorm output.
-- `docs/spec/<SPEC_NAME>/library-probe.md` — selected libraries (optional; folded into VS-0 scenarios if present).
-- `docs/spec/<SPEC_NAME>/verification/verification-stubs.md` — probe scenarios to fold in (optional).
+- `.harness/features/<SPEC_NAME>/design.md` — the approved brainstorm output.
+- `.harness/features/<SPEC_NAME>/library-probe.md` — selected libraries (optional; folded into VS-0 scenarios if present).
+- `.harness/features/<SPEC_NAME>/verification/verification-stubs.md` — probe scenarios to fold in (optional).
 
-**Output:** `docs/spec/<SPEC_NAME>/spec.md` — structured specification with testable requirements.
+**Output:** `.harness/features/<SPEC_NAME>/spec.md` — structured specification with testable requirements.
 
-The `docs/spec/<SPEC_NAME>/` directory is created by pipeline-setup; the planning skill writes `plan.md` alongside.
+The `.harness/features/<SPEC_NAME>/` directory is created by pipeline-setup; the planning skill writes `plan.md` alongside.
 
 ---
 
@@ -138,9 +138,9 @@ For each REQ and EDGE ID:
 
 ### Step 5: Write spec.md
 
-1. The `docs/spec/<SPEC_NAME>/` directory is created by pipeline-setup; verify it exists
-2. Write `docs/spec/<SPEC_NAME>/spec.md` using the template above
-3. If `docs/spec/<SPEC_NAME>/verification/verification-stubs.md` exists, append its VS-0 entries to the spec's Verification Scenarios section
+1. The `.harness/features/<SPEC_NAME>/` directory is created by pipeline-setup; verify it exists
+2. Write `.harness/features/<SPEC_NAME>/spec.md` using the template above
+3. If `.harness/features/<SPEC_NAME>/verification/verification-stubs.md` exists, append its VS-0 entries to the spec's Verification Scenarios section
 4. Verify every REQ ID appears in the verification matrix
 5. Verify every EDGE ID links to a valid REQ ID
 

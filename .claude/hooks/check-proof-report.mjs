@@ -11,20 +11,26 @@ if (process.env.HARNESS_SKIP_VERIFY_GATE === "1") process.exit(0);
 
 const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const root = (gitAvailable() && repoRoot(cwd)) || cwd;
-const specRoot = join(root, "docs", "spec");
+// Unified layout, with the pre-migration root as fallback.
+const specRoots = [join(root, ".harness", "features"), join(root, "docs", "spec")].filter(
+  existsSync,
+);
 
-if (!existsSync(specRoot)) process.exit(0);
+if (specRoots.length === 0) process.exit(0);
 
 const ACTIVE_MS = 24 * 60 * 60 * 1000;
 const now = Date.now();
 const missing = [];
 
-let specDirs;
-try {
-  specDirs = readdirSync(specRoot, { withFileTypes: true }).filter((d) => d.isDirectory());
-} catch {
-  process.exit(0);
-}
+const specDirs = specRoots.flatMap((specRoot) => {
+  try {
+    return readdirSync(specRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => ({ name: d.name, dir: join(specRoot, d.name) }));
+  } catch {
+    return [];
+  }
+});
 
 const isRecent = (dir) => {
   try {
@@ -39,28 +45,31 @@ const isRecent = (dir) => {
   }
 };
 
-// Design-only specs (no coder stage ran) have nothing to verify yet.
-// Implementation evidence = .harness/<name>/ pipeline state (claims/phase files).
+// Design/planning-only specs (no coder stage ran) have nothing to verify yet.
+// Implementation evidence = coder-produced claims files; planning's phase-N.md
+// breakdowns are NOT evidence.
 const hasImplementationEvidence = (name) => {
-  const harnessDir = join(root, ".harness", name);
-  if (!existsSync(harnessDir)) return false;
-  try {
-    return readdirSync(harnessDir).some(
-      (e) => e === "claims.json" || e.startsWith("phase-"),
-    );
-  } catch {
-    return false;
+  // Unified layout, with the pre-migration location as fallback.
+  const evidenceDirs = [join(root, ".harness", "runtime", name), join(root, ".harness", name)];
+  for (const harnessDir of evidenceDirs) {
+    if (!existsSync(harnessDir)) continue;
+    try {
+      const hit = readdirSync(harnessDir).some(
+        (e) => e === "claims.json" || /^phase-.*-claims\.json$/.test(e),
+      );
+      if (hit) return true;
+    } catch {}
   }
+  return false;
 };
 
-for (const d of specDirs) {
-  const dir = join(specRoot, d.name);
+for (const { name, dir } of specDirs) {
   const specMd = join(dir, "spec.md");
   if (!existsSync(specMd)) continue;
   if (!isRecent(dir)) continue;
-  if (!hasImplementationEvidence(d.name)) continue;
+  if (!hasImplementationEvidence(name)) continue;
   if (!existsSync(join(dir, "verification", "proof-report.md"))) {
-    missing.push(d.name);
+    missing.push(name);
   }
 }
 

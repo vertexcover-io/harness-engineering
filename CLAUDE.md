@@ -24,7 +24,4 @@ Ask clarifying questions before architectural changes
 Explain reasoning for non-obvious decisions
 
 ## Prior Learnings
-- Before implementing, check `docs/solutions/` for relevant gotchas and patterns
-- Search by tags/keywords related to the feature area: `Grep pattern="<keyword>" path=docs/solutions/`
-- Critical gotchas that caused pipeline failures:
-  <!-- Updated automatically by learn skill -->
+- Before implementing, read `.harness/knowledge/INDEX.md` and the full text of any lesson whose `applies_to`/tags match your task

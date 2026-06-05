@@ -6,7 +6,7 @@ description: >
   gate where you try to BREAK the feature. Trigger on phrases like "tests pass",
   "implementation done", "ready for review", "ship it", or when orchestrate enters
   the verify stage. The only proof this skill ran is the file
-  docs/spec/<SPEC_NAME>/verification/proof-report.md. If that file does not exist for
+  .harness/features/<SPEC_NAME>/verification/proof-report.md. If that file does not exist for
   the current spec, verification did not happen — the feature is not done.
 user-invocable: true
 ---
@@ -17,7 +17,7 @@ user-invocable: true
 
 ## Your contract (this is the whole skill)
 
-You are the gate between "tests are green" and "feature is done." Your job is **not** to confirm the happy path — the test suite already did that. Your job is to **produce `docs/spec/<SPEC_NAME>/verification/proof-report.md` containing evidence a reviewer can re-run.** No file → no verification → not done.
+You are the gate between "tests are green" and "feature is done." Your job is **not** to confirm the happy path — the test suite already did that. Your job is to **produce `.harness/features/<SPEC_NAME>/verification/proof-report.md` containing evidence a reviewer can re-run.** No file → no verification → not done.
 
 Three non-negotiables:
 
@@ -27,9 +27,9 @@ Three non-negotiables:
 
 ## Inputs
 
-- Spec: `docs/spec/<SPEC_NAME>/spec.md`
-- Plan: `docs/spec/<SPEC_NAME>/plan.md` (per-phase breakdowns live in `.harness/<SPEC_NAME>/phase-*.md`)
-- **Claims report (required when present): `.harness/<SPEC_NAME>/claims.json`** — aggregated from
+- Spec: `.harness/features/<SPEC_NAME>/spec.md`
+- Plan: `.harness/features/<SPEC_NAME>/plan.md` (per-phase breakdowns live in `.harness/runtime/<SPEC_NAME>/phase-*.md`)
+- **Claims report (required when present): `.harness/runtime/<SPEC_NAME>/claims.json`** — aggregated from
   per-phase `phase-*-claims.json` produced by the coder stage. Schema lives in
   `skills/tdd/references/phase-claims-format.md` (per phase) and
   `skills/orchestrate/references/claims-aggregation-format.md` (aggregated).
@@ -37,7 +37,7 @@ Three non-negotiables:
 ## Step 0 — Read claims and refuse double-runs
 
 - If `verification/proof-report.md` already exists for this spec in this session, **refuse to silently re-run.** Report the existing report path and stop. If the user wants a re-verify, they will ask.
-- Read `.harness/<SPEC_NAME>/claims.json` if present and classify each claim:
+- Read `.harness/runtime/<SPEC_NAME>/claims.json` if present and classify each claim:
   - `failed > 0` → BLOCKER. Report and stop.
   - **`type: "ui"` claims are NOT considered proven** by the phase test. Every UI claim is a
     *work item* for Step 4 — you MUST drive a real browser via Playwright MCP, capture a screenshot
@@ -72,7 +72,7 @@ For each api scenario:
 
 Drive a real browser via `mcp__playwright__browser_*`. Do NOT write `.spec.ts` files or run `npx playwright test` — that is the e2e suite, not this gate.
 
-**Per-claim coverage rule.** For every `type: "ui"` entry in `.harness/<SPEC_NAME>/claims.json`, you MUST:
+**Per-claim coverage rule.** For every `type: "ui"` entry in `.harness/runtime/<SPEC_NAME>/claims.json`, you MUST:
 
 1. Navigate to the claim's `surface` (route), act out the `behavior`, and capture a screenshot.
 2. Save the PNG with the claim id in the filename (e.g. `PHASE7-C1-settings-enabled.png`).
@@ -82,7 +82,7 @@ Spec-derived UI scenarios (`VS-*` with `type: ui`) are covered the same way. UI 
 
 If Playwright MCP is unavailable: this is a hard failure for any spec with UI claims. Report `BLOCKED:no-playwright-mcp` listing the unproven claim ids and stop. Do not paper over with adjacent API checks.
 
-`mkdir -p docs/spec/<SPEC_NAME>/verification/{screenshots,traces}`. One browser session for all scenarios; `browser_close` once at the end.
+`mkdir -p .harness/features/<SPEC_NAME>/verification/{screenshots,traces}`. One browser session for all scenarios; `browser_close` once at the end.
 
 **Before driving the browser:** read the project's page-level layout contract (typically the routing/layout section of CLAUDE.md, or the relevant page component file) and record — in `observations.md` as a one-line "expected ordering" note — the expected vertical ordering of the page's top-level sections. This becomes the layout invariant that screenshots must validate alongside the feature's own checks.
 
@@ -116,7 +116,7 @@ Block-level verdict is `UNMET` if any spec check is `UNMET` or any open-review f
 
 This pass runs in the same context (subagents cannot spawn subagents), so the isolation has to come from discipline. Three mandatory mitigations:
 
-1. **Forced context break.** Before generating adversarial scenarios, re-read ONLY: `docs/spec/<SPEC_NAME>/spec.md` and `.harness/<SPEC_NAME>/claims.json` (if present). Do NOT re-read `verification/screenshots/observations.md` or any draft of the proof report — they will bias you toward agreement with what you already wrote.
+1. **Forced context break.** Before generating adversarial scenarios, re-read ONLY: `.harness/features/<SPEC_NAME>/spec.md` and `.harness/runtime/<SPEC_NAME>/claims.json` (if present). Do NOT re-read `verification/screenshots/observations.md` or any draft of the proof report — they will bias you toward agreement with what you already wrote.
 2. **Targets are spec requirements NOT covered by `claims.json` `claims[]`** (gaps you compute by diffing spec ACs against claim ids), not from your own memory of what the verifier covered. If claims.json is absent, derive from the spec: error paths, boundary values, out-of-order multi-step flows, concurrent actions, stale-state operations.
 3. **You must list what you tried.** A bare "no defects found" is a verification failure. Section 2 of `adversarial-findings.md` is non-skippable.
 
@@ -162,7 +162,7 @@ Before writing:
 4. Confirm `verification/adversarial-findings.md` exists and section 2 (scenarios attempted) is non-empty. Missing → return to Step 5.
 5. Escalate any confirmed `DEFECT` from adversarial-findings to `UNMET` in the proof report. Quote findings verbatim; do not paraphrase.
 
-Write `docs/spec/<SPEC_NAME>/verification/proof-report.md`. Use `references/proof-report-template.md` for the section list and ordering.
+Write `.harness/features/<SPEC_NAME>/verification/proof-report.md`. Use `references/proof-report-template.md` for the section list and ordering.
 
 ## Step 7 — Honest non-verification + cleanup
 

@@ -244,7 +244,7 @@ For multi-stage pipeline skills — assert on stage completion and artifacts:
   "files": [],
   "expectations": [
     "All 8 pipeline stages (setup through commit) were attempted",
-    "A spec document was created in docs/spec/ with testable acceptance criteria",
+    "A spec document was created in .harness/features/ with testable acceptance criteria",
     "A plan document with phases was created",
     "All unit tests pass",
     "New tests written for the feature",

@@ -1,6 +1,6 @@
 ---
 name: quality-gate
-description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads baseline metrics from .harness/<SPEC_NAME>/baseline.json."
+description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads baseline metrics from .harness/runtime/<SPEC_NAME>/baseline.json."
 user-invocable: false
 ---
 
@@ -16,9 +16,9 @@ Every claim in this report is backed by verbatim command output. No check may be
 
 The quality gate receives these parameters from the orchestrator:
 
-- **Baseline file:** `.harness/<SPEC_NAME>/baseline.json`
-- **Spec dir:** `docs/spec/<SPEC_NAME>/` (committed — spec.md, plan.md)
-- **Harness dir:** `.harness/<SPEC_NAME>/` (gitignored — phase-*.md, e2e-report.json, gate reports)
+- **Baseline file:** `.harness/runtime/<SPEC_NAME>/baseline.json`
+- **Spec dir:** `.harness/features/<SPEC_NAME>/` (committed — spec.md, plan.md)
+- **Harness dir:** `.harness/runtime/<SPEC_NAME>/` (gitignored — phase-*.md, e2e-report.json, gate reports)
 - **Stage:** `post-tdd` | `post-refactor` | `pre-pr`
 
 ---
@@ -54,7 +54,7 @@ This proves the gate ran against the actual current code state.
 
 Run at pipeline start, immediately after worktree setup. Records the starting state so gates can detect regressions.
 
-**Capture these metrics and write to `.harness/<SPEC_NAME>/baseline.json`:**
+**Capture these metrics and write to `.harness/runtime/<SPEC_NAME>/baseline.json`:**
 
 ```json
 {
@@ -147,7 +147,7 @@ Detect project tooling in this order:
 
 ### Check 6: Plan Compliance
 
-- Read each `phase-N.md` in `.harness/<SPEC_NAME>/`
+- Read each `phase-N.md` in `.harness/runtime/<SPEC_NAME>/`
 - Extract all "Done When" checklist items
 - For each item, cite specific evidence:
   - Test name that passes
@@ -182,13 +182,13 @@ Detect project tooling in this order:
 
 ### Check 9: E2E Report Verification
 
-- Read `.harness/<SPEC_NAME>/e2e-report.json`
+- Read `.harness/runtime/<SPEC_NAME>/e2e-report.json`
 - If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found"
 - If `not_applicable: true` → `NOT_APPLICABLE` with the reason from the file
 - If file exists, verify:
   1. `failed` count is 0 — any E2E failures during coding are a hard block
   2. `coverage` array is non-empty — report must cover at least one spec requirement
-  3. Each coverage entry maps to a REQ or EDGE ID from the spec — verify the IDs exist in `docs/spec/<SPEC_NAME>/spec.md`
+  3. Each coverage entry maps to a REQ or EDGE ID from the spec — verify the IDs exist in `.harness/features/<SPEC_NAME>/spec.md`
   4. `gaps` field exists and is non-empty — a report with no documented gaps is suspicious; flag as WARNING (not BLOCKED)
   5. Timestamp is within the pipeline run window (not stale from a previous run)
 - **Pass:** `failed` = 0, coverage non-empty, all REQ IDs valid, timestamp current
@@ -198,12 +198,12 @@ Detect project tooling in this order:
 ### Check 10: Context Map Freshness
 
 **Ordering (critical):** Stage 5 runs context-map **sync before** this gate, so the gate reads a
-report the same run just produced. If `docs/context/` exists but `.sync-report.md` is absent, first
+report the same run just produced. If `.harness/knowledge/context/` exists but `.sync-report.md` is absent, first
 **trigger a context-map sync, then re-read** — only treat a *still-missing* report as a problem. This
 avoids deadlocking the first adopter (hand-made map, no report yet).
 
-- If `docs/context/` does not exist → `NOT_APPLICABLE` (project never adopted the context map).
-- Else read `docs/context/.sync-report.md`:
+- If `.harness/knowledge/context/` does not exist → `NOT_APPLICABLE` (project never adopted the context map).
+- Else read `.harness/knowledge/context/.sync-report.md`:
   - File missing → run context-map sync, then re-read. Still missing after sync → **BLOCKED** (sync
     itself is failing — that needs fixing). Present after sync → evaluate its verdict below.
   - `verdict: FAIL` → **BLOCKED**: surface the report's stale-refs / uncovered / orphan / standards-stale lines.
@@ -229,7 +229,7 @@ If any gate returns **BLOCKED**, the pipeline stops at that point. The orchestra
 
 ## Gate Report Format
 
-Written to `.harness/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `gate-report-post-tdd-001.md`). Increment the sequence number based on existing reports in the directory:
+Written to `.harness/runtime/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `gate-report-post-tdd-001.md`). Increment the sequence number based on existing reports in the directory:
 
 ```markdown
 ## Quality Gate Report — <stage>
@@ -305,7 +305,7 @@ Binary verdicts — no WARN tier:
 
 ## Stagnation Detection
 
-Read previous gate reports from `.harness/<SPEC_NAME>/gate-report-*.md`.
+Read previous gate reports from `.harness/runtime/<SPEC_NAME>/gate-report-*.md`.
 
 Compare error signatures: check name + first error line. If the **same check fails 3 consecutive times with the same error signature**, report STAGNATION.
 

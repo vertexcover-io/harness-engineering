@@ -1,7 +1,7 @@
 ---
 name: context-map
 description: >
-  Maintains docs/context/ — a tiered map of WHY the codebase is shaped as it is: architecture,
+  Maintains .harness/knowledge/context/ — a tiered map of WHY the codebase is shaped as it is: architecture,
   cross-package data flows, per-package intent (deps, public surface, data in→out, inline gotchas),
   a decisions log, and self-routing prescriptive standards (S-* shards with applies_to globs, derived
   from what the repo enforces). Data flow is captured as function-level traces (indented branching trees), in
@@ -15,7 +15,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
 
 # Context Map
 
-Keep `docs/context/` — a tiered map of the *why* behind the code — accurate and current. Code
+Keep `.harness/knowledge/context/` — a tiered map of the *why* behind the code — accurate and current. Code
 answers *what*; the context map answers *why this shape, what flows where, what breaks if you change it*.
 
 **Rule that governs everything:** code is authoritative. Context docs are advisory. On any conflict,
@@ -60,12 +60,26 @@ surface + data-flow only) — never padded. A mundane file gets NO `files/` doc.
 
 ## Mode select (first thing, always)
 
+**Step 0 — layout guard** (contract: `../_shared/knowledge.md`). Standalone invocations
+must not write a map into an ignored or pre-migration tree:
+
+```bash
+node "<plugin-root>/skills/_shared/knowledge.mjs" verify
 ```
-test -d docs/context && ls docs/context/*.md >/dev/null 2>&1
+
+- Exit 2 (`.harness/knowledge` gitignored) → **STOP** and surface the fix from the
+  envelope — a map written there would be silently uncommitted.
+- A pre-migration map root exists (the old context dir under the docs tree) but
+  `.harness/knowledge/context/` is empty → the repo is unmigrated. Run
+  `node "<plugin-root>/skills/_shared/knowledge.mjs" migrate` first (it moves the
+  existing map with history preserved), then continue.
+
+```
+test -d .harness/knowledge/context && ls .harness/knowledge/context/*.md >/dev/null 2>&1
 ```
 - Map exists (even partial — e.g. only one package mapped) → **SYNC MODE** (Part A). A no-arg sync
   covers the WHOLE codebase (A0) and bootstraps any package that has code but no doc yet.
-- No `docs/context/` or empty → **BOOTSTRAP MODE** (Part B), then one SYNC pass.
+- No `.harness/knowledge/context/` or empty → **BOOTSTRAP MODE** (Part B), then one SYNC pass.
 
 This skill always runs when invoked. If nothing needs changing it still emits a sync-report and
 reports "no changes needed" — the invocation itself is the gate.
@@ -102,7 +116,7 @@ Scope is the set of packages this sync covers. It is independent of git-change d
 - **Path argument(s) given** (`$ARGUMENTS` non-empty) → scope = those paths' package(s) only.
 - **No argument** → scope = **the entire codebase** — every package/sub-package that has code OR a
   `PACKAGE.md`. Do NOT narrow scope to "what git changed" — a no-arg sync must reconcile the full map.
-- **A `docs/spec/<name>/` path among the args** is not a scope — it's a **decision source** (see A2
+- **A `.harness/features/<name>/` path among the args** is not a scope — it's a **decision source** (see A2
   "Decision sources"): read its `design.md`/`plan.md` to transcribe recorded decisions. Code paths set
   scope; the spec dir sets the rationale source.
 
@@ -144,7 +158,7 @@ When creating or updating any doc, consult `references/doc-formats.md` for the e
   `standards/<pkg>.md` created.
 
 #### Decision sources — transcribe the recorded *why*, don't re-derive it
-The rationale is *already written* in `docs/spec/<name>/design.md` (+ `plan.md`) — ingest it, don't
+The rationale is *already written* in `.harness/features/<name>/design.md` (+ `plan.md`) — ingest it, don't
 reconstruct from code (which loses the *why* and the rejected alternatives). If a spec dir is available
 (orchestrate passes its path; else use a recently-touched one), transcribe each recorded **cross-cutting**
 decision's **Why/Tradeoff** into its `D-*`, set **Governs** to what it touches, then **verify against code**
@@ -178,7 +192,7 @@ No spec → fall back to deriving from the diff (lossy, last resort).
   stays fast on PACKAGE.md/standards but never lets cross-package drift pass silently.)
 
 ### A4. Emit the sync-report (required — the gate reads this)
-Write `docs/context/.sync-report.md`:
+Write `.harness/knowledge/context/.sync-report.md`:
 ```
 context-map sync @ <sha>
 - scope: whole codebase   (or: packages/api — scoped to argument)
@@ -280,14 +294,14 @@ you did not open (if a referenced helper wasn't in your file list, hedge it, don
   (or system-wide) → full body in root `DECISIONS.md`; single-package → full body in that package's
   `PACKAGE.md ## Decisions`. Write the root `DECISIONS.md` with the `D-* → file` index (every id) plus the
   cross-package bodies; write package-local bodies into their `PACKAGE.md` (format in `references/doc-formats.md`).
-- **Merge `standards` into `docs/context/standards/*.md`**: group candidate rules by scope into shards
+- **Merge `standards` into `.harness/knowledge/context/standards/*.md`**: group candidate rules by scope into shards
   (`global.md` for `["**/*"]` rules, one `<pkg>.md` per package, layer shards like `routes.md`, language
   shards). Assign stable `S-*` ids (`S-<scope>-NN`), dedupe identical rules across packages, write each
   shard with its `applies_to`/`enforced_by` frontmatter, cross-link `decisions:`. A shard with no real
   rules is not written (no empty slop).
-- Write every `package_docs[].md_body` to `docs/context/packages/<...>/PACKAGE.md`, rewriting `D-*`
+- Write every `package_docs[].md_body` to `.harness/knowledge/context/packages/<...>/PACKAGE.md`, rewriting `D-*`
   refs to the assigned ids; ensure each sub-package doc's `## Data flows` traces and `flow_fns:` are present.
-- Write `file_exceptions` to `docs/context/files/<mirrored/path>.md`.
+- Write `file_exceptions` to `.harness/knowledge/context/files/<mirrored/path>.md`.
 - Compose `DATAFLOW.md` by stitching agents' `flows[].trace` into end-to-end cross-package traces
   (entry package → each hop → terminal output), branching where the system branches, with `Detail:`
   links into the sub-package `## Data flows`. Link, don't duplicate the per-hop interior.
@@ -323,4 +337,4 @@ context every coder sub-agent starts with — staleness here propagates into gen
 - Slop guard: no per-file mirroring, no tracing pure getters/CRUD, no padding a thin module, no restating code.
 
 ## References
-- `references/doc-formats.md` — the literal format/template for every `docs/context/` doc (read before writing one).
+- `references/doc-formats.md` — the literal format/template for every `.harness/knowledge/context/` doc (read before writing one).

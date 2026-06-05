@@ -28,16 +28,16 @@ const makeSandbox = () => {
 };
 
 const writeBreadcrumb = (dir, spec, phase, sha) => {
-  mkdirSync(join(dir, ".harness"), { recursive: true });
+  mkdirSync(join(dir, ".harness", "runtime"), { recursive: true });
   writeFileSync(
-    join(dir, ".harness", "current-phase"),
+    join(dir, ".harness", "runtime", "current-phase"),
     `SPEC_NAME=${spec}\nPHASE_N=${phase}\nSTART_SHA=${sha}\n`,
   );
 };
 
 const writeClaims = (dir, spec, phase, body) => {
-  mkdirSync(join(dir, ".harness", spec), { recursive: true });
-  writeFileSync(join(dir, ".harness", spec, `phase-${phase}-claims.json`), body);
+  mkdirSync(join(dir, ".harness", "runtime", spec), { recursive: true });
+  writeFileSync(join(dir, ".harness", "runtime", spec, `phase-${phase}-claims.json`), body);
 };
 
 const runHook = (cwd) => {
@@ -69,19 +69,19 @@ test("absolute breadcrumb makes gate cwd-independent", () => {
   const elsewhere = mkdtempSync(join(tmpdir(), "coder-e2e-gate-cwd-"));
   try {
     writeBreadcrumb(dir, "myspec", 1, headSha(dir));
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
     writeClaims(
       dir, "myspec", 1,
       '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":"' +
-        join(dir, ".harness", "myspec", "run.json") +
+        join(dir, ".harness", "runtime", "myspec", "run.json") +
         '"},"claims":[]}',
     );
     // Run from an unrelated cwd; point at the breadcrumb by absolute path.
     const r = spawnSync(process.execPath, [HOOK], {
       cwd: elsewhere,
       encoding: "utf8",
-      env: { ...process.env, HARNESS_CURRENT_PHASE_FILE: join(dir, ".harness", "current-phase") },
+      env: { ...process.env, HARNESS_CURRENT_PHASE_FILE: join(dir, ".harness", "runtime", "current-phase") },
     });
     expect((r.stdout || "") + (r.stderr || ""), r.status ?? 1, 0, "e2e gate OK");
   } finally { cleanup(dir); cleanup(elsewhere); }
@@ -132,7 +132,7 @@ test("missing report file blocks", () => {
     writeBreadcrumb(dir, "myspec", 1, headSha(dir));
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/myspec/missing.json"},"claims":[]}',
+      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/missing.json"},"claims":[]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 2, "MISSING_E2E_REPORT");
@@ -143,11 +143,11 @@ test("zero executed blocks", () => {
   const dir = makeSandbox();
   try {
     writeBreadcrumb(dir, "myspec", 1, headSha(dir));
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":0,"passed":0,"failed":0}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":0,"passed":0,"failed":0}');
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":0,"passed":0,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/myspec/run.json"},"claims":[]}',
+      '{"executed":0,"passed":0,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 2, "E2E_NOT_EXECUTED");
@@ -158,11 +158,11 @@ test("failures block", () => {
   const dir = makeSandbox();
   try {
     writeBreadcrumb(dir, "myspec", 1, headSha(dir));
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":3,"passed":2,"failed":1}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":3,"passed":2,"failed":1}');
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":3,"passed":2,"failed":1,"e2e_run":{"runner":"generic","report_path":".harness/myspec/run.json"},"claims":[]}',
+      '{"executed":3,"passed":2,"failed":1,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 2, "E2E_FAILED");
@@ -173,11 +173,11 @@ test("tampered counts block", () => {
   const dir = makeSandbox();
   try {
     writeBreadcrumb(dir, "myspec", 1, headSha(dir));
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":2,"passed":2,"failed":0}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":2,"passed":2,"failed":0}');
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":99,"passed":99,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/myspec/run.json"},"claims":[]}',
+      '{"executed":99,"passed":99,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 2, "E2E_COUNTS_TAMPERED");
@@ -188,11 +188,11 @@ test("passing with no code touched", () => {
   const dir = makeSandbox();
   try {
     writeBreadcrumb(dir, "myspec", 1, headSha(dir));
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/api","behavior":"x","proven_by":"x.spec.ts::y"}]}',
+      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/api","behavior":"x","proven_by":"x.spec.ts::y"}]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 0, "e2e gate OK");
@@ -207,11 +207,11 @@ test("uncovered code file blocks", () => {
     writeFileSync(join(dir, "src", "widget.ts"), "export const foo = 1");
     sh("git", ["add", "-A"], dir);
     sh("git", ["commit", "-q", "-m", "add widget"], dir);
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/api","behavior":"other","proven_by":"unrelated.spec.ts::x"}]}',
+      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/api","behavior":"other","proven_by":"unrelated.spec.ts::x"}]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 2, "UNCOVERED_FILES");
@@ -226,11 +226,11 @@ test("covered code file passes", () => {
     writeFileSync(join(dir, "src", "widget.ts"), "export const widget = 1");
     sh("git", ["add", "-A"], dir);
     sh("git", ["commit", "-q", "-m", "add widget"], dir);
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/myspec/run.json"},"claims":[{"id":"P1-C1","type":"ui","surface":"/x","behavior":"widget works","proven_by":"widget.spec.ts::renders"}]}',
+      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[{"id":"P1-C1","type":"ui","surface":"/x","behavior":"widget works","proven_by":"widget.spec.ts::renders"}]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 0, "e2e gate OK");
@@ -244,11 +244,11 @@ test("config file ignored", () => {
     writeFileSync(join(dir, "settings.json"), '{"a":1}');
     sh("git", ["add", "-A"], dir);
     sh("git", ["commit", "-q", "-m", "edit config"], dir);
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/x","behavior":"x","proven_by":"x.spec.ts::y"}]}',
+      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/x","behavior":"x","proven_by":"x.spec.ts::y"}]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 0, "e2e gate OK");
@@ -263,11 +263,11 @@ test("test-only file ignored", () => {
     writeFileSync(join(dir, "src", "widget.spec.ts"), "test");
     sh("git", ["add", "-A"], dir);
     sh("git", ["commit", "-q", "-m", "add only test"], dir);
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
-    writeFileSync(join(dir, ".harness", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(join(dir, ".harness", "runtime", "myspec", "run.json"), '{"executed":1,"passed":1,"failed":0}');
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/x","behavior":"x","proven_by":"unrelated.spec.ts::y"}]}',
+      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/x","behavior":"x","proven_by":"unrelated.spec.ts::y"}]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 0, "e2e gate OK");
@@ -278,14 +278,14 @@ test("vitest runner shape parsed", () => {
   const dir = makeSandbox();
   try {
     writeBreadcrumb(dir, "myspec", 1, headSha(dir));
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
     writeFileSync(
-      join(dir, ".harness", "myspec", "run.json"),
+      join(dir, ".harness", "runtime", "myspec", "run.json"),
       '{"numTotalTests":5,"numPassedTests":5,"numFailedTests":0}',
     );
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":5,"passed":5,"failed":0,"e2e_run":{"runner":"vitest","report_path":".harness/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/x","behavior":"x","proven_by":"x.spec.ts::y"}]}',
+      '{"executed":5,"passed":5,"failed":0,"e2e_run":{"runner":"vitest","report_path":".harness/runtime/myspec/run.json"},"claims":[{"id":"P1-C1","type":"api","surface":"/x","behavior":"x","proven_by":"x.spec.ts::y"}]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 0, "e2e gate OK");
@@ -296,9 +296,9 @@ test("playwright runner shape parsed", () => {
   const dir = makeSandbox();
   try {
     writeBreadcrumb(dir, "myspec", 1, headSha(dir));
-    mkdirSync(join(dir, ".harness", "myspec"), { recursive: true });
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
     writeFileSync(
-      join(dir, ".harness", "myspec", "run.json"),
+      join(dir, ".harness", "runtime", "myspec", "run.json"),
       JSON.stringify({
         suites: [{
           specs: [{
@@ -312,7 +312,7 @@ test("playwright runner shape parsed", () => {
     );
     writeClaims(
       dir, "myspec", 1,
-      '{"executed":2,"passed":2,"failed":0,"e2e_run":{"runner":"playwright","report_path":".harness/myspec/run.json"},"claims":[{"id":"P1-C1","type":"ui","surface":"/x","behavior":"x","proven_by":"x.spec.ts::y"}]}',
+      '{"executed":2,"passed":2,"failed":0,"e2e_run":{"runner":"playwright","report_path":".harness/runtime/myspec/run.json"},"claims":[{"id":"P1-C1","type":"ui","surface":"/x","behavior":"x","proven_by":"x.spec.ts::y"}]}',
     );
     const { code, out } = runHook(dir);
     expect(out, code, 0, "e2e gate OK");

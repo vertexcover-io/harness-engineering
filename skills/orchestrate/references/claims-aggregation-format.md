@@ -1,6 +1,6 @@
 # Claims Aggregation Format & UI-Proof Gate
 
-After every coder phase has produced `.harness/<SPEC_NAME>/phase-<N>-claims.json` (see `skills/tdd/references/phase-claims-format.md` for the per-phase shape), orchestrate aggregates them into a single `.harness/<SPEC_NAME>/claims.json` that functional-verify consumes.
+After every coder phase has produced `.harness/runtime/<SPEC_NAME>/phase-<N>-claims.json` (see `skills/tdd/references/phase-claims-format.md` for the per-phase shape), orchestrate aggregates them into a single `.harness/runtime/<SPEC_NAME>/claims.json` that functional-verify consumes.
 
 ## Aggregated `claims.json` schema
 
@@ -16,7 +16,7 @@ After every coder phase has produced `.harness/<SPEC_NAME>/phase-<N>-claims.json
     {
       "phase": 7,
       "runner": "playwright",
-      "report_path": ".harness/web-search-settings/phase-7-playwright.json",
+      "report_path": ".harness/runtime/web-search-settings/phase-7-playwright.json",
       "command": "pnpm test:e2e --reporter=json",
       "executed": 12,
       "passed":   12,
@@ -41,7 +41,7 @@ After every coder phase has produced `.harness/<SPEC_NAME>/phase-<N>-claims.json
 
 ```bash
 cd '<WORKTREE_PATH>' || exit 1
-HARNESS_SPEC_DIR='.harness/<SPEC_NAME>'
+HARNESS_SPEC_DIR='.harness/runtime/<SPEC_NAME>'
 shopt -s nullglob
 PHASE_FILES=( "$HARNESS_SPEC_DIR"/phase-*-claims.json )
 if [ ${#PHASE_FILES[@]} -eq 0 ]; then
@@ -77,8 +77,8 @@ This gate is the reason the claims model exists. Every `type: "ui"` claim must h
 
 ```bash
 cd '<WORKTREE_PATH>' || exit 1
-CLAIMS_FILE='.harness/<SPEC_NAME>/claims.json'
-PROOF='docs/spec/<SPEC_NAME>/verification/proof-report.md'
+CLAIMS_FILE='.harness/runtime/<SPEC_NAME>/claims.json'
+PROOF='.harness/features/<SPEC_NAME>/verification/proof-report.md'
 
 if [ ! -f "$CLAIMS_FILE" ]; then
   echo 'MISSING_CLAIMS_FILE'; exit 1

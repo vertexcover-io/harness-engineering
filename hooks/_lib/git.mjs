@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-const run = (args, cwd) => {
+export const run = (args, cwd) => {
   const res = spawnSync("git", args, { cwd, encoding: "utf8" });
   if (res.status !== 0) return null;
   return res.stdout;
@@ -14,6 +14,11 @@ export const gitAvailable = () => {
 export const repoRoot = (cwd) => {
   const out = run(["rev-parse", "--show-toplevel"], cwd);
   return out ? out.trim() : null;
+};
+
+export const isIgnored = (path, cwd) => {
+  const res = spawnSync("git", ["check-ignore", "-q", path], { cwd, encoding: "utf8" });
+  return res.status === 0;
 };
 
 export const diffNamesSince = (sha, cwd) => {

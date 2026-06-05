@@ -19,7 +19,7 @@ being reproducible: a re-run produces whatever the model happened to remember.
 The fix pass MUST read the structured manifest `tech-debt-finder` wrote:
 
 ```
-.harness/tech-debt/<YYYY-MM-DD>/findings.json
+.harness/runtime/tech-debt/<YYYY-MM-DD>/findings.json
 ```
 
 It MUST NOT reconstruct the fix list from the terminal report, the GitHub issue bodies, or
@@ -63,7 +63,7 @@ Step 5). Ineligibility is never a reason to drop a finding from the manifest.
 
 ## Rule 3 — Every finding reaches a terminal disposition
 
-After the fix pass, write `.harness/tech-debt/<YYYY-MM-DD>/fix-manifest.json`. **Every** `id`
+After the fix pass, write `.harness/runtime/tech-debt/<YYYY-MM-DD>/fix-manifest.json`. **Every** `id`
 from `findings.json` MUST appear with exactly one terminal `disposition`:
 
 | disposition  | meaning |

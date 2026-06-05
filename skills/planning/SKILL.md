@@ -26,10 +26,10 @@ lets you work on early phases while refining later ones in parallel sessions.
 `plan.md` (the overview + DOT phase graph) is committed; per-phase breakdowns are pipeline working state and stay gitignored.
 
 ```
-docs/spec/<SPEC_NAME>/
+.harness/features/<SPEC_NAME>/
 └── plan.md          # Committed — overview, DOT phase graph, codebase context
 
-.harness/<SPEC_NAME>/
+.harness/runtime/<SPEC_NAME>/
 ├── phase-1.md       # Gitignored — detailed steps for phase 1
 ├── phase-2.md       # Gitignored — detailed steps for phase 2
 └── ...
@@ -54,16 +54,16 @@ The input is either a **design document**, a **spec**, or a **feature descriptio
 
 Build understanding of existing code before planning changes. **Read the context map FIRST (Step 2.0), then explore (Step 2.1)** — the map is the legend for the territory; you read it before walking the streets, not after.
 
-#### Step 2.0: Read the Context Map (MANDATORY when `docs/context/` exists)
+#### Step 2.0: Read the Context Map (MANDATORY when `.harness/knowledge/context/` exists)
 
 This is a **hard gate, not an optional scan**. You may NOT draft phases until you have read the map for every package this feature touches. The map carries the *why* — structure, decisions, and standards — that the raw code does not state. Skipping it means re-litigating decisions and violating standards the codebase already settled.
 
-Existence-gated: if `docs/context/` does **not** exist, skip this step and note `Context map: none` in plan.md. Otherwise you MUST read, in this order:
+Existence-gated: if `.harness/knowledge/context/` does **not** exist, skip this step and note `Context map: none` in plan.md. Otherwise you MUST read, in this order:
 
-1. **`docs/context/ARCHITECTURE.md`** — system shape, package boundaries, module-level traces. Establishes where this feature sits and which boundaries it must not cross.
-2. **`docs/context/DECISIONS.md`** — scan the `D-*` index; read the body of every decision whose scope touches this feature. These are settled cross-cutting tradeoffs the plan **must not re-open**.
-3. **The owning `docs/context/packages/<pkg>/**/PACKAGE.md`** for each package the feature touches — purpose, public surface, data-in→out, function-level data-flow traces, and inline gotchas. This is the single highest-value read for plan accuracy.
-4. **Standards headlines** — the `## S-*` rule *titles* from each matching `docs/context/standards/*.md` (titles only, not full bodies). The plan's approach must respect every applicable `S-*`; the full rule bodies land later with the coder/reviewer where they are enforced.
+1. **`.harness/knowledge/context/ARCHITECTURE.md`** — system shape, package boundaries, module-level traces. Establishes where this feature sits and which boundaries it must not cross.
+2. **`.harness/knowledge/context/DECISIONS.md`** — scan the `D-*` index; read the body of every decision whose scope touches this feature. These are settled cross-cutting tradeoffs the plan **must not re-open**.
+3. **The owning `.harness/knowledge/context/packages/<pkg>/**/PACKAGE.md`** for each package the feature touches — purpose, public surface, data-in→out, function-level data-flow traces, and inline gotchas. This is the single highest-value read for plan accuracy.
+4. **Standards headlines** — the `## S-*` rule *titles* from each matching `.harness/knowledge/context/standards/*.md` (titles only, not full bodies). The plan's approach must respect every applicable `S-*`; the full rule bodies land later with the coder/reviewer where they are enforced.
 
 **Code is authoritative; the map is advisory and staleness-checked.** Use the map for the existing shape, decision IDs, and rule names — but verify any specific you will build against in the actual code (Step 2.1). If the map and code disagree, trust the code and note the drift.
 
@@ -73,7 +73,7 @@ Existence-gated: if `docs/context/` does **not** exist, skip this step and note 
 - **Standards honored:** the `S-*` ids that apply, one line each on how the approach stays compliant.
 - **Gotchas carried forward:** any `PACKAGE.md` gotcha that shapes a phase.
 
-A plan.md whose Codebase Context section lacks these lines (when `docs/context/` exists) is incomplete — do not proceed to Step 3.
+A plan.md whose Codebase Context section lacks these lines (when `.harness/knowledge/context/` exists) is incomplete — do not proceed to Step 3.
 
 #### Step 2.1: Explore the Code (grounds and verifies the map)
 

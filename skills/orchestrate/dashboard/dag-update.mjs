@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Port of dag-update.sh. Manages .harness/<SPEC_NAME>/dag.json with atomic,
+// Port of dag-update.sh. Manages .harness/runtime/<SPEC_NAME>/dag.json with atomic,
 // lock-protected writes. Usage: dag-update.mjs <command> [args...]
 
 import { createReadStream, readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, statSync, unlinkSync, readdirSync } from "node:fs";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir, platform } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
+import { harnessDir as harnessDirFor } from "../../../hooks/_lib/paths.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const BREADCRUMB = join(tmpdir(), ".claude-harness-active");
@@ -61,7 +62,7 @@ const dagPath = () => {
 const cmdInit = async (specName, task, branch = "unknown", worktree = "unknown") => {
   if (!specName || !task) die("Usage: init <spec_name> <task> [branch] [worktree]");
 
-  const harnessDir = join(process.cwd(), ".harness", specName);
+  const harnessDir = harnessDirFor(process.cwd(), specName);
 
   // Crash recovery
   const oldPidFile = join(harnessDir, "server.pid");

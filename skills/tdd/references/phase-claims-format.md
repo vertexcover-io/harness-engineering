@@ -3,7 +3,7 @@
 Every coder phase that runs an e2e or integration suite MUST emit a phase-claims report at:
 
 ```
-.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json
+.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>-claims.json
 ```
 
 This file is the only artifact the orchestrator trusts to decide whether the phase is done. It serves two consumers:
@@ -20,8 +20,8 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
   "passed":   12,                      // integer; passed == executed required
   "failed":    0,                      // integer; MUST be 0 for the phase to be unblocked
   "context_consulted": {               // REQUIRED when the dispatch injected CONTEXT_MAP:INJECTED
-    "docs":      ["docs/context/packages/web/PACKAGE.md"],   // PACKAGE.md / ARCHITECTURE / DECISIONS paths you read
-    "standards": ["docs/context/standards/S-api.md"]         // S-* shards you honored (may be empty)
+    "docs":      [".harness/knowledge/context/packages/web/PACKAGE.md"],   // PACKAGE.md / ARCHITECTURE / DECISIONS paths you read
+    "standards": [".harness/knowledge/context/standards/S-api.md"]         // S-* shards you honored (may be empty)
   },
   "scenarios": [                       // raw runner output, one entry per test case
     {
@@ -32,7 +32,7 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
   ],
   "e2e_run": {                         // REQUIRED. Re-verified by coder-e2e-gate hook.
     "runner": "playwright",            // "playwright" | "vitest" | "jest" | "generic"
-    "report_path": ".harness/<SPEC_NAME>/phase-7-playwright.json",
+    "report_path": ".harness/runtime/<SPEC_NAME>/phase-7-playwright.json",
     "command": "pnpm test:e2e --reporter=json",
     "started_at": "2026-05-20T18:11:02Z",
     "finished_at": "2026-05-20T18:12:43Z"
@@ -51,7 +51,7 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
 
 ## Rules
 
-- **`context_consulted` must be non-empty when the dispatch injected context-map pointers** (the preamble had a `## Context for this phase — READ THESE FIRST` block, i.e. `CONTEXT_MAP:INJECTED`). List the `docs/context/` files you actually read before coding; `standards` may be empty if none applied, but `docs` must name at least the injected `PACKAGE.md`(s). Phases dispatched with no map (`CONTEXT_MAP:NONE`/`EMPTY`) may omit the field. Orchestrate re-dispatches the phase once if this is empty when pointers were injected.
+- **`context_consulted` must be non-empty when the dispatch injected context-map pointers** (the preamble had a `## Context for this phase — READ THESE FIRST` block, i.e. `CONTEXT_MAP:INJECTED`). List the `.harness/knowledge/context/` files you actually read before coding; `standards` may be empty if none applied, but `docs` must name at least the injected `PACKAGE.md`(s). Phases dispatched with no map (`CONTEXT_MAP:NONE`/`EMPTY`) may omit the field. Orchestrate re-dispatches the phase once if this is empty when pointers were injected.
 - **`executed` must be > 0.** A non-executed suite does not satisfy the phase gate. Authoring a `.spec.ts` without running it = BLOCKED.
 - **`failed` must be 0.** Any failure blocks the phase.
 - **`e2e_run.report_path` must point at the raw runner JSON on disk.** The `coder-e2e-gate` SubagentStop hook re-parses this file to derive `executed` / `passed` / `failed` independently. Hand-written counts that disagree with the runner output = BLOCKED (`E2E_COUNTS_TAMPERED`). Use the runner's machine-readable reporter (Playwright JSON reporter, vitest/jest `--reporter=json`, or a generic `{executed,passed,failed}` shape).
@@ -75,4 +75,4 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
 
 ## How orchestrate consumes this
 
-After all phases complete, orchestrate aggregates every `phase-*-claims.json` into a single `.harness/<SPEC_NAME>/claims.json`. See `skills/orchestrate/references/claims-aggregation-format.md` for the aggregated shape and the UI-proof gate that runs after functional-verify.
+After all phases complete, orchestrate aggregates every `phase-*-claims.json` into a single `.harness/runtime/<SPEC_NAME>/claims.json`. See `skills/orchestrate/references/claims-aggregation-format.md` for the aggregated shape and the UI-proof gate that runs after functional-verify.

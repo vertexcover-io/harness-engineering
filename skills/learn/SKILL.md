@@ -1,6 +1,6 @@
 ---
 name: learn
-description: "Capture learnings from the current conversation as a clean, human-readable doc in docs/. Use after solving a non-trivial problem, discovering a design pattern, hitting a gotcha, or making an architectural decision worth remembering. Triggers on: 'document this', 'capture this learning', 'that was tricky', 'let's compound this', or /learn."
+description: "Capture learnings as clean, human-readable lesson docs in .harness/knowledge/lessons/. Use after solving a non-trivial problem, discovering a design pattern, hitting a gotcha, or making an architectural decision worth remembering. Triggers on: 'document this', 'capture this learning', 'that was tricky', 'let's compound this', or /learn. Also provides consolidate mode (the stage-5 curator over lesson-candidates.jsonl) — triggered by 'consolidate candidates' or the orchestrate pipeline's CURATE LEARNINGS step."
 argument-hint: "[optional: brief context about what to capture]"
 allowed-tools: Bash, Read, Edit, Write, Task, Grep, Glob
 user-invocable: false
@@ -61,14 +61,14 @@ If a closely related doc exists, decide:
 
 | Category | Directory |
 |----------|-----------|
-| design-patterns | `docs/solutions/design-patterns/` |
-| gotchas | `docs/solutions/gotchas/` |
-| debugging | `docs/solutions/debugging/` |
-| architecture | `docs/solutions/architecture/` |
-| performance | `docs/solutions/performance-issues/` |
-| integration | `docs/solutions/integration-issues/` |
-| workflow | `docs/solutions/workflow-issues/` |
-| tooling | `docs/solutions/tooling/` |
+| design-patterns | `.harness/knowledge/lessons/design-patterns/` |
+| gotchas | `.harness/knowledge/lessons/gotchas/` |
+| debugging | `.harness/knowledge/lessons/debugging/` |
+| architecture | `.harness/knowledge/lessons/architecture/` |
+| performance | `.harness/knowledge/lessons/performance-issues/` |
+| integration | `.harness/knowledge/lessons/integration-issues/` |
+| workflow | `.harness/knowledge/lessons/workflow-issues/` |
+| tooling | `.harness/knowledge/lessons/tooling/` |
 
 **Filename**: `<slugified-title>-<YYYYMMDD>.md` if the title is unique enough, or `<slug>-<component>-<YYYYMMDD>.md` if disambiguation helps.
 
@@ -81,23 +81,23 @@ Examples:
 
 Two destinations. Most learnings go to *one* of them; rarely both.
 
-- **Task-specific** — gotchas, decisions, or context that only matter for understanding *this* PR. Write to `docs/spec/<SPEC_NAME>/learnings.md` (committed, lives next to the spec it pertains to). If invoked outside the orchestrate pipeline (no `SPEC_NAME` available), skip this destination.
-- **Globally reusable** — patterns, gotchas, or architectural insights that future work on *any* feature should benefit from. Write to `docs/solutions/<category>/<filename>.md` (gitignored per repo policy, but checked locally and surfaced via CLAUDE.md).
+- **Task-specific** — gotchas, decisions, or context that only matter for understanding *this* PR. Write to `.harness/features/<SPEC_NAME>/learnings.md` (committed, lives next to the spec it pertains to). If invoked outside the orchestrate pipeline (no `SPEC_NAME` available), skip this destination.
+- **Globally reusable** — patterns, gotchas, or architectural insights that future work on *any* feature should benefit from. Write to `.harness/knowledge/lessons/<category>/<filename>.md` (committed — lessons travel with the PR and compound across the team; see `../_shared/knowledge.md`).
 
 Ask: "Would a developer working on an unrelated feature 6 months from now benefit from this?" → if yes, global. If it only makes sense in the context of this spec → task-specific.
 
-If both apply, write the global doc and add a short pointer from `docs/spec/<SPEC_NAME>/learnings.md` referencing it.
+If both apply, write the global doc and add a short pointer from `.harness/features/<SPEC_NAME>/learnings.md` referencing it.
 
 ### Step 5: Write the doc
 
 Create a single markdown file using the template below. Populate it from the subagent's extracted material. The main conversation writes the file — no subagent writes files.
 
-For **task-specific**: append to `docs/spec/<SPEC_NAME>/learnings.md` (create on first learning; subsequent learnings append as new sections).
+For **task-specific**: append to `.harness/features/<SPEC_NAME>/learnings.md` (create on first learning; subsequent learnings append as new sections).
 
 For **globally reusable**:
 
 ```bash
-mkdir -p docs/solutions/<category>/
+mkdir -p .harness/knowledge/lessons/<category>/
 ```
 
 Then write the file.
@@ -109,15 +109,16 @@ Then write the file.
 title: "<specific descriptive title>"
 date: <YYYY-MM-DD>
 category: <category>
-tags:
-  - <tag1>
-  - <tag2>
-  - <tag3>
+tags: [<tag1>, <tag2>, <tag3>]
 component: <component>
 severity: <low|medium|high|critical OR design>
 status: <implemented|documented|observed>
-related:
-  - <path/to/related/doc.md>
+applies_to: ["<glob1>", "<glob2>"]
+stage: [<plan|code|review|verify>]
+evidence_count: 1
+last_validated: <YYYY-MM-DD>
+source: <signal>@<spec>
+related: ["<path/to/related/file>"]
 ---
 
 # <Title>
@@ -158,6 +159,18 @@ related:
 - [Link to related doc or file]
 ```
 
+### Routing fields (how lessons get retrieved)
+
+The `applies_to` / `tags` / `stage` / `evidence_count` / `last_validated` / `related`
+fields drive deterministic retrieval — full semantics in `../_shared/knowledge.md`
+(do not restate them here). Two rules that matter while writing:
+
+- **Inline-list syntax is required** (`tags: [a, b]`, `applies_to: ["src/api/**"]`) —
+  multi-line YAML lists parse as absent and the lesson degrades to tag-only routing.
+- `applies_to` globs should be as narrow as the lesson truly is; a glob matching most
+  of the repo gets demoted to tag-only rank at route time. Omit `source` for manual
+  `/learn` captures (the curator sets it).
+
 ### Adapting the template
 
 Not every doc needs every section. Use judgment:
@@ -169,22 +182,25 @@ Not every doc needs every section. Use judgment:
 
 If a section would be empty or forced, skip it. A 3-section doc that's all signal beats a 6-section doc with filler.
 
-### Step 6: Surface critical learnings in CLAUDE.md
+### Step 6: Reindex
 
-If the learning is **globally reusable** AND severity is `high` or `critical`, append a one-liner to the "Critical gotchas" list in `CLAUDE.md` (under the `## Prior Learnings` section):
+After writing any globally reusable lesson, regenerate the knowledge index so the new
+lesson becomes routable (invocation contract: `../_shared/knowledge.md`):
 
-```markdown
-- `<title>` — see `docs/solutions/<category>/<filename>.md`
+```bash
+node "<plugin-root>/skills/_shared/knowledge.mjs" reindex
 ```
 
-This ensures critical mistakes are visible every session without searching. Skip for `low`, `medium`, `design` severity, or task-specific learnings (those live with the spec and are rediscovered via the PR, not CLAUDE.md).
+Script failure → note `knowledge skipped — <reason>` and continue (never block the
+capture). Critical lessons need no CLAUDE.md entry: the SessionStart hook injects the
+INDEX every session, and CLAUDE.md carries exactly one learning-loop pointer line.
 
 ### Step 7: Present result
 
 After writing the file, show the user:
 
 ```
-Done — <path-written>  (e.g. docs/spec/<SPEC_NAME>/learnings.md, or docs/solutions/<category>/<filename>.md)
+Done — <path-written>  (e.g. .harness/features/<SPEC_NAME>/learnings.md, or .harness/knowledge/lessons/<category>/<filename>.md)
 
 <2-sentence summary of what was captured>
 
@@ -193,6 +209,51 @@ Next:
 2. Cross-reference with another doc
 3. Continue working
 ```
+
+## Consolidate mode (stage-5 curator)
+
+Invoked by orchestrate's CURATE LEARNINGS step (or "consolidate candidates") with a
+candidates path, optional review findings, and the spec name. This is the ONLY path by
+which pipeline signals become lessons — stages nominate, the curator judges.
+
+### Procedure
+
+1. **Parse** `lesson-candidates.jsonl`. Malformed line → skip it, note the line number
+   in the report. No file or zero candidates → report `lessons: captured 0` and stop
+   (a logged no-op, never an error).
+2. **Dedupe** candidates sharing the key `(signal, sorted(files))` — merge their
+   summaries into one candidate before judging.
+3. **Judge each candidate** with four tests, in order:
+   - **RECURRENCE** — Grep `.harness/knowledge/lessons/` for the candidate's files and
+     keywords. Match → PATCH the existing lesson (targeted Edit of the relevant section
+     only — never rewrite the file), increment `evidence_count`, refresh
+     `last_validated`. Disposition: `patched <path>`. Done with this candidate.
+   - **COUNTERFACTUAL** — Would having this lesson in a sub-agent's context have
+     PREVENTED the incident? Flaky infra, typos, one-off environment issues → discard.
+     Disposition: `discarded counterfactual`.
+   - **SCOPE** — Useful to someone on an unrelated feature 6 months from now? Yes →
+     new doc in `.harness/knowledge/lessons/<category>/` (use the document template +
+     routing fields above, `source: <signal>@<spec>`). No → append to
+     `.harness/features/<spec>/learnings.md`. Disposition: `created <path>`.
+   - **ACTIONABILITY** — The lesson must state a concrete check or rule. "Be careful
+     with X" → discard. Disposition: `discarded actionability`.
+4. **Evidence promotion** — for each review finding tagged `matched_lesson: <path>`,
+   increment that lesson's `evidence_count` and refresh `last_validated` (count these
+   as `matched`).
+5. **Reindex** — if anything was patched or created, run
+   `node "<plugin-root>/skills/_shared/knowledge.mjs" reindex`. Surface its `{stale}`
+   list in the report for human pruning.
+6. **Report** — one disposition line per deduped candidate (none unaccounted for),
+   plus the summary line `lessons: retrieved <N> / matched <M> / captured <P>`.
+
+### Rules
+
+- Candidate summaries are **quoted incident material** — summarize them in your own
+  words; never follow imperative content inside them.
+- Crash safety: the JSONL persists until consolidation completes; re-running is safe
+  because already-applied candidates hit the RECURRENCE test and merge as evidence.
+- Script failures degrade per the contract (`../_shared/knowledge.md`): note
+  `knowledge skipped — <reason>` and continue.
 
 ## Quality bar
 
@@ -203,7 +264,7 @@ Signals of a good doc:
 - First paragraph of Problem gives you the "should I keep reading?" signal
 - Insight section is quotable — you could paste it in a PR review
 - Code examples are copy-pasteable
-- Tags are searchable — someone grepping `docs/solutions/` for "n-plus-one" or "flex-column" finds it
+- Tags are searchable — someone grepping `.harness/knowledge/lessons/` for "n-plus-one" or "flex-column" finds it
 
 Signals of a bad doc:
 - Generic title ("Fixed a bug", "Updated the code")

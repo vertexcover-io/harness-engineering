@@ -4,7 +4,7 @@ Use this template when producing the design document in Phase 8. Scale sections
 to the problem — a minor feature might have 2-3 sentence sections, a major
 architectural change might have full paragraphs with diagrams.
 
-Save to `docs/spec/<SPEC_NAME>/design.md`.
+Save to `.harness/features/<SPEC_NAME>/design.md`.
 
 ```markdown
 # <Topic> — Design
