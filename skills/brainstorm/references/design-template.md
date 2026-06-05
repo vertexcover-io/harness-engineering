@@ -1,6 +1,6 @@
 # Design Document Template
 
-Use this template when producing the design document in Phase 8. Scale sections
+Use this template when producing the design document in Phase 6. Scale sections
 to the problem — a minor feature might have 2-3 sentence sections, a major
 architectural change might have full paragraphs with diagrams.
 
@@ -50,13 +50,18 @@ into Verification Scenarios (VS-N).
 
 ## Requirements
 ### Functional Requirements
-- Numbered list of what the system must do.
+EARS-style, one behavior per ID. These F# IDs are canonical — the PRD story table
+references them and spec-generation derives REQ-* from them.
+- F1: <what the system must do>
+- F2: ...
 
 ### Non-Functional Requirements
-- Performance, scalability, reliability, security, observability, maintainability.
+- NF1: <performance / scalability / reliability / security / observability / maintainability obligation>
+- NF2: ...
 
 ### Edge Cases and Boundary Conditions
-- Identified edge cases and how they should be handled.
+- EC1: <edge case> — <how it should be handled>
+- EC2: ...
 
 ## Key Insights
 Conditional — include only when 3-4 genuine reframings exist that aren't
@@ -82,7 +87,7 @@ Which approach and why. What trade-offs we're accepting.
 ## High-Level Design
 Architectural overview — components, boundaries, data flow, contracts.
 This is conceptual, not code. Think boxes-and-arrows, not classes-and-methods.
-Mermaid diagrams go here (architecture / sequence / state — see Phase 8 rules
+Mermaid diagrams go here (architecture / sequence / state — see Phase 6 rules
 for when each is required).
 
 ## External Dependencies & Fallback Chain
@@ -93,7 +98,6 @@ Write `None — pure-internal feature.` if there are no external deps.
 - **Purpose:** What it does in this feature.
 - **Use cases to probe:** Distinct flows we depend on (e.g. for Twitter:
   single tweet, list, thread). Each one becomes a separate probe.
-- **Maturity:** Last commit, downloads, deprecated/archived flags. Note bad signals.
 - **Auth:** none | api-key | oauth | cookies
 - **Required env keys:** KEY1, KEY2 (all loaded from project-root `.env.harness`, gitignored)
 

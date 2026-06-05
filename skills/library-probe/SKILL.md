@@ -59,7 +59,7 @@ turns belief into evidence before a single line of production code is written.
 ## Step 1 — Extract dependency list
 
 Read the design doc's `## External Dependencies & Fallback Chain` section.
-Format expected (added by the brainstorm skill — see brainstorm Phase 2.5):
+Format expected (added by the brainstorm skill — see its "External Dependency Declaration" section):
 
 ```markdown
 ## External Dependencies & Fallback Chain
@@ -77,7 +77,7 @@ Format expected (added by the brainstorm skill — see brainstorm Phase 2.5):
 ```
 
 If the section is missing, **stop** with: `BLOCKED: design doc missing
-'External Dependencies & Fallback Chain' section. Re-run brainstorm Phase 2.5.`
+'External Dependencies & Fallback Chain' section. Re-run brainstorm (External Dependency Declaration).`
 
 If no external deps are declared (pure-internal feature), write a short
 `library-probe.md` with `verdict: NOT_APPLICABLE` and exit 0.
