@@ -119,23 +119,29 @@ Detect project tooling in this order:
 - **Fail:** New warnings introduced (count > baseline)
 - Report: exit code, warning count, delta from baseline
 
-### Check 3: Test Suite + Coverage (ONE run, feeds both Check 3 and Check 4)
+### Check 3: Test Suite + Behavior Coverage (ONE run, feeds both Check 3 and Check 4)
 
 - Run the test suite **with coverage enabled** in a SINGLE invocation — prefer `baseline.json`'s
   `commands.coverage_all` (e.g. `vitest run --coverage`, `pytest --cov`, `go test -cover ./...`).
   Coverage runs the tests, so a plain test run followed by a separate coverage run executes the whole
   suite twice — do NOT do that. This one invocation feeds both Check 3 (pass/fail) and Check 4 (coverage).
-- **Pass:** Exit code 0 AND test count >= baseline test count (no deleted tests)
-- **Fail:** Non-zero exit code OR test count < baseline (tests were deleted)
-- Report: exit code, pass/fail/skip counts, delta from baseline
+- **Behavior coverage procedure:** extract every REQ/EDGE ID from the verification matrix in
+  `.harness/features/<SPEC_NAME>/spec.md`, then grep the test files/output for each ID via the
+  `test_<ID>_` naming convention. Every matrix ID must map to at least one passing test. When the
+  REFACTOR consolidation note says an ID's test was merged or moved to another level, verify the
+  named surviving test passes.
+- **Pass:** Exit code 0 AND every matrix REQ/EDGE ID has a passing test
+- **Fail:** Non-zero exit code OR any matrix ID has no passing test
+- Test count is NOT compared — consolidation may legitimately reduce it. The budget is the matrix.
+- Report: exit code, pass/fail/skip counts, matrix IDs covered/missing
 
-### Check 4: Coverage (parsed from the Check 3 run — do NOT re-run the suite)
+### Check 4: Coverage (diagnostic only — parsed from the Check 3 run, do NOT re-run the suite)
 
 - Parse the coverage percentage from the Check 3 run's output. Do not invoke the suite again.
-- **Pass:** Coverage meets threshold (default 100% for new code, configurable via CLAUDE.md)
-- **Fail:** Coverage below threshold
-- **MISSING:** No coverage tool detected but tests exist → BLOCKED
-- Report: coverage percentage, threshold, delta from baseline
+- **Report only — this check never fails.** Line coverage is a diagnostic, not a gate.
+- On a drop vs baseline, emit an INFO line: "Coverage dropped X% → what behavior is missing from the matrix?"
+- No coverage tool detected → INFO note, not BLOCKED
+- Report: coverage percentage, delta from baseline, verdict INFO
 
 ### Check 5: Scope Compliance
 
@@ -213,15 +219,35 @@ avoids deadlocking the first adopter (hand-made map, no report yet).
   report or a FAIL verdict").
 - Report: verdict, stale/uncovered/standards-stale counts.
 
+### Check 11: Mutation Spot-Check (`post-tdd` and `pre-pr` only)
+
+Detects tautological / written-to-pass tests — the only check that proves tests can fail for the right reason.
+
+1. From the spec's verification matrix, pick 3-5 behaviors implemented or changed in this run.
+   Prefer the riskiest: branching logic, validation, calculations.
+2. Confirm the working tree is clean for the target files (`git diff --quiet -- <file>` or note the
+   exact pre-mutation content). Apply ONE mutation at a time to the production code:
+   - Invert a boolean condition (`if (x)` → `if (!x)`)
+   - Replace a return value with a constant
+   - Introduce an off-by-one (`<=` → `<`, `+ 1` removed)
+3. Run the scoped test(s) for that behavior (`commands.test_file` with the relevant test file).
+4. **Killed** (at least one test fails) → revert and continue. **Survived** (all tests still pass) →
+   the behavior's test verifies nothing → **BLOCKED**, naming the file, behavior ID, and surviving mutation.
+5. Revert after EVERY mutation: `git checkout -- <file>`, then verify `git diff --quiet` before the
+   next mutation and again before finishing the check. Never leave a mutant in the tree.
+- **Pass:** every sampled mutation was killed
+- **Fail:** any mutation survived
+- Report table: Behavior ID | File | Mutation applied | Killing test | KILLED/SURVIVED
+
 ---
 
 ## When Gates Run
 
 | Stage | Checks Run | Trigger |
 |-------|-----------|---------|
-| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 always + Check 10 (context map) | Implementation complete |
-| After Refactor (`post-refactor`) | Checks 1-4 (no scope/plan/ignore/smoke/e2e check) | Refactoring should not change scope |
-| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 always + Check 10 (context map) | Final audit before commit |
+| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 always + Check 10 (context map) + Check 11 (mutation) | Implementation complete |
+| After Refactor (`post-refactor`) | Checks 1-4 (no scope/plan/ignore/smoke/e2e/mutation check) | Refactoring should not change scope |
+| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 always + Check 10 (context map) + Check 11 (mutation) | Final audit before commit |
 
 If any gate returns **BLOCKED**, the pipeline stops at that point. The orchestrator reports what failed and does not proceed to the next stage.
 
@@ -250,14 +276,15 @@ Written to `.harness/runtime/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `g
 |---|-------|----------|---------|---------|
 | 1 | Type Checker | exit=0, errors=0 | exit=0, errors=0 | PASS |
 | 2 | Linter | exit=0, warnings=3 | exit=0, warnings=3 | PASS |
-| 3 | Test Suite | exit=0, 42 passed | exit=0, 47 passed (+5) | PASS |
-| 4 | Coverage | 85.5% | 92.3% (+6.8%) | PASS |
+| 3 | Test Suite + Behavior Coverage | exit=0, 42 passed | exit=0, 38 passed, 12/12 matrix IDs covered | PASS |
+| 4 | Coverage (diagnostic) | 85.5% | 87.3% (+1.8%) | INFO |
 | 5 | Scope Compliance | — | 3 files changed, all in plan | PASS |
 | 6 | Plan Compliance | — | 5/5 items verified | PASS |
 | 7 | Ignore Comment Audit | — | 0 new ignore comments | PASS |
 | 8 | Smoke Test | — | 2/2 passed | PASS |
 | 9 | E2E Tests | — | 12 passed, 0 failed | PASS |
 | 10 | Context Map Freshness | — | verdict: PASS, 0 stale | PASS |
+| 11 | Mutation Spot-Check | — | 4/4 mutants killed | PASS |
 
 <!-- QG:VERDICT:PASS -->
 **Verdict: PASS**
@@ -278,15 +305,21 @@ Written to `.harness/runtime/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `g
 
 ...
 
-#### Check 4: Coverage (FAIL example)
-<!-- QG:CHECK:4:FAIL -->
-**Command:** `pytest --cov 2>&1; echo "EXIT_CODE=$?"`
-**Exit code:** 0
-**Summary:** 78.2% (threshold: 100%)
-**Error output (first 20 lines):**
-\```
-<verbatim error output — only included because this check FAILED>
-\```
+#### Check 4: Coverage (diagnostic example)
+<!-- QG:CHECK:4:INFO -->
+**Command:** parsed from Check 3 run (`pytest --cov`)
+**Summary:** 78.2% (baseline: 85.5%, -7.3%)
+**INFO:** Coverage dropped 7.3% → what behavior is missing from the matrix? (never blocks on its own)
+
+#### Check 11: Mutation Spot-Check (FAIL example)
+<!-- QG:CHECK:11:FAIL -->
+**Mutations:**
+| Behavior ID | File | Mutation | Killing test | Result |
+|-------------|------|----------|--------------|--------|
+| REQ-003 | validator.py | inverted `if amount > 0` | test_REQ_003_rejects_negative | KILLED |
+| REQ-005 | pricing.py | return constant `0` | — | SURVIVED |
+
+**BLOCKED:** REQ-005's test passed against a mutant returning 0 — the test does not verify the pricing behavior.
 ```
 
 Machine-parseable markers: `<!-- QG:VERDICT:PASS -->` and `<!-- QG:CHECK:N:PASS -->` for orchestrator extraction.
@@ -297,7 +330,7 @@ Machine-parseable markers: `<!-- QG:VERDICT:PASS -->` and `<!-- QG:CHECK:N:PASS 
 
 Binary verdicts — no WARN tier:
 
-- **`PASS`** — all mandatory checks pass (Checks 1-8, Check 9 when e2e is detected, Check 10 when a context map exists)
+- **`PASS`** — all mandatory checks pass (Checks 1-3 and 5-8, Check 9 when e2e is detected, Check 10 when a context map exists, Check 11 at post-tdd/pre-pr; Check 4 is diagnostic and never blocks)
 - **`BLOCKED`** — any mandatory check fails (with specific reasons listed)
 - **`STAGNATION`** — same check failed 3 consecutive times across gate runs (special signal: stop entirely, don't retry)
 
@@ -321,7 +354,9 @@ This prevents infinite loops where a sub-agent keeps making the same mistake.
 
 - **Weakening thresholds** — "Let's allow 2 type errors since they're minor" — No. Zero is zero.
 - **Skipping gates** — "Tests pass so we don't need the linter check" — All checks run, always.
-- **Deleting tests to match baseline** — Caught by Check 3 (test count must be >= baseline).
+- **Tautological / written-to-pass tests** — Caught by Check 11: a surviving mutant means the test verifies nothing.
+- **Padding the suite with filler tests for line coverage** — Coverage is diagnostic; the test budget is the spec's verification matrix.
+- **Deleting a behavior's only test** — Caught by Check 3 (every matrix REQ/EDGE ID must map to a passing test).
 - **Adding ignore comments without justification** — Caught by Check 7. Every ignore comment needs an inline reason.
 - **Running gates without capturing verbatim output** — Every claim must have evidence. No exceptions.
 - **Marking NOT_APPLICABLE without justification** — Must explain why a tool doesn't apply (e.g., "all changed files are .md").

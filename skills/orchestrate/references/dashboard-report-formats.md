@@ -113,7 +113,8 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 | Type check | 0 errors | X errors | PASS/FAIL |
 | Lint | X warnings | Y warnings | PASS/FAIL |
 | Tests | X passed | Y passed | PASS/FAIL |
-| Coverage | X% | Y% | PASS/FAIL |
+| Behavior coverage (matrix IDs) | — | X/Y covered | PASS/FAIL |
+| Coverage | X% | Y% | INFO |
 
 ## Failures
 - Details of any failures (or "None")

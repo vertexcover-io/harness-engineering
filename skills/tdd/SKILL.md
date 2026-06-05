@@ -59,7 +59,7 @@ Write one minimal test describing the behavior you want. Run it. Watch it fail.
 - Clear name stating what should happen
 - Uses real code, not mocks (unless unavoidable)
 - Fails for the right reason (feature missing, not a typo or import error)
-- If working from a spec with REQ/EDGE IDs, reference the ID in the test name or a comment
+- If working from a spec, the test comes from a verification-matrix row and its name follows the `test_<ID>_<behavior>` convention (e.g., `test_REQ_003_event_triggers_action`) — the quality gate greps for these IDs
 
 ```
 # Run ONLY this test's file — use the scoped `test_file` command (substitute {FILE})
@@ -116,8 +116,14 @@ Refactoring is not mandatory after every green. Assess whether it adds value:
 **Rules during refactoring:**
 - All tests must stay green throughout
 - Don't add new behavior
-- Don't add new tests (that's the next RED)
+- Don't add tests for new behaviors (that's the next RED) — consolidating existing tests is allowed and encouraged
 - Fix lint findings in a single pass (use the scoped `lint_file`), then run full `lint` ONCE — don't re-run the whole-package linter after every individual fix
+
+**Suite consolidation (part of every REFACTOR pass):**
+- Merge near-duplicate tests of one behavior into one parameterized table (equivalence partitions + boundaries)
+- Delete any test fully subsumed by a stronger or higher-level test
+- Record what moved in the phase report: `tests X,Y merged into test_REQ_00N; test A deleted, behavior covered by integration test B` — the quality gate uses this note to confirm every matrix ID still maps to a passing test
+- Test count may drop. That is expected, not a regression — the gate checks behavior coverage, not test count
 
 For detailed refactoring methodology, load the `refactor` skill.
 
@@ -219,7 +225,7 @@ The phase is BLOCKED until the E2E test passes and the e2e-report artifact is wr
 2. **GREEN**: Build the feature — use unit/integration TDD cycles for each component until the e2e test passes.
 3. **REFACTOR**: Clean up as usual.
 
-The e2e test defines the finish line. Unit and integration tests are written as needed to build toward it.
+The e2e test defines the finish line. The unit and integration tests written along the way are the ones the verification matrix assigns — not ad-hoc extras.
 
 ### Before writing a new E2E spec: check for duplicates
 
@@ -274,21 +280,29 @@ The RED-GREEN-REFACTOR cycle is unchanged — steps just narrow the scope.
 
 ---
 
-## Coverage Verification
+## Behavior Coverage (not line coverage)
 
-### Default: 100% Coverage Required
+Done = every row of the spec's verification matrix is green: each REQ/EDGE has its ONE
+test passing at its assigned level (`test_<ID>_<behavior>` naming). The matrix is the
+test budget — do not write tests outside it unless you can state the unique bug an
+extra test would catch (add it as a matrix row with that justification).
 
-When checking coverage, verify all metrics — lines, statements, branches, functions. The question when coverage drops is always **"What business behavior am I not testing?"** not "What line am I missing?" Add tests for behaviors and coverage follows naturally.
+Line/branch coverage is a diagnostic, never a gate or a target. When coverage drops,
+the only question is **"what behavior is missing from the matrix?"** — never "what
+line am I missing?" Filler tests written to move a coverage number are a defect, not
+a contribution.
 
-### When 100% Isn't Achievable
+**Don't-test list** — code with no defect-detection value, intentionally untested:
+- Getters/setters and straight field mappers
+- Pass-through wrappers that add no logic
+- Framework/library behavior (already tested upstream)
+- Generated code
+- Mock interactions (asserting a mock was called verifies the test, not the code)
 
-Some code genuinely can't reach 100% in unit tests (SSR paths, platform-specific branches, generated code). When this happens:
-
-1. Document the gap and the reason in the project README or CLAUDE.md
-2. Explain where the missing coverage comes from (integration tests, E2E, etc.)
-3. Get explicit approval from the project maintainer
-
-The burden of proof is on the requester. 100% is the default.
+**Beck's rule:** test as little as possible to reach the desired level of confidence.
+Tests respond to *behavior* changes, never to *structure* changes — if a
+behavior-preserving refactor breaks a test, the test was coupled to structure and
+should be rewritten or deleted.
 
 ---
 
@@ -327,10 +341,6 @@ The "waste" is keeping code you can't trust.
 No. Tests-after answer "What did I build?" Tests-first answer "What should I build?"
 
 Tests-after are biased by your implementation. You test what you built, not what's required. You verify edge cases you remembered, not ones you would have discovered by writing tests first.
-
-### "This is too simple to test"
-
-Simple code breaks. The test takes 30 seconds to write. The debugging session when it breaks takes much longer.
 
 ### "I need to explore first"
 
@@ -405,13 +415,13 @@ If any of these are happening, TDD has been abandoned. Delete the production cod
 
 Before marking work complete:
 
-- [ ] Every new function/method has a test that was watched failing first
+- [ ] Every spec matrix row has its one test, watched failing first (no 1:1 test-per-function; don't-test-list code is intentionally untested)
 - [ ] Each test failed for the expected reason (feature missing, not typo)
 - [ ] Wrote minimum code to pass each test
 - [ ] All tests pass
 - [ ] Output is clean (no errors, warnings)
 - [ ] Tests use real code (mocks only when unavoidable)
-- [ ] Edge cases and error paths are covered
+- [ ] Input variations are parameterized, near-duplicate tests consolidated
 - [ ] Refactoring assessed after each green
 
 Can't check all boxes? You skipped TDD. Start over.

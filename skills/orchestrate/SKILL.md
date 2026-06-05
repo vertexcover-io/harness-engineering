@@ -303,7 +303,7 @@ When a local override is found, log:
 
 The local skill is loaded and followed exactly in place of the global one. The local skill is responsible for emitting compatible verdict comments so orchestrate can parse the result:
 - `<!-- QG:VERDICT:PASS -->` or `<!-- QG:VERDICT:BLOCKED -->`
-- `<!-- QG:CHECK:N:PASS -->` or `<!-- QG:CHECK:N:BLOCKED -->` (N = 1–9)
+- `<!-- QG:CHECK:N:PASS -->` or `<!-- QG:CHECK:N:BLOCKED -->` (N = 1–11)
 
 ---
 

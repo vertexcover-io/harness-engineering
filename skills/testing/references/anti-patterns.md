@@ -223,6 +223,7 @@ The failure step is important — it proves your test actually checks something.
 | Incomplete mocks | Mirror real data structures completely |
 | Tests after implementation | TDD — write the test first |
 | Over-complex mock setup | Refactor the production code for testability |
+| N near-duplicate tests for one behavior | Collapse into one parameterized table (partitions + boundaries) |
 
 ## Red Flags Checklist
 
@@ -234,3 +235,4 @@ The failure step is important — it proves your test actually checks something.
 - [ ] Mocking "just to be safe"
 - [ ] `.toHaveBeenCalled()` without checking outcomes
 - [ ] More than 3 mocks in a single test
+- [ ] Several near-identical test functions varying only in input values

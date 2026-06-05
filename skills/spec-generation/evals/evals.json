@@ -5,7 +5,7 @@
       "id": 1,
       "name": "rate-limiting-design-to-spec",
       "prompt": "Generate a SPEC from this approved design doc: skills/spec-generation/evals/files/eval1_design_doc.md. The feature is rate limiting for our public API.",
-      "expected_output": "A SPEC.md with EARS-formatted requirements covering token bucket behavior, Redis failover, tier configuration, and monitoring. Includes edge cases for empty buckets, Redis unavailability, and missing API keys. Verification matrix maps every REQ and EDGE ID to test types. Out of Scope section present.",
+      "expected_output": "A SPEC.md with EARS-formatted requirements covering token bucket behavior, Redis failover, tier configuration, and monitoring. Includes edge cases for empty buckets, Redis unavailability, and missing API keys. Verification matrix assigns every REQ and EDGE ID exactly one test at one level (unit|integration|e2e) with a test name and rationale. Out of Scope section present.",
       "files": [
         "skills/spec-generation/evals/files/eval1_design_doc.md"
       ],
@@ -18,7 +18,7 @@
         "Requirements cover Redis unavailability as an unwanted-behavior type requirement with fail-open semantics",
         "Edge Cases table includes entries for empty token bucket, missing API key, Redis failover, and configuration change propagation",
         "Every EDGE ID links to a valid REQ ID in the 'Derived From' column",
-        "Verification matrix includes every REQ and EDGE ID with at least one test type marked",
+        "Verification matrix includes every REQ and EDGE ID with exactly one test at one level (unit|integration|e2e), a test_<ID>_ name, and a rationale",
         "Out of Scope section is non-empty and explicitly lists what the feature does not cover"
       ],
       "anti_expectations": [
@@ -44,7 +44,7 @@
         "HTTP response code handling is specified per status range (2xx success, 3xx not followed, 4xx permanent failure except 429, 429 with Retry-After, 5xx retry)",
         "Each requirement has exactly one behavior — no compound requirements using 'and' or 'also'",
         "Edge Cases table covers: HTTP 429 with Retry-After header, payload exceeding 256KB, endpoint returning 4xx after previous successes, circuit breaker probe succeeding",
-        "Verification matrix covers every REQ ID and EDGE ID with at least one test type checked",
+        "Verification matrix covers every REQ ID and EDGE ID with exactly one test at one level (unit|integration|e2e), a test_<ID>_ name, and a rationale",
         "Priority assignments distinguish between Must (core retry logic) and Should/Could (dashboard, notifications)"
       ],
       "anti_expectations": [
@@ -71,7 +71,7 @@
         "Acceptance criteria include specific measurable values from the design doc (25MB limit, 60 second scan timeout, 15 minute download URL expiry, 10 minute upload URL expiry)",
         "Edge Cases table includes scenarios for: scan timeout at exactly 60 seconds, magic bytes not matching declared content type, file exceeding 25MB, more than 5 files per ticket, total exceeding 100MB per ticket",
         "Every EDGE ID references a valid parent REQ ID",
-        "Verification matrix has at least one test type marked for every REQ and EDGE ID",
+        "Verification matrix has exactly one test at one level (unit|integration|e2e) for every REQ and EDGE ID, with test name and rationale",
         "SPEC includes Source field referencing the input design doc path and a Generated date"
       ],
       "anti_expectations": [
