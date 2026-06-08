@@ -189,7 +189,7 @@ Detect project tooling in this order:
 ### Check 9: E2E Report Verification
 
 - Read `.harness/runtime/<SPEC_NAME>/e2e-report.json`
-- If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found"
+- If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found". Note: a hermetic runner (`e2e.self_provisioning` in baseline) should **emit this file itself** from the framework's machine output (e.g. Playwright's JSON reporter) — a `failed`/`coverage`/`timestamp` derived from the actual run, not hand-authored. A report whose numbers can't be traced to a runner invocation is not evidence.
 - If `not_applicable: true` → `NOT_APPLICABLE` with the reason from the file
 - If file exists, verify:
   1. `failed` count is 0 — any E2E failures during coding are a hard block

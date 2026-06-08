@@ -73,7 +73,11 @@ If aggregation fails → stop the pipeline with `MISSING_PHASE_CLAIMS`.
 
 ## UI-proof gate (runs AFTER functional-verify returns, BEFORE quality gate)
 
-This gate is the reason the claims model exists. Every `type: "ui"` claim must have an independent Playwright MCP screenshot referenced in `proof-report.md` — not in the phase's `.spec.ts`, not in the phase report. The verifier must have driven a real browser via `mcp__playwright__browser_*` and captured the screenshot themselves.
+This gate is the reason the claims model exists. Every `type: "ui"` claim must have a Playwright MCP screenshot referenced in `proof-report.md` — not in the phase's `.spec.ts`, not in the phase report. The verifier must have driven a real browser via `mcp__playwright__browser_*` and captured the screenshot themselves.
+
+**One screenshot may evidence several claims that share a surface.** The check below greps per claim id for a nearby screenshot path, so a single capture whose caption line lists multiple ids (e.g. `REQ-005 REQ-006 — verification/screenshots/edit-mode.png`) satisfies all of them. Group co-located UI claims into one capture rather than one browser round-trip per claim — that is the difference between ~5 captures and ~100.
+
+**This gate should pass on the first try.** functional-verify Step 6 runs a pre-flight that mirrors this exact check before handing off, so a `MISSING_UI_PROOF` here means the pre-flight was skipped. The check accumulates **all** missing ids in one pass (it does not stop at the first), so a single re-dispatch covering the full list converges it — never loop claim-by-claim.
 
 ```bash
 cd '<WORKTREE_PATH>' || exit 1
@@ -120,7 +124,7 @@ fi
 | `MISSING_PHASE_CLAIMS` | Stop pipeline. Coder did not produce phase reports. |
 | `MISSING_CLAIMS_FILE` | Stop pipeline. Aggregation step was skipped. |
 | `MISSING_PROOF_REPORT` | Stop pipeline. Functional-verify did not run (Stop hook should have caught this). |
-| `MISSING_UI_PROOF — <ids>` | Stop pipeline. Verify skipped Playwright MCP for one or more UI claims. Re-dispatch verify with explicit instruction to cover the listed claim ids. |
+| `MISSING_UI_PROOF — <ids>` | Stop pipeline. Verify skipped Playwright MCP for one or more UI claims (its Step 6 pre-flight would have caught this). Re-dispatch verify **once** with the full listed id set — the gate already reported every gap, so one pass covering all of them converges it. Do not re-dispatch per id. |
 
 ## Why this gate exists
 
@@ -129,4 +133,4 @@ A passing Playwright `.spec.ts` from the coder phase asserts a *contract* (selec
 - Silent validation failures (the API accepts a value the UI says is invalid).
 - Layout / neighbour-ordering breakage that a contract test cannot encode.
 
-The UI-proof gate forces a Playwright MCP session per claim. The screenshot is the evidence.
+The UI-proof gate forces a real Playwright MCP browser session — the screenshot is the evidence. One capture can cover several co-located claims (above); the requirement is a real rendered view per *surface*, not a redundant round-trip per id.
