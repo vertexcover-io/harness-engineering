@@ -208,8 +208,12 @@ Without these, debugging e2e failures becomes guesswork and developers stop inve
 
 Each e2e test should start from a known state:
 - **Authentication:** Use stored session state (cookies/tokens from a setup step), not a full login flow in every test
-- **Data:** Seed test-specific data via API or database before each test, clean up after
+- **Data:** Seed test-specific data via API or database before each test, clean up after. **Reset per spec, not per run** — truncate the touched tables in `beforeEach`/`afterEach`, wrap each test in a rolled-back transaction, or use a fresh schema. The tell-tale of missing isolation is a suite that passes file-by-file but fails as a whole: earlier specs' seeded rows pollute later ones (dashboard ordering, "my row is at the top", counts).
 - **Browser context:** Use fresh browser contexts per test to prevent cookie/storage leakage
+
+**7. Provision infra hermetically, on ephemeral ports.**
+
+The suite must bring up its own DB/services on runtime-allocated free ports and tear them down — never depend on a human/agent having started the stack first, and never hardcode a host port or credentials. One env-driven source of truth (a shared `_infra` module) feeds the app server, the seed client, and the runner's base URL. Every wait fails fast (<30s, not minutes). See `hermetic-e2e.md` for the discovery procedure (how to derive the bring-up from any project) plus the lifecycle traps to check on your runner.
 
 ### E2E Test Structure
 

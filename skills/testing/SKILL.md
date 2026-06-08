@@ -85,6 +85,8 @@ After confirming the code is testable, determine the right test level. Scan the 
 
 For the full guide on *how* to write integration and e2e tests, read `references/test-granularity.md`.
 
+**E2E suites must be hermetic.** When you add or touch an e2e suite, follow `references/hermetic-e2e.md`: self-provisioned infra on runtime-allocated **ephemeral ports** (never hardcode a port or credential), one env-driven source of truth every spec reads, **fail-fast** health gates (<30s, not minutes), and **per-spec DB isolation** (a spec must pass both alone and inside the full suite). The reference gives a stack-agnostic procedure for deriving the bring-up from any project — don't assume a specific tool. A suite that needs the stack started manually first, hardcodes a port, or only resets per-run is the thing that quietly rots into "never actually runs."
+
 ### Browser Verification During Development
 
 When the project has a browser automation tool available (Playwright MCP or similar) and the change is user-visible:

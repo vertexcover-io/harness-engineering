@@ -70,10 +70,15 @@ Record in baseline.json alongside the other metrics:
     "infra_down_cmd": "<script that stops backing services>",
     "dev_cmd": "<script that starts the app>",
     "e2e_cmd": "<script that runs e2e tests>",
+    "self_provisioning": true,
+    "emits_e2e_report": true,
     "frameworks": ["playwright", "vitest-e2e"]
   }
 }
 ```
+
+- **`self_provisioning`** — `true` if `e2e_cmd` brings up its own infra + app on its own ports and tears them down (the hermetic pattern in `testing/references/hermetic-e2e.md`; signals: a wrapper like `run-e2e.mjs`, a Playwright `webServer` block, ephemeral-port allocation). When `true`, downstream stages run `e2e_cmd` directly and must **not** also run `infra_up_cmd` or hardcode dev ports. When `false`, the suite assumes a pre-started stack on fixed ports — the setup that drifts and silently rots; flag it so the coder/verify stages know they own bring-up.
+- **`emits_e2e_report`** — `true` if the runner writes `e2e-report.json` itself (vs. the coder generating it from the runner's machine output).
 
 If no e2e infrastructure is found, record `"e2e": { "detected": false }`. Do not fail — not every project has e2e tests.
 

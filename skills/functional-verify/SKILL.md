@@ -58,7 +58,7 @@ If nothing can be derived: report "No functional verification scenarios — skip
 
 ## Step 2 — Start infrastructure
 
-See `references/infra-startup.md` for probe/start/health-poll commands. Rule: if **you** started a process, **you** kill it in Step 7. If it was already running, leave it.
+See `references/infra-startup.md` for probe/start/health-poll commands and the worktree-safe DB-access snippet. Three rules: (1) prefer a self-provisioning command over a manual `infra:up` + dev server; (2) **capture the actual port** you started on and use it everywhere — never type `localhost:3000` from memory (it drifts); (3) every health-poll has a **30s hard deadline that stops with the server log** — a missing service must fail fast here, not turn into 120s selector timeouts in Step 4. If **you** started a process, **you** kill it in Step 7. If it was already running, leave it.
 
 ## Step 3 — API verification
 
@@ -79,6 +79,8 @@ Drive a real browser via `mcp__playwright__browser_*`. Do NOT write `.spec.ts` f
 3. Reference the claim id and the screenshot path together in `observations.md` and ultimately in `proof-report.md`. The orchestrator's UI-proof gate greps for `<claim_id>` and a screenshot path on the same/nearby line — if either is missing, the pipeline fails with `MISSING_UI_PROOF`.
 
 Spec-derived UI scenarios (`VS-*` with `type: ui`) are covered the same way. UI claims and spec UI scenarios are additive, not substitutes.
+
+**Group co-located claims into one capture.** Claims that render on the same surface/view share a single screenshot — reference all their ids on that screenshot's caption line in `observations.md` and the proof report (e.g. `REQ-005 REQ-006 — …/edit-mode.png`). The UI-proof gate greps per id, so one well-framed capture satisfies several claims. The goal is one real rendered view per surface, not one browser round-trip per id — that is the difference between ~5 captures and ~100, and it stays within the 5-screenshot cap below.
 
 If Playwright MCP is unavailable: this is a hard failure for any spec with UI claims. Report `BLOCKED:no-playwright-mcp` listing the unproven claim ids and stop. Do not paper over with adjacent API checks.
 
@@ -164,6 +166,18 @@ Before writing:
 
 Write `.harness/features/<SPEC_NAME>/verification/proof-report.md`. Use `references/proof-report-template.md` for the section list and ordering.
 
+**Pre-flight the UI-proof gate before you hand off.** The orchestrator's gate greps the proof report for each `type:"ui"` claim id next to a `verification/screenshots/<file>.png` path, and fails the whole pipeline with `MISSING_UI_PROOF` if any is missing — each failure costs a resume cycle. Catch it here instead. Run, and fix any gap before finishing:
+
+```bash
+spec=<SPEC_NAME>
+for id in $(jq -r '.claims[] | select(.type=="ui") | .id' .harness/runtime/$spec/claims.json 2>/dev/null); do
+  grep -qE "$id.*verification/screenshots/.*\.png" .harness/features/$spec/verification/proof-report.md \
+    && echo "ok  $id" || echo "MISSING $id"
+done
+```
+
+Every line must read `ok`. No placeholders (`COVERED_BY_E2E` on a ui line will not pass the gate) — each UI claim needs a real screenshot path you captured in Step 4.
+
 ## Step 7 — Honest non-verification + cleanup
 
 - Under "Not executed," list anything this skill genuinely cannot verify (touch-hold gestures, real-device sensors, manual visual diffs vs last week's build, no-new-deps assertions). State the reason. Do not paper over with adjacent passing checks.
@@ -187,7 +201,8 @@ Write `.harness/features/<SPEC_NAME>/verification/proof-report.md`. Use `referen
 
 ## References
 
-- `references/infra-startup.md` — port probes, start commands, health polling
+- `references/infra-startup.md` — fail-fast probe/start/health-poll + worktree-safe DB access
+- `../testing/references/hermetic-e2e.md` — the self-provisioning, ephemeral-port app pattern to prefer over manual `infra:up`
 - `references/playwright-capture.md` — viewports, slicing, console/network, capture rules
 - `references/proof-report-template.md` — section ordering for `proof-report.md`
 - `../tdd/references/phase-claims-format.md` — per-phase `phase-<N>-claims.json` schema (input source)
