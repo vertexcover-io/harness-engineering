@@ -160,7 +160,7 @@
       "expected_output": "A brainstorm session where codebase-answerable questions (existing channel interface, dispatcher shape, retry behavior) are answered by exploring src/notifications/ instead of asking, every question to the user carries a recommended answer, dependent decisions are asked one at a time in dependency order, and questioning ends when the decision branches are resolved.",
       "files": [],
       "expectations": [
-        "Checks the context layer (.harness/knowledge/context/ — DECISIONS.md D-* ids, PACKAGE.md, GLOSSARY.md) before asking the user or grepping code, and does not re-ask anything a D-* decision already records",
+        "Checks the knowledge index (.harness/knowledge/INDEX.md) for relevant lessons before asking the user or grepping code, and does not re-ask anything already recorded",
         "Explores src/notifications/ to answer questions about the existing channel interface and dispatcher instead of asking the user",
         "Every AskUserQuestion includes a recommended option listed first and labeled '(Recommended)'",
         "Questions whose answers depend on an earlier unresolved decision are asked one at a time, after the upstream decision is resolved",

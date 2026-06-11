@@ -1,6 +1,6 @@
 {
   "name": "harness",
-  "version": "1.9.0",
+  "version": "1.12.0",
   "description": "Systematic software engineering pipeline: brainstorm, plan, TDD, quality gates, code review, and full orchestration from spec to PR.",
   "author": {
     "name": "Vertex Cover"

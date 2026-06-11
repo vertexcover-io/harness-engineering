@@ -201,25 +201,7 @@ Detect project tooling in this order:
 - **Fail:** `failed` > 0, or coverage empty, or REQ IDs don't match spec, or file missing for user-facing task
 - Report: failed count, coverage count, gap count, REQ ID validation results
 
-### Check 10: Context Map Freshness
-
-**Ordering (critical):** Stage 5 runs context-map **sync before** this gate, so the gate reads a
-report the same run just produced. If `.harness/knowledge/context/` exists but `.sync-report.md` is absent, first
-**trigger a context-map sync, then re-read** — only treat a *still-missing* report as a problem. This
-avoids deadlocking the first adopter (hand-made map, no report yet).
-
-- If `.harness/knowledge/context/` does not exist → `NOT_APPLICABLE` (project never adopted the context map).
-- Else read `.harness/knowledge/context/.sync-report.md`:
-  - File missing → run context-map sync, then re-read. Still missing after sync → **BLOCKED** (sync
-    itself is failing — that needs fixing). Present after sync → evaluate its verdict below.
-  - `verdict: FAIL` → **BLOCKED**: surface the report's stale-refs / uncovered / orphan / standards-stale lines.
-  - `verdict: PASS` → **PASS** (a `trace-needs-review` warning does not block — it is advisory).
-- **Why:** the map is injected into every coder sub-agent; a stale map propagates wrong context into
-  generated code. This wires the rule the context-map skill already states ("must block on a missing
-  report or a FAIL verdict").
-- Report: verdict, stale/uncovered/standards-stale counts.
-
-### Check 11: Mutation Spot-Check (`post-tdd` and `pre-pr` only)
+### Check 10: Mutation Spot-Check (`post-tdd` and `pre-pr` only)
 
 Detects tautological / written-to-pass tests — the only check that proves tests can fail for the right reason.
 
@@ -245,9 +227,9 @@ Detects tautological / written-to-pass tests — the only check that proves test
 
 | Stage | Checks Run | Trigger |
 |-------|-----------|---------|
-| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 always + Check 10 (context map) + Check 11 (mutation) | Implementation complete |
+| After TDD (`post-tdd`) | Checks 1-8 mandatory + Check 9 always + Check 10 (mutation) | Implementation complete |
 | After Refactor (`post-refactor`) | Checks 1-4 (no scope/plan/ignore/smoke/e2e/mutation check) | Refactoring should not change scope |
-| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 always + Check 10 (context map) + Check 11 (mutation) | Final audit before commit |
+| Before PR (`pre-pr`) | Checks 1-8 mandatory + Check 9 always + Check 10 (mutation) | Final audit before commit |
 
 If any gate returns **BLOCKED**, the pipeline stops at that point. The orchestrator reports what failed and does not proceed to the next stage.
 
@@ -283,7 +265,7 @@ Written to `.harness/runtime/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `g
 | 7 | Ignore Comment Audit | — | 0 new ignore comments | PASS |
 | 8 | Smoke Test | — | 2/2 passed | PASS |
 | 9 | E2E Tests | — | 12 passed, 0 failed | PASS |
-| 10 | Context Map Freshness | — | verdict: PASS, 0 stale | PASS |
+| 10 | Mutation Spot-Check | — | 0/3 mutants survived, 0 false-positive muts | PASS |
 | 11 | Mutation Spot-Check | — | 4/4 mutants killed | PASS |
 
 <!-- QG:VERDICT:PASS -->
@@ -311,7 +293,7 @@ Written to `.harness/runtime/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g., `g
 **Summary:** 78.2% (baseline: 85.5%, -7.3%)
 **INFO:** Coverage dropped 7.3% → what behavior is missing from the matrix? (never blocks on its own)
 
-#### Check 11: Mutation Spot-Check (FAIL example)
+#### Check 10: Mutation Spot-Check (FAIL example)
 <!-- QG:CHECK:11:FAIL -->
 **Mutations:**
 | Behavior ID | File | Mutation | Killing test | Result |
@@ -330,7 +312,7 @@ Machine-parseable markers: `<!-- QG:VERDICT:PASS -->` and `<!-- QG:CHECK:N:PASS 
 
 Binary verdicts — no WARN tier:
 
-- **`PASS`** — all mandatory checks pass (Checks 1-3 and 5-8, Check 9 when e2e is detected, Check 10 when a context map exists, Check 11 at post-tdd/pre-pr; Check 4 is diagnostic and never blocks)
+- **`PASS`** — all mandatory checks pass (Checks 1-3 and 5-8, Check 9 when e2e is detected, Check 10 at post-tdd/pre-pr; Check 4 is diagnostic and never blocks)
 - **`BLOCKED`** — any mandatory check fails (with specific reasons listed)
 - **`STAGNATION`** — same check failed 3 consecutive times across gate runs (special signal: stop entirely, don't retry)
 
@@ -354,7 +336,7 @@ This prevents infinite loops where a sub-agent keeps making the same mistake.
 
 - **Weakening thresholds** — "Let's allow 2 type errors since they're minor" — No. Zero is zero.
 - **Skipping gates** — "Tests pass so we don't need the linter check" — All checks run, always.
-- **Tautological / written-to-pass tests** — Caught by Check 11: a surviving mutant means the test verifies nothing.
+- **Tautological / written-to-pass tests** — Caught by Check 10: a surviving mutant means the test verifies nothing.
 - **Padding the suite with filler tests for line coverage** — Coverage is diagnostic; the test budget is the spec's verification matrix.
 - **Deleting a behavior's only test** — Caught by Check 3 (every matrix REQ/EDGE ID must map to a passing test).
 - **Adding ignore comments without justification** — Caught by Check 7. Every ignore comment needs an inline reason.

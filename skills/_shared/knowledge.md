@@ -8,7 +8,7 @@ relative to their own skill directory and MUST NOT restate its rules.
 
 | Zone | Git | Lifetime |
 |---|---|---|
-| `.harness/knowledge/` | committed | forever — lessons + context map + INDEX.md |
+| `.harness/knowledge/` | committed | forever — lessons + INDEX.md |
 | `.harness/features/<spec>/` | committed | frozen once the PR merges |
 | `.harness/runtime/<spec>/` | gitignored | scratch; dies with the worktree |
 

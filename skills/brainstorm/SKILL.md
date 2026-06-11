@@ -41,10 +41,7 @@ written AND (unless bypassed) approved by the user. Applies to EVERY project, ho
 Applies to every question in every phase:
 
 - **Explore before asking.** Resolve a question from the cheapest authoritative source first:
-  1. **Context layer** — `.harness/knowledge/context/` (`DECISIONS.md` `D-*` for choices already
-     made, `GLOSSARY.md` for vocabulary, `PACKAGE.md`/`DATAFLOW.md` for module intent and flows,
-     `standards/*.md` `S-*` for conventions) and lessons via `.harness/knowledge/INDEX.md`.
-     Re-asking what a `D-*` already answers is the failure this layer exists to prevent — cite
+  1. **Lessons** — `.harness/knowledge/INDEX.md` for past incidents and patterns in this codebase.
      the decision instead; question it only if the new design has a concrete reason to revisit it.
   2. **Code and git history** — for what the map doesn't cover; code is authoritative when it
      conflicts with the map.
@@ -130,12 +127,6 @@ without it.)
 ### Phase 1 — Context Gathering & Scope Check
 
 Review relevant files, docs, and recent changes. Build a mental model.
-
-**Context map** — if `.harness/knowledge/context/` exists, read `ARCHITECTURE.md` (system shape, boundaries),
-`DECISIONS.md` (`D-*` — prior cross-cutting choices the design must not silently contradict), and
-`GLOSSARY.md` (domain vocabulary). This keeps the design consistent with the existing product shape and
-stops it re-proposing something a decision already ruled out. Advisory — verify against code; no
-`.harness/knowledge/context/` → skip.
 
 **Scope decomposition check** — if the request spans multiple independent subsystems
 (own data model + API + auth/contract, each independently shippable), flag it. Each
