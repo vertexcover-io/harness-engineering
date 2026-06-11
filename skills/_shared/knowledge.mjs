@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { repoRoot, gitAvailable, isIgnored, run } from "../../hooks/_lib/git.mjs";
-import { readFrontmatter } from "../../hooks/_lib/context-map.mjs";
+import { readFrontmatter } from "../../hooks/_lib/frontmatter.mjs";
 
 const ZONES = [
   ".harness/knowledge/lessons",

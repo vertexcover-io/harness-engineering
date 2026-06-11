@@ -19,7 +19,7 @@ Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & 
 
 **CRITICAL: Do NOT explore the codebase, read project files, or fetch URLs before completing the Initialization steps below. The very first actions are: detect input, check for auto mode, then create the worktree and start the dashboard inside it. No exceptions.**
 
-**CRITICAL: There is exactly ONE pause in this pipeline — the plan-approval gate after Stage 2. After the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back WITHOUT stopping, pausing, asking the user anything, or emitting any interim summary. Internal corrective re-dispatches (e.g. planner context-map loopback, context-consumption retry, LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going. Halt before Stage 6 completes ONLY on a genuine BLOCK/FAIL (functional verification FAILED, quality gate BLOCKED/STAGNATION, review hard-standards failure, library-probe BLOCKED, or a sub-agent error) — and when you halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.**
+**CRITICAL: There is exactly ONE pause in this pipeline — the plan-approval gate after Stage 2. After the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back WITHOUT stopping, pausing, asking the user anything, or emitting any interim summary. Internal corrective re-dispatches (e.g. LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going. Halt before Stage 6 completes ONLY on a genuine BLOCK/FAIL (functional verification FAILED, quality gate BLOCKED/STAGNATION, review hard-standards failure, library-probe BLOCKED, or a sub-agent error) — and when you halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.**
 
 ---
 
@@ -172,48 +172,8 @@ Every sub-agent prompt MUST start with this preamble (referred to as `[PREAMBLE]
 ```
 You are working in the worktree at <WORKTREE_PATH>.
 Your working directory is <WORKTREE_PATH>.
-<CONTEXT_MAP_AWARENESS>
-<CONTEXT_MAP_PATHS>
 <TOOLING_COMMANDS>
 ```
-
-We pass **pointers, not content**: the dispatch tells the sub-agent which context docs to read and that
-the map exists; the agent `Read`s them itself, on demand, into its own window. This keeps the preamble
-tiny and lets the agent pull anything else it touches.
-
-**`<CONTEXT_MAP_AWARENESS>` — goes in EVERY sub-agent (coder, explore, review, verify).** Include this
-line verbatim **only if `.harness/knowledge/context/` exists** in the worktree (else omit):
-```
-A context map exists at .harness/knowledge/context/ — the WHY behind this codebase: ARCHITECTURE.md, DATAFLOW.md,
-DECISIONS.md (D-*), GLOSSARY.md, per-package .harness/knowledge/context/packages/<pkg>/**/PACKAGE.md (purpose, data-flow
-traces, gotchas), and prescriptive rules in .harness/knowledge/context/standards/*.md (S-*, with enforced_by). Code is
-authoritative; these docs are advisory. You MAY Read any of them for anything you touch.
-```
-
-**`<CONTEXT_MAP_PATHS>` — coder/tdd dispatch ONLY (where the phase files are known).** Resolve the docs
-for this phase's files and pass the PATH LIST as a MUST-read. The resolver path is captured at skill-load
-(the plugin-root var only expands reliably inside hooks, NOT arbitrary Bash):
-!`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/_lib/context-map.mjs"`
-
-Collect the `**Files:**` paths from `.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md`, then run **in the worktree**
-(stdout = the path list; stderr = a status marker — capture BOTH):
-```
-node '<CONTEXT_MAP_SCRIPT>' phase-paths <file1> <file2> ...   2>/tmp/ctxmap.err; cat /tmp/ctxmap.err
-```
-Act on the stderr marker — do NOT conflate the three states:
-- `CONTEXT_MAP:INJECTED docs=N standards=M` → paste stdout under this header and **log** `context paths: N docs, M standards`:
-  ```
-  ## Context for this phase — READ THESE FIRST (code is authoritative; docs advisory)
-  Before writing code, Read each listed doc. You MAY Read other .harness/knowledge/context/ files for anything you touch.
-  <the path list from stdout>
-  ```
-- `CONTEXT_MAP:EMPTY` → a map exists but nothing matched these files; omit the path list (keep the
-  awareness line), and **log** it (the phase's files may be outside the mapped packages).
-- `CONTEXT_MAP:NONE` → no map; omit both `<CONTEXT_MAP_AWARENESS>` and `<CONTEXT_MAP_PATHS>` silently.
-
-If the command errors (no stdout, no marker) the resolver path is wrong — fix it; do **not** silently
-proceed. When the coder discovers it must touch files the plan never listed, re-run with
-`phase-paths` via `diff <START_SHA> --paths` to get the docs for the actually-changed files.
 
 **`<TOOLING_COMMANDS>` — goes in EVERY sub-agent (coder, review, verify).** Read the `commands` block
 from `<HARNESS_DIR>/baseline.json` (recorded by pipeline-setup) and paste it verbatim so the agent
@@ -355,15 +315,13 @@ The trust gate. Runs *before* spec generation so verified probes can be folded i
 ### Stage 2: Planner (Main Conversation)
 
 1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status planning running")`
-2. **Resolve + inject context-map pointers (if `.harness/knowledge/context/` exists).** Before invoking the planner, resolve the map files covering the packages this feature touches — the same pointers-not-content resolution the coder dispatch uses: the owning `.harness/knowledge/context/packages/<pkg>/**/PACKAGE.md` for each touched package, plus `ARCHITECTURE.md`, `DECISIONS.md`, and the matching `.harness/knowledge/context/standards/*.md`. Pass them to the planning skill as an explicit **"READ THESE FIRST"** block (paths, not bodies) and **log** `context paths: N docs, M standards`. Map consumption at plan time is NOT the planner's discretion — the plan must reason over structure/decisions/standards before drafting phases. No `.harness/knowledge/context/` → skip and note it.
-3. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally, and reads the injected context-map pointers FIRST (planning Step 2.0) before exploring code. Include `Lessons: <ROUTED_LESSONS>` in the invocation — known pitfalls matching this spec become plan steps, not surprises
-4. Planner explores codebase, asks interactive questions, designs phases
-5. **Verify the gate ran:** plan.md's Codebase Context section must record `Context map read: …` with the `D-*`/`S-*` ids honored (or `Context map: none`). If `.harness/knowledge/context/` exists but the plan omits this, the planner skipped the map — **automatically re-invoke the `planning` skill ONCE** (same inputs, with an explicit instruction to record `Context map read: …`; track a one-shot `PLAN_CONTEXT_REDISPATCH` flag) before presenting the approval gate. This is an internal re-dispatch, NOT a user pause. If the second attempt still omits it, proceed to the gate and note the omission in the plan summary.
-6. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
-7. Output: `.harness/features/<SPEC_NAME>/plan.md` (committed) + `.harness/runtime/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH=.harness/features/<SPEC_NAME>/plan.md` and `PHASE_DIR=.harness/runtime/<SPEC_NAME>/`
-8. Add phase DAG nodes as children of `coder`, mark planning done:
+2. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally before exploring code. Include `Lessons: <ROUTED_LESSONS>` in the invocation — known pitfalls matching this spec become plan steps, not surprises
+3. Planner explores codebase, asks interactive questions, designs phases
+4. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
+5. Output: `.harness/features/<SPEC_NAME>/plan.md` (committed) + `.harness/runtime/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH=.harness/features/<SPEC_NAME>/plan.md` and `PHASE_DIR=.harness/runtime/<SPEC_NAME>/`
+6. Add phase DAG nodes as children of `coder`, mark planning done:
    `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status planning done")`
-9. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && node '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
+7. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && node '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
 
 **Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count
 
@@ -428,20 +386,6 @@ Aggregate every `.harness/runtime/<SPEC_NAME>/phase-*-claims.json` into a single
 command live in `references/claims-aggregation-format.md` — invoke it verbatim.
 If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated
 `claims.json` is what verify reads; phase files are kept for audit.
-
-### Context-consumption check (per coder phase)
-
-After a coder phase whose dispatch emitted `CONTEXT_MAP:INJECTED` returns, read its
-`<HARNESS_DIR>/phase-<PHASE_N>-claims.json` and inspect `context_consulted`. If it is missing, or both
-`docs` and `standards` are empty, the agent ignored the injected pointers — **automatically re-dispatch
-that phase ONCE** (track a per-phase `CONTEXT_REDISPATCH` flag so this fires at most once) with this line
-appended to the preamble:
-> You did not record `context_consulted` last run. Read the injected `## Context for this phase` docs/standards
-> BEFORE writing code, and populate `context_consulted` in the phase claims.
-
-This is an internal re-dispatch, **not** a user pause. If it is still empty after the single retry, **log a
-warning and continue** — the context map is advisory, so do not block the pipeline on it. Phases dispatched
-with `CONTEXT_MAP:EMPTY`/`NONE` are exempt.
 
 ### LIB_SUSPECT Loopback (from Stage 3 → 1.5)
 
@@ -583,7 +527,7 @@ Agent(model="sonnet", prompt="
 
 ### Stage 5: Verify & Finalize
 
-Single consolidated sub-agent that runs functional verification, syncs the context map, the quality gate, syncs inline docs, and captures learnings. The context-map sync runs BEFORE the gate so Check 10 reads a fresh report.
+Single consolidated sub-agent that runs functional verification, the quality gate, syncs inline docs, and captures learnings.
 
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status verify-finalize running")`
 
@@ -613,17 +557,7 @@ Agent(model="sonnet", prompt="
      If FAILED: stop entirely, return failure with which scenarios failed and why.
      Evidence is saved to .harness/features/<SPEC_NAME>/verification/ — do NOT delete it.
 
-  2. SYNC CONTEXT MAP (must run BEFORE the quality gate — Check 10 reads its report):
-     If .harness/knowledge/context/ exists, invoke the context-map skill scoped to this run's changed files:
-     `context-map <changed file paths>` (collect via `git diff --name-only <BASE_BRANCH>..HEAD`).
-     ALSO tell it the spec dir for this run — `.harness/features/<SPEC_NAME>/` — so it ingests the recorded
-     decisions from design.md/plan.md into DECISIONS.md (transcribe the why+tradeoff, route each D-* by
-     Governs: cross-package → root DECISIONS.md, single-package → that PACKAGE.md ## Decisions; keep the
-     root D-*→file index current). This refreshes affected PACKAGE.md / standards / decisions and rewrites
-     .harness/knowledge/context/.sync-report.md so the gate's Check 10 reads a report THIS run produced. Scoped sync
-     still re-checks cross-package DATAFLOW/DECISIONS dangling refs (context-map A3). No .harness/knowledge/context/ → skip.
-
-  3. QUALITY GATE: Invoke quality-gate skill.
+  2. QUALITY GATE: Invoke quality-gate skill.
      Baseline: .harness/runtime/<SPEC_NAME>/baseline.json. Spec dir: .harness/features/<SPEC_NAME>/. Harness dir: .harness/runtime/<SPEC_NAME>/. Stage: post-tdd.
      Write dashboard report following 'Quality Gate Report' format in
      references/dashboard-report-formats.md.
@@ -631,12 +565,12 @@ Agent(model="sonnet", prompt="
      .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (the JSONL persists — the next
      run's curator judges it), then stop entire pipeline, return verdict + failure details.
 
-  4. SYNC DOCS: Invoke sync-docs skill.
+  3. SYNC DOCS: Invoke sync-docs skill.
      Spec dir: .harness/features/<SPEC_NAME>/. Harness dir: .harness/runtime/<SPEC_NAME>/ (phase-*.md).
      Write dashboard report following 'Sync Docs Report' format in
      references/dashboard-report-formats.md.
 
-  5. CURATE LEARNINGS: Invoke learn skill in consolidate mode (this step ALWAYS runs —
+  4. CURATE LEARNINGS: Invoke learn skill in consolidate mode (this step ALWAYS runs —
      zero candidates is a logged no-op, never a silent skip).
      Candidates: .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl
      Review findings: .harness/runtime/<SPEC_NAME>/review/pass-*.md (matched_lesson tags

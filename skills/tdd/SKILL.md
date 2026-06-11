@@ -19,19 +19,6 @@ description: >
 
 User-provided guidelines take precedence on conflicts with defaults.
 
-**Context map (if present).** When given a phase file with a `**Files:**` list, resolve which context
-docs to read, then **Read them before writing code** (pointers, not paste — you pull them into your own
-window). The plugin-root var only expands inside hooks, so resolve the path at load:
-```
-SCRIPT=$(echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/_lib/context-map.mjs")
-node "$SCRIPT" phase-paths <files...>   # stdout = doc paths to Read; stderr = CONTEXT_MAP:{INJECTED|EMPTY|NONE}
-```
-On `CONTEXT_MAP:INJECTED`, **Read each listed `PACKAGE.md` (purpose, flow traces, gotchas) and
-`standards/*.md` (S-* rules, enforced_by) before coding** — and you MAY Read any other `.harness/knowledge/context/`
-file for anything you touch (code is authoritative; docs advisory). `CONTEXT_MAP:NONE`/`EMPTY` → no
-applicable map, proceed normally. (When dispatched by orchestrate the path list is already in your
-preamble; resolve it yourself only when invoked standalone.)
-
 **Tooling commands (if present).** When dispatched by orchestrate, your preamble carries a
 `## Tooling commands` block. Use the **scoped `test_file`** (substitute `{FILE}`) on every RED/GREEN
 iteration and run the full `test_all` at most once, only to confirm green before declaring the phase

@@ -27,15 +27,6 @@ before commit. Only touches docs relevant to what changed — does not generate 
 
 ## Process
 
-### Step 0: Sync the context map (if present)
-
-If `.harness/knowledge/context/` exists, invoke the `context-map` skill scoped to the changed files
-(`context-map <changed paths>`) **before** the inline-doc sync below. This refreshes the affected
-`PACKAGE.md` / `standards/*.md` and rewrites `.harness/knowledge/context/.sync-report.md`, keeping the WHY-map current
-on every run (and ahead of the quality gate's Check 10). No `.harness/knowledge/context/` → skip. When invoked by
-orchestrate Stage 5 this already ran as a separate step — skip the duplicate; do it here for the
-standalone `/sync-docs` path.
-
 ### Step 1: Identify What Changed
 
 Use `git diff --name-only HEAD` (or against the base branch) to get the list of changed files.

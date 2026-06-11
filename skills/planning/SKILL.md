@@ -52,37 +52,12 @@ The input is either a **design document**, a **spec**, or a **feature descriptio
 
 ### Step 2: Explore the Codebase
 
-Build understanding of existing code before planning changes. **Read the context map FIRST (Step 2.0), then explore (Step 2.1)** — the map is the legend for the territory; you read it before walking the streets, not after.
-
-#### Step 2.0: Read the Context Map (MANDATORY when `.harness/knowledge/context/` exists)
-
-This is a **hard gate, not an optional scan**. You may NOT draft phases until you have read the map for every package this feature touches. The map carries the *why* — structure, decisions, and standards — that the raw code does not state. Skipping it means re-litigating decisions and violating standards the codebase already settled.
-
-Existence-gated: if `.harness/knowledge/context/` does **not** exist, skip this step and note `Context map: none` in plan.md. Otherwise you MUST read, in this order:
-
-1. **`.harness/knowledge/context/ARCHITECTURE.md`** — system shape, package boundaries, module-level traces. Establishes where this feature sits and which boundaries it must not cross.
-2. **`.harness/knowledge/context/DECISIONS.md`** — scan the `D-*` index; read the body of every decision whose scope touches this feature. These are settled cross-cutting tradeoffs the plan **must not re-open**.
-3. **The owning `.harness/knowledge/context/packages/<pkg>/**/PACKAGE.md`** for each package the feature touches — purpose, public surface, data-in→out, function-level data-flow traces, and inline gotchas. This is the single highest-value read for plan accuracy.
-4. **Standards headlines** — the `## S-*` rule *titles* from each matching `.harness/knowledge/context/standards/*.md` (titles only, not full bodies). The plan's approach must respect every applicable `S-*`; the full rule bodies land later with the coder/reviewer where they are enforced.
-
-**Code is authoritative; the map is advisory and staleness-checked.** Use the map for the existing shape, decision IDs, and rule names — but verify any specific you will build against in the actual code (Step 2.1). If the map and code disagree, trust the code and note the drift.
-
-**Required output — record in plan.md's Codebase Context section (this is how we verify the gate ran):**
-- `Context map read: <N> PACKAGE.md, <M> standards files` (or `Context map: none`)
-- **Decisions honored:** the `D-*` ids this plan respects, one line each on how.
-- **Standards honored:** the `S-*` ids that apply, one line each on how the approach stays compliant.
-- **Gotchas carried forward:** any `PACKAGE.md` gotcha that shapes a phase.
-
-A plan.md whose Codebase Context section lacks these lines (when `.harness/knowledge/context/` exists) is incomplete — do not proceed to Step 3.
-
-#### Step 2.1: Explore the Code (grounds and verifies the map)
-
-With the map's shape in hand, dispatch sub-agents in parallel to investigate the specifics — Claude Code: `Agent` tool with `subagent_type=Explore`; Codex: invoke the `explore` agent defined at `.codex/agents/explore.toml` (see `references/codex-tools.md`). Also use `Glob`/`Grep`/`Read` directly for targeted lookups. Let the map from Step 2.0 direct *where* you look.
+Build understanding of existing code before planning changes. Dispatch sub-agents in parallel to investigate — Claude Code: `Agent` tool with `subagent_type=Explore`; Codex: invoke the `explore` agent defined at `.codex/agents/explore.toml` (see `references/codex-tools.md`). Also use `Glob`/`Grep`/`Read` directly for targeted lookups.
 
 **What to explore:**
 
 1. **Files that will be touched/extended** — find them, read them, understand their structure
-2. **Data flow** — trace how data moves through the parts of the codebase this feature touches (cross-check against the `PACKAGE.md` traces from Step 2.0)
+2. **Data flow** — trace how data moves through the parts of the codebase this feature touches
 3. **Existing patterns** — utilities, base classes, conventions that the implementation should follow
 4. **Potential conflicts** — modules that share state, coupling risks, migration concerns
 5. **Test infrastructure** — how similar features are tested, what fixtures and helpers exist
@@ -181,11 +156,7 @@ implementation details. See `references/plan-template.md` for annotated example.
 
 ## Codebase Context
 
-### Context Map (Step 2.0)
-- **Context map read:** `<N>` PACKAGE.md, `<M>` standards files  *(or `Context map: none`)*
-- **Decisions honored:** `D-0xx` — [how this plan respects it]; `D-0yy` — [...]
-- **Standards honored:** `S-pkg-0x` — [how the approach stays compliant]; `S-pkg-0y` — [...]
-- **Gotchas carried forward:** [PACKAGE.md gotcha → which phase it shapes]
+<!-- Describe the relevant parts of the existing codebase: packages touched, key files, patterns followed. -->
 
 ### Existing Patterns to Follow
 - **[Pattern]**: `path/to/example.py` — [brief description]

@@ -14,16 +14,11 @@ description: >
 1. **Always load local rules:** Glob `.claude/rules/*` in the project root. If any
    files exist, read all of them. These contain project-wide coding standards,
    conventions, and constraints that apply to every review.
-1b. **Load context-map standards:** if `.harness/knowledge/context/standards/*.md` exists, read every shard.
-   Also read the owning `PACKAGE.md` for the changed files (the doc whose `governs:` is the longest
-   prefix of each changed file's dir). These hold the project's prescriptive `S-*` rules; each carries
-   an `enforced_by:` field (`eslint` | `tsconfig` | `convention`). See "Standards enforcement" below for
-   how to act on them.
-2. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
+1. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
    its guidelines over the defaults below.
-3. Otherwise, check if `.claude/harness/code-review-reference.md` exists in the
+2. Otherwise, check if `.claude/harness/code-review-reference.md` exists in the
    project root. If it does, read it and apply its guidelines.
-4. If neither (2) nor (3) provides guidelines, use the defaults below.
+3. If neither (1) nor (2) provides guidelines, use the defaults below.
 
 Local rules from `.claude/rules/*` are always applied alongside any other guideline
 source. User-provided guidelines take precedence on conflicts with defaults.
@@ -303,19 +298,6 @@ a plan was provided.
 - **`APPROVE WITH SUGGESTIONS`**: One or more Important defects, or plan deviations that
   warrant discussion, but nothing that would cause a production incident.
 - **`APPROVE`**: Only Minor defects or no defects. Change accomplishes its intent correctly.
-
-### Standards enforcement (context-map `S-*`)
-For each loaded standard, check the diff against its rule. Act by `enforced_by`:
-- **`enforced_by: convention`** (no linter catches it — review is the only gate): if the diff violates it
-  and the author left **no cited reason** (a code comment or PR-body line naming the `S-*` id), raise a
-  **Critical** defect → forces `REQUEST CHANGES`. The defect MUST cite the exact `S-*` id and a concrete
-  `file:line`, and MUST include the token `S-VIOLATION:<id>` on its own line (the orchestrator greps this
-  to hard-stop the pipeline). Only raise what you can point to a specific line — never block on a vibe.
-- **`enforced_by: eslint` | `tsconfig`**: do NOT raise here. The lint/typecheck quality-gate check already
-  enforces these deterministically — flagging them in review is double-jeopardy and risks second-guessing
-  the linter. At most, note in passing.
-- **Author cited a reason** (comment/PR body names the `S-*`): downgrade to a **Minor** note, do not block —
-  an explicit, reasoned deviation is allowed.
 
 **With plan:**
 
