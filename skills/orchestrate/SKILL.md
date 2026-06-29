@@ -243,27 +243,61 @@ After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch 
 
 ---
 
-## Local Skill Override Resolution
+## Per-stage Config: `orchestrate.config.json`
 
-Before dispatching any stage that invokes a named skill, check for a project-local override in the current working directory:
+Optional file at the **repo root** (read once during Stage 0). Its `stages` map keys each
+stage to `{ skill?, model?, disabled? }` — every field independent. Keys are stage IDs
+(`coder`) or the stage's default skill name (`tdd`) — both resolve the same stage.
 
+```json
+{
+  "stages": {
+    "brainstorm":      { "skill": "my-brainstorm" },
+    "coder":           { "skill": "my-tdd", "model": "opus" },
+    "code-review":     { "model": "opus" },
+    "quality-gate":    { "skill": "my-quality-gate" },
+    "planning":        { "disabled": true },
+    "verify-finalize": { "model": "haiku" }
+  }
+}
 ```
-<cwd>/.claude/skills/<skill-name>/SKILL.md
-```
 
-Resolution order:
-1. `<cwd>/.claude/skills/<skill-name>/SKILL.md` — project-local (wins)
-2. Global harness skill — fallback
+Look the entry up by stage ID, then by default skill name; call the match `CFG`. Then,
+per stage:
 
-Applies to: `quality-gate`, `tdd`, `testing`, `code-review`, `library-probe`.
+- **skill** = `CFG.skill` → a project skill named exactly like the default (the `Skill`
+  tool already prefers project/plugin over global, so no path lookup) → global default.
+  `CFG.skill` is a skill **name only**; a value with `/` is ignored (log it). Log the
+  resolved override: `"Using custom skill for stage <id>: <skill-name>"`.
+- **model** (sub-agent stages `coder`/`code-review`/`verify-finalize` only) = `CFG.model`
+  → the dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model`
+  on a main-conversation stage has no Agent to retarget — ignore it (log).
+- **disabled** = `CFG.disabled === true` skips the stage, exactly like a caller "skip
+  <stage>" (DAG node → `skipped`, "Handling Skipped Stages" applies). Honored ONLY for the
+  **Skippable Stages** (`brainstorm`, `planning`); on any **Mandatory** stage it is
+  rejected (`"Cannot disable mandatory stage <id> — ignoring"`).
+
 Does NOT apply to `orchestrate` itself (no recursive override).
 
-When a local override is found, log:
-> "Using local skill override: .claude/skills/\<skill-name\>/SKILL.md"
+### Stages, default skills, and gate contracts
 
-The local skill is loaded and followed exactly in place of the global one. The local skill is responsible for emitting compatible verdict comments so orchestrate can parse the result:
-- `<!-- QG:VERDICT:PASS -->` or `<!-- QG:VERDICT:BLOCKED -->`
-- `<!-- QG:CHECK:N:PASS -->` or `<!-- QG:CHECK:N:BLOCKED -->` (N = 1–11)
+A custom skill is invoked with the **same arguments** the default would get (see each
+dispatch block) and, for **gated** stages, MUST emit the same verdict markers/artifacts so
+orchestrate can parse the result — a missing verdict is treated as a stage FAILURE/BLOCKED.
+
+| Stage ID | Default skill | Gate contract (gated stages only) |
+|----------|---------------|------------------------------------|
+| `brainstorm` | `brainstorm` | — |
+| `library-probe` | `library-probe` | `<!-- LP:VERDICT:PASS -->` / `BLOCKED` |
+| `spec-gen` | `spec-generation` | — |
+| `planning` | `planning` | — |
+| `coder` | `tdd` (+ `testing` for stepped phases) | phase `…-claims.json` (`executed>0`, `failed=0`) |
+| `code-review` | `code-review` | `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
+| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.md` + `adversarial-findings.md`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
+
+Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N = 1–11).
+`verify-finalize` is a bundle — overriding its `skill` replaces all four sub-skills and
+their contracts; override `quality-gate` (etc.) to swap just one.
 
 ---
 
@@ -282,6 +316,7 @@ The local skill is loaded and followed exactly in place of the global one. The l
 8. Run baseline metrics (typecheck, lint, test, coverage), write to `.harness/runtime/<SPEC_NAME>/baseline.json`
 9. Write `.harness/runtime/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`
 10. Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/features/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/runtime/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
+10b. **Load stage config.** If `orchestrate.config.json` exists at the worktree root, `Read` its `stages` map into `STAGE_CONFIG` (see "Per-stage Config"); else `STAGE_CONFIG = {}` (every stage uses its default skill/model and runs). Before each stage below, resolve `skill`/`model`/`disabled` from its entry per that section.
 11. After baseline: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' write-report baseline '# Baseline\n- **Spec:** <SPEC_NAME>\n- **Baseline:** <BASELINE_PATH>' && node '<DAG_SCRIPT>' set-status baseline done && node '<DAG_SCRIPT>' set-status setup done")`
 
 ### Stage 1: Brainstorm (Main Conversation)
@@ -410,7 +445,7 @@ is futile — the answer is to swap the underlying tool, not iterate the call.
 
 **A) Phase has no Steps section** → single agent:
 ```
-Agent(model="sonnet", prompt="
+Agent(model="<coder model: sonnet by default>", prompt="
   [PREAMBLE]
   Invoke tdd skill. Spec: <SPEC_PATH>. Plan: .harness/features/<SPEC_NAME>/plan.md. Phase file: .harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md.
   Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — read BEFORE coding; advisory
@@ -444,7 +479,7 @@ Agent(model="sonnet", prompt="
 
 **B) Phase has Steps section** → dispatch per-step, parallelizing independent steps:
 ```
-Agent(model="sonnet", prompt="
+Agent(model="<coder model: sonnet by default>", prompt="
   [PREAMBLE]
   Invoke tdd and testing skills. Spec: <SPEC_PATH>. Plan: .harness/features/<SPEC_NAME>/plan.md.
   Phase file: .harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md. Step: <STEP_DETAILS>.
@@ -473,7 +508,7 @@ Two-pass review: a review+fix agent addresses defects directly, then a final rev
 **Pass 1 — Review & Fix:**
 
 ```
-Agent(model="sonnet", prompt="
+Agent(model="<code-review model: sonnet by default>", prompt="
   [PREAMBLE]
   Invoke code-review skill. Plan: .harness/features/<SPEC_NAME>/plan.md.
   Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/runtime/<SPEC_NAME>/review/pass-1.md.
@@ -503,7 +538,7 @@ Agent(model="sonnet", prompt="
 **Pass 2 — Final Review:**
 
 ```
-Agent(model="sonnet", prompt="
+Agent(model="<code-review model: sonnet by default>", prompt="
   [PREAMBLE]
   Invoke code-review skill. Plan: .harness/features/<SPEC_NAME>/plan.md.
   Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/runtime/<SPEC_NAME>/review/pass-2.md.
@@ -532,7 +567,7 @@ Single consolidated sub-agent that runs functional verification, the quality gat
 `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status verify-finalize running")`
 
 ```
-Agent(model="sonnet", prompt="
+Agent(model="<verify-finalize model: sonnet by default>", prompt="
   [PREAMBLE]
   Run these in order. Stop and return failure immediately if any step fails.
 
