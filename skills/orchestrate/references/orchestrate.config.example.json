@@ -1,0 +1,12 @@
+{
+  "stages": {
+    "brainstorm": { "skill": "my-brainstorm" },
+    "library-probe": { "skill": "my-library-probe" },
+    "spec-gen": { "skill": "my-spec-generation" },
+    "planning": { "skill": "my-planning", "disabled": true },
+    "coder": { "skill": "my-tdd", "model": "opus" },
+    "code-review": { "skill": "strict-review", "model": "opus" },
+    "quality-gate": { "skill": "my-quality-gate" },
+    "verify-finalize": { "model": "haiku" }
+  }
+}
