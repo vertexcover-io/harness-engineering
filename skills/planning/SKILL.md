@@ -82,47 +82,26 @@ The input is either a **design document**, a **spec**, or a **feature descriptio
 
 Build understanding of existing code before planning changes. Dispatch sub-agents in parallel to investigate — Claude Code: `Agent` tool with `subagent_type=Explore`; Codex: invoke the `explore` agent defined at `.codex/agents/explore.toml` (see `references/codex-tools.md`). Also use `Glob`/`Grep`/`Read` directly for targeted lookups.
 
-**What to explore:**
+**What to explore:** the files this feature will touch (structure); the data flow through them;
+existing patterns/utilities/conventions to follow; conflict risks (shared state, coupling,
+migration); test infrastructure (fixtures, helpers) and E2E infrastructure (frameworks, how backing
+services and the dev server start); dependencies (what can run in parallel); and, for external
+libraries, current API signatures via context7 or web search.
 
-1. **Files that will be touched/extended** — find them, read them, understand their structure
-2. **Data flow** — trace how data moves through the parts of the codebase this feature touches
-3. **Existing patterns** — utilities, base classes, conventions that the implementation should follow
-4. **Potential conflicts** — modules that share state, coupling risks, migration concerns
-5. **Test infrastructure** — how similar features are tested, what fixtures and helpers exist
-6. **E2E test infrastructure** — what e2e frameworks exist, what tests already cover, how backing services are started, what the dev server command is
-7. **Dependencies** — what depends on what, what can run in parallel
-8. **Library docs** — for external libraries the feature touches, use context7 or web search to check current API signatures and usage patterns
-
-**Depth scaling** (match effort to change size):
-- **Minor changes:** Quick scan of 2-3 files, skip parallel agents
-- **Medium changes:** Thorough scan, use 1-2 parallel explore agents
-- **Major changes:** Deep exploration, at most 2 parallel explore agents — use main-thread Glob/Grep for additional areas
+**Depth scaling** (match effort to change size): minor → quick scan of 2-3 files, no parallel agents;
+medium → thorough scan, 1-2 explore agents; major → deep exploration, at most 2 explore agents plus
+main-thread Glob/Grep.
 
 Record findings — they go into plan.md's Codebase Context section.
 
 ### Step 3: Interactive Q&A
 
-From the codebase exploration, identify implementation questions and resolve them with the user before designing phases. This ensures the planner starts with zero ambiguity.
-
-**Question categories:**
-
-**A. Implementation Approach**
-- "The spec says X, but the codebase does Y — should we follow the existing pattern or change it?"
-- "There are two ways to extend this — via Z or via W. Which do you prefer?"
-
-**B. Integration Points**
-- "This touches module M which also affects feature F — is that intentional?"
-- "Should this reuse the existing utility at `path/to/util` or create a new one?"
-
-**C. Edge Cases & Error Handling**
-- "The spec doesn't cover what happens when X fails — should we retry, fail silently, or propagate?"
-
-**D. Scope Boundaries**
-- "Implementing REQ-003 would require changing the shared Z interface — is that in scope?"
-
-**E. Technical Decisions**
-- "What's the preferred approach for state management here — option A or option B?"
-- "Should tests use real DB or mocks for this feature?"
+From the codebase exploration, identify implementation questions and resolve them with the user
+before designing phases, so the planner starts with zero ambiguity. Ask about: **implementation
+approach** (spec says X but code does Y; two ways to extend), **integration points** (reuse vs. new;
+shared-module impact), **edge cases** (unspecified failure handling), **scope boundaries** (does
+REQ-N require changing a shared interface), and **technical decisions** (state management, real DB
+vs. mocks).
 
 **Rules:**
 - **Always use the `AskUserQuestion` tool** to ask questions — never embed questions in plain text output
@@ -140,65 +119,23 @@ Before designing phases, derive the **behavioral, scenario-based tests** that wi
 feature works and that nothing regressed. This step drives phase design — scenarios come first so
 each phase is built to satisfy specific, observable behaviors.
 
-**Read `references/test-scenarios.md` and follow it.** It is the authority on this step.
+**Read `references/test-scenarios.md` and follow it — it is the authority on this step** (scenario
+format, systematic derivation, two altitudes, the placement/containment test, regression rules, the
+coverage checklist). Do not restate its content here or in your reasoning; apply it. This step must
+not be skipped or done shallowly — the process-level obligations it feeds are:
 
-The essentials, so this is not skipped or done shallowly:
-
-- Write each scenario as **Steps + Expected** — the ordered actions (an actor and a trigger), then
-  the **observable outcome** at a stable boundary (UI, API response, index query, rendered output).
-  One behavior per scenario (one capability per flow). Group scenarios into `### Unit` / `### API` /
-  `### E2E` subsections in the phase file, showing only the non-empty ones.
-- **Test behavior, not implementation.** Never let an assertion name a private function, an internal
-  call order, or an intermediate data shape — those tests break on refactor and add no value. If the
-  design or your draft phrases a test as "function X returns Y," rewrite it as the observable outcome
-  a user or caller would see. (See the before/after rewrites in the reference.)
-- **Derive systematically** from the source: every functional requirement → a happy-path scenario
-  **and** its negative/failure scenario; every edge case → a scenario; every state transition
-  (edit/update/re-index/delete, not just create) → a scenario; every cross-boundary transform → a
-  round-trip scenario; config-/data-driven behavior → a scenario that varies the data.
-- **Derive at two altitudes — atomic AND end-to-end flow.** Atomic scenarios (one trigger, one
-  outcome, narrowest boundary) map to unit/API tests. But every user-facing capability that spans
-  screens or services (create→save→reopen→render, edit→see-updated, save→search) **also** needs an
-  **end-to-end flow scenario** — an ordered multi-step user journey through the running system,
-  with checkpoints inline, proving the whole capability works. No-UI capabilities (search) get an
-  **API flow scenario** instead. Give each entity/country variant its own flow. A plan of only
-  atomic scenarios has not proven the feature works end to end. See `references/test-scenarios.md`,
-  "Two altitudes."
-- **Regression scenarios are mandatory when the plan touches shared code** — assert the old behavior
-  is unchanged, even if the source doc names no such requirement. Add it and note the gap.
-- **Trace every scenario** to a requirement / edge case / risk id. A scenario tracing to nothing is
-  either implementation trivia (drop it) or a spec gap (flag it).
-
-**Where scenarios live — split by altitude across two file kinds:**
-
-- **Phase-scoped scenarios (`### Unit` and `### API`)** go into the **`phase-N.md` file that
-  delivers that behavior** — one scenario in one phase, written out in full as a Steps + Expected
-  block with its trace tag.
-- **End-to-end flow scenarios (`### E2E`)** are placed by a **containment test**. Because each phase
-  is a vertical slice that owns every layer its capability touches, a flow whose every step runs on
-  **that one slice's own code** is *phase-level* and lives in that phase's `### E2E` subsection —
-  the common case. Only a flow whose steps **cross slice boundaries** (it combines two
-  independently-built capabilities, so no single phase can run it) is *system-level* and lives in
-  **`plan.md`'s `## System E2E Tests` section**. See `references/test-scenarios.md`, "the placement
-  rule," for the discriminator and worked examples.
-
-During this step, first derive the whole set so you can check feature-wide coverage (every
-requirement, edge case, risk, and regression), then distribute: atomic Unit/API scenarios to their
-phase, and each E2E flow by the containment test (phase-level to its phase — the common case;
-cross-slice to plan.md's System E2E Tests section). Number them globally (S1, S2, …) so the trace
-tags stay unique across all files. **Write each scenario out in full where it lives; never restate it elsewhere and never
-replace it with an "id-only" pointer like "see S4" — a reader must be able to read any one file top
-to bottom without chasing ids across files.**
-
-**Mandatory coverage-map pass (do not skip):** before writing the phase files, build an explicit
-map pairing every source item — each requirement, edge case, risk, "shall not change" clause, and
-**each named variant** of a capability — with the scenario id(s) covering it. This is a written
-pass, not a mental one; it is what catches the coverage that a linear read misses (the 2nd/3rd
-variant of a capability, the enforcement negative on each gated axis, the plain create-then-view,
-the edit/re-index transition). Any item with no scenario is filled or flagged with a reason. This
-map is a **working artifact for you only — it does not become a section in plan.md** (no audit,
-coverage-map, or traceability-matrix section is written into any output file); coverage lives
-implicitly in the per-scenario trace tags. See `references/test-scenarios.md`, "Coverage checklist."
+- **Derive the whole set first, then distribute.** List every scenario across the feature to confirm
+  coverage, then place each: Unit/API in the phase that delivers it; each E2E flow by the containment
+  test (phase-level to its phase — the common case; cross-slice to plan.md's System E2E). Number
+  globally (S1, S2, …) so trace ids stay unique across files.
+- **Regression scenarios are mandatory when the plan touches shared code**, even if the source names
+  no such requirement — add them and note the gap.
+- **Do a written coverage-map pass** before writing phase files: pair every source item (each
+  requirement, edge case, risk, "shall not change" clause, and each named variant of a capability)
+  with the scenario id(s) covering it. A written pass catches what a linear read misses (the 2nd/3rd
+  variant, the enforcement negative, the plain create-then-view). Fill or flag any gap. This map is a
+  **working artifact only — never a section in any output file** (no audit / coverage-map /
+  traceability-matrix section); coverage lives in the per-scenario trace tags.
 
 ### Step 5: Design the Phases
 
@@ -211,129 +148,65 @@ and should be split.
 
 **Slice vertically, never horizontally:**
 - A phase delivers a **thin end-to-end capability a user can exercise** — e.g. "a user registers and
-  the account exists: input validated → persisted → confirmable on read" — cutting through every
-  layer it needs (data, service, endpoint/form, validation, response/render), not one layer across
-  all capabilities.
-- **Anti-horizontal rule:** a phase must not be "all of layer X." If a phase's title names only a
-  repo or layer with no user-visible outcome ("db: schema", "api: validation", "ui: render"), it is
-  a horizontal slice — re-slice it around the capability it serves. A phase spanning several repos to
-  deliver one working capability is correct; several phases each confined to one repo is the
-  anti-pattern.
-- **Load-bearing-work rule — every phase must *build* something the feature needs, not merely
-  exercise a prior phase.** Before keeping a phase, read its `## Implementation` and ask: *does it add
-  new, non-trivial production code whose absence would make the feature not function?* If its steps
-  are mostly "confirm X", "verify the prior phase's builder handles Y", "no change needed here" —
-  with one stray real edit buried among them — it is **not a slice**; it is the prior slice's own
-  test obligation wearing a phase costume. Fold it back: move its one real edit and all its scenarios
-  into the phase that built the mechanism they exercise.
-- **Do not split one mechanism across phases by data case.** When a slice builds a *generic*
-  mechanism (a config-driven builder, a validator that reads a config, a renderer with no per-case
-  branch), every data case it already handles — the second locale, one role vs. another, the third
-  record type — is **the same capability with different data**, not a new capability. Splitting, say,
-  "the endpoint for role A" and "the endpoint for role B" into two phases when one config-driven
-  handler serves both cuts one mechanism in half, and the second phase is left with nothing to build
-  but confirming the first. Keep all the data cases the mechanism covers in the **one** slice that
-  builds the mechanism; prove each case with its own scenario there. Only split when the second case
-  needs genuinely new production code (a different component, a new enforcement path, a distinct file
-  the mechanism doesn't already cover) — and then the split is justified by *that new code*, not by
-  the data.
-- **The first slice is the walking skeleton** — the narrowest capability that touches every layer
-  once and produces a visible result. Later slices thicken it and, being independent, mostly
-  parallelize (see the foundation-phase exception in the skill intro before pulling shared plumbing
-  into its own phase).
-- Leaves codebase in a working state with all tests passing.
-- Express dependencies as a DOT digraph in plan.md — nodes with no edges between them are independent.
-  Vertical slices are far more independent than horizontal layers; expect a walking-skeleton node
-  with a wide fan-out, not a strict layer chain.
-- **Carries its own phase-scoped test scenarios** (Step 4): assign each derived **Unit/API**
-  scenario to the phase that delivers its behavior, written as Steps + Expected (grouped by
-  `### Unit` / `### API`, plus a phase-level `### E2E` — which a vertical slice almost always owns,
-  since its whole point is a runnable end-to-end capability) in that phase file with its trace tag.
-  **Only a genuinely cross-slice E2E flow goes to plan.md's `## System E2E Tests`** (see the
-  containment test in Step 4); under vertical slicing that is the exception, not the norm. A phase
-  has no separate Done-When section; the scenarios it carries *are* its definition of done.
+  the account exists: validated → persisted → confirmable on read" — cutting through every layer it
+  needs (data, service, form, validation, render), not one layer across all capabilities. A phase
+  spanning several repos to deliver one working capability is correct; several phases each confined to
+  one repo/layer ("db: schema", "ui: render") is the horizontal anti-pattern — re-slice it.
+- **The first slice is the walking skeleton** — the narrowest capability touching every layer once
+  with a visible result. Later slices thicken it and, being independent, mostly parallelize (see the
+  foundation-phase exception in the intro before pulling shared plumbing into its own phase).
+- **Don't split one mechanism across phases by data case.** A *generic* mechanism (a config-driven
+  builder/validator, a per-case-free renderer) handles every data case it covers at once — the second
+  locale, another role, the third record type are the **same capability with different data**.
+  Splitting them leaves the second phase nothing to build but confirming the first. Keep all the data
+  cases in the one slice that builds the mechanism; prove each with its own scenario. Split only when
+  a case needs genuinely new production code (a different component, a new enforcement path) — the
+  split is justified by *that code*, not the data.
+- Leaves the codebase working with all tests passing. Express dependencies as a DOT digraph in
+  plan.md — expect a walking-skeleton node with a wide fan-out, not a strict layer chain.
+- **Carries its own phase-scoped test scenarios** (Step 4): each Unit/API scenario, plus a
+  phase-level `### E2E` — which a vertical slice almost always owns, since its point is a runnable
+  end-to-end capability. Only a genuinely cross-slice E2E goes to plan.md's System E2E. The scenarios
+  a phase carries *are* its definition of done — no separate Done-When section.
 
-**A test obligation is not a phase; only new behavior is.**
-Before making something a phase, ask: *does it introduce new user-visible behavior, or does it only
-assert existing behavior still holds?*
-- **Regression / "still generic" / "unchanged" work is a test obligation of whichever slice touches
-  that code — never its own phase.** A phase that only guards existing behavior (a standalone
-  "legacy-locale regression" phase, a "confirm the shared renderer is still generic" phase) is the
-  horizontal tell — it pulls "all the guard tests" out into their own layer, decoupled from the
-  feature work that created the risk. Delete it as a phase and **fold its assertions into the vertical
-  slice that actually touches the shared code**: a slice that changes a shared handler asserts the
-  pre-existing callers of that handler still work *for the code it touched*. Each slice guards the
-  regressions its own changes could break — no phase exists solely to hold guard tests.
-- **New behavior belongs to the slice where it first becomes meaningful — folded in, not stranded.**
-  Some work is a real capability but not independently valuable (e.g. a cross-row de-duplication rule
-  means nothing until a record can hold multiple rows). Do not give it its own thin phase; fold it
-  into the slice that first makes it meaningful. Only split a capability into its own phase when it is
-  both genuinely independent and substantial enough to demo alone (it builds new production code in a
-  file no other slice touches — see the load-bearing-work rule above).
-This generalizes the confirm-and-guard rule below: under vertical slicing a pure test-only phase
-almost always dissolves into the slice that builds (and therefore must guard) the code it covers.
+**Every phase must build load-bearing work; a test obligation is not a phase.** Before keeping a
+phase, read its `## Implementation`: *does it add new production code whose absence would break the
+feature?* If its steps are mostly "confirm X" / "verify the prior builder handles Y" / "no change
+needed" with one stray edit, it is not a slice — it is another slice's test obligation. Fold such
+work into the slice that **touches (modifies) or exercises (runs end-to-end) the code it concerns**:
+- **Regression / "unchanged" / "still generic" guards** belong in the slice that changes the shared
+  code — that slice asserts the pre-existing callers still work. No phase exists solely to hold guard
+  tests.
+- **"Touched" is not the only trigger — "exercised" counts too.** A generic downstream artifact (a
+  renderer, serializer, formatter) a slice does not *edit* but whose output *is the observable outcome
+  of that slice's own end-to-end flow* is exercised by it: its coverage is that slice's `### E2E`
+  render/output leg, not a separate phase. Do not read "the slice doesn't modify the renderer" as "no
+  slice touches it" — that pulls render back into a standalone layer-phase (horizontal slicing).
+- **New-but-not-independently-valuable behavior** (e.g. a cross-row de-dup rule, meaningless until a
+  record holds multiple rows) folds into the slice where it first becomes meaningful. Split it out
+  only when it builds new production code in a file no other slice touches.
 
-**Steps within a phase:**
-- A phase is decomposed by its file-level `## Implementation` work, not by a separate Step Graph.
-  Do not add a Step Graph or per-step Files/Tests/Done blocks — those duplicate the Implementation
-  bullets and the Test Scenarios. If sub-work is genuinely parallelizable, note it in one line of
-  Implementation prose; the parallelism lives in the phase graph, not a nested step graph.
+**Two things are genuinely *not* phases:**
+- **An unchanged artifact with no in-scope way to prove it** (a schema already generic whose only
+  consumer is out of scope). Record it as a **verified precondition in plan.md's Codebase Context**,
+  not a phase.
+- **A standalone confirm-and-guard phase** survives *only* when generic code is **neither modified nor
+  exercised end-to-end by any slice**, yet the feature relies on its genericness and it has no
+  coverage — a rare case with no slice to fold into. When one does survive: its `## Overview` states
+  the guard's purpose; its `## Implementation` first step notes no production change and the rest
+  describe the test file(s); if a test surfaces a real gap, fixing it to stay generic is in scope.
 
-**When the owning repo has no test runner (data/schema/JSON-package phases):**
-- Some phases deliver an artifact in a repo that cannot run tests (e.g. a raw JSON config package,
-  a types-only package — `test` is `echo no-test`). The proving scenario runs in the **consumer**
-  repo that imports the artifact and has a runner. Never invent a test runner for a repo that has
-  none.
-- **The scenario has exactly one home: the phase whose `## Implementation` builds the executing test
-  (the consumer phase).** Write the scenario in full there, once. The producer phase (the one that
-  ships the runner-less artifact) does **not** carry the scenario block — that would restate it in
-  two files. Instead, the producer phase's `## Implementation` states plainly that the repo has no
-  runner and, in prose, names where the behavior is proven (e.g. "the config's shape is exercised by
-  the config-contract test built in Phase 2"). That prose is a locator, not a scenario copy and not
-  an id-only pointer — the full scenario text still lives, once, in the consumer phase.
-- If the artifact repo *does* have a runner, the scenario lives in that phase normally; this rule
-  only applies when the producer repo cannot run tests.
-- **When the runner-less producer is folded into its consumer slice** (common under vertical slicing —
-  a shared config created inside the walking-skeleton slice that first reads it), producer and
-  consumer are the *same phase*: create the artifact in one Implementation step and prove it with the
-  scenarios in that same phase. There is no separate producer phase and no locator prose — the
-  distinct-producer-phase wording above applies only when they genuinely land in different phases.
+**Runner-less producer repos** (a raw JSON/config or types-only package — `test` is `echo no-test`):
+never invent a runner. The proving scenario lives in the **consumer** phase that imports the artifact
+and has a runner, written there once. If producer and consumer are separate phases, the producer's
+`## Implementation` names in prose where the behavior is proven (a locator, not a scenario copy). If
+the producer is folded into its consumer slice (common — a shared config created inside the
+walking-skeleton slice that reads it), they are the same phase: create the artifact and prove it
+there, no locator needed.
 
-**When an artifact is unchanged AND has no in-scope way to be proven — it is not a phase.**
-- If a repo needs no production change *and* there is no in-scope consumer/test that would exercise
-  it (e.g. a schema that is already generic, whose only consumer is out of scope), do **not** create
-  a phase for it — a phase that changes nothing and can prove nothing is hollow. Record the fact as
-  a **verified precondition in plan.md's Codebase Context** (e.g. "the shared persistence schema is
-  already generic; no change needed"), not as a phase. Only make it a phase if there is real work or
-  a real in-scope test to run.
-
-**When a phase changes no production code (confirm-and-guard / regression-only phases):**
-- **First check it should exist at all.** Under vertical slicing, a test-only guard almost always
-  belongs *inside* the slice that touches the code it guards (see "A test obligation is not a phase"
-  above) — fold it there rather than making it a phase.
-- **"Touched" means *modified*; "exercised" means *run by a slice's end-to-end flow*. A guard folds
-  into any slice that *exercises* the code — not only one that modifies it.** This is the distinction
-  that decides most confirm-and-guard calls, so apply it before creating the phase. A generic
-  downstream artifact (a renderer, a serializer, a formatter) that a slice does not *edit* but whose
-  output *is the observable outcome of that slice's own end-to-end flow* is **exercised** by that
-  slice: the slice must run through it to prove its capability is user-visible. Its coverage is that
-  slice's E2E leg — write it as the render/output step of the slice's `### E2E`, not as a separate
-  phase. Do not treat "the slice doesn't modify the renderer" as "no slice touches the renderer" —
-  that mistake pulls the render back out into a standalone layer-phase and re-creates horizontal
-  slicing. (Concretely: if the capability is "a value the user enters becomes visible downstream,"
-  the downstream display is part of that capability's slice, generic or not.)
-- Keep a standalone confirm-and-guard phase **only** when the guarded code is genuinely generic, is
-  **neither modified nor exercised end-to-end by any slice in this plan** (no slice's flow runs
-  through it to reach a user-visible outcome), yet the feature *relies* on its genericness and it
-  currently has no coverage — a genuinely rare case where there is no slice to fold into. When that
-  holds, it is a phase of the shape below; otherwise fold it in.
-- A phase may exist purely to prove an already-generic capability still holds (add missing test
-  coverage; no source change). Its `## Overview` states that purpose (why the guard exists). Its
-  `## Implementation` first step states plainly that no production code changes — the
-  component/schema is already generic — and the remaining steps describe the **test file(s)** (setup,
-  assertions, what they prove), exactly like any other Implementation step. If a test surfaces a real
-  gap, fixing it to stay generic is in scope and noted. Such a phase still has only the four body
-  sections; it is simply Implementation-light and test-focused, not a different shape.
+**Steps within a phase:** decompose by the `## Implementation` work, not a separate Step Graph or
+per-step Files/Tests/Done blocks (those duplicate Implementation and Test Scenarios). Note any
+parallelizable sub-work in one line of prose; real parallelism lives in the phase graph.
 
 ### Step 6: Write the Plan Documents
 

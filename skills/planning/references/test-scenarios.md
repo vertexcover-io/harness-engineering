@@ -4,16 +4,6 @@ How to derive **behavioral, scenario-based tests** for a plan — tests that pin
 the feature *does* for a user or a caller, not how a particular function is wired. This is the
 part of a plan that proves the feature works and that nothing regressed.
 
-## Contents
-
-- [The core rule: test behavior, not implementation](#the-core-rule-test-behavior-not-implementation)
-- [What a scenario is](#what-a-scenario-is)
-- [How to derive scenarios (the extraction pass)](#how-to-derive-scenarios-the-extraction-pass)
-- [Rewriting an implementation test into a behavioral scenario](#rewriting-an-implementation-test-into-a-behavioral-scenario)
-- [Regression scenarios (guarding what already worked)](#regression-scenarios-guarding-what-already-worked)
-- [Where scenarios live (phase files, not plan.md)](#where-scenarios-live-phase-files-not-planmd)
-- [Coverage checklist](#coverage-checklist)
-
 ---
 
 ## The core rule: test behavior, not implementation
@@ -98,25 +88,19 @@ redundant, they catch different failures and run at different cost:
    UI (search, a headless endpoint), its flow is an **API flow**: set up data through the service,
    call the API, assert the response.
 
-**You must derive flow scenarios, not only atomic ones.** A plan made purely of atomic scenarios
-silently drops the integration story — the exact thing a reviewer means by "does this actually work
-end to end?" For every capability a user (or caller) exercises across more than one screen or
-service — create-then-view, save-then-search, edit-then-see-updated — write at least one flow in
-addition to the atomic scenarios for its parts. Each distinct variant of a capability (per entity,
-role, or data case) is its own flow, even when steps overlap; do not merge unrelated capabilities
-into one flow, and do not split one capability into many tiny flows. Under vertical slicing a flow
-belongs to the slice that delivers its capability, and — because that slice owns every layer the
-capability touches — the flow usually runs entirely on that one slice's code (a phase-level `### E2E`,
-per the placement rule below); only a flow combining two independently-built capabilities crosses
-slice boundaries into plan.md's System E2E.
-
-Rough altitude guide: a single field validating, a component offering the right options, or one
-query returning/omitting a record are **atomic**; a create→save→reopen→appears-downstream journey or
-an edit→see-updated journey is an **E2E flow**; a save-then-find-via-API is an **API flow**.
+**You must derive flow scenarios, not only atomic ones** — a plan of only atomic scenarios silently
+drops the integration story ("does this actually work end to end?"). For every capability a user or
+caller exercises across more than one screen or service (create-then-view, save-then-search,
+edit-then-see-updated), write at least one flow *in addition to* the atomic scenarios for its parts.
+Each distinct variant (per entity, role, or data case) is its own flow; don't merge unrelated
+capabilities into one flow or split one capability into many tiny ones. Under vertical slicing a flow
+belongs to the slice that delivers its capability and usually runs entirely on that slice's code (a
+phase-level `### E2E`); only a flow combining two independently-built capabilities crosses into
+plan.md's System E2E (see the placement rule below).
 
 Derive the atomic scenarios first (the extraction pass below), then ask per capability: *what is the
-shortest user (or caller) journey that proves this whole thing works?* — and write that as a flow.
-(For the concrete Steps/Expected shape of every scenario, see "Where scenarios live" below.)
+shortest journey that proves this whole thing works?* — and write that as a flow. (Steps/Expected
+shape is under "Where scenarios live" below.)
 
 ---
 
@@ -278,26 +262,15 @@ the exception holding only the truly cross-slice journeys.
   credentials, *then* reach a protected page — registration is one slice, login another, protected
   routes a third, so the combined journey is owned by no single phase.)
 
-**The discriminator is containment, not altitude.** Ask of every flow: *does every step run on code
-this one slice builds?* Yes → phase `### E2E` (the common case under vertical slicing). No (it needs
-another slice assembled) → plan.md System E2E (the exception). The failure this prevents is twofold:
-(a) forcing a genuinely cross-slice flow into a phase that can't run it (a hollow, context-starved
-test), and (b) — the failure horizontal slicing caused — draining every good end-to-end test into
-plan.md and leaving phases with only unit tests, because horizontal layers could never run a flow on
-their own. If plan.md's System E2E section is filling with flows each runnable inside one phase, the
-phases were sliced horizontally; re-slice vertically and those flows drop back into their phases.
+**The discriminator is containment, not altitude:** *does every step run on code this one slice
+builds?* Yes → phase `### E2E`. No → plan.md System E2E. This prevents both forcing a cross-slice
+flow into a phase that can't run it, and draining every good E2E into plan.md leaving phases with
+only unit tests. If plan.md's System E2E is filling with flows each runnable inside one phase, the
+phases were sliced horizontally — re-slice.
 
-**Each scenario is written out in full exactly once, in its home file.** Never restate a scenario in
-a second file, and never replace it with an id-only pointer such as "see S4 in phase 2" — every file
-must read top to bottom on its own. Do not add a per-phase scenario list or matrix, and do not add
-Unit/API scenarios to plan.md.
-
-**Derive the whole set first, then distribute.** During the Derive Test Scenarios step, list every
-scenario across the feature so you can confirm feature-wide coverage (every requirement, edge case,
-risk, and regression). That full list is a *working artifact for you* — it does not get written into
-any file as a matrix. Then distribute: Unit/API to their phase, each E2E flow by the containment
-test above (phase-level E2E to its phase's `### E2E` — the common case; cross-slice E2E to plan.md's
-System E2E Tests section). Number scenarios **globally** (`S1, S2, …`) so trace ids stay unique across files.
+**Each scenario is written out in full exactly once, in its home file.** Never restate it in a second
+file or replace it with an id-only pointer ("see S4"); every file must read top to bottom on its own.
+Do not add a per-phase scenario list or matrix, and do not add Unit/API scenarios to plan.md.
 
 **In each `phase-N.md`** — a **Test Scenarios** section grouped into `### Unit`, `### API`, and
 (when the phase owns a self-contained end-to-end flow) `### E2E` subsections. **Only include the
@@ -396,49 +369,32 @@ Scenario S20 (flow): A user registers, then logs in, then reaches a protected pa
   (traces to F1, F3, F6)
 ```
 
-A phase has **no Done-When section** — the scenarios listed in the phase (Unit/API, plus any
-phase-level `### E2E`) *are* its definition of done. Do not add a checklist that restates their ids.
-
-Because there is no central matrix, coverage is verified by the derive-first pass and the checklist
-below — walk the requirements/edge-cases/risks and confirm each has a scenario in its home file
-(Unit/API and phase-level E2E in a phase; cross-slice E2E flows in plan.md).
+A phase has **no Done-When section** — the scenarios listed in the phase *are* its definition of
+done. Do not add a checklist that restates their ids.
 
 ### Which subsection does a scenario go in?
 
-Group by the **altitude/boundary the scenario asserts at**, which usually maps to the kind of test
-that will be written:
+Group by the **boundary the scenario asserts at**:
 
-- **`### Unit`** — a single component/function/module behavior at the narrowest boundary: dropdown
-  options, one field's validation, a transform's round-trip, a renderer's output. Never crosses a
-  repo.
-- **`### API`** — a behavior at a service's public API: create-then-view a record, a search query,
-  a write rejected at the enforcement boundary. Set up data, call the API, assert the response.
-- **`### E2E`** — a multi-step user journey through the running system, from a user entry point to
-  a user-visible outcome. These are the flow scenarios. Placement follows the containment test above:
-  a flow whose every step runs on **one vertical slice's own code** goes in that phase's `### E2E`
-  (the common case — a slice spans every layer, so its capability's flow is self-contained); only a
-  flow whose steps **cross slice boundaries** (no single phase can run it end to end) goes in
-  plan.md's `## System E2E Tests`.
+- **`### Unit`** — a single component/function/module at the narrowest boundary: dropdown options,
+  one field's validation, a transform's round-trip, a renderer's output. Never crosses a repo.
+- **`### API`** — a service's public API: create-then-view a record, a search query, a write rejected
+  at the enforcement boundary. Set up data, call the API, assert the response.
+- **`### E2E`** — a multi-step user journey through the running system to a user-visible outcome
+  (the flow scenarios). Placed by the containment test above.
 
-A single capability often contributes to more than one subsection (a role assignment has a Unit
-validation scenario, an API search scenario, and appears in an E2E flow) — that is expected, not duplication.
-The subsection is chosen per scenario by where it asserts, not per capability.
+A single capability often contributes to more than one subsection (a Unit validation scenario, an API
+search scenario, and an E2E flow) — expected, not duplication. The subsection is chosen per scenario
+by where it asserts, not per capability.
 
 ---
 
 ## Coverage checklist
 
-**This is an action, not a reading.** Before writing the phase files, build an explicit **coverage
-map** — a list pairing every source item (each functional requirement, edge case, risk, "shall not
-change" clause, and each named variant of a capability) with the scenario id(s) that cover it. Walk
-the source top to bottom; do not rely on memory of what you "probably covered." Any source item with
-no scenario is a gap you must either fill or flag as a deliberate omission with a reason. The map is
-your working artifact (it does not go into plan.md), but you must actually produce it — a plan whose
-scenarios were written without this pass reliably drops the coverage that does not fall out of a
-linear read: the second/third variant of a capability, the enforcement negative, the plain
-create-then-view, the edit/re-index transition.
-
-Cross-check the map against every box below:
+**This is an action, not a reading.** Build the coverage map (per "Do a written coverage-map pass" in
+SKILL.md Step 4), then cross-check it against every box below. Walking the source top to bottom is
+what catches the coverage a linear read misses (the 2nd/3rd variant, the enforcement negative, the
+plain create-then-view, the edit/re-index transition):
 
 - [ ] Every functional requirement has at least one happy-path scenario **and** its negative/failure
       scenario where one exists.
