@@ -1,25 +1,20 @@
 ---
 name: brainstorm
 description: >
-  Structured brainstorming and design exploration for deep problem understanding before implementation.
-  Use this skill whenever the user says "brainstorm", "think through", "explore this problem",
-  "let's think about", "what are the angles", "help me understand", "design this", or wants to
-  deeply analyze a feature, architecture decision, or technical challenge before writing code.
-  Also trigger when the user arrives with an existing plan and wants it interrogated — "grill me",
-  "stress-test my plan", "poke holes in this design" (see Grill Mode). Also trigger when the user
-  is about to jump into implementation of something non-trivial and hasn't explored the problem
-  space yet. This skill produces an architectural design doc — no code, scaffolding, or implementation.
+  Explore a problem and design it before implementation — surfacing every decision the
+  design turns on, then producing an architectural design doc (no code). Use when the user
+  wants to brainstorm, think through, or design a non-trivial feature, architecture change,
+  or migration; when they hand over a design to interrogate ("grill me", "poke holes in
+  this" — see Grill Mode); or before jumping into implementation of something structural
+  they haven't explored yet.
 ---
 
 # Brainstorm: Deep Problem Understanding and Design
 
-Two jobs that work together:
-
-- **Deep problem understanding** — explore the problem from every angle, surface hidden
-  assumptions, identify what hasn't been considered.
-- **Design synthesis** — produce an architectural design (conceptual, not code-level).
-
-A thorough exploration produces a good design; a rushed design produces rework.
+**The job: open the decision tree, then close it.** A design is done when every decision it
+turns on is either resolved or consciously parked — not when questioning feels thorough. You
+open the tree by discovering decisions (Phases 1-5), close it at the completeness gate, then
+synthesize the design doc. The design is conceptual — boundaries, contracts, trade-offs, no code.
 
 <HARD-GATE>
 Do NOT write code, scaffold, or invoke an implementation skill until the design doc is
@@ -27,37 +22,27 @@ written AND (unless bypassed) approved by the user. Applies to EVERY project, ho
 "simple" it seems.
 </HARD-GATE>
 
-## Core Principles
-
-- **Understand before solving** — a well-understood problem reveals its own solution.
-- **Surface what's hidden** — unstated constraints, implicit requirements, hidden dependencies,
-  catastrophic edge cases.
-- **Thinking gaps over solutions** — finding what hasn't been considered beats refining what has.
-- **Design at the right level** — components, contracts, boundaries, trade-offs. No pseudocode.
-- **YAGNI ruthlessly** — every knob, flag, optional feature must justify its existence *now*.
-
 ## Questioning Discipline
 
 Applies to every question in every phase:
 
 - **Explore before asking.** Resolve a question from the cheapest authoritative source first:
-  1. **Lessons** — `.harness/knowledge/INDEX.md` for past incidents and patterns in this codebase.
-     the decision instead; question it only if the new design has a concrete reason to revisit it.
-  2. **Code and git history** — for what the map doesn't cover; code is authoritative when it
-     conflicts with the map.
-  3. **The user** — only for decisions they alone can make: preferences, priorities, business
+  1. **Code and git history** — code is authoritative when it conflicts with stated assumptions.
+  2. **The user** — only for decisions they alone can make: preferences, priorities, business
      context, unknowable intent.
 - **Every question carries a recommendation.** State your recommended answer and the one-clause
   why. In `AskUserQuestion`, the recommended option goes first, labeled "(Recommended)".
   Forming a recommendation forces the thinking; the user accepts or corrects instead of
   authoring from scratch.
-- **Resolve decisions in dependency order.** Treat open decisions as a tree: ask the question
-  that unblocks the most downstream questions first, and never ask a question whose best form
-  depends on an unanswered upstream one. Batch 2-4 questions in one `AskUserQuestion` call only
-  for independent context facts; any question whose answer could reshape another is asked alone.
-- **Exit on shared understanding, not stamina.** Questioning ends when every identified decision
-  branch is resolved or consciously parked in Open Questions — not when the list feels long
-  enough. An unresolved material branch means keep going.
+- **Write the decision tree down.** Keep an explicit written list of open decisions — not a
+  mental model. Tag each `blocks:` / `blocked-by:` and resolve top-down: ask the decision that
+  unblocks the most downstream ones first, never one whose best form depends on an unanswered
+  upstream one. A decision you were forced to write cannot be silently forgotten. Batch 2-4
+  questions in one `AskUserQuestion` call only for independent context facts; any question whose
+  answer could reshape another is asked alone. (Format and derivation: `references/question-completeness.md`.)
+- **Exit on a closed decision tree, not stamina.** Questioning ends only after the completeness
+  gate (see Phase 2) confirms no material decision is still open — every one resolved or
+  consciously parked in Open Questions. "The list feels long enough" is not the exit condition.
 
 ## Scope of This Skill
 
@@ -95,14 +80,13 @@ competing alternative.
 |-------|----------------------|------------------------------------------|------------------------------|
 | 1 Context & scope | one AskUserQuestion round | full | full |
 | 2 Problem & requirements | folded into that round | focused | full depth |
+| 2 Completeness gate | inline self-check | subagent | subagent |
 | 3 Architectural challenges | skip unless boundaries move | focused | full |
 | 4 Approach comparison | skip — state the approach in one line | 2 approaches | 2-3 approaches |
 | 5 Stress test | 2-3 most relevant lenses | all lenses, brief | all lenses, full |
 | 6 YAGNI + design doc | a few paragraphs | key sections | thorough |
 | 7 Spec review | self-review against the rubric (no subagent) | subagent review | subagent review |
 | 8 User review gate | always | always | always |
-
-Start shallow; go deeper if hidden complexity surfaces.
 
 ## External Dependency Declaration (continuous — not a phase)
 
@@ -155,36 +139,29 @@ the test: would the user understand this better by *seeing* it? Browser for mock
 wireframes, layout comparisons; terminal for requirements, tradeoffs, scope decisions. A
 question about UI is not automatically a visual question. Skip entirely for backend-only work.
 
-### Phase 2 — Problem & Requirements Exploration
+### Phase 2 — Problem & Requirements Exploration (open the tree)
 
-Map the full problem space and discover what's needed. Requirements rarely arrive complete.
+Requirements rarely arrive complete. **Seed the decision tree from two sources** so
+completeness is derived, not recalled: walk every section of `references/design-template.md`
+(an empty or hand-wavy section is an unasked question — this covers problem space,
+functional/non-functional requirements, edge cases, the hard structural questions, and
+personas/non-goals for user-facing work) and walk the stress-test lenses as question sources.
+Both feed the written tree.
 
-- **Problem space:** stakeholders, conflicting needs, constraints (technical, organizational,
-  temporal), analogous solved problems.
-- **Functional requirements:** core behaviors, I/O, business rules, integration points.
-- **Non-functional:** performance, scalability, reliability, security, observability,
-  maintainability.
-- **Edge cases:** boundaries, dependency failures, unexpected user behavior, time/version
-  evolution.
-- **Product framing (user-facing features only):** capture personas and explicit
-  non-goals while questioning — 1-2 targeted questions at most; this feeds the PRD
-  section, it is not a new interrogation round. Skip for internal-facing changes.
-
-Switch to **one question at a time**, in dependency order, each with a recommendation
+Ask **one question at a time**, in dependency order, each with a recommendation
 (Questioning Discipline). Multiple-choice when possible. Always via `AskUserQuestion`.
 
-**Techniques:** assumption surfacing, pre-mortem, constraint inversion, scope probing,
-dependency mapping.
+**Completeness gate (exit criterion).** Before leaving questioning, confirm no material
+decision is still open. Minor: inline self-check re-walking both sources. Medium/Major:
+dispatch a fresh completeness sub-agent. Anything it surfaces re-enters the tree and must be
+resolved or parked. Full rubric and sub-agent prompt: `references/question-completeness.md`.
 
 ### Phase 3 — Architectural Challenges
 
-Identify hard structural problems shaping the solution:
-- **Boundaries & interfaces** — where components start/end; contracts between them.
-- **Data flow & ownership** — origin, movement, source of truth.
-- **State management** — where state lives, how it syncs.
-- **Concurrency & ordering** — races, ordering dependencies.
-- **Evolution & migration** — change over time, incremental migration path.
-- **Integration seams** — connections to existing systems, contract stability.
+The hard structural questions (boundaries, data ownership, state, concurrency, migration,
+integration seams) are surfaced by the Phase 2 template walk — see the High-Level Design
+entry in `references/question-completeness.md`. This phase is where you resolve them into
+the chosen structure; at Minor depth skip unless boundaries actually move.
 
 ### Phase 4 — Approach Comparison
 
@@ -197,19 +174,9 @@ Pros/Cons blocks for losers.
 
 ### Phase 5 — Approach Stress Test
 
-Stress-test the chosen approach before writing the doc. Walk these lenses against it —
-generative, not just review. Each finding flows into Requirements, Edge Cases, Risks, or
-Decisions:
-
-- **End user:** failure modes visible or silently degrading?
-- **6-months-later maintainer:** where will the next reader get stuck?
-- **System under load:** what breaks at 10x / 100x?
-- **Adjacent systems:** what contract did we assume that might change?
-- **Security & abuse:** who exploits this and how?
-- **Failure modes:** what happens when each dependency dies?
-
-Also check: unvalidated assumptions, decision reversibility, edge cases vs. chosen approach.
-If a lens produces nothing, that's suspicious — try again or note why it doesn't apply.
+Stress-test the chosen approach before writing the doc. Walk the lenses in
+`references/stress-test-lenses.md` against it — generative, not just review. Each finding
+flows into Requirements, Edge Cases, Risks, or Decisions.
 
 ### Phase 6 — YAGNI Pass + Design Synthesis
 
@@ -221,50 +188,16 @@ the right value is genuinely empirical (then defer the value, not the knob).
 `.harness/features/<SPEC_NAME>/design.md` (the orchestrator passes `SPEC_NAME`; if invoked
 standalone without a `SPEC_NAME`, slugify the topic and create `.harness/features/<slug>/design.md`).
 
-Sections (matching `references/design-template.md`): Problem Statement, Context,
-Product Requirements (PRD — always present: personas, goals/non-goals, story→F# table,
-user flows; for internal-facing changes the body is the
-`No PRD — internal-facing change.` sentinel), Requirements (functional + non-functional +
-edge cases as EARS-style IDs: F1, F2…, NF1, NF2…, EC1, EC2…), Key Insights (conditional),
-Architectural Challenges, Approaches Considered, Chosen Approach, High-Level Design,
-External Dependencies & Fallback Chain (finalized here from the continuous External
-Dependency Declaration notes), Open Questions, Risks and Mitigations, Assumptions.
-"What this does NOT do" lives in the PRD's Non-Goals — not a separate section.
-
-**Output rules** (to keep docs tight):
-- **Key Insights section is conditional** — include only when 3-4 genuine reframings exist
-  that aren't restated in Architectural Challenges or Chosen Approach.
-- **Assumptions** — no tautologies, no verified facts, no "we'll see". Omit if empty.
-- **Open Questions** — items that block planning. Tunable knobs go inline with their
-  decision as `(default X, tune empirically)`.
-- **Code blocks show shapes, not bodies** — interfaces, signatures, data shapes. Bodies
-  belong in planning/coding.
-- **Cite, don't re-enumerate** — if a linked artifact covers it, reference the section.
-- **PRD never restates acceptance criteria** — stories reference F# IDs; flows describe
-  observable behavior only (no architecture). F# stays the single source of truth.
-- **Justification budget** — one clause per decision. If more is needed, the decision
-  isn't ready.
-
-**Diagrams required** (mermaid, part of the design — not decoration):
-- **Architecture diagram** (`graph TB` / `graph LR`) — required for designs with 3+
-  components. Show components and their connections.
-- **Sequence diagrams** (`sequenceDiagram`) — one per multi-component flow that crosses
-  2+ boundaries (e.g., upload pipeline, auth handshake, write-with-fanout).
-- **State diagrams** (`stateDiagram-v2`) — when an entity has non-trivial transitions
-  (e.g., subscription confirmation, payment lifecycle, document review states).
-
-If the diagram is wrong, the design is wrong. Update diagrams when the design changes.
+The section list, output rules (keep docs tight), and required mermaid diagrams all live
+in `references/design-template.md` — follow it; do not restate it here. The External
+Dependencies & Fallback Chain section is finalized here from the continuous External
+Dependency Declaration notes. "What this does NOT do" lives in the PRD's Non-Goals.
 
 ### Phase 7 — Spec Review
 
-Dispatch a fresh subagent with the design doc + review rubric (NOT session history).
-Rubric covers: completeness vs. the lens list (Phase 5), EARS-style requirement IDs,
-YAGNI pass evidence, no tautological assumptions, contract clarity, missing sections,
-PRD integrity — section always present, with full subsections or (internal-facing only)
-the `No PRD — internal-facing change.` sentinel as its body;
-every user flow's behavior covered by at least one F#; no criteria text duplicated
-between PRD and Requirements.
-Iterate fixes; max 5 iterations, then surface to human.
+Dispatch a fresh subagent with the design doc + the rubric in
+`references/spec-review-rubric.md` (NOT session history). Iterate fixes; max 5
+iterations, then surface to human.
 
 ### Phase 8 — User Review Gate (configurable)
 
@@ -277,31 +210,9 @@ Iterate fixes; max 5 iterations, then surface to human.
 
 On approval (or bypass), flow to spec-generation.
 
-## Handling Pushback
-
-If the user wants to skip phases, let them — but note what's skipped and what risk it
-introduces. If they disagree with the recommendation, explore why — their context often
-reveals factors you missed. If they want to go straight to implementation, that's their
-call, but ensure it's conscious, not habit.
-
 ## Anti-Patterns
 
-- **Premature solutioning** — jumping to "here's how to implement" before understanding.
-- **Single-perspective analysis** — only happy path or only developer view. Rotate.
+- **Premature completion** — closing the tree because the list feels long, before the gate
+  confirms no material decision is open. The failure this skill exists to prevent.
+- **Premature solutioning** — jumping to "here's how to implement" before the tree is open.
 - **Skipping for "simple" problems** — simple-seeming problems harbor unexamined assumptions.
-- **Asking what the context layer or codebase already answers** — check `D-*` decisions and
-  explore first; user time is for decisions only they can make.
-- **Questions without recommendations** — open-ended questions offload the thinking to the
-  user. Always bring a recommended answer.
-- **Ignoring non-functional requirements** — perf, security, observability, maintainability
-  is where production problems live.
-- **Edge cases as afterthought** — found in brainstorm = cheap; found in prod = catastrophic.
-- **Restating across sections** — Key Insights ↔ Architectural Challenges ↔ Risks should
-  not say the same thing in different words.
-- **Justification-stacking** — piling rationale on already-settled decisions.
-- **Straw-man approaches** — listing obvious losers with full Pros/Cons to make the chosen
-  one look better.
-- **Combining the visual companion offer with other content** — the offer must be its own
-  standalone message.
-- **Re-deriving a plan the user brought** — that's Grill Mode: interrogate their design,
-  don't compete with it.

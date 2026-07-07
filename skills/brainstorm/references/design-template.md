@@ -117,3 +117,29 @@ Known risks and how we plan to address them.
 What we're taking as given. What would invalidate these assumptions.
 Omit if empty — no tautologies or already-verified facts.
 ```
+
+## Output rules (keep docs tight)
+
+- **Key Insights is conditional** — include only when 3-4 genuine reframings exist that
+  aren't restated in Architectural Challenges or Chosen Approach.
+- **Assumptions** — no tautologies, no verified facts, no "we'll see". Omit if empty.
+- **Open Questions** — items that block planning. Tunable knobs go inline with their
+  decision as `(default X, tune empirically)`.
+- **Code blocks show shapes, not bodies** — interfaces, signatures, data shapes. Bodies
+  belong in planning/coding.
+- **Cite, don't re-enumerate** — if a linked artifact covers it, reference the section.
+- **PRD never restates acceptance criteria** — stories reference F# IDs; flows describe
+  observable behavior only (no architecture). F# stays the single source of truth.
+- **Justification budget** — one clause per decision. If more is needed, the decision
+  isn't ready.
+
+## Diagrams required (mermaid — part of the design, not decoration)
+
+- **Architecture diagram** (`graph TB` / `graph LR`) — required for designs with 3+
+  components. Show components and their connections.
+- **Sequence diagrams** (`sequenceDiagram`) — one per multi-component flow that crosses
+  2+ boundaries (e.g. upload pipeline, auth handshake, write-with-fanout).
+- **State diagrams** (`stateDiagram-v2`) — when an entity has non-trivial transitions
+  (e.g. subscription confirmation, payment lifecycle, document review states).
+
+If the diagram is wrong, the design is wrong. Update diagrams when the design changes.
