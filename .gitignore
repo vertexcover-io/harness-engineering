@@ -6,3 +6,4 @@ docs/*
 orchestrate-workspace
 code-review-workspace
 dev-docs
+.harness/.linear-config.json
