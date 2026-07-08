@@ -118,23 +118,32 @@ protected routes) builds on. On its own it is demoable: POST /register and the a
 
 ## Implementation
 
-<!-- Ordered, action-centric steps naming the files each touches, with the approach/content — not
-     a bare list and not one paragraph. This slice spans layers (model → service → route), so its
-     steps name files across them. Test steps state setup, assertions, and what they prove. -->
+<!-- Ordered, action-centric steps naming the files each touches. Every step that creates/changes a
+     function, schema, endpoint, or component states its Contract and Logic — the shape a coder
+     can't re-derive — not a sentence narrating the outcome. A pure wiring step stays a one-liner
+     (step 4). Test steps state setup, assertions, and what they prove (step 5). -->
 
-1. **Add the user model and storage** — create `src/models/user.py`: a Pydantic `User` with
-   `EmailStr` and a hashed-password field (never plaintext), following the validator shape in
-   `src/models/session.py`; and its storage accessor. This is the shared foundation, carried inside
-   the first slice that needs it rather than a phase of its own.
-2. **Add the registration service** — create `src/services/auth_service.py`: expose
-   `register(email, password)` that normalizes the email, rejects a duplicate (looks up the existing
-   account first), hashes the password with bcrypt (never stores plaintext), persists the user, and
-   returns the user without the password field. Follows the injected-deps shape in
-   `src/services/usage_service.py`.
-3. **Expose the endpoint** — create `src/routes/registration.py`: a `POST /register` route with a
-   Pydantic request model (`EmailStr` + password-strength validator); on valid input call
-   `auth_service.register` and return 201 with the password-free user; map duplicate → 409, weak
-   password → 422 naming the unmet rule. Mirrors `src/routes/health.py`.
+1. **Add the user model and storage** — create `src/models/user.py`.
+   - **Contract:** a Pydantic `User { email: EmailStr, password_hash: str, ... }` (never a plaintext
+     field) + a storage accessor `get_user(email) → User | None`, `save_user(User) → None`.
+   - **Logic:** validate `email` via `EmailStr`; the model exposes no plaintext password field at
+     all. This is the shared foundation, carried inside the first slice that needs it rather than a
+     phase of its own.
+   - **Integrates:** validator shape from `src/models/session.py`.
+2. **Add the registration service** — create `src/services/auth_service.py`.
+   - **Contract:** `register(email, password) → User (no password field) | raises DuplicateEmail`.
+   - **Logic:** normalize the email → `get_user` to check for an existing account → if found, raise
+     `DuplicateEmail` → hash the password with bcrypt (never store plaintext) → `save_user` →
+     return the `User` projection that omits the hash.
+   - **Integrates:** injected-deps shape from `src/services/usage_service.py`.
+3. **Expose the endpoint** — create `src/routes/registration.py`.
+   - **Contract:** `POST /register` with request `{email: EmailStr, password: str}` → `201 User`
+     (password-free) | `409` duplicate | `422` weak password.
+   - **Logic:** parse body into the request model (framework returns 422 on malformed) → run the
+     password-strength validator (length/upper/lower/digit), 422 naming the unmet rule on failure →
+     call `auth_service.register` → map `DuplicateEmail` → 409 → on success return 201 with the
+     password-free user.
+   - **Integrates:** route structure from `src/routes/health.py`.
 4. **Wire the route** — modify `src/routes/__init__.py`: register the new route on the app router.
 5. **Cover it** — create `tests/test_registration.py`: with no account for the test email, assert
    (a) a valid POST returns 201 and the body has no `password` field; (b) `password:"abc"` returns

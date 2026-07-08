@@ -88,6 +88,14 @@ migration); test infrastructure (fixtures, helpers) and E2E infrastructure (fram
 services and the dev server start); dependencies (what can run in parallel); and, for external
 libraries, current API signatures via context7 or web search.
 
+**Verify execution preconditions, don't assume them.** How the code *runs* is as load-bearing as how
+it's written: the dev/test command, the bundler, whether a worktree's dependency layout actually works
+with that command, which env file loads, and which services must be up. Check these in the actual
+environment (or mark them explicitly unverified) exactly as you'd verify a code assumption — an
+asserted-but-unchecked "the server starts with X" is a landmine a coder builds on before discovering
+it's false. Record them as **verified preconditions in plan.md's Codebase Context**, next to the code
+preconditions.
+
 **Depth scaling** (match effort to change size): minor → quick scan of 2-3 files, no parallel agents;
 medium → thorough scan, 1-2 explore agents; major → deep exploration, at most 2 explore agents plus
 main-thread Glob/Grep.
@@ -261,7 +269,7 @@ onto a phase that owns none. The `tdd` skill handles RED-GREEN-REFACTOR during e
 |---|---|---|
 | header | what phase this is, what it depends on | behavior, files, a prose summary |
 | `## Overview` | *why* this phase exists — its purpose and what it enables | file lists, step-by-step how, scenario prose, a restated phase-graph label |
-| `## Implementation` | *how* the change is made, as ordered steps naming the files each touches | scenario prose, done-criteria, purpose/why |
+| `## Implementation` | *how* the change is made, as ordered steps naming the files each touches, each production step stating its Contract and Logic | scenario prose, done-criteria, purpose/why |
 | `## Test Scenarios` | *what behavior* proves it works — Unit/API, plus the phase-level `### E2E` the slice runs on its own code (a vertical slice almost always owns one) | file lists, implementation how, cross-slice E2E flows (those go in plan.md) |
 | `## Commit` | the commit message | — |
 
@@ -269,12 +277,26 @@ onto a phase that owns none. The `tdd` skill handles RED-GREEN-REFACTOR during e
   it is its own phase, what it unlocks. It must add context no other section holds — not a reworded
   phase-graph label, not a narration of the steps. If it starts naming files or listing behaviors,
   cut it back to the "why."
-- **Implementation is ordered steps, not one paragraph.** Each step: a short bold action title, then
-  the file(s) it creates/modifies and the approach/content, in one or two sentences — enough to act
-  on. A test-file step states what it sets up, what it asserts, and what that proves; a bare
-  "Create: foo.test.ts (Vitest)" is not acceptable. Order steps the way the work unfolds. Include a
-  code block under a step only for genuinely non-obvious logic (a tricky algorithm, an easily
-  mis-implemented rule); routine code is left to the TDD cycle.
+- **Implementation is ordered steps with a per-step shape, not prose.** Each step opens with a short
+  bold action title naming the file(s) it creates/modifies, then states the construction — not a
+  sentence *narrating* the outcome, but the shape a coder cannot re-derive:
+  - **Contract** — the signature / data shape it introduces (`register(email, password) → User |
+    DuplicateError`), or the endpoint's request → response + error codes, or the schema entry point
+    and what it accepts/rejects. One line; this is the thing the coder must not guess.
+  - **Logic** — the ordered operations *including the branch and edge/error path*: e.g. normalize →
+    look up existing → reject duplicate → hash → persist → return without the secret field. A few
+    bullets, not a run-on sentence.
+  - **Integrates** *(optional)* — the specific existing function it calls or the pattern/convention
+    it follows or diverges from, with the reason.
+
+  **Mandatory for any step that creates or changes a callable function, a schema/validator, an
+  endpoint, or a component.** A pure wiring/registration step (register a route on the router, add
+  an export) may stay a one-liner — no Contract/Logic. A **test-file** step keeps its own shape:
+  what it sets up, what it asserts, and what that proves (a bare "Create: foo.test.ts (Vitest)" is
+  not acceptable). Order steps the way the work unfolds. The shape *replaces* run-on prose — Contract
+  + a few Logic bullets is usually shorter and more actionable. Include a code block under a step
+  only for genuinely non-obvious logic (a tricky algorithm, an easily mis-implemented rule); routine
+  code the Contract + Logic already pin down is left to the TDD cycle.
 - **Test Scenarios** carries `### Unit` / `### API`, and a `### E2E` for the flow this phase can run
   entirely on its own code — which a vertical slice almost always has, since the slice *is* an
   end-to-end capability; a slice with no phase-level E2E is a signal it may have been sliced
