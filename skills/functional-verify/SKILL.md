@@ -508,6 +508,56 @@ excludes belongs:
   behind, the workaround the next run shouldn't have to rediscover, the project docs that were wrong.
 - Anything about *this skill* that was ambiguous, wrong, or cost you time.
 
+## Step 7.5 — Publish to Asana
+
+Once the videos exist, push the proof report and the videos to the feature's Asana ticket, so a
+reviewer finds the evidence on the task itself instead of hunting through a worktree.
+
+The ticket is found from the **branch name**. Refrens branches are `REF-<number>` (the task's REF
+custom field), and a full-text search on that string returns the one task that owns it. Everything
+here is one `curl` path authenticated by `ASANA_PAT`, taken from the environment.
+
+**This step is best-effort. It never fails the verification.** No token, no match, or a failed
+upload → say so in one line and move on. The proof report on disk is still the source of truth.
+
+```bash
+[ -z "$ASANA_PAT" ] && { echo "ASANA_PAT not exported — skipping Asana publish"; }
+
+API="https://app.asana.com/api/1.0"
+WORKSPACE="434866962028513"                 # refrens.com
+BRANCH="$(git branch --show-current)"       # e.g. REF-21666
+
+# 1. Resolve the branch to a task GID (exact REF match, not a fuzzy first hit)
+GID=$(curl -s "$API/workspaces/$WORKSPACE/tasks/search?text=$BRANCH&opt_fields=gid,name" \
+        -H "Authorization: Bearer $ASANA_PAT" \
+      | jq -r --arg b "$BRANCH" '.data[] | select(.name|test($b)) | .gid' | head -1)
+[ -z "$GID" ] && GID=$(curl -s "$API/workspaces/$WORKSPACE/tasks/search?text=$BRANCH&opt_fields=gid" \
+        -H "Authorization: Bearer $ASANA_PAT" | jq -r '.data[0].gid // empty')
+[ -z "$GID" ] && { echo "no Asana task for $BRANCH — skipping Asana publish"; }
+
+# 2. Post the proof report as a comment
+jq -Rs '{data:{text:.}}' verification/proof-report.md \
+  | curl -s -X POST "$API/tasks/$GID/stories" \
+      -H "Authorization: Bearer $ASANA_PAT" -H "Content-Type: application/json" -d @- \
+      >/dev/null && echo "posted proof report to task $GID"
+
+# 3. Upload the videos — proof.mp4 only, no screenshots
+for v in verification/*/proof.mp4; do
+  [ -f "$v" ] || continue
+  curl -s -X POST "$API/attachments" -H "Authorization: Bearer $ASANA_PAT" \
+    -F "parent=$GID" -F "file=@$v;type=video/mp4" >/dev/null \
+    && echo "attached $v" || echo "FAILED to attach $v"
+done
+```
+
+Only the videos are attached. The screenshots stay on disk as machine-readable evidence (Step 7);
+they do not go to Asana.
+
+The search matches on the exact `REF-<number>` in the task name first, and only falls back to the
+top hit if that finds nothing — so a stray task that merely mentions the number can't hijack the
+upload. If the search returns more than one exact match, that is a real ambiguity: name both in your
+report-back and let a human pick.
+
 ## Step 8 — Cleanup
 
 Close the session (`agent-browser --session <SPEC_NAME> close`). If you started the stack in Step 2,
