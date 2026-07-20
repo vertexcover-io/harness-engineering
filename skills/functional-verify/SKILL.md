@@ -515,7 +515,9 @@ reviewer finds the evidence on the task itself instead of hunting through a work
 
 The ticket is found from the **branch name**. Refrens branches are `REF-<number>` (the task's REF
 custom field), and a full-text search on that string returns the one task that owns it. Everything
-here is one `curl` path authenticated by `ASANA_PAT`, taken from the environment.
+here is one `curl` path authenticated by `ASANA_PAT`, taken from the environment. The workspace GID
+comes from `ASANA_WORKSPACE_GID` — exported env first, then a `.env` at the repo root; if it is set
+nowhere, the step skips and asks you to export it.
 
 **This step is best-effort. It never fails the verification.** No token, no match, or a failed
 upload → say so in one line and move on. The proof report on disk is still the source of truth.
@@ -524,7 +526,9 @@ upload → say so in one line and move on. The proof report on disk is still the
 [ -z "$ASANA_PAT" ] && { echo "ASANA_PAT not exported — skipping Asana publish"; }
 
 API="https://app.asana.com/api/1.0"
-WORKSPACE="434866962028513"                 # refrens.com
+# Workspace GID: exported env first, then a .env at the repo root.
+WORKSPACE="${ASANA_WORKSPACE_GID:-$(grep -hs '^ASANA_WORKSPACE_GID=' .env | tail -1 | cut -d= -f2-)}"
+[ -z "$WORKSPACE" ] && { echo "ASANA_WORKSPACE_GID not set — export it (or add it to .env), then re-run — skipping Asana publish"; }
 BRANCH="$(git branch --show-current)"       # e.g. REF-21666
 
 # 1. Resolve the branch to a task GID (exact REF match, not a fuzzy first hit)
@@ -571,16 +575,20 @@ or you aren't logged in, this step does nothing — it prints one line and moves
 transcript, session not yet captured on the server, or a failed upload → say so in one line and move
 on. The proof report on disk is still the source of truth.
 
-The session id is not passed to you — you derive it. A session's transcript is a `<session-id>.jsonl`
-file under `~/.claude/projects/<encoded-cwd>/`, where `<encoded-cwd>` is the current working directory
-with every `/` replaced by `-`. The session you are in is the newest transcript in that directory.
+The session id reaches you one of two ways. **When orchestrate runs this skill as a sub-agent it
+exports `SESSION_ID`** — the real top-level session — and you use it verbatim. On a **standalone run
+nothing injects it**, so you derive it: a session's transcript is a `<session-id>.jsonl` file under
+`~/.claude/projects/<encoded-cwd>/`, where `<encoded-cwd>` is the current working directory with every
+`/` replaced by `-`, and the session you are in is the newest transcript there. Deriving from inside
+an orchestrate worktree would resolve the *wrong* id — the worktree encodes to a different projects
+directory than the session that launched it — which is exactly why orchestrate injects `SESSION_ID`.
 
 ```bash
 # Only proceed when the CLI is installed AND authenticated.
 if command -v claude-sessions >/dev/null 2>&1 && claude-sessions status >/dev/null 2>&1; then
-  # Derive THIS session's id: encode the cwd (every / → -), take the newest transcript there.
+  # Prefer the injected id (orchestrate); else derive from the newest transcript under the cwd.
   ENC=$(pwd | sed 's#/#-#g')
-  SID=$(basename "$(ls -t ~/.claude/projects/$ENC/*.jsonl 2>/dev/null | head -1)" .jsonl)
+  SID="${SESSION_ID:-$(basename "$(ls -t ~/.claude/projects/$ENC/*.jsonl 2>/dev/null | head -1)" .jsonl 2>/dev/null)}"
 
   if [ -n "$SID" ]; then
     # --file/--glob replace auto-derivation, so only the report and the videos go up.
@@ -599,8 +607,9 @@ fi
 ```
 
 Unlike `summarize`, the `artifacts` command has no `--current` flag — it needs the session id
-explicitly, which is why you derive it above. As with Asana, only the report and the `proof.mp4`
-videos are published; the screenshots stay on disk as machine-readable evidence (Step 7).
+explicitly, which is why you resolve it above (injected first, derived as a fallback). As with Asana,
+only the report and the `proof.mp4` videos are published; the screenshots stay on disk as
+machine-readable evidence (Step 7).
 
 ## Step 8 — Cleanup
 

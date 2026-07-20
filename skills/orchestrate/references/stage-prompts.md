@@ -93,6 +93,10 @@ Tell the agent to run them in order and stop on the first failure.
 - Lessons `.harness/runtime/<SPEC_NAME>/relevant-lessons.md` (past breaks are adversarial test
   ideas), candidates `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`, spec name `<SPEC_NAME>`
 - `<SKILL:learn>` runs even with zero candidates — a logged no-op, never a silent skip.
+- Artifact-publish session id: tell the agent to `export SESSION_ID=<SESSION_ID>` before running
+  `<SKILL:functional-verify>`, so its publish steps target the real top-level session instead of
+  deriving it from the worktree cwd (which encodes to the wrong transcript directory). If
+  `<SESSION_ID>` is empty, omit this — the skill falls back to deriving.
 
 **Return:** verification verdict, gate verdict, docs updated,
 `lessons: retrieved <N> / matched <M> / captured <P>`.
