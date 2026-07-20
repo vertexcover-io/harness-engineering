@@ -69,36 +69,23 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 
 ## Verdict: <PASSED|FAILED>
 
+Full report + evidence: `.harness/features/<SPEC_NAME>/verification/proof-report.md`
+
 ## Scenarios
 
-| # | Type | Description | Verdict |
-|---|------|-------------|---------|
-| 1 | api | POST /users → 201 + DB entry | PASSED |
-| 2 | ui  | Login flow redirects to dashboard | PASSED |
-
-## API Evidence
-
-### VS-1: POST /users
-**Command:** `curl -s -X POST http://localhost:3000/api/users -H 'Content-Type: application/json' -d '{...}'`
-**Status:** 201
-**Body (truncated):**
-\```json
-{...}
-\```
-**DB check:** `SELECT COUNT(*) FROM users WHERE email='test@example.com'` → 1 (expected: 1) PASSED
-
-## UI Evidence
-
-### VS-2: Login flow
-**Route:** /login
-**Screenshots:**
-- [Step 1: Login form](verification/screenshots/vs-2-step1.png)
-- [Step 2: After redirect](verification/screenshots/vs-2-step2.png)
+| What is to be tested | Success/Failure | Reason/Details | Reference |
+|---|---|---|---|
+| Signing in lands the user on their dashboard | Success | Landed on /dashboard, session cookie set | `verification/login-redirects-to-dashboard/proof.mp4` |
+| A session that expires mid-save does not report success | Failure | "Saved" toast shown on a 401. Major. | `verification/expired-session-reports-saved/proof.mp4` |
+| Creating a user persists the row | Success | 201; DB count 1 as expected | see proof-report |
 
 ## Infrastructure
 - **Started:** `npm run dev` (PID 12345), `docker compose up -d`
 - **Cleaned up:** yes
 ```
+
+This is the dashboard summary, not a second report: the scenario rows mirror `proof-report.md` so a
+reader sees the verdict at a glance, and every piece of evidence stays in the report itself.
 
 ## Quality Gate Report
 
@@ -107,14 +94,19 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 
 ## Verdict: PASS/BLOCKED/STAGNATION
 
-## Metrics Comparison
-| Metric | Baseline | Current | Status |
-|--------|----------|---------|--------|
-| Type check | 0 errors | X errors | PASS/FAIL |
-| Lint | X warnings | Y warnings | PASS/FAIL |
-| Tests | X passed | Y passed | PASS/FAIL |
-| Behavior coverage (matrix IDs) | — | X/Y covered | PASS/FAIL |
-| Coverage | X% | Y% | INFO |
+## Checks
+| # | Check | Baseline | Current | Verdict |
+|---|-------|----------|---------|---------|
+| 1 | Type check | 0 errors | X errors | PASS/FAIL |
+| 2 | Lint | X warnings | Y warnings | PASS/FAIL |
+| 3 | Tests + behavior coverage | — | X/Y matrix rows covered | PASS/FAIL |
+| 4 | Coverage (diagnostic) | X% | Y% | INFO |
+| 5 | Scope compliance | — | in-plan / out-of-plan | PASS/FAIL |
+| 6 | Plan compliance | — | X/Y scenarios evidenced | PASS/FAIL |
+| 7 | Ignore comment audit | — | N new | PASS/FAIL |
+| 8 | Smoke test | — | run / none defined | PASS/INFO |
+| 9 | E2E report | — | X passed, 0 failed | PASS/FAIL |
+| 10 | Mutation spot-check | — | X/Y mutants killed | PASS/FAIL |
 
 ## Failures
 - Details of any failures (or "None")

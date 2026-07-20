@@ -71,50 +71,25 @@ jq -s '{
 
 If aggregation fails → stop the pipeline with `MISSING_PHASE_CLAIMS`.
 
-## UI-proof gate (runs AFTER functional-verify returns, BEFORE quality gate)
+## Verification proof (runs AFTER functional-verify returns)
 
-This gate is the reason the claims model exists. Every `type: "ui"` claim must have a Playwright MCP screenshot referenced in `proof-report.md` — not in the phase's `.spec.ts`, not in the phase report. The verifier must have driven a real browser via `mcp__playwright__browser_*` and captured the screenshot themselves.
+functional-verify drives the browser and writes `.harness/features/<SPEC_NAME>/verification/` —
+`proof-report.md` plus a folder of frames and a `proof.mp4` per scenario. **None of it is gated,
+parsed, or committed.** The report is written for a human in plain English and deliberately carries
+no claim ids, so there is nothing here to grep; the verifier reports its verdict and its bugs back
+in prose when it returns.
 
-**One screenshot may evidence several claims that share a surface.** The check below greps per claim id for a nearby screenshot path, so a single capture whose caption line lists multiple ids (e.g. `REQ-005 REQ-006 — verification/screenshots/edit-mode.png`) satisfies all of them. Group co-located UI claims into one capture rather than one browser round-trip per claim — that is the difference between ~5 captures and ~100.
-
-**This gate should pass on the first try.** functional-verify Step 6 runs a pre-flight that mirrors this exact check before handing off, so a `MISSING_UI_PROOF` here means the pre-flight was skipped. The check accumulates **all** missing ids in one pass (it does not stop at the first), so a single re-dispatch covering the full list converges it — never loop claim-by-claim.
+Check only that the run happened:
 
 ```bash
 cd '<WORKTREE_PATH>' || exit 1
-CLAIMS_FILE='.harness/runtime/<SPEC_NAME>/claims.json'
-PROOF='.harness/features/<SPEC_NAME>/verification/proof-report.md'
-
-if [ ! -f "$CLAIMS_FILE" ]; then
-  echo 'MISSING_CLAIMS_FILE'; exit 1
-fi
-if [ ! -f "$PROOF" ]; then
-  echo 'MISSING_PROOF_REPORT'; exit 1
-fi
-
-MISSING=""
-for CLAIM_ID in $(jq -r '.claims[] | select(.type == "ui") | .id' "$CLAIMS_FILE"); do
-  # proof-report must reference the claim id AND a screenshot path under verification/screenshots/
-  if ! grep -q "$CLAIM_ID" "$PROOF"; then
-    MISSING="$MISSING $CLAIM_ID(no-id-mention)"
-    continue
-  fi
-  # Lines mentioning the claim id must include a screenshot reference
-  if ! awk -v id="$CLAIM_ID" '
-        $0 ~ id { found=1 }
-        found && /verification\/screenshots\/.*\.png/ { ok=1; exit }
-        END { exit ok ? 0 : 1 }
-      ' "$PROOF"; then
-    MISSING="$MISSING $CLAIM_ID(no-screenshot)"
-  fi
-done
-
-if [ -n "$MISSING" ]; then
-  echo "MISSING_UI_PROOF —$MISSING"
-  echo "Every UI claim must have an independent Playwright MCP screenshot in $PROOF."
-  echo "A passing phase .spec.ts does NOT satisfy this gate — verify must drive the browser itself."
-  exit 1
-fi
+test -f '.harness/features/<SPEC_NAME>/verification/proof-report.md' \
+  || { echo 'MISSING_PROOF_REPORT'; exit 1; }
 ```
+
+The claims model still earns its keep upstream: `executed > 0` and `failed = 0` on the aggregated
+`claims.json` is what proves the coder's suites ran and passed, and functional-verify reads the
+claims to decide what to drive. It just no longer decides whether verification counted.
 
 ## Verdict mapping
 
@@ -124,13 +99,12 @@ fi
 | `MISSING_PHASE_CLAIMS` | Stop pipeline. Coder did not produce phase reports. |
 | `MISSING_CLAIMS_FILE` | Stop pipeline. Aggregation step was skipped. |
 | `MISSING_PROOF_REPORT` | Stop pipeline. Functional-verify did not run (Stop hook should have caught this). |
-| `MISSING_UI_PROOF — <ids>` | Stop pipeline. Verify skipped Playwright MCP for one or more UI claims (its Step 6 pre-flight would have caught this). Re-dispatch verify **once** with the full listed id set — the gate already reported every gap, so one pass covering all of them converges it. Do not re-dispatch per id. |
 
-## Why this gate exists
+## Why verification is not gated
 
 A passing Playwright `.spec.ts` from the coder phase asserts a *contract* (selectors exist, values persist) but does not let any human eye see the rendered page. Two real bugs surface only when a verifier opens a browser and looks:
 
 - Silent validation failures (the API accepts a value the UI says is invalid).
 - Layout / neighbour-ordering breakage that a contract test cannot encode.
 
-The UI-proof gate forces a real Playwright MCP browser session — the screenshot is the evidence. One capture can cover several co-located claims (above); the requirement is a real rendered view per *surface*, not a redundant round-trip per id.
+That is what functional-verify is for, and it is why the claims carry a `surface` and a `behavior` at all. But the evidence it produces — a flow filmed frame by frame, each frame read and asserted against — is aimed at a person watching it, and no grep over prose can tell a real drive from a plausible one. Pretending otherwise bought a regex that passed whenever the report used an id format it didn't expect, and passed vacuously on every spec whose claims weren't tagged `ui` — which surface-based routing made the common case. The verifier reports what it proved and what it found; a human decides whether that is enough.

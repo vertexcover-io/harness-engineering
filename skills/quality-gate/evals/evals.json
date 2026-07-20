@@ -12,7 +12,7 @@
         "Captures state snapshot by running git log --oneline -1 and git diff --stat before any checks",
         "Every command is run with the pattern: <command> 2>&1; echo \"EXIT_CODE=$?\"",
         "Report includes exact command, raw output, and exit code for every check executed",
-        "All mandatory checks are attempted: type checker, linter, test suite + behavior coverage (every spec matrix REQ/EDGE ID maps to a passing test), scope compliance, plan compliance, ignore comment audit, and the mutation spot-check (Check 11)",
+        "All mandatory checks are attempted: type checker, linter, test suite + behavior coverage (every spec matrix row's named test passes), scope compliance, plan compliance, ignore comment audit, and the mutation spot-check (Check 10)",
         "Coverage (Check 4) is reported as a diagnostic INFO — it never produces a FAIL verdict on its own",
         "Check 8 (smoke test) is attempted or noted as 'No smoke test defined'",
         "Reads baseline.json and compares current results against baseline values",
@@ -29,29 +29,27 @@
     },
     {
       "id": 2,
-      "name": "post-refactor-gate-with-regression",
-      "prompt": "Run the post-refactor quality gate for spec 'refactor-auth-module'. The baseline is at docs/spec/refactor-auth-module/baseline.json. Previous baseline shows 42 passing tests; the refactor consolidated several near-duplicate tests into parameterized tables, so the current run has 38 tests with every spec matrix REQ/EDGE ID still covered. The project is a Python project with pytest and mypy.",
-      "expected_output": "A gate report running only checks 1-4 (type checker, linter, test suite + behavior coverage, diagnostic coverage) since post-refactor skips scope/plan/ignore/smoke/e2e/mutation checks. If any spec matrix REQ/EDGE ID no longer maps to a passing test, the verdict is BLOCKED; a lower test count alone (e.g., tests consolidated into parameterized tables) is not a failure.",
+      "name": "post-tdd-gate-test-consolidation",
+      "prompt": "Run the quality gate for post-tdd stage, spec 'refactor-auth-module'. The baseline is at docs/spec/refactor-auth-module/baseline.json. Previous baseline shows 42 passing tests; the coder consolidated several near-duplicate tests into parameterized tables, so the current run has 38 tests with every spec matrix row's named test still passing. The project is a Python project with pytest and mypy.",
+      "expected_output": "A gate report running all post-tdd checks. If any spec matrix row's named test is missing or failing, the verdict is BLOCKED; a lower test count alone (e.g., tests consolidated into parameterized tables) is not a failure.",
       "files": [],
       "expectations": [
-        "Only runs checks 1-4 (type checker, linter, test suite + behavior coverage, diagnostic coverage) for the post-refactor stage",
-        "Does not run scope compliance, plan compliance, or ignore comment audit checks",
-        "Verifies behavior coverage: every REQ/EDGE ID from the spec's verification matrix maps to a passing test (grep test names for test_<ID>_); flags BLOCKED only when a matrix ID has no passing test, not when raw test count drops",
+        "Verifies behavior coverage by reading the spec matrix's Test Name column and grepping for each named test; flags BLOCKED only when a matrix row's named test is missing or failing, not when raw test count drops",
         "Auto-detects Python tooling: mypy for type checking, ruff or equivalent for lint, pytest for tests",
         "Uses three-tier detection classification: DETECTED, NOT_APPLICABLE, or MISSING for each tool",
         "If a tool is MISSING for a project with source files, reports BLOCKED verdict",
         "Includes the Toolchain table showing detected status and command for each tool"
       ],
       "anti_expectations": [
-        "Does not run scope compliance, plan compliance, or ignore comment audit during post-refactor stage",
         "Does not mark a tool as NOT_APPLICABLE without providing a justification",
-        "Does not flag BLOCKED merely because test count is lower than baseline when all matrix REQ/EDGE IDs still map to passing tests"
+        "Does not flag BLOCKED merely because test count is lower than baseline when every matrix row's named test still passes",
+        "Does not reconstruct test names as test_<ID>_ from the requirement id instead of reading the matrix Test Name column"
       ]
     },
     {
       "id": 3,
-      "name": "pre-pr-gate-stagnation-detection",
-      "prompt": "Run the pre-pr quality gate for spec 'fix-payment-flow'. Baseline is at docs/spec/fix-payment-flow/baseline.json. There are already two previous gate reports in the spec directory: gate-report-post-tdd-001.md and gate-report-post-tdd-002.md, both showing the linter check failing with 'Unexpected any. Specify a different type' on line 45 of src/payments.ts. This is the third consecutive run with this same linter failure.",
+      "name": "post-tdd-gate-stagnation-detection",
+      "prompt": "Run the quality gate for post-tdd stage, spec 'fix-payment-flow'. Baseline is at docs/spec/fix-payment-flow/baseline.json. There are already two previous gate reports in the spec directory: gate-report-post-tdd-001.md and gate-report-post-tdd-002.md, both showing the linter check failing with 'Unexpected any. Specify a different type' on line 45 of src/payments.ts. This is the third consecutive run with this same linter failure.",
       "expected_output": "A gate report that detects stagnation on the linter check (same error 3 consecutive times) and reports STAGNATION, halting the pipeline rather than retrying.",
       "files": [],
       "expectations": [
@@ -59,7 +57,7 @@
         "Detects that the linter check has failed 3 consecutive times with the same error signature",
         "Reports STAGNATION with format: 'STAGNATION DETECTED: [check] has failed 3 consecutive times with: [error summary]'",
         "Stops the pipeline and does not suggest retrying after stagnation detection",
-        "Runs all mandatory pre-pr checks (including behavior coverage and the mutation spot-check) plus optional smoke test since this is pre-pr stage",
+        "Runs all mandatory checks (including behavior coverage and the mutation spot-check) plus the optional smoke test",
         "Gate report sequence number is incremented based on existing reports in the directory",
         "Report includes verbatim output for all checks that were run before stagnation was determined",
         "Includes the ignore comment audit check, scanning git diff for @ts-ignore, @ts-expect-error, eslint-disable, etc."

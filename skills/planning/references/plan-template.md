@@ -38,25 +38,64 @@ Add JWT-based authentication with login, registration, and token refresh.
 - Fixtures: `tests/conftest.py` — `test_client`, `mock_config`
 - Run: `uv run pytest tests/ -v`
 
-## Phases
+<!-- plan.md carries NO Unit/API scenarios — those live in the phase files. It DOES carry the
+     whole-feature E2E flows, in the System E2E Tests section below. See test-scenarios.md. -->
 
-| # | Phase | Status | Depends On |
-|---|-------|--------|------------|
-| 1 | User model, storage, and test factories | complete | — |
-| 2 | Registration endpoint with validation | in-progress | Phase 1 |
-| 3 | Login endpoint with JWT token generation | pending | Phase 1 |
-| 4 | Auth middleware and protected endpoints | pending | Phase 2, 3 |
-| 5 | Token refresh and expiration handling | pending | Phase 4 |
+## Phase Graph
 
-## Phase Dependency Graph
+```dot
+digraph phases {
+  rankdir=LR
+  node [shape=box]
 
-Phase 1 --+--> Phase 2 --\
-           |               +--> Phase 4 --> Phase 5
-           +--> Phase 3 --/
+  // Vertical slices — each a thin capability through every layer it needs (model + endpoint +
+  // response), independently demoable. Phase 1 is the walking skeleton: the thinnest path that
+  // touches storage, an endpoint, and a response once.
+  phase_1 [label="Phase 1 (register): a user can create an account (walking skeleton)"]
+  phase_2 [label="Phase 2 (login): a registered user logs in and gets a token"]
+  phase_3 [label="Phase 3 (protected): a token holder reaches a protected page; others are refused"]
+  phase_4 [label="Phase 4 (refresh): an expired token is refreshed without re-login"]
+
+  phase_1 -> phase_2
+  phase_2 -> phase_3
+  phase_3 -> phase_4
+}
+```
+
+Nodes with no incoming edges are ready to dispatch. Each slice cuts through every layer its
+capability needs (the user model/storage rides inside the register slice that first needs it — no
+separate "build all the models" phase), so each is demoable on its own. Nodes with no edges between
+them are independent and can run in parallel.
+
+## System E2E Tests
+
+<!-- CROSS-SLICE flow scenarios only: journeys that combine two independently-built capabilities, so
+     no single phase can run them end to end (owned by no one phase). Under vertical slicing this is
+     the EXCEPTION — most E2E flows are phase-level and live in their phase's ### E2E (a slice owns
+     every layer its capability touches, so its flow runs on its own code). See test-scenarios.md
+     "the placement rule". Full Steps + Expected, one per cross-slice journey. Environment/harness
+     setup (backing services, dev-server/build command, browser driver) is NOT here — it lives in
+     the project's CLAUDE.md. -->
+
+Scenario S20 (flow): A user registers, then logs in, then reaches a protected page
+  Steps:
+    1. From the running app, register a new account with a valid email and strong password
+    2. Log in with those credentials
+    3. Navigate to a protected page
+  Expected:
+    - registration succeeds and no password is shown anywhere
+    - login with the just-registered credentials returns a working session
+    - the protected page loads while authenticated and is refused when logged out
+  (traces to REQ-001, REQ-002, REQ-003)
+
+<!-- This flow is cross-slice: it chains the register slice, the login slice, and the protected slice,
+     so no one phase can run it. The register slice's OWN flow (register → the account exists and can
+     be fetched, no password leaked) is phase-level and lives in phase-1's ### E2E, not here. -->
 
 ## Notes
 
-- Phase 2 and 3 can run in parallel after Phase 1 completes
+- The user model/storage is not its own phase — it rides inside Phase 1 (register), the first slice
+  that needs it (walking skeleton).
 - JWT secret should come from environment config, not hardcoded
 ```
 
@@ -65,40 +104,60 @@ Phase 1 --+--> Phase 2 --\
 ## phase-N.md Example
 
 ```markdown
-# Phase 2: Registration Endpoint with Validation
+# Phase 1 (register): A user can create an account  (walking skeleton)
 
 > **Status:** pending
-> **Depends on:** Phase 1
+> **Depends on:** —
 
 ## Overview
 
-Build user registration. After this phase, new users can create accounts by
-submitting email and password. Validates input, hashes passwords, rejects
-duplicates, and never exposes passwords in responses.
+The walking skeleton: the thinnest end-to-end slice that lets a real person create an account —
+touching storage, an endpoint, and a response once. It carries the user model/storage inside it (no
+separate "build the model" phase), establishing the plumbing every later auth slice (login, refresh,
+protected routes) builds on. On its own it is demoable: POST /register and the account exists.
 
 ## Implementation
 
-**Files:**
-- Create: `src/routes/registration.py`
-- Create: `src/services/auth_service.py`
-- Create: `tests/test_registration.py`
-- Modify: `src/routes/__init__.py` — register new route
+<!-- Ordered, action-centric steps naming the files each touches. Every step that creates/changes a
+     function, schema, endpoint, or component states its Contract and Logic — the shape a coder
+     can't re-derive — not a sentence narrating the outcome. A pure wiring step stays a one-liner
+     (step 4). Test steps state setup, assertions, and what they prove (step 5). -->
 
-**Pattern to follow:** `src/routes/health.py` for route structure,
-`src/services/usage_service.py` for service layer.
+1. **Add the user model and storage** — create `src/models/user.py`.
+   - **Contract:** a Pydantic `User { email: EmailStr, password_hash: str, ... }` (never a plaintext
+     field) + a storage accessor `get_user(email) → User | None`, `save_user(User) → None`.
+   - **Logic:** validate `email` via `EmailStr`; the model exposes no plaintext password field at
+     all. This is the shared foundation, carried inside the first slice that needs it rather than a
+     phase of its own.
+   - **Integrates:** validator shape from `src/models/session.py`.
+2. **Add the registration service** — create `src/services/auth_service.py`.
+   - **Contract:** `register(email, password) → User (no password field) | raises DuplicateEmail`.
+   - **Logic:** normalize the email → `get_user` to check for an existing account → if found, raise
+     `DuplicateEmail` → hash the password with bcrypt (never store plaintext) → `save_user` →
+     return the `User` projection that omits the hash.
+   - **Integrates:** injected-deps shape from `src/services/usage_service.py`.
+3. **Expose the endpoint** — create `src/routes/registration.py`.
+   - **Contract:** `POST /register` with request `{email: EmailStr, password: str}` → `201 User`
+     (password-free) | `409` duplicate | `422` weak password.
+   - **Logic:** parse body into the request model (framework returns 422 on malformed) → run the
+     password-strength validator (length/upper/lower/digit), 422 naming the unmet rule on failure →
+     call `auth_service.register` → map `DuplicateEmail` → 409 → on success return 201 with the
+     password-free user.
+   - **Integrates:** route structure from `src/routes/health.py`.
+4. **Wire the route** — modify `src/routes/__init__.py`: register the new route on the app router.
+5. **Cover it** — create `tests/test_registration.py`: with no account for the test email, assert
+   (a) a valid POST returns 201 and the body has no `password` field; (b) `password:"abc"` returns
+   422 naming the unmet rule; (c) a second POST with an existing email returns 409 and no second
+   account is created; (d) a hashed password verifies true for the right password, false for a
+   wrong one, and the stored value is not the plaintext; plus the end-to-end flow in `### E2E` below
+   (register → fetch the account back). Proves registration works, rejects bad input at the
+   boundary, and never leaks or stores plaintext. Uses the `test_client` fixture in
+   `tests/conftest.py`.
 
-**What to test:**
-- Rejects missing email (422)
-- Rejects weak password — min 8 chars, uppercase, lowercase, digit (422)
-- Successful registration returns user without password (201)
-- Duplicate email rejected (409)
+**Pattern to follow:** `src/routes/health.py` (route structure), `src/services/usage_service.py`
+(service layer), `src/models/session.py` (model validators).
 
-**What to build:**
-Registration route accepting `{email, password}`. Pydantic request model with
-EmailStr and password validator. Auth service with `register()` that hashes
-password and persists user.
-
-Password hashing — include because salt rounds and verify function matter:
+Password hashing is the one non-obvious bit — salt rounds and the verify function matter:
 
 ```python
 import bcrypt
@@ -110,14 +169,82 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 ```
 
-**Commit:** `feat(auth): add registration endpoint with validation`
+## Test Scenarios
 
-## Done When
+`### Unit` / `### API`, plus the `### E2E` this slice runs on its own code. Because this is a
+vertical slice — register end to end — it owns a phase-level flow (register → the account exists and
+comes back on a fetch, no password leaked). Only a flow that *chains another slice* (register → then
+log in → then a protected page) is cross-slice and lives in plan.md's System E2E Tests, not here.
 
-- [ ] All 4 test cases pass
-- [ ] Existing tests still pass
-- [ ] No password exposed in any API response
+```markdown
+### Unit
+
+Scenario S1: Passwords are stored hashed, never in plaintext
+  Steps:
+    1. Hash a known password, then verify it against the stored value
+  Expected:
+    - the stored value is not the plaintext
+    - verify() returns true for the right password and false for a wrong one
+  (traces to REQ-001)
+
+### API
+
+Scenario S2: A new user registers successfully
+  Steps:
+    1. With no account for alice@example.com, POST a valid email and strong password to /register
+  Expected:
+    - the response is 201
+    - the returned user has no password field
+  (traces to REQ-001)
+
+Scenario S3: Weak passwords are rejected with a reason
+  Steps:
+    1. POST a registration with password "abc" to /register
+  Expected:
+    - the response is 422
+    - it names the unmet rule (length/upper/lower/digit)
+  (traces to REQ-001)
+
+Scenario S4: Duplicate email is rejected
+  Steps:
+    1. With an account already existing for alice@example.com, POST a second registration with the same email
+  Expected:
+    - the response is 409
+    - no second account is created
+  (traces to EDGE-002)
+
+Scenario S5 (regression): Public endpoints stay open
+  Steps:
+    1. Call the health endpoint without credentials
+  Expected:
+    - it still returns 200 (unchanged from before this change)
+  (traces to NF-004)
+
+### E2E
+
+Scenario S6 (flow): A user registers and the account exists end to end
+  Steps:
+    1. From the running app, POST /register with a valid email and strong password
+    2. Fetch the just-created account back through the normal read path
+  Expected:
+    - registration returns 201 with no password field
+    - the fetched account exists with the registered email and no plaintext password anywhere
+  (traces to REQ-001)
 ```
+
+S6 is **phase-level**: every step — register, then read the account back — runs on this slice's own
+code (model + service + route), so it lives here, not in plan.md. The cross-slice flow that continues
+"…then log in and reach a protected page" (S20) needs the login and protected slices too, so it lives
+in plan.md's System E2E Tests.
+
+## Commit
+
+`feat(auth): add registration endpoint with validation`
+```
+
+Use the conventional prefix that matches the phase's work: `feat:` for new behavior, `fix:` for a
+bug fix, `test:` for a confirm-and-guard / regression-only phase that adds coverage with no
+production change, `refactor:` for internal restructuring.
 
 ---
 

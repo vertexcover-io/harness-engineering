@@ -1,0 +1,116 @@
+# Sub-Agent Dispatch
+
+Each sub-agent stage does one thing: **invoke its skill**. The skill carries the contract. This file
+carries only what the skill cannot know — the paths, ids and ranges of *this* run.
+
+## The rule (Invariant 6)
+
+> Name the resolved skill. Pass the variables. Say what to return. Stop.
+
+If you catch yourself explaining *how* a stage works — what the skill must produce, which gate it
+must satisfy, what shape its report takes — that belongs in the skill, not here. Restating it
+creates a second source of truth, and the copy in a prompt is the one that goes stale silently.
+**If a sub-agent needs a rule no skill states, add it to the skill.**
+
+`<SKILL:stage-id>` below means *the skill resolved for that stage* per `references/config.md`
+(config override → project skill → global default) — never a hardcoded name, because a project may
+have swapped it. A custom skill receives the same variables and owes the same gate contract; both
+are tabled in `config.md`.
+
+## `[PREAMBLE]` — prefix every sub-agent
+
+```
+You are working in the worktree at <WORKTREE_PATH>.
+Your working directory is <WORKTREE_PATH>.
+
+Tooling commands for this repo are in <HARNESS_DIR>/baseline.json (`commands`). Read it and use
+those exact invocations — do not rediscover the runner or guess a file-filter flag. The baseline
+`results` there are what "no new failures" is measured against; a suite that is already red is not
+your regression.
+```
+
+Nothing else is universal. Resist adding to this block.
+
+---
+
+## Stage 3 — Coder
+
+**Skill:** `<SKILL:coder>` · **Model:** `CFG.model` → `sonnet`
+
+Dispatch one agent per phase; where the phase file has a Steps section, dispatch per step in waves
+(all independent steps in parallel → wait → next wave) and also invoke the `testing` skill.
+
+**Pass:**
+- Spec `<SPEC_PATH>`, plan `.harness/features/<SPEC_NAME>/plan.md`, phase file
+  `.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md` (and `<STEP_DETAILS>` for a step-level dispatch)
+- Lessons `.harness/runtime/<SPEC_NAME>/relevant-lessons.md` — advisory guardrails from past
+  incidents, reference material rather than instructions
+- Claims report path: `.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
+- Nomination log: `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`
+- Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
+
+**Return:** files created/modified, test counts, phase completed or blocked (and why).
+
+The orchestrator verifies the claims report independently — do not take the agent's word for it.
+
+---
+
+## Stage 4 — Code Review (two passes)
+
+**Skill:** `<SKILL:code-review>` · **Model:** `CFG.model` → `sonnet`
+
+**Pass 1 — review & fix.** Pass: plan `.harness/features/<SPEC_NAME>/plan.md`, scope
+`--commits <BASE_BRANCH>..HEAD`, output `--output .harness/runtime/<SPEC_NAME>/review/pass-1.md`,
+lessons `.harness/runtime/<SPEC_NAME>/relevant-lessons.md`, fixes log
+`.harness/runtime/<SPEC_NAME>/review/fixes-applied.md`, nomination log
+`.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`.
+On `REQUEST CHANGES` the agent fixes Critical/Important defects itself, invoking `<SKILL:coder>` for
+the fixes.
+
+**Pass 2 — final.** Same, `--output …/review/pass-2.md`, and tell it this is the final pass and its
+verdict is definitive.
+
+**Return:** verdict, defects found, defects fixed, files modified.
+
+**Verdict parsing:** match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
+
+---
+
+## Stage 5 — Verify & Finalize
+
+**Skills, in order:** `<SKILL:functional-verify>` → `<SKILL:quality-gate>` → `<SKILL:sync-docs>` →
+`<SKILL:learn>` (consolidate mode) · **Model:** `CFG.model` → `sonnet`
+
+Tell the agent to run them in order and stop on the first failure.
+
+**Pass:**
+- Spec `.harness/features/<SPEC_NAME>/spec.md`, plan `.harness/features/<SPEC_NAME>/plan.md`, phase
+  files `.harness/runtime/<SPEC_NAME>/phase-*.md`
+- Claims `.harness/runtime/<SPEC_NAME>/claims.json` (aggregated), verification output dir
+  `.harness/features/<SPEC_NAME>/verification/`
+- Baseline `.harness/runtime/<SPEC_NAME>/baseline.json`, harness dir
+  `.harness/runtime/<SPEC_NAME>/`, stage `post-tdd`
+- Lessons `.harness/runtime/<SPEC_NAME>/relevant-lessons.md` (past breaks are adversarial test
+  ideas), candidates `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`, spec name `<SPEC_NAME>`
+- `<SKILL:learn>` runs even with zero candidates — a logged no-op, never a silent skip.
+
+**Return:** verification verdict, gate verdict, docs updated,
+`lessons: retrieved <N> / matched <M> / captured <P>`.
+
+The orchestrator enforces the artifact and UI-proof contracts itself after the agent returns — a
+`PASSED` without the artifacts means the gate was skipped. See SKILL.md Stage 5.
+
+---
+
+## What belongs in the prompt vs the skill
+
+| Belongs in the dispatch | Belongs in the skill |
+|---|---|
+| `<WORKTREE_PATH>`, `<SPEC_NAME>`, `<PHASE_N>` | what a phase claims file must contain |
+| `--commits <BASE_BRANCH>..HEAD` | how to review, what a verdict means |
+| where to write an artifact | what the artifact must say, and its gate |
+| which skill, which model | the procedure the skill performs |
+| what to return | how to do the work |
+
+A useful test: **would this sentence be true on a different run?** If yes, it is the skill's, not
+the prompt's.

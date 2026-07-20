@@ -20,18 +20,28 @@ description: >
 User-provided guidelines take precedence on conflicts with defaults.
 
 **Tooling commands (if present).** When dispatched by orchestrate, your preamble carries a
-`## Tooling commands` block. Use the **scoped `test_file`** (substitute `{FILE}`) on every RED/GREEN
-iteration and run the full `test_all` at most once, only to confirm green before declaring the phase
-done — never pipe the whole-package suite through grep to find one test. For lint, fix ALL findings in
-a single pass then run full `lint` ONCE; use the scoped `lint_file` while iterating. If a strict lint
-rule is noisy on test files, follow the project's eslint config — do not restructure working tests to
-satisfy it. (Relaxing rules for test files is the project's eslint-config concern, not handled here.)
-Standalone (no injected commands) → use the project's documented runner.
+`## Tooling commands` block: use the scoped `test_file` / `lint_file` (substitute `{FILE}`) while
+iterating and run the full `test_all` / `lint` **once** each, only to confirm green before declaring
+the phase done. Standalone (no injected commands) → use the project's documented runner. Don't
+restructure working tests to satisfy a strict lint rule on test files — that's the project's
+eslint-config concern.
 
 
 # Test-Driven Development
 
 TDD is the fundamental practice. Every line of production code must be written in response to a failing test.
+
+**Load the `code-quality` skill before you write anything** — production code and tests alike. It
+carries the rules for how the code you are about to write should read (naming over comments, purity,
+immutability, early returns). TDD governs the *order* you write in; `code-quality` governs *what you
+write*. Neither substitutes for the other, and the tests you produce here are held to the same bar as
+the source.
+
+**Primary input: a `phase-N.md`** (from the planning skill, at `.harness/runtime/<SPEC_NAME>/`; its
+committed overview is `plan.md` under `.harness/features/<SPEC_NAME>/`). Read its four sections and
+map them: `## Implementation` = the build steps to execute; `## Test Scenarios` (`### Unit` / `### API`
+/ `### E2E`, each `S<n>`) = the RED specs, one test per scenario; `## Commit` = the message to use.
+The scenarios are already derived and placed — do not re-decompose the feature.
 
 ---
 
@@ -43,23 +53,44 @@ Write one minimal test describing the behavior you want. Run it. Watch it fail.
 
 **Requirements:**
 - Test describes one behavior
-- Clear name stating what should happen
 - Uses real code, not mocks (unless unavoidable)
 - Fails for the right reason (feature missing, not a typo or import error)
-- If working from a spec, the test comes from a verification-matrix row and its name follows the `test_<ID>_<behavior>` convention (e.g., `test_REQ_003_event_triggers_action`) — the quality gate greps for these IDs
+- The test comes from a scenario in the phase's `## Test Scenarios`. Carry that scenario's id in the
+  title (`S12: …`) so a reviewer can trace it — the id is for tracing, and that is all it is for.
+- **The title states the claim, not the topic.** Name the concrete input and the expected outcome, so
+  a failure is legible from CI output without opening the file. Where the test guards against a
+  specific wrong result, name that result — it is usually the most informative token available.
+  **Match the surrounding tests' format** (`it('…')`, `test('…')`, a snake_case function): the id is
+  the only thing this skill dictates, and a file whose neighbours all disagree with you is a file you
+  named wrong.
 
-```
-# Run ONLY this test's file — use the scoped `test_file` command (substitute {FILE})
-$ <test_file with {FILE} = path/to/this.test.ext>
+  ```
+  ✗ test_S3_pagination_handles_the_last_page              ← names the topic
+  ✓ S3: page 4 of 31 items at 10 per page returns the
+        final 1 item - not the empty list an off-by-one
+        gives                                            ← names the claim
+  ```
 
-# Confirm:
-# - Test FAILS (not errors)
-# - Failure message matches what you expect
-# - Fails because the feature is missing
-```
+  Both trace to S3; both describe one behavior; both state "what should happen". Only one tells you
+  what broke. The ✗ is what you write when you treat the id as the title's job — so treat legibility
+  as the job, and the id as a prefix.
+
+Run only this test's file (the scoped `test_file` command, substituting `{FILE}`) and confirm it
+**fails** — not errors — with a message that matches, because the feature is missing.
 
 **Test passes immediately?** If the behavior predates your changes, you're testing existing behavior — fix the test. If the behavior was just introduced in the previous GREEN step (e.g., minimum code naturally covers an edge case), the test is documenting a valid property of new code — keep it as a regression guard.
+**Guard / confirm-and-guard phase?** A `test:`-commit phase that adds regression coverage over
+*already-generic* code (the planning skill's confirm-and-guard case) legitimately has tests that pass
+on the first run — there is no production change to make them fail. That is expected here, not an
+abandonment signal: keep them as regression guards. This is the one place a first-run pass is fine.
 **Test errors instead of failing?** Fix the error (missing import, syntax), re-run until it fails correctly.
+**Edit made no difference — the "impossible" result?** If a change you're certain about doesn't move
+the result — the test still fails after you fixed the cause, or *still* fails when you loosen the
+assertion to accept anything — **stop suspecting your logic and suspect the running artifact.** You are
+almost certainly not executing the code you edited: a stale build/cache, an unsynced consumer copy, or
+the wrong process. Prove it before re-reading logic — drop a unique sentinel into the code path (a
+nonsense string in the message, a distinctive value), rebuild/sync, and confirm the sentinel appears.
+If it doesn't, fix the build/sync — not the code. The words *"this is impossible"* are the tell.
 
 ### GREEN: Minimum Code to Pass
 
@@ -72,16 +103,8 @@ Write the simplest code that makes the test pass. Nothing more.
 - Don't "improve" beyond what the test requires
 - Don't anticipate future needs
 
-```
-# Run the scoped test_file again (NOT the whole package suite)
-$ <test_file with {FILE} = path/to/this.test.ext>
-
-# Confirm:
-# - Test passes
-# - Output is clean (no errors, warnings)
-```
-
-Run the full suite (`test_all`) **once**, only when the phase's behaviors are all green — to confirm
+Re-run the scoped `test_file` and confirm it passes with clean output. Run the full suite (`test_all`)
+**once**, only when the phase's behaviors are all green — to confirm
 nothing else broke before declaring the phase done. Do not run `test_all` after every iteration.
 
 **Test still fails?** Fix the implementation code, not the test.
@@ -109,7 +132,7 @@ Refactoring is not mandatory after every green. Assess whether it adds value:
 **Suite consolidation (part of every REFACTOR pass):**
 - Merge near-duplicate tests of one behavior into one parameterized table (equivalence partitions + boundaries)
 - Delete any test fully subsumed by a stronger or higher-level test
-- Record what moved in the phase report: `tests X,Y merged into test_REQ_00N; test A deleted, behavior covered by integration test B` — the quality gate uses this note to confirm every matrix ID still maps to a passing test
+- Record what moved in the phase report, naming the surviving test as it is actually titled: `S3,S4 merged into S3's test; S7 deleted, behavior covered by E2E S12` — the quality gate uses this note to confirm every scenario still maps to a passing test
 - Test count may drop. That is expected, not a regression — the gate checks behavior coverage, not test count
 
 For detailed refactoring methodology, load the `refactor` skill.
@@ -132,27 +155,6 @@ Bugs are the highest-value TDD target. A bug means a behavior wasn't tested. The
 The test proves the fix works *and* prevents the bug from returning. Never fix a bug without a failing test first.
 
 **Reproduction test passes?** The bug may not exist in the current code. Verify your test matches the reported scenario exactly. If it does, report that the bug cannot be reproduced — do not introduce unnecessary code changes to satisfy an inaccurate report. Keep the test as a regression guard.
-
-**Example:**
-```
-# Bug: Empty email accepted by registration
-
-# RED - reproduce the bug
-test('rejects empty email', () => {
-  result = register({ email: '' })
-  assert result.error == 'Email required'
-})
-# Fails: got undefined, expected 'Email required'
-
-# GREEN - fix it
-def register(data):
-    if not data.email.strip():
-        return Error('Email required')
-    ...
-# Passes
-
-# REFACTOR - extract validation if pattern emerges
-```
 
 ---
 
@@ -186,98 +188,93 @@ The characterization test protects you while you restructure. It is temporary sc
 
 ---
 
-## TDD for New Features
-
-Break the feature into small behavioral increments. Each increment follows the full RED-GREEN-REFACTOR cycle.
-
-**Approach:**
-1. List the behaviors the feature needs (start with the simplest)
-2. Write a failing test for the first behavior
-3. Implement minimum code to pass
-4. Assess refactoring
-5. Write a failing test for the next behavior
-6. Continue until the feature is complete
-
-Each cycle should be small enough that "minimum code to pass" is obvious. If you're unsure what the minimum code is, your test is asking for too much at once — break it into smaller behaviors.
-
----
-
 ## TDD with E2E Tests
 
 **E2E TDD is mandatory for every phase that changes production behavior**, not only for UI or HTTP changes. A backend job, a CLI command, a queue consumer, a scheduled task — if it has an externally-observable effect, the e2e test exercises that effect end-to-end (real services, real I/O, no mocks at the boundary).
 
 The phase is BLOCKED until the E2E test passes and the e2e-report artifact is written.
 
-1. **RED**: Write a failing e2e test for the user journey. Infrastructure and dev server must be running. Use accessible locators (role, label, text) and condition-based waits — never CSS selectors or hard-coded delays.
+**Authored ≠ run.** A spec file that was written but never executed does **not** satisfy the phase —
+`executed > 0` at the scenario's altitude is the gate (see `references/phase-claims-format.md`:
+"Authoring a `.spec.ts` without running it = BLOCKED"). If you author an API/E2E test but cannot run it
+(missing test hooks, an unsyncable consumer build, the stack down), the phase is **BLOCKED, not done**:
+say so plainly, name the scenario and the concrete reason, and return control. Do not downgrade it to a
+unit test, and do not hand-author report numbers — the counts must come from a real runner invocation.
+
+**The environment is the first task of the phase, not a blocker.** A stack that won't start, an
+unsynced consumer build, a service that's down — bring it up before concluding anything: read the
+project's testing contract (`CLAUDE.md`'s testing/e2e section, a `setup-worktree`-style script) and
+follow it. Only *after* you've run that setup and it still can't run — a genuinely missing test hook, a
+build that has no documented sync path — is the phase **BLOCKED, not done**.
+
+**Running standalone (no orchestrate gate).** When this skill is invoked directly — not inside the
+orchestrate pipeline — there is no downstream `quality-gate` Check 9 to catch a missing/​unrun E2E for
+you. You must self-enforce the rule above: an API/E2E scenario that did not run green means you report
+the phase as BLOCKED yourself, rather than declaring it done.
+
+1. **RED**: Write a failing e2e test for the user journey. Infrastructure and dev server must be running. Confirm the behavior under test is actually **enabled** in this environment — if it sits behind an env flag or feature gate (a validation that only runs in prod, an entitlement), the harness must turn it on, or the test goes green because the code never ran. A pass whose subject is disabled is a false pass, not a done scenario. Use accessible locators (role, label, text) and condition-based waits — never CSS selectors or hard-coded delays.
 2. **GREEN**: Build the feature — use unit/integration TDD cycles for each component until the e2e test passes.
 3. **REFACTOR**: Clean up as usual.
 
-The e2e test defines the finish line. The unit and integration tests written along the way are the ones the verification matrix assigns — not ad-hoc extras.
+**The E2E flow is given, not chosen.** When executing from a `phase-N.md`, its `### E2E` block is the
+finish-line spec — use it verbatim; do not invent a journey. Do **not** author E2E for flows in
+plan.md's `## System E2E Tests` — those are cross-slice and run after the slices are assembled, not in
+this phase. The unit/API tests written along the way are exactly the phase's `### Unit`/`### API`
+scenarios — not ad-hoc extras. Before creating a new spec file, grep the e2e directory for the surface
+(route, command, topic, selector); if one already covers it, **extend it** — a parallel spec for the
+same flow is a BLOCKED condition.
 
-### Before writing a new E2E spec: check for duplicates
-
-A flow is identified by the user-visible surface it exercises — a route path, a CLI command, a queue topic, a UI selector chain. Before creating a new spec file:
-
-1. Grep the project's e2e directory for the surface you're about to test (route literal, command name, selector, topic).
-2. If a spec already covers that surface, **extend it** with new `test()` cases for the new behavior. Do not create a parallel spec file.
-3. Only create a new spec file when the surface is genuinely new.
-
-Duplicate e2e specs for the same flow are a BLOCKED condition — they double maintenance cost and drift apart over time. The reviewer will flag them.
+**Published component under test?** When the phase changes a library component that is *rendered or
+executed by a separate host app* (not runnable standalone), its E2E leg runs in the **consumer** repo
+where it is mounted, and the consumer's installed copy of the library must be rebuilt/synced from the
+worktree before that E2E is trusted. See `references/consumer-repo-e2e.md`.
 
 ### E2E Report Artifact (mandatory)
 
-After all E2E tests pass, write `.harness/runtime/<SPEC_NAME>/e2e-report.json` (gitignored — pipeline working state consumed by functional-verify and quality-gate):
+After all E2E tests pass, write `.harness/runtime/<SPEC_NAME>/e2e-report.json` (gitignored; consumed
+by functional-verify and quality-gate) — numbers derived from the runner's machine output, never
+hand-authored:
 
 ```json
 {
-  "phase": "<PHASE_N>",
-  "timestamp": "<ISO timestamp>",
-  "passed": 0,
-  "failed": 0,
-  "coverage": [
-    {
-      "req": "REQ-1",
-      "description": "<what was tested>",
-      "inputs": ["<input1>", "<input2>"],
-      "routes": ["/path/exercised"],
-      "endpoints": ["POST /api/resource"],
-      "verdict": "PASS"
-    }
-  ],
-  "gaps": ["<what this E2E suite did NOT test — user flows skipped, edge cases not covered>"]
+  "phase": "<PHASE_N>", "timestamp": "<ISO>", "passed": 0, "failed": 0,
+  "coverage": [{ "scenario": "S12", "description": "<what was tested>", "verdict": "PASS" }],
+  "gaps": ["<what this E2E suite did NOT test — flows skipped, edge cases not covered>"]
 }
 ```
 
-The `gaps` field is as important as `coverage` — it tells functional-verify what to target. Be honest: list input combinations not tried, error paths not exercised, concurrent scenarios not tested, and surface areas not touched.
+`gaps` is as important as `coverage` — it tells functional-verify what to target. Be honest: input
+combinations not tried, error paths not exercised, surfaces not touched.
 
-**Escape hatch — use sparingly.** A phase may skip E2E only if it changes *no externally-observable behavior*: pure internal refactors with identical outputs, doc-only changes, or config changes with no runtime effect. Migrations, new endpoints, new background jobs, and behavior-preserving changes that still touch the request path do NOT qualify. Write `"not_applicable": true, "reason": "<specific why>"` to the e2e-report and be ready to justify it in code review.
+**Escape hatch — use sparingly.** Skip E2E only if the phase changes *no externally-observable
+behavior* (pure internal refactor, doc-only, config with no runtime effect). Migrations, new
+endpoints/jobs, and any change touching the request path do NOT qualify. Write
+`"not_applicable": true, "reason": "<why>"` and be ready to justify it.
 
----
-
-## Step-Scoped TDD
-
-When invoked with a specific **step** (a subset of a phase), scope your work to that step only:
-
-- Only touch files listed in the step
-- Only write tests for the step's behaviors
-- Do not implement beyond the step boundary
-- Report completion per-step
-
-The RED-GREEN-REFACTOR cycle is unchanged — steps just narrow the scope.
+**Step-scoped:** when invoked on a step (a subset of a phase), touch only that step's files and
+scenarios; the RED-GREEN-REFACTOR cycle is unchanged, just narrower.
 
 ---
 
 ## Behavior Coverage (not line coverage)
 
-Done = every row of the spec's verification matrix is green: each REQ/EDGE has its ONE
-test passing at its assigned level (`test_<ID>_<behavior>` naming). The matrix is the
-test budget — do not write tests outside it unless you can state the unique bug an
-extra test would catch (add it as a matrix row with that justification).
+Done = every scenario in the phase's `## Test Scenarios` was **executed by the runner and observed to
+pass at its assigned altitude** (Unit / API / E2E): each `S<n>` has its ONE test, carrying that
+scenario's id in its title so a reviewer can trace it, that actually ran green.
 
-Line/branch coverage is a diagnostic, never a gate or a target. When coverage drops,
-the only question is **"what behavior is missing from the matrix?"** — never "what
-line am I missing?" Filler tests written to move a coverage number are a defect, not
-a contribution.
+**Passing at altitude is not optional.** A scenario placed under `### API` or `### E2E` is done only
+when a test *at that altitude* ran green. "The behavior is already covered by a Unit test" does **not**
+satisfy an API/E2E scenario — silently re-homing a scenario to a cheaper altitude to reach done is a
+**BLOCKED** condition, not a pass. If you cannot run the API/E2E test, the phase is BLOCKED; report it
+and return control (see *TDD with E2E Tests* below). Never quietly fold an unrun API/E2E scenario into
+a unit test and call the phase complete.
+
+The phase's scenario set is the test
+budget — do not write tests outside it unless you can state the unique bug an extra one would catch.
+
+Line/branch coverage is a diagnostic, never a gate. When it drops, the only question is **"what
+behavior is missing from the scenario set?"** — never "what line am I missing?" Filler tests to move a
+coverage number are a defect.
 
 **Don't-test list** — code with no defect-detection value, intentionally untested:
 - Getters/setters and straight field mappers
@@ -291,97 +288,38 @@ Tests respond to *behavior* changes, never to *structure* changes — if a
 behavior-preserving refactor breaks a test, the test was coupled to structure and
 should be rewritten or deleted.
 
----
-
-## Why Order Matters
-
-### "I'll write tests after"
-
-Tests written after code pass immediately. A test that passes immediately proves nothing:
-- It might test the wrong thing
-- It might test implementation, not behavior
-- It might miss edge cases you forgot
-- You never saw it catch anything
-
-Test-first forces you to see the failure, proving the test actually validates something.
-
-### "I already manually tested it"
-
-Manual testing is ad-hoc and irreproducible:
-- No record of what was tested
-- Can't re-run when code changes
-- Easy to miss cases under pressure
-- "It worked when I tried it" is not evidence
-
-Automated tests are systematic and run the same way every time.
-
-### "Deleting X hours of work is wasteful"
-
-Sunk cost fallacy. The time is already gone. Your choices are:
-- Delete and rewrite with TDD — high confidence the code works
-- Keep it and add tests after — low confidence, likely bugs, technical debt
-
-The "waste" is keeping code you can't trust.
-
-### "Tests after achieve the same goals"
-
-No. Tests-after answer "What did I build?" Tests-first answer "What should I build?"
-
-Tests-after are biased by your implementation. You test what you built, not what's required. You verify edge cases you remembered, not ones you would have discovered by writing tests first.
-
-### "I need to explore first"
-
-Fine. Exploration is valuable. But throw away the exploration code and start over with TDD. If you keep it, you're testing after.
-
-### "The test is hard to write"
-
-Listen to the test. Hard to test means hard to use. The difficulty is telling you the design needs work — simplify the interface, break up the function, inject the dependency.
-
----
-
-## Library Suspect Detection (`LIB_SUSPECT`)
-
-Default failure mode: tunneling on the symptom when the lib itself is the
-problem. This classifier surfaces "the lib is wrong" as an explicit hypothesis
-instead of burning iterations on doomed retries.
-
-**Trigger** — emit `LIB_SUSPECT` only when **all** hold for the same test:
-- Failed ≥ 3 times in a row.
-- Every failure's stack trace contains a frame inside the *same* external lib.
-- Error class is one of: `auth` (401/403), `schema` (shape mismatch),
-  `not-found` (404 on a documented endpoint), `import-error`, or `timeout`
-  after retries.
-
-**Action:**
-1. Stop the TDD loop on this test — do not retry.
-2. Write a short diagnosis to `.harness/runtime/<SPEC_NAME>/lib-suspect-<lib>.md`:
-   lib + version, top-3 stack frames, error class, what you tried.
-3. Emit `<!-- LIB_SUSPECT:<library-name>:<error-class> -->` in your report.
-4. Return control. Orchestrate re-invokes `library-probe --lib <name>` to
-   walk the fallback chain.
-
-**Guards (don't false-positive):**
-- Most failures are in *your* code — flip only when the lib frame is
-  consistently in the stack.
-- Read the docs (context7) first; your call may be wrong, not the lib.
-- Different errors on each retry = flailing, not a lib problem. Slow down.
+**Runner-less producer repos.** A phase may create an artifact in a repo with no test runner
+(`"test": "echo no-test"` — a raw JSON/config or types-only package). Never invent a runner there: the
+proving scenario lives in the **consumer** phase that imports the artifact and has a runner, exactly
+as the planning skill places it. Coverage of that artifact is the consumer's scenario, not an
+uncovered-file gap. A **published library component** proven end-to-end through a host app is the
+same shape one altitude up — see `references/consumer-repo-e2e.md`.
 
 ---
 
 ## Red Flags — Stop and Start Over
 
-If any of these are happening, TDD has been abandoned. Delete the production code and restart from RED:
+Any of these means TDD was abandoned. Delete the production code and restart from RED:
+code written before its test; a test written after the implementation; a test that passes on its
+first run (for new behavior — see the guard-phase exception in RED); can't explain why the test
+failed; "tests later"; "just this once"; "I already manually tested it"; "keep as reference / adapt
+existing code"; "already spent X hours, deleting is wasteful."
 
-- Code written before test
-- Test written after implementation
-- Test passes immediately on first run
-- Can't explain why the test failed
-- Tests to be added "later"
-- Rationalizing "just this once"
-- "I already manually tested it"
-- "Keep as reference" or "adapt existing code"
-- "Already spent X hours, deleting is wasteful"
-- "This is different because..."
+The reasons are not negotiable: a test written after the code passes immediately and proves nothing —
+you never saw it catch anything, and it's biased toward what you built, not what was required.
+Test-first is the only thing that forces you to watch the failure.
+
+---
+
+## Library Suspect Detection (`LIB_SUSPECT`)
+
+When a test fails ≥3 times in a row with every failure's stack trace inside the *same* external lib
+(error class `auth` / `schema` / `not-found` / `import-error` / `timeout`), stop retrying: the lib,
+not your code, may be wrong. Emit `<!-- LIB_SUSPECT:<lib>:<error-class> -->` in your report and
+return control — orchestrate re-invokes the `library-probe` skill to walk the fallback chain. Guard
+against false positives: most failures are in your code, so flip only when the lib frame is
+*consistently* in the stack, read the docs (context7) first, and treat a different error on each
+retry as flailing, not a lib problem.
 
 ---
 
@@ -393,25 +331,6 @@ If any of these are happening, TDD has been abandoned. Delete the production cod
 | Test too complicated | The design is too complicated. Simplify the interface. |
 | Must mock everything | Code is too coupled. Use dependency injection. |
 | Test setup is huge | Extract factories/helpers. Still complex? Simplify the design. |
-| Don't know where to start | Start with the simplest behavior. What's the first thing this code should do? |
-| Feature too large | Break it into smaller behaviors. Each one gets its own RED-GREEN-REFACTOR. |
-
----
-
-## Verification Checklist
-
-Before marking work complete:
-
-- [ ] Every spec matrix row has its one test, watched failing first (no 1:1 test-per-function; don't-test-list code is intentionally untested)
-- [ ] Each test failed for the expected reason (feature missing, not typo)
-- [ ] Wrote minimum code to pass each test
-- [ ] All tests pass
-- [ ] Output is clean (no errors, warnings)
-- [ ] Tests use real code (mocks only when unavoidable)
-- [ ] Input variations are parameterized, near-duplicate tests consolidated
-- [ ] Refactoring assessed after each green
-
-Can't check all boxes? You skipped TDD. Start over.
 
 ---
 

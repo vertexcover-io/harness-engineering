@@ -17,9 +17,14 @@ Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & 
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
-**CRITICAL: Do NOT explore the codebase, read project files, or fetch URLs before completing the Initialization steps below. The very first actions are: detect input, check for auto mode, then create the worktree and start the dashboard inside it. No exceptions.**
+## Invariants
 
-**CRITICAL: There is exactly ONE pause in this pipeline — the plan-approval gate after Stage 2. After the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back WITHOUT stopping, pausing, asking the user anything, or emitting any interim summary. Internal corrective re-dispatches (e.g. LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going. Halt before Stage 6 completes ONLY on a genuine BLOCK/FAIL (functional verification FAILED, quality gate BLOCKED/STAGNATION, review hard-standards failure, library-probe BLOCKED, or a sub-agent error) — and when you halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.**
+1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, create the worktree, start the dashboard inside it.
+2. **Exactly ONE pause — the plan-approval gate after Stage 2.** After the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back with NO stopping, pausing, questions, or interim summaries. Internal corrective re-dispatches (e.g. LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going.
+3. **Halt only on a genuine BLOCK/FAIL** (functional verification FAILED, quality gate BLOCKED/STAGNATION, review hard-standards failure, library-probe BLOCKED, or a sub-agent error). On halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.
+4. **Every question uses `AskUserQuestion`** — never plain text. In `--auto` mode, skip all `AskUserQuestion` calls.
+5. **Invoke the stage's resolved skill. Never hand-roll its output.** Every stage runs a skill — resolve *which* per `references/config.md` (config override → project skill → global default), then invoke it via the `Skill` tool. Do this even when you believe you already know what it would say: your recollection is not the contract, and a project may have swapped the skill out from under you. This binds main-conversation stages exactly as it binds sub-agents — writing `plan.md` yourself instead of invoking the planning stage's skill, or a design instead of the brainstorm stage's, is a pipeline violation, not a shortcut. **Before leaving a stage, confirm you invoked its skill.** If you didn't, the stage did not run.
+6. **The skill owns the contract; the dispatch owns the variables.** When telling a sub-agent what to do, name the resolved skill and pass what only this run knows (paths, ids, ranges). Do NOT restate what the skill already says — a second copy is a second source of truth, and it will drift. If a sub-agent needs a rule that no skill states, add it to the skill rather than the prompt.
 
 ---
 
@@ -29,66 +34,34 @@ Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & 
 
 The argument is either an **inline prompt** or a **spec file path**.
 
-1. Check if the argument contains `--auto`. If present, set `AUTO_MODE=true` and strip `--auto` from the argument.
-2. Check if the remaining argument is a path to an existing file (use `Bash` to test with `[ -f "<arg>" ]`)
-3. If file exists → read its contents as the task spec
-4. If not a file → treat the argument as an inline task prompt
-5. Store the resolved input as `TASK_CONTEXT` — this is passed to every stage.
-6. **Tech-debt manifest mode.** If the input is (or points to) a `findings.json` produced by
-   `tech-debt-finder`, do NOT re-summarize it into a prose spec from memory. Read the manifest
-   directly and follow `tech-debt-finder/references/auto-fix-handoff.md`: fix only
-   `auto_fixable: true` findings, and before Stage 6 write `fix-manifest.json` giving every finding
-   a terminal disposition (`fixed`/`issue`/`suppressed`/`dropped`, reason required for `dropped`).
-   Reconcile and BLOCK the commit if any `auto_fixable` finding was dropped without a reason. Include
-   the disposition table in the commit/PR body.
+1. If the argument contains `--auto`, set `AUTO_MODE=true` and strip `--auto`.
+2. Test whether the remaining argument is an existing file (`[ -f "<arg>" ]`).
+3. If file → read its contents as the task spec. If not → treat it as an inline task prompt.
+4. Store the resolved input as `TASK_CONTEXT` — passed to every stage.
+5. **Tech-debt manifest mode.** If the input is (or points to) a `findings.json` from `tech-debt-finder`, do NOT re-summarize it into prose. Read the manifest directly and follow `tech-debt-finder/references/auto-fix-handoff.md`: fix only `auto_fixable: true` findings, and before Stage 6 write `fix-manifest.json` giving every finding a terminal disposition (`fixed`/`issue`/`suppressed`/`dropped`, reason required for `dropped`). BLOCK the commit if any `auto_fixable` finding was dropped without a reason. Include the disposition table in the commit/PR body.
 
 When `AUTO_MODE=true`:
-- **Skip all AskUserQuestion calls** — Claude decides autonomously, auto-approves designs and plans
-- **Skip worktree creation** — use current working directory (e.g., GitHub Actions already checked out the PR branch)
-- **Skip all `dag-update` calls** — no live dashboard in CI
-- **Skip PR creation in Stage 6** — only commit and push; caller handles PR interaction
-- **All artifacts still produced** (design docs, specs, plans) for auditability
+- Skip all `AskUserQuestion` calls — Claude decides autonomously, auto-approves designs and plans.
+- Skip worktree creation — use current working directory (CI already checked out the branch).
+- Skip all `dag-update` calls — no live dashboard.
+- Skip PR creation in Stage 6 — only commit and push; caller handles PR.
+- All artifacts still produced (design docs, specs, plans) for auditability.
 
 ### Step 2: Create Worktree, then Bootstrap the DAG Dashboard
 
+DAG commands, the init block, and the transition pattern all live in **`references/dag-commands.md`**. Resolve `DAG_SCRIPT` first:
+
 The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs"`
-Store the path above as `DAG_SCRIPT`. All Bash calls below invoke it via `node` (cross-platform: works on Linux, macOS, and Windows).
 
-**Create the worktree FIRST, then start the dashboard from inside it.** `dag-update init` writes `.harness/runtime/<SPEC_NAME>/` (dag.json, server.*, reports/) relative to the current directory — so it MUST run with the worktree as cwd, otherwise the dashboard lands in the main checkout while claims/phase files land in the worktree (split-brain). The ONLY Skill you may invoke before the dashboard is `using-git-worktrees`; do NOT read files, explore the codebase, or invoke any other Skill or Agent before the dashboard is serving.
+**Create the worktree FIRST, then start the dashboard from inside it** — `init` writes `.harness/runtime/<SPEC_NAME>/` relative to cwd, so it must run with the worktree as cwd (else the dashboard and the phase/claims files split across two checkouts). The ONLY Skill you may invoke before the dashboard is `using-git-worktrees`.
 
-(In `--auto` mode, skip this whole step — no worktree is created (the caller's cwd is used) and no dashboard runs.)
+(In `--auto` mode, skip this whole step — no worktree, no dashboard.)
 
-1. Generate a spec name from the task prompt: lowercase, replace spaces with hyphens, truncate to 30 chars. Example: `"Add user auth system"` → `"add-user-auth-system"`
-2. **Create the worktree first.** Invoke the `using-git-worktrees` skill via the `Skill` tool, then `cd` into the worktree. Store `WORKTREE_PATH` and `BRANCH_NAME`. (This is Stage 0's worktree sub-step, pulled forward so the dashboard's `.harness/runtime/` colocates with every other artifact.)
-3. **From inside the worktree**, initialize the DAG (cwd is the worktree, so `HARNESS_DIR` resolves to `<WORKTREE_PATH>/.harness/runtime/<SPEC_NAME>`):
-   ```
-   Bash("
-     export HARNESS_DIR=$(node '<DAG_SCRIPT>' init '<SPEC_NAME>' '<TASK_CONTEXT summary>' unknown unknown)
-     node '<DAG_SCRIPT>' add-node setup 'Setup'
-     node '<DAG_SCRIPT>' add-node worktree 'Create Worktree' --parent setup
-     node '<DAG_SCRIPT>' add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
-     node '<DAG_SCRIPT>' add-node brainstorm 'Brainstorm' --depends-on setup
-     node '<DAG_SCRIPT>' add-node library-probe 'Library Probe' --depends-on brainstorm
-     node '<DAG_SCRIPT>' add-node spec-gen 'Spec Generation' --depends-on library-probe
-     node '<DAG_SCRIPT>' add-node planning 'Planning' --depends-on spec-gen
-     node '<DAG_SCRIPT>' add-node coder 'Coder' --depends-on planning
-     node '<DAG_SCRIPT>' add-node code-review 'Code Review' --depends-on coder
-     node '<DAG_SCRIPT>' add-node verify-finalize 'Verify & Finalize' --depends-on code-review
-     node '<DAG_SCRIPT>' add-node commit-pr 'Commit & PR' --depends-on verify-finalize
-     echo \"$HARNESS_DIR\"
-   ")
-   ```
-   Note: Phase nodes are added as children of `coder` after planning (Stage 2) when phases are known.
-4. Store the `HARNESS_DIR` printed above — the absolute `<WORKTREE_PATH>/.harness/runtime/<SPEC_NAME>` — for all subsequent `dag-update` calls.
-5. Start the dashboard server **as a background job** (`run_in_background: true`). `serve` is long-running (it keeps an HTTP server alive until finalize), so running it in the foreground would block the pipeline; it MUST be a separate, backgrounded Bash call:
-   ```
-   Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve", run_in_background=true)
-   ```
-6. The worktree already exists, so record it on the dashboard right away:
-   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status setup running && node '<DAG_SCRIPT>' write-report worktree '# Worktree\n- **Path:** <WORKTREE_PATH>\n- **Branch:** <BRANCH_NAME>' && node '<DAG_SCRIPT>' set-status worktree done")`
-
-**DAG command pattern:** Invoke `dag-update.mjs` via `node` directly instead of storing the command in a shell string. This works in bash, zsh, and PowerShell:
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' <command> <args>")`
+1. Generate a spec name from the prompt: lowercase, spaces → hyphens, truncate to 30 chars. `"Add user auth system"` → `"add-user-auth-system"`.
+2. **Create the worktree.** Invoke `using-git-worktrees` via `Skill`, then `cd` into it. Store `WORKTREE_PATH`, `BRANCH_NAME`.
+3. **From inside the worktree**, run the DAG init block (see `references/dag-commands.md`). Store the printed `HARNESS_DIR`.
+4. Start the dashboard server as a **background job**: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve", run_in_background=true)`.
+5. Record the existing worktree on the dashboard: `set-status setup running`, `write-report worktree` (path + branch), `set-status worktree done`.
 
 ---
 
@@ -98,110 +71,57 @@ Store the path above as `DAG_SCRIPT`. All Bash calls below invoke it via `node` 
 |---|-------|-----------|--------|
 | 0 | Setup | **Main conversation** | Worktree path, baseline metrics, spec directory |
 | 1 | Brainstorm | **Main conversation** | `.harness/features/<name>/design.md` with declared dependency + fallback chain |
-| 1.5 | Library Probe | **Main conversation** | `.harness/features/<name>/library-probe.md` + verified probe scripts (in `.harness/runtime/<name>/probes/`) |
+| 1.5 | Library Probe | **Main conversation** | `.harness/features/<name>/library-probe.md` + verified probe scripts (`.harness/runtime/<name>/probes/`) |
 | 1.7 | Spec Generation | **Main conversation** | `.harness/features/<name>/spec.md` (folds VS-0 probe scenarios in) |
 | 2 | Planner | **Main conversation** | `.harness/features/<name>/plan.md` (committed) + `.harness/runtime/<name>/phase-*.md` (gitignored) |
-| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `.harness/runtime/<name>/phase-<N>-claims.json` (one per phase) |
+| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-claims.json` + `e2e-report.json` |
 | 4 | Code Review | Sub-agent (2-pass) | `.harness/runtime/<name>/review/pass-{1,2}.md` verdicts, fixes applied |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
+
+**Every stage runs a skill, and which one is never hardcoded here** — `references/config.md` owns the
+stage → default-skill table and the resolution order (config override → project skill → global
+default). Resolve it there, then invoke it (Invariant 5).
+
+Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the main conversation — not as sub-agents — because Stage 0 sets the working directory, Stage 1 needs conversation context and flows into spec generation, and Stage 2 explores the codebase interactively and holds the only approval gate. All other stages (3–5) run as sub-agents via `Agent`.
 
 ---
 
 ## Stage Skip Rules
 
-After resolving the input (TASK_CONTEXT), determine which stages to skip **before** starting execution. Stages not listed here are **never skippable** — they run unconditionally every time.
-
-### Skip Decision Logic
+After resolving `TASK_CONTEXT`, decide which stages to skip **before** starting execution. Stages not listed here are never skippable.
 
 ```
 For each skippable stage:
-  1. If input EXPLICITLY says "skip <stage>" → skip unconditionally (trust the caller)
+  1. Input EXPLICITLY says "skip <stage>" → skip unconditionally (trust the caller)
   2. Else if a spec/context file is provided → read it and evaluate:
-     - Is the problem clearly defined with specific scope?
-     - Are the files/changes to make listed explicitly?
-     - Are acceptance criteria present?
-     → If ALL yes → skip (the stage would add no value)
-     → If ANY no → run the stage to fill the gaps
-  3. Else (bare prompt, no spec) → always run the stage
+     - Problem clearly defined with specific scope?  Files/changes listed?  Acceptance criteria present?
+     → ALL yes → skip (stage adds no value);  ANY no → run the stage
+  3. Else (bare prompt) → always run the stage
 ```
-
-### Skippable Stages
 
 | Stage | Skip condition |
 |-------|---------------|
-| 1: Brainstorm + Spec | Explicit skip instruction from caller, OR agent evaluates input has complete context (clear problem definition, specific scope, acceptance criteria) |
-| 2: Planner | Explicit skip instruction from caller, OR agent evaluates task is straightforward enough (single-phase work, per-file instructions already provided) |
+| 1: Brainstorm + Spec | Explicit skip instruction, OR input has complete context (clear problem, specific scope, acceptance criteria) |
+| 2: Planner | Explicit skip instruction, OR task is straightforward (single-phase, per-file instructions already provided) |
 
-### Mandatory Stages (never skip)
+**Mandatory (never skip):** 0 Setup, 1.5 Library Probe (trust gate — every external dep verified before code), 3 Coder, 4 Code Review (semantic gate), 5 Verify & Finalize, 6 Commit & PR.
 
-| Stage | Why |
-|-------|-----|
-| 0: Setup | Worktree and baseline are always required |
-| 1.5: Library Probe | Trust gate — every external dep must be verified before code is written |
-| 3: Coder | Core implementation — the whole point of the pipeline |
-| 4: Code Review | Semantic verification gate — catches bugs that metrics can't |
-| 5: Verify & Finalize | Functional verification + quality gate + docs + learnings — always runs as single consolidated stage |
-| 6: Commit & PR | Always runs to finalize work (runs in main conversation) |
+**Handling skipped stages:** set the DAG node to `skipped`, log `"Skipping Stage N (<name>) — <reason>"`, proceed. Skipping brainstorm does not skip setup; skipping planning does not skip coder, review, gate, or commit.
 
-### Handling Skipped Stages
-
-For each skipped stage:
-1. Set its DAG status to `skipped` (using the full `export HARNESS_DIR=... && DU=...` preamble pattern)
-2. Log: "Skipping Stage N (<name>) — <reason>"
-3. Proceed to the next stage in order
-
-**Even when stages are skipped, all mandatory stages MUST execute in order.** Skipping brainstorm does not skip setup. Skipping planning does not skip coder, code review, quality gate, or commit.
+`disabled` in `orchestrate.config.json` (see below) is honored only on the two skippable stages.
 
 ---
 
 ## Execution Rules
 
-### HARD RULE: Questions and Approvals
+**Single approval gate:** the only gate is after Stage 2 (Planner) — present the plan and wait for approval before Stage 3. All other stages flow without gates or interim summaries (Invariant 2).
 
-**Every question to the user MUST use the `AskUserQuestion` tool — never output questions as plain text.** In auto mode, skip all `AskUserQuestion` calls entirely.
+**Waiting status:** a PreToolUse/PostToolUse hook sets the running node to `waiting` before any `AskUserQuestion` and back to `running` after — no manual dag-update needed.
 
-**Single approval gate:** The only approval gate in the pipeline is after Stage 2 (Planner). Present the plan and wait for user approval before proceeding to Stage 3. All other stages flow without approval gates — and without interim summaries between them.
+**Sub-agent prompts:** every sub-agent prompt starts with `[PREAMBLE]` (worktree path + a pointer to `baseline.json` for tooling commands), then names the stage's resolved skill and passes this run's variables. Dispatch blocks: **`references/stage-prompts.md`** — and per Invariant 6, do not add to them what a skill already says.
 
-**Waiting status:** A PreToolUse/PostToolUse hook automatically sets the current running node to `waiting` (purple) before any `AskUserQuestion` call, and back to `running` after the user responds. No manual dag-update calls needed for this.
-
-### Sub-Agent Prompt Preamble
-
-Every sub-agent prompt MUST start with this preamble (referred to as `[PREAMBLE]` in stage templates below):
-
-```
-You are working in the worktree at <WORKTREE_PATH>.
-Your working directory is <WORKTREE_PATH>.
-<TOOLING_COMMANDS>
-```
-
-**`<TOOLING_COMMANDS>` — goes in EVERY sub-agent (coder, review, verify).** Read the `commands` block
-from `<HARNESS_DIR>/baseline.json` (recorded by pipeline-setup) and paste it verbatim so the agent
-never rediscovers the test runner or guesses a wrong file-filter flag. Omit the block only if
-`baseline.json` has no `commands` block (older runs). Format:
-```
-## Tooling commands (use these exact invocations — do NOT rediscover the runner)
-- typecheck:   <commands.typecheck>
-- lint (full): <commands.lint>     lint (one file): <commands.lint_file>
-- build:       <commands.build>
-- test (all):  <commands.test_all>
-- test (one file): <commands.test_file>   (substitute {FILE} with the test's path)
-Discipline: run the scoped **test_file** on EVERY RED/GREEN iteration; run **test_all** AT MOST ONCE,
-only to confirm green before declaring the phase done — and in a monorepo that once-only run is the
-CHANGED package's suite (the `--filter <pkg>` form), not the whole repo. Use **lint_file** while
-iterating; run full **lint** once at the end. Never pipe the whole-package suite through grep to find
-one test. Downstream review/verify/quality-gate do NOT re-run a green suite — don't pre-empt them.
-```
-
-### Stages 0-2 Run in Main Conversation
-
-Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the main conversation — NOT as sub-agents.
-
-- **Stage 0** runs in main so we can `cd` into the worktree and set the working directory for everything that follows.
-- **Stage 1** runs in main because brainstorm needs conversation context and flows into spec generation.
-- **Stage 2** runs in main because the planner explores the codebase interactively and holds the only approval gate.
-
-Invoke their respective skills directly using the `Skill` tool. All other stages (3-5) run as sub-agents via the `Agent` tool.
+**DAG transitions:** `set-status running` before each stage, `done` after, `write-report` on completion — exact invocations in **`references/dag-commands.md`**.
 
 ### Pipeline Flow
 
@@ -209,17 +129,11 @@ Invoke their respective skills directly using the `Skill` tool. All other stages
 digraph pipeline {
   rankdir=LR
   node [shape=box]
-
-  stage_0 [label="0: Setup"]
-  stage_1 [label="1: Brainstorm"]
-  stage_15 [label="1.5: Library Probe"]
-  stage_17 [label="1.7: Spec Generation"]
-  stage_2 [label="2: Planner"]
-  stage_3 [label="3: Coder"]
-  stage_4 [label="4: Code Review"]
-  stage_5 [label="5: Verify & Finalize"]
+  stage_0 [label="0: Setup"]; stage_1 [label="1: Brainstorm"]
+  stage_15 [label="1.5: Library Probe"]; stage_17 [label="1.7: Spec Generation"]
+  stage_2 [label="2: Planner"]; stage_3 [label="3: Coder"]
+  stage_4 [label="4: Code Review"]; stage_5 [label="5: Verify & Finalize"]
   stage_6 [label="6: Commit & PR"]
-
   stage_0 -> stage_1 -> stage_15 -> stage_17 -> stage_2 -> stage_3
   stage_3 -> stage_4 -> stage_5 -> stage_6
   stage_4 -> stage_4 [label="2-pass review+fix" style=dashed]
@@ -227,77 +141,21 @@ digraph pipeline {
 }
 ```
 
-Stage 3 (Coder) is the only stage with internal parallelism — see "Parallel When Possible" below. Stage 4 (Code Review) has a two-pass review — see Stage 4 dispatch below.
-
 ### Parallel When Possible
 
-After Stage 2, read the **phase graph** from plan.md (DOT digraph) and dispatch in waves:
+Parallelism is **graph-driven**, not file-count-driven. Under vertical slicing (see the `planning` skill) each phase is an independent capability, so dispatch comes straight from the phase graph:
 
-**Phase waves:** Compute **ready nodes** = phases with no incomplete predecessors. Dispatch all ready phases in parallel. After each wave completes, recompute → dispatch next wave.
+**Phase waves:** read the DOT phase graph from plan.md. Compute **ready nodes** = phases with no incomplete predecessors. Dispatch all ready phases in parallel (multiple `Agent` calls in one message). After each wave, recompute → dispatch the next wave.
 
 **Per phase, choose ONE strategy:**
-- **Has step graph** in `phase-N.md` → dispatch steps in waves (same ready-node logic), skip phase-level agent
-- **No step graph** → single agent for the whole phase
-
-**To parallelize:** Send multiple `Agent` tool calls in a single message.
+- **Has step graph** in `phase-N.md` → dispatch steps in waves (same ready-node logic), skip the phase-level agent.
+- **No step graph** → single agent for the whole phase.
 
 ---
 
 ## Per-stage Config: `orchestrate.config.json`
 
-Optional file at the **repo root** (read once during Stage 0). Its `stages` map keys each
-stage to `{ skill?, model?, disabled? }` — every field independent. Keys are stage IDs
-(`coder`) or the stage's default skill name (`tdd`) — both resolve the same stage.
-
-```json
-{
-  "stages": {
-    "brainstorm":      { "skill": "my-brainstorm" },
-    "coder":           { "skill": "my-tdd", "model": "opus" },
-    "code-review":     { "model": "opus" },
-    "quality-gate":    { "skill": "my-quality-gate" },
-    "planning":        { "disabled": true },
-    "verify-finalize": { "model": "haiku" }
-  }
-}
-```
-
-Look the entry up by stage ID, then by default skill name; call the match `CFG`. Then,
-per stage:
-
-- **skill** = `CFG.skill` → a project skill named exactly like the default (the `Skill`
-  tool already prefers project/plugin over global, so no path lookup) → global default.
-  `CFG.skill` is a skill **name only**; a value with `/` is ignored (log it). Log the
-  resolved override: `"Using custom skill for stage <id>: <skill-name>"`.
-- **model** (sub-agent stages `coder`/`code-review`/`verify-finalize` only) = `CFG.model`
-  → the dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model`
-  on a main-conversation stage has no Agent to retarget — ignore it (log).
-- **disabled** = `CFG.disabled === true` skips the stage, exactly like a caller "skip
-  <stage>" (DAG node → `skipped`, "Handling Skipped Stages" applies). Honored ONLY for the
-  **Skippable Stages** (`brainstorm`, `planning`); on any **Mandatory** stage it is
-  rejected (`"Cannot disable mandatory stage <id> — ignoring"`).
-
-Does NOT apply to `orchestrate` itself (no recursive override).
-
-### Stages, default skills, and gate contracts
-
-A custom skill is invoked with the **same arguments** the default would get (see each
-dispatch block) and, for **gated** stages, MUST emit the same verdict markers/artifacts so
-orchestrate can parse the result — a missing verdict is treated as a stage FAILURE/BLOCKED.
-
-| Stage ID | Default skill | Gate contract (gated stages only) |
-|----------|---------------|------------------------------------|
-| `brainstorm` | `brainstorm` | — |
-| `library-probe` | `library-probe` | `<!-- LP:VERDICT:PASS -->` / `BLOCKED` |
-| `spec-gen` | `spec-generation` | — |
-| `planning` | `planning` | — |
-| `coder` | `tdd` (+ `testing` for stepped phases) | phase `…-claims.json` (`executed>0`, `failed=0`) |
-| `code-review` | `code-review` | `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
-| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.md` + `adversarial-findings.md`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
-
-Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N = 1–11).
-`verify-finalize` is a bundle — overriding its `skill` replaces all four sub-skills and
-their contracts; override `quality-gate` (etc.) to swap just one.
+Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys each stage ID (or default skill name) to `{ skill?, model?, disabled? }`. `skill` swaps the stage's skill (name only); `model` retargets sub-agent stages (`coder`/`code-review`/`verify-finalize`); `disabled` skips — honored only on the skippable stages (`brainstorm`, `planning`), rejected on mandatory ones. Full resolution rules, the gate-contract table, and an example: **`references/config.md`**. Does NOT apply to `orchestrate` itself.
 
 ---
 
@@ -305,83 +163,56 @@ their contracts; override `quality-gate` (etc.) to swap just one.
 
 ### Stage 0: Setup (Main Conversation)
 
-**Worktree sub-step:** Already done in Step 2 — the worktree was created (and `cd`'d into) and the `setup`/`worktree` nodes recorded there so the dashboard could be bootstrapped inside the worktree. `WORKTREE_PATH` and `BRANCH_NAME` are already stored. (In `--auto` mode no worktree exists; the caller's cwd is used.)
+Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
-**Baseline sub-step:**
-5. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status baseline running")`
-6. Derive `SPEC_NAME` from task, create:
-   - `.harness/features/<SPEC_NAME>/verification/{screenshots,traces}/` (committed tree)
-   - `.harness/runtime/<SPEC_NAME>/review/` (gitignored working tree; `reports/` already created by dashboard init)
-7. Auto-detect project tooling: check `CLAUDE.md` first, then `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`
-8. Run baseline metrics (typecheck, lint, test, coverage), write to `.harness/runtime/<SPEC_NAME>/baseline.json`
-9. Write `.harness/runtime/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`
-10. Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/features/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/runtime/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
-10b. **Load stage config.** If `orchestrate.config.json` exists at the worktree root, `Read` its `stages` map into `STAGE_CONFIG` (see "Per-stage Config"); else `STAGE_CONFIG = {}` (every stage uses its default skill/model and runs). Before each stage below, resolve `skill`/`model`/`disabled` from its entry per that section.
-11. After baseline: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' write-report baseline '# Baseline\n- **Spec:** <SPEC_NAME>\n- **Baseline:** <BASELINE_PATH>' && node '<DAG_SCRIPT>' set-status baseline done && node '<DAG_SCRIPT>' set-status setup done")`
+1. `set-status baseline running`.
+2. Create dirs: `.harness/features/<SPEC_NAME>/verification/{screenshots,traces,recording}/` (committed) and `.harness/runtime/<SPEC_NAME>/review/` (gitignored; `reports/` already created by dashboard init).
+3. Auto-detect tooling: `CLAUDE.md` first, then `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`.
+4. Run baseline metrics (typecheck, lint, test, coverage) → `.harness/runtime/<SPEC_NAME>/baseline.json`.
+5. Write `.harness/runtime/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`.
+6. Store `SPEC_NAME`, `SPEC_DIR` (`.harness/features/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/runtime/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`.
+7. **Load stage config.** If `orchestrate.config.json` exists at the worktree root, `Read` its `stages` map into `STAGE_CONFIG`; else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md`.
+8. `write-report baseline`, `set-status baseline done`, `set-status setup done`.
 
 ### Stage 1: Brainstorm (Main Conversation)
 
-1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status brainstorm running")`
-2. Invoke `brainstorm` skill via `Skill` tool — no approval gate, design flows straight through.
-   The brainstorm skill MUST produce a `## External Dependencies & Fallback Chain` section in the design doc (see brainstorm's "External Dependency Declaration" section). If absent, library-probe will block.
-3. Mark brainstorm done:
-   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' write-report brainstorm '# Brainstorm' && node '<DAG_SCRIPT>' set-status brainstorm done")`
+`set-status brainstorm running` → invoke `brainstorm` via `Skill` (no approval gate, design flows straight through) → `write-report brainstorm`, `set-status brainstorm done`.
+
+The brainstorm skill's own `## External Dependency Declaration` section must produce an `## External Dependencies & Fallback Chain` section in the design doc — that design-doc section is library-probe's input contract; without it, library-probe blocks.
 
 ### Stage 1.5: Library Probe (Main Conversation)
 
-The trust gate. Runs *before* spec generation so verified probes can be folded into the spec as VS-0 scenarios.
+The trust gate. Runs *before* spec generation so verified probes fold into the spec as VS-0 scenarios.
 
-1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status library-probe running")`
-2. Invoke `library-probe` skill via `Skill` tool. Pass design-doc path and `SPEC_DIR`. Pass `--auto` if `AUTO_MODE=true`.
+1. `set-status library-probe running`.
+2. Invoke `library-probe` via `Skill`. Pass design-doc path and `SPEC_DIR`; pass `--auto` if `AUTO_MODE`.
 3. Read the verdict marker from `.harness/features/<SPEC_NAME>/library-probe.md`:
-   - `<!-- LP:VERDICT:PASS -->` → continue.
-   - `<!-- LP:VERDICT:BLOCKED -->` → **stop the pipeline.** Report which library failed and the user's choice (or that creds were missing in `--auto`).
-   - `NOT_APPLICABLE` (no external deps) → continue.
-4. Mark done:
-   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' write-report library-probe '<summary>' && node '<DAG_SCRIPT>' set-status library-probe done")`
+   - `<!-- LP:VERDICT:PASS -->` or `NOT_APPLICABLE` (no external deps) → continue.
+   - `<!-- LP:VERDICT:BLOCKED -->` → **stop the pipeline.** Report which library failed and the user's choice (or missing creds in `--auto`).
+4. `write-report library-probe`, `set-status library-probe done`.
 
 ### Stage 1.7: Spec Generation (Main Conversation)
 
-1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status spec-gen running")`
-2. Invoke `spec-generation` skill — it reads `.harness/features/<SPEC_NAME>/design.md` + `library-probe.md` + the probe verification stubs at `.harness/features/<SPEC_NAME>/verification/verification-stubs.md` and folds them into the spec's `## Verification Scenarios` (so functional-verify re-runs the probes).
-3. Save spec to `.harness/features/<SPEC_NAME>/spec.md`, store `SPEC_PATH`.
-4. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status spec-gen done")`
+`set-status spec-gen running` → invoke `spec-generation` (it reads `design.md` + `library-probe.md` + the probe stubs at `verification/verification-stubs.md` and folds them into the spec's `## Verification Scenarios`) → save to `.harness/features/<SPEC_NAME>/spec.md`, store `SPEC_PATH` → `set-status spec-gen done`.
 
 ### Stage 2: Planner (Main Conversation)
 
-1. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status planning running")`
-2. Invoke `planning` skill via `Skill` tool — it reads design doc + spec internally before exploring code. Include `Lessons: <ROUTED_LESSONS>` in the invocation — known pitfalls matching this spec become plan steps, not surprises
-3. Planner explores codebase, asks interactive questions, designs phases
-4. **APPROVAL GATE:** Use `AskUserQuestion` — hook auto-handles waiting status
-5. Output: `.harness/features/<SPEC_NAME>/plan.md` (committed) + `.harness/runtime/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH=.harness/features/<SPEC_NAME>/plan.md` and `PHASE_DIR=.harness/runtime/<SPEC_NAME>/`
-6. Add phase DAG nodes as children of `coder`, mark planning done:
-   `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status planning done")`
-7. Add phase nodes: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && node '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")`
+1. `set-status planning running`.
+2. Invoke `planning` via `Skill` — it reads design doc + spec internally before exploring code. Include `Lessons: <ROUTED_LESSONS>` — known pitfalls matching this spec become plan steps.
+3. Planner explores the codebase, asks interactive questions, designs **vertical-slice** phases.
+4. **APPROVAL GATE:** use `AskUserQuestion` (hook auto-handles waiting status).
+5. Output: `.harness/features/<SPEC_NAME>/plan.md` (committed) + `.harness/runtime/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH`, `PHASE_DIR`.
+6. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `set-status planning done`.
 
-**Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count
+**Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count.
 
 ### Stage 3: Coder
 
-Dispatch based on phase and step dependency graphs. Two-level parallelism:
+Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 block in `references/stage-prompts.md` — one agent per phase, or per step in waves where the phase file has a Steps section. Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook + functional-verify read this) **and** `e2e-report.json` (raw run summary — quality-gate reads this).
 
-**Parallelism heuristic:** Only parallelize phases touching 3+ files or having a Steps section. Serialize smaller phases.
+DAG: `set-status coder running` before dispatch; per phase `set-status <phase-node> running`/`done`; after all phases `set-status coder done`.
 
-**Phase level:** Parse the phase graph from plan.md. Dispatch ready nodes (no incomplete predecessors) in waves.
-
-**Step level:** For each phase, read `.harness/runtime/<SPEC_NAME>/phase-N.md`. If it has a step graph → dispatch steps in waves. If not → single agent for the phase.
-
-DAG transitions:
-- Before dispatching: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status coder running")`
-- Before each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status <phase-node> running")`
-- After each phase: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status <phase-node> done && rm -f .harness/runtime/current-phase")`
-- After all phases: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status coder done")`
-
-**Coder-e2e-gate breadcrumb (mandatory before EVERY coder dispatch):**
-
-Before dispatching any coder sub-agent (phase-level or step-level), write the
-active-phase breadcrumb so the `coder-e2e-gate` SubagentStop hook can verify the
-phase report after the agent returns. Without this file, the hook no-ops and the
-phase is unprotected.
+**Coder-e2e-gate breadcrumb (mandatory before EVERY coder dispatch):** before dispatching any coder sub-agent (phase- or step-level), write the active-phase breadcrumb so the `coder-e2e-gate` SubagentStop hook can verify the phase report after the agent returns. Without this file the hook no-ops and the phase is unprotected:
 
 ```bash
 START_SHA="$(git rev-parse HEAD)"
@@ -392,300 +223,93 @@ START_SHA=$START_SHA
 EOF
 ```
 
-After each phase completes (whether single-agent or last step of a multi-step
-phase), delete the breadcrumb so unrelated subagents in later stages do not
-trigger the gate.
+After each phase completes, delete the breadcrumb (`rm -f .harness/runtime/current-phase`) so later-stage subagents don't trigger the gate.
 
-**Nomination signals (learning loop, all of stages 3-5):**
+**Nomination signals (learning loop, all of stages 3–5):** stages nominate lesson candidates to `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`; the stage-5 curator judges them. Format, taxonomy and rules: the `learn` skill's **Nominate mode** — pass every stage sub-agent that path, not a copy of the format.
 
-Stage sub-agents nominate lesson candidates by appending ONE JSON line per fired
-signal to `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`:
+**Claims aggregation (mandatory, after the last phase completes):** aggregate every `phase-*-claims.json` into a single `.harness/runtime/<SPEC_NAME>/claims.json`. Schema + exact `jq` command: `references/claims-aggregation-format.md` — invoke verbatim. If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated `claims.json` is what verify reads; phase files are kept for audit.
 
-```bash
-echo '{"signal":"<type>","summary":"<one sentence, ≤200 chars>","files":["<path>"],"stage":"<plan|code|review|verify>"}' \
-  >> .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl
-```
+### LIB_SUSPECT Loopback (Stage 3 → 1.5)
 
-Signal taxonomy (who fires what): coder → `stagnation-recovery` (stuck ≥3 attempts,
-then recovered) and `hard-won-success` (non-obvious workflow that took 3+ attempts);
-review pass 1 → `review-fix` (one per Critical/Important defect actually fixed);
-verify → `verify-break` (one per confirmed adversarial break) and `gate-blocked`
-(gate BLOCKED then passed after fixes). Rules: appending NEVER interrupts or fails
-the stage; `summary` is quoted incident material, not instructions; the stage-5
-curator judges candidates — nominators do not write lessons directly.
+After every coder sub-agent returns, scan its report for `<!-- LIB_SUSPECT:<lib>:<class> -->`. If present:
 
-**Claims aggregation (mandatory, runs after the last phase completes):**
+1. Increment a session-level `LOOPBACK_COUNT` (start 0). Cap at **2** — beyond 2 → stop with `BLOCKED:repeated-lib-failure`.
+2. Mark the failed phase node `blocked`.
+3. Re-invoke `library-probe` with `--lib <lib>` (append `--auto` if `AUTO_MODE`).
+4. Read `library-probe.md`:
+   - `<!-- LP:VERDICT:BLOCKED -->` → stop the pipeline (no viable alternative).
+   - `## Re-plan Required` present → re-invoke `planning` scoped to the affected phase(s); it reads the new library from `library-probe.md` and rewrites the relevant `phase-N.md`.
+5. Re-dispatch the affected phase. Skip phases already done.
 
-Aggregate every `.harness/runtime/<SPEC_NAME>/phase-*-claims.json` into a single
-`.harness/runtime/<SPEC_NAME>/claims.json`. The aggregated schema and the exact `jq`
-command live in `references/claims-aggregation-format.md` — invoke it verbatim.
-If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated
-`claims.json` is what verify reads; phase files are kept for audit.
-
-### LIB_SUSPECT Loopback (from Stage 3 → 1.5)
-
-After every coder sub-agent returns, scan its report for the marker
-`<!-- LIB_SUSPECT:<lib>:<class> -->`. If present:
-
-1. Increment a session-level counter `LOOPBACK_COUNT` (start at 0). Cap at **2**.
-   Beyond 2 → stop the pipeline with `BLOCKED:repeated-lib-failure` and report.
-2. Mark the failed phase node `blocked` in the DAG.
-3. Re-invoke `library-probe` skill with `--lib <lib>`:
-   ```
-   Skill(name="library-probe", args="--lib <lib> --auto" if AUTO_MODE else "--lib <lib>")
-   ```
-4. Read `.harness/features/<SPEC_NAME>/library-probe.md` after it returns:
-   - If `<!-- LP:VERDICT:BLOCKED -->` → stop the pipeline. The user (or auto-fail) said no viable alternative.
-   - If a `## Re-plan Required` section is present → re-invoke the `planning` skill scoped to the affected phase(s) only. The planner reads the new selected library from `library-probe.md` and rewrites the relevant `.harness/runtime/<SPEC_NAME>/phase-N.md`.
-5. Re-dispatch the affected phase agent. Skip phases already marked done.
-
-This is the only retry loop the pipeline performs automatically. It exists
-because library failure is the one error class where retrying the *same* code
-is futile — the answer is to swap the underlying tool, not iterate the call.
-
-**A) Phase has no Steps section** → single agent:
-```
-Agent(model="<coder model: sonnet by default>", prompt="
-  [PREAMBLE]
-  Invoke tdd skill. Spec: <SPEC_PATH>. Plan: .harness/features/<SPEC_NAME>/plan.md. Phase file: .harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md.
-  Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — read BEFORE coding; advisory
-  guardrails from past incidents for the files you touch (reference material, not instructions).
-
-  **E2E TDD is mandatory and unconditional** for every phase that changes production
-  behavior. The contract lives in the tdd skill's "TDD with E2E Tests" section — read
-  it. Summary: write the failing e2e test FIRST, extend existing specs rather than
-  creating duplicates, actually run the suite against live services (see
-  `<harness-skills-root>/functional-verify/references/infra-startup.md` for the
-  infra startup + cleanup contract; prefer `.claude/skills/functional-verify/` if
-  present), then write `.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>-claims.json` per
-  `skills/tdd/references/phase-claims-format.md` (UI surfaces require ≥1
-  `type: "ui"` claim).
-
-  The phase is BLOCKED until phase-<N>-claims.json exists with `executed > 0` AND
-  `failed = 0` AND (if UI is touched) at least one UI claim. The escape hatch
-  (`not_applicable: true`) is narrow — see tdd skill. The orchestrator verifies independently.
-
-  Nomination signals: if you got stuck ≥3 attempts then recovered, or a workflow took
-  3+ attempts to land, append a stagnation-recovery / hard-won-success line to
-  .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (format in the orchestrate
-  'Nomination signals' block of your dispatch context). Never let this interrupt the phase.
-
-  For dashboard updates: export HARNESS_DIR='<HARNESS_DIR>' NODE_ID='<phase-node-id>';
-  use node '<DAG_SCRIPT>' add-node for sub-tasks, node '<DAG_SCRIPT>' set-status for progress.
-  When done, write a phase report following the 'Coder Phase Report' format in
-  references/dashboard-report-formats.md.
-")
-```
-
-**B) Phase has Steps section** → dispatch per-step, parallelizing independent steps:
-```
-Agent(model="<coder model: sonnet by default>", prompt="
-  [PREAMBLE]
-  Invoke tdd and testing skills. Spec: <SPEC_PATH>. Plan: .harness/features/<SPEC_NAME>/plan.md.
-  Phase file: .harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md. Step: <STEP_DETAILS>.
-  Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — read BEFORE coding (advisory).
-
-  **E2E TDD is mandatory and unconditional** for every step that changes production
-  behavior — see the tdd skill's "TDD with E2E Tests" section for the full contract.
-  Write the failing e2e test FIRST (extend an existing spec if one already covers the
-  surface; do not create duplicates), implement until it passes, run the suite against
-  live services, then write `.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>-claims.json` per
-  `skills/tdd/references/phase-claims-format.md` (executed > 0, failed = 0, UI surfaces
-  require ≥1 `type: "ui"` claim). Authoring the spec without running it = BLOCKED.
-
-  Scope: Only this step's files. Return: files created/modified, test results, step completed or blocked.
-")
-```
-
-Dispatch in waves: send all independent steps in parallel → wait → dispatch next wave → repeat.
+This is the only automatic retry loop — library failure is the one class where retrying the *same* code is futile; swap the tool, don't iterate the call.
 
 ### Stage 4: Code Review Loop
 
-Two-pass review: a review+fix agent addresses defects directly, then a final review validates.
+Two-pass review: a review+fix agent addresses defects, then a final review validates. `set-status code-review running`. Dispatch Pass 1 (review & fix) then Pass 2 (final review) from `references/stage-prompts.md`; model = code-review model (`sonnet` default). `set-status code-review done`.
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status code-review running")`
-
-**Pass 1 — Review & Fix:**
-
-```
-Agent(model="<code-review model: sonnet by default>", prompt="
-  [PREAMBLE]
-  Invoke code-review skill. Plan: .harness/features/<SPEC_NAME>/plan.md.
-  Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/runtime/<SPEC_NAME>/review/pass-1.md.
-  Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — treat each lesson as a review
-  checklist item; tag every finding with matched_lesson per the code-review skill.
-
-  After completing the review:
-  — If verdict is APPROVE or APPROVE WITH SUGGESTIONS: skip fixing, just write the review report.
-    Do NOT run tests, lint, or typecheck — the coder already proved the suite green; re-running it
-    here is wasted time.
-  — If verdict is REQUEST CHANGES: FIX all Critical and Important defects you found.
-    Invoke tdd skill. After each fix run only the SCOPED test_file for the file you touched (from the
-    tooling-commands block), not the whole suite; run full test_all + lint ONCE at the end, only because
-    you changed code. Then write a combined review+fix report
-    and append the list of fixed defects to .harness/runtime/<SPEC_NAME>/review/fixes-applied.md.
-    For EACH Critical/Important defect you fixed, also append one review-fix nomination line
-    to .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (never let this fail the stage).
-
-  Write dashboard reports following 'Code Review Report' and 'Fix Report' formats in
-  references/dashboard-report-formats.md.
-  Return: verdict, defects found, defects fixed, files modified.
-")
-```
-
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status review-1 done")`
-
-**Pass 2 — Final Review:**
-
-```
-Agent(model="<code-review model: sonnet by default>", prompt="
-  [PREAMBLE]
-  Invoke code-review skill. Plan: .harness/features/<SPEC_NAME>/plan.md.
-  Scope: --commits <BASE_BRANCH>..HEAD. Output: --output .harness/runtime/<SPEC_NAME>/review/pass-2.md.
-  Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — lesson checklist + matched_lesson tagging apply.
-  This is the FINAL review pass.
-
-  If verdict is APPROVE / APPROVE WITH SUGGESTIONS: do NOT run tests, lint, or typecheck.
-  If verdict is REQUEST CHANGES: fix any remaining Critical/Important defects yourself, running only the
-  scoped test_file for files you touch; run full test_all + lint ONCE at the end if you changed code.
-  Then re-review the fix. Your output is the definitive verdict.
-
-  Write dashboard report following 'Code Review Report' format in
-  references/dashboard-report-formats.md.
-  Return: final verdict, any defects fixed in this pass.
-")
-```
-
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status code-review done")`
-
-**Verdict parsing:** Match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
+**Verdict parsing:** match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
 
 ### Stage 5: Verify & Finalize
 
-Single consolidated sub-agent that runs functional verification, the quality gate, syncs inline docs, and captures learnings.
+Single consolidated sub-agent: functional verification → quality gate → sync docs → curate learnings. `set-status verify-finalize running`. Dispatch the Stage 5 template from `references/stage-prompts.md`; model = verify-finalize model (`sonnet` default).
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status verify-finalize running")`
-
-```
-Agent(model="<verify-finalize model: sonnet by default>", prompt="
-  [PREAMBLE]
-  Run these in order. Stop and return failure immediately if any step fails.
-
-  1. FUNCTIONAL VERIFICATION: Invoke functional-verify skill.
-     Spec: .harness/features/<SPEC_NAME>/spec.md. Plan: .harness/features/<SPEC_NAME>/plan.md.
-     Phase files: .harness/runtime/<SPEC_NAME>/phase-*.md.
-     Lessons: .harness/runtime/<SPEC_NAME>/relevant-lessons.md — past break patterns are adversarial test ideas.
-     Claims report: .harness/runtime/<SPEC_NAME>/claims.json (aggregated from phase-*-claims.json).
-     Functional-verify reads this in Step 0. Every `type: "ui"` claim MUST be independently re-proven
-     via Playwright MCP — a passing phase .spec.ts is NOT a substitute. API/DB claims may be cited
-     as COVERED_BY_E2E. Phase format: skills/tdd/references/phase-claims-format.md.
-     Aggregated format + UI-proof gate: skills/orchestrate/references/claims-aggregation-format.md.
-     The skill produces TWO required artifacts (both committed):
-       - .harness/features/<SPEC_NAME>/verification/proof-report.md  (gate output — the verdict)
-       - .harness/features/<SPEC_NAME>/verification/adversarial-findings.md  (Step 5 role-swap pass: scenarios attempted + defects)
-     Plus screenshots in .harness/features/<SPEC_NAME>/verification/screenshots/ and traces in verification/traces/.
-     Both proof-report.md and adversarial-findings.md must exist before you return. Missing either one = verification did not happen, treat as FAILED.
-     For each CONFIRMED break in adversarial-findings.md, append one verify-break nomination
-     line to .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (never let this fail the stage).
-     Write dashboard report following 'Verification Report' format in
-     references/dashboard-report-formats.md.
-     If FAILED: stop entirely, return failure with which scenarios failed and why.
-     Evidence is saved to .harness/features/<SPEC_NAME>/verification/ — do NOT delete it.
-
-  2. QUALITY GATE: Invoke quality-gate skill.
-     Baseline: .harness/runtime/<SPEC_NAME>/baseline.json. Spec dir: .harness/features/<SPEC_NAME>/. Harness dir: .harness/runtime/<SPEC_NAME>/. Stage: post-tdd.
-     Write dashboard report following 'Quality Gate Report' format in
-     references/dashboard-report-formats.md.
-     If BLOCKED or STAGNATION: append one gate-blocked nomination line to
-     .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl (the JSONL persists — the next
-     run's curator judges it), then stop entire pipeline, return verdict + failure details.
-
-  3. SYNC DOCS: Invoke sync-docs skill.
-     Spec dir: .harness/features/<SPEC_NAME>/. Harness dir: .harness/runtime/<SPEC_NAME>/ (phase-*.md).
-     Write dashboard report following 'Sync Docs Report' format in
-     references/dashboard-report-formats.md.
-
-  4. CURATE LEARNINGS: Invoke learn skill in consolidate mode (this step ALWAYS runs —
-     zero candidates is a logged no-op, never a silent skip).
-     Candidates: .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl
-     Review findings: .harness/runtime/<SPEC_NAME>/review/pass-*.md (matched_lesson tags
-     drive evidence promotion). Spec: <SPEC_NAME>.
-     The consolidate procedure (four tests, dedupe, dispositions, reindex) lives in the
-     learn skill — follow it exactly. Also capture any pipeline friction you noticed
-     yourself (stalls, wrong assumptions, retries) as ordinary /learn material.
-     Write dashboard report following 'Learnings Report' format in
-     references/dashboard-report-formats.md.
-
-  Return: verification verdict, gate verdict, docs list,
-  lessons: retrieved <N> / matched <M> / captured <P>.
-")
-```
-
-**After the sub-agent returns, enforce the proof-report contract AND the e2e-execution contract before trusting the verdict:**
+**After the sub-agent returns, enforce the artifact + e2e-execution contracts before trusting the verdict:**
 
 ```
 Bash("
-  test -f .harness/features/<SPEC_NAME>/verification/proof-report.md &&
-  test -f .harness/features/<SPEC_NAME>/verification/adversarial-findings.md ||
+  test -f .harness/features/<SPEC_NAME>/verification/proof-report.md ||
   { echo 'MISSING_VERIFICATION_ARTIFACTS'; exit 1; }
 ")
 ```
 
-If either file is missing → treat verification as FAILED regardless of what the sub-agent returned, stop the pipeline. A "PASSED" verdict without the artifacts means the gate was skipped — the Stop/SubagentStop hook should have already blocked it, but this is the belt-and-suspenders check in orchestrate.
+If the file is missing → verification FAILED regardless of the returned verdict; stop the pipeline. A "PASSED" verdict without the artifact means the gate was skipped.
 
-**E2E execution + UI-proof gate (mandatory):**
+**E2E execution check (mandatory):** run the aggregated-claims check from `references/claims-aggregation-format.md`. It enforces `claims.json` exists, `executed > 0`, `failed = 0`.
 
-After verify returns, run the aggregated-claims gate from
-`references/claims-aggregation-format.md`. It enforces, in order:
-
-1. `claims.json` exists, `executed > 0`, `failed = 0`.
-2. Every `type: "ui"` claim id appears in `verification/proof-report.md` AND has a
-   `verification/screenshots/*.png` reference on the same / a nearby line.
-
-Failure modes (stop the pipeline, do not continue):
-
+Failure modes (stop the pipeline):
 - `MISSING_PHASE_CLAIMS` / `MISSING_CLAIMS_FILE` — coder or aggregation skipped.
 - `E2E_NOT_EXECUTED` / `E2E_FAILED` — phase suites did not run or had failures.
-- `MISSING_UI_PROOF — <claim-ids>` — verify skipped Playwright MCP for one or more
-  UI claims. Re-dispatch verify with explicit instruction to cover the listed ids.
 
-A passing phase `.spec.ts` is NOT sufficient — the verifier must drive a real
-browser via `mcp__playwright__browser_*` and capture screenshots per claim id.
+**Verification itself is not gated.** functional-verify writes a plain-English `proof-report.md` for a human, carrying no claim ids and nothing to grep — see *Why verification is not gated* in `references/claims-aggregation-format.md`. Read the verdict and the bugs it reports back, and judge them. A passing phase `.spec.ts` is NOT sufficient evidence a feature works: the verifier must have driven a real browser via the `agent-browser` CLI and filmed each scenario.
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status verify-finalize done")`
-
-**If functional verification FAILED → stop pipeline and report which scenarios failed.**
-**If proof-report.md or adversarial-findings.md is missing → stop pipeline, report MISSING_VERIFICATION_ARTIFACTS.**
-**If quality gate BLOCKED → stop pipeline and report what failed.**
-**If STAGNATION → stop pipeline entirely, do not retry.**
+`set-status verify-finalize done`.
 
 ### Stage 6: Commit & PR (Main Conversation)
 
-`Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status commit-pr running")`
+`set-status commit-pr running`. Do these directly (no sub-agent):
 
-Do these directly (no sub-agent):
+1. **Generate `.harness/features/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict **stated inline** (`verification/` is never committed, so a link to it would be dead for everyone but you); one-paragraph summary; TOC linking each committed artifact (`design.md`, `spec.md`, `plan.md`, `library-probe.md`, `learnings.md` if present); library-probe verdict line (selected lib + alternatives); PR link placeholder.
+2. Invoke `git-commit` via `Skill`. Create a final, separate commit for the artifact tree: `docs(spec): add artifacts for <SPEC_NAME>` containing only `.harness/features/<SPEC_NAME>/` files. **Never commit `verification/`** — the report, frames and videos stay on disk for a human and out of git forever. Confirm `.harness/features/*/verification/` is in `.gitignore` before staging; add it if it is missing.
+3. `git push -u origin <BRANCH_NAME>`.
+4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body 'Closes: see .harness/features/<SPEC_NAME>/README.md for design, spec, plan, and verification proof.' --base main --head <BRANCH_NAME>`.
+5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md and amend the artifact commit (or follow up with a new commit if amend is forbidden by policy).
+6. `write-report commit-pr`, `set-status commit-pr done`.
 
-1. **Generate `.harness/features/<SPEC_NAME>/README.md`** — the reviewer index. Include:
-   - Title (from spec) + final verification verdict (PASS / BLOCKED, with link to `verification/proof-report.md`)
-   - One-paragraph summary of what was built (from spec)
-   - Table of contents linking each committed artifact: `design.md`, `spec.md`, `plan.md`, `library-probe.md`, `learnings.md` (if present), `verification/proof-report.md`, `verification/adversarial-findings.md`
-   - Library-probe verdict line (selected lib + alternatives tried)
-   - PR link placeholder (filled in after step 4)
-2. Invoke the `git-commit` skill via `Skill` tool. It should create a final, separate commit for the artifact tree: `docs(spec): add artifacts for <SPEC_NAME>` containing only the `.harness/features/<SPEC_NAME>/` files (kept distinct from feature commits for review clarity).
-3. `Bash("git push -u origin <BRANCH_NAME>")`
-4. If PR desired (not --no-pr): `Bash("gh pr create --title '<spec title>' --body 'Closes: see .harness/features/<SPEC_NAME>/README.md for design, spec, plan, and verification proof.' --base main --head <BRANCH_NAME>")`
-5. Update `.harness/runtime/<SPEC_NAME>/manifest.json` with `pr_number` and `completed_at`. Backfill the PR URL into `.harness/features/<SPEC_NAME>/README.md` and amend the artifact commit (or follow up with a new commit if pre-existing commit policy forbids amend).
-6. Write dashboard report following 'Commit & PR Report' format in references/dashboard-report-formats.md.
-   Use: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' write-report commit-pr '...'")`
-7. `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' set-status commit-pr done")`
+**Extract:** commits, `PR_URL`.
 
-**Extract:** commits, `PR_URL`
+---
+
+## Terminal BLOCK/FAIL conditions
+
+Stop the pipeline and report which stage failed and why on any of:
+
+| Condition | Detail |
+|-----------|--------|
+| Sub-agent error | Any sub-agent fails or returns an error |
+| Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
+| Missing verification artifacts | `proof-report.md` absent → `MISSING_VERIFICATION_ARTIFACTS` |
+| Quality gate BLOCKED | Report what failed |
+| Quality gate STAGNATION | Do NOT retry — report the stagnated check, repeated error signature, need for manual intervention |
+| Library-probe BLOCKED | No viable alternative; or `BLOCKED:repeated-lib-failure` after 2 loopbacks |
+| Review hard-standards failure | Pass-2 still `REQUEST CHANGES` **and** pass-2.md has an unresolved `S-VIOLATION:<id>` (uncited `enforced_by: convention`) → stop; report the `S-*` id + `file:line` |
+
+Review pass 2 returning `REQUEST CHANGES` with only subjective Critical/Important defects (no `S-VIOLATION`) → **log a warning but proceed** to Stage 5; verification and gate catch the rest. On any halt, the worktree is preserved for manual intervention — present what was accomplished and suggest next steps.
 
 ---
 
 ## Summary
 
-Present this summary ONLY after Stage 6 (commit + PR) completes, or after a genuine BLOCK/FAIL halt — never between stages. After all stages complete, present a compact summary:
+Present ONLY after Stage 6 completes, or after a genuine BLOCK/FAIL halt — never between stages.
 
 ```markdown
 ## Pipeline Complete
@@ -711,32 +335,11 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' final
 
 ---
 
-## Error Handling
-
-- If any sub-agent fails or returns an error, **stop the pipeline** and report which stage failed and why
-- If functional verification fails (any scenario), **stop the pipeline** — the feature doesn't work as specified
-- If the review pass 2 still returns `REQUEST CHANGES` after its own fix attempt:
-  - Grep pass-2.md for an unresolved `S-VIOLATION:<id>` token (an uncited `enforced_by: convention`
-    standards violation). If present → **stop the pipeline** — a declared project standard was broken
-    with no cited reason; report the `S-*` id + `file:line`. This is a hard standards gate.
-  - Otherwise (subjective Critical/Important defects, no `S-VIOLATION`) → **log a warning but proceed**
-    to Stage 5 — verification and gate catch remaining violations.
-- If a review agent fails, **stop the pipeline** — do not continue
-- If the quality gate returns BLOCKED, **stop the pipeline** and report what failed
-- If the quality gate returns STAGNATION, **stop the pipeline entirely** — do not retry. Report which check stagnated, the repeated error signature, and that manual intervention is required
-- Do not proceed to the next stage if the current one failed
-- Present what was accomplished so far and suggest next steps
-- Worktree is preserved for manual intervention on failure
-
----
-
 ## Key Principles
 
-- **Each stage is isolated** — sub-agents don't share context, so pass all necessary information in the prompt
-- **Extract artifacts** — after each sub-agent returns, extract file paths and key info to pass forward
-- **Verify before gate** — functional verification runs the app and tests features live BEFORE the quality gate runs metrics. A feature that doesn't work is caught early, with evidence.
-- **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds
-- **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) in parallel, at both phase and step level. Only parallelize phases touching 3+ files
-- **Stagnation stops early** — coder detects repeated failures and stops itself, don't loop endlessly
-- **Spec folder structure** — committed, reviewer-facing artifacts live in `.harness/features/<name>/` (design, spec, plan, library-probe, learnings, verification/); pipeline working state lives in `.harness/runtime/<name>/` (baseline, phase-*, phase-*-claims.json, claims.json, gate-reports, review/, probes/, manifest) and is gitignored
-- **Dashboard** — orchestrator calls `node '<DAG_SCRIPT>' set-status` at each stage transition. Sub-agents use `node '<DAG_SCRIPT>' add-node` and `node '<DAG_SCRIPT>' write-report` for sub-task tracking. Formats live in `references/dashboard-report-formats.md`.
+- **Each stage is isolated** — sub-agents don't share context; pass all necessary info in the prompt, and extract file paths + key info from each return to pass forward.
+- **Verify before gate** — functional verification runs the app and tests features live BEFORE the quality gate runs metrics. A broken feature is caught early, with evidence.
+- **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds.
+- **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) at both phase and step level; vertical slices are independent by construction.
+- **Stagnation stops early** — the coder detects repeated failures and stops itself; don't loop endlessly.
+- **Spec folder structure** — committed reviewer-facing artifacts in `.harness/features/<name>/` (design, spec, plan, library-probe, learnings, verification/); pipeline working state in `.harness/runtime/<name>/` (baseline, phase-*, phase-*-claims.json, claims.json, e2e-report.json, gate-reports, review/, probes/, manifest), gitignored.

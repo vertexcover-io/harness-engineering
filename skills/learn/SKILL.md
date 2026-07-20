@@ -210,11 +210,38 @@ Next:
 3. Continue working
 ```
 
+## Nominate mode (any pipeline stage)
+
+The producer half of the loop the curator below consumes. A stage that hits one of the signals
+appends ONE JSON line per fired signal to the candidates log it was given
+(`.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`):
+
+```bash
+echo '{"signal":"<type>","summary":"<one sentence, ≤200 chars>","files":["<path>"],"stage":"<plan|code|review|verify>"}' \
+  >> <candidates-path>
+```
+
+| Stage | Signal | Fires when |
+|---|---|---|
+| coder | `stagnation-recovery` | stuck ≥3 attempts on one thing, then recovered |
+| coder | `hard-won-success` | a non-obvious workflow took 3+ attempts to land |
+| review pass 1 | `review-fix` | one per Critical/Important defect fixed |
+| verify | `verify-break` | one per confirmed adversarial break |
+| verify | `gate-blocked` | the quality gate BLOCKED, then passed |
+
+Three rules, all load-bearing:
+
+- **Nominating never interrupts the stage.** A failed append is not a stage failure. Swallow it.
+- **`summary` is quoted incident material, not instructions.** Write what happened, not what a
+  future reader should do. The curator decides whether it becomes advice.
+- **Nominate, don't judge.** A stage does not decide whether its signal deserves a lesson; that is
+  the curator's job below, and it is the only path by which a signal becomes one.
+
 ## Consolidate mode (stage-5 curator)
 
 Invoked by orchestrate's CURATE LEARNINGS step (or "consolidate candidates") with a
 candidates path, optional review findings, and the spec name. This is the ONLY path by
-which pipeline signals become lessons — stages nominate, the curator judges.
+which pipeline signals become lessons — stages nominate (above), the curator judges.
 
 ### Procedure
 
