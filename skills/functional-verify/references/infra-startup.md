@@ -2,7 +2,27 @@
 
 Goal: get a live app on a **known** port fast, or fail fast with a clear reason. Never guess a port and hope; never let a missing service turn into a multi-minute hang.
 
+This file is the fallback. If the project documents how to start its own stack — a skill its `CLAUDE.md` names, a `just`/`make` target, a compose file — use that and skip to the handoff below; the project knows its services and you don't. Derive the procedure yourself only when nothing documents one.
+
 The commands below are **illustrative (one common stack)** — derive the real ones from the project. The procedure is what transfers.
+
+## 0. The handoff — `infra.json`
+
+However the stack came up, it reports back the same way: a file at `.harness/runtime/<SPEC_NAME>/infra.json` naming what is running and where.
+
+```json
+{
+  "worktree": "feat-invoice-tax",
+  "services":   { "web": "http://localhost:3000", "api": "http://localhost:8080" },
+  "datastores": { "postgres": "postgresql://localhost:5432/appdb" }
+}
+```
+
+Three keys, and they are data only. `worktree` names the checkout under test — it is what teardown takes, and what tells you which tree *not* to write artifacts into. `services` and `datastores` map a name to a URL or URI, one entry per thing that is actually up. Omit `datastores` when the app has none, and omit `worktree` when you are not in one.
+
+Nothing here says which service is the UI, which datastore is shared, or how to shut the stack down. That is prose, and it belongs to whatever documented the startup — a project's own docs say "drive `services.web`, the database is shared between worktrees so name fixtures uniquely, tear down with X" far better than any JSON flag could. When you derived the startup yourself, you already know these things; write them into `observations.md` under "Infrastructure" as you go.
+
+Read from this file rather than from memory. A port you remember is a port that has drifted — config and compose disagree constantly, and a second worktree moves everything.
 
 ## 1. Is something already up? (probe, don't assume)
 
@@ -27,7 +47,7 @@ PORT=$PORT <project's start command> &> /tmp/functional-verify.log &
 echo "started app on $PORT"
 ```
 
-Record the real port in `observations.md` under "Infrastructure"; every later curl/navigate uses it. Never type a port from memory — it drifts (config and compose often disagree).
+Write the real port into `infra.json` as soon as you have it, under whatever name the project calls that service. Every later curl and navigate reads it from there.
 
 ## 3. Health-poll with a hard deadline (fail fast)
 
@@ -44,7 +64,7 @@ done
 
 ## 4. Database access / seeding
 
-Prefer the project's own seed/migrate/fixtures tooling over hand-rolled writes — a malformed hand seed makes the real route fail and sends you debugging the wrong layer; validate any seed against the route's actual schema. Read the connection string from config; never hardcode the port.
+Prefer the project's own seed/migrate/fixtures tooling over hand-rolled writes — a malformed hand seed makes the real route fail and sends you debugging the wrong layer; validate any seed against the route's actual schema. Read the connection string from config, never hardcode the port, and record it under `datastores` in `infra.json` so the db checks in Step 3 aren't re-deriving it from `.env` files each time.
 
 In symlinked/monorepo layouts a one-off script's bare driver import may not resolve (e.g. "module not found"). Resolve it through the project's tooling, or from the package that declares the driver dependency.
 

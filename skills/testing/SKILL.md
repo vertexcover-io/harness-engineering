@@ -18,6 +18,10 @@ description: >
 
 User-provided guidelines take precedence on conflicts with defaults.
 
+**Load the `code-quality` skill too.** A test file is code, and is held to the same bar as the
+source: named helpers over commented blocks, no narration, no comment that restates its own
+assertion. This skill decides *what* to test; `code-quality` decides how the test reads.
+
 
 # Testing: Behavior Over Implementation
 
@@ -89,7 +93,7 @@ For the full guide on *how* to write integration and e2e tests, read `references
 
 ### Browser Verification During Development
 
-When the project has a browser automation tool available (Playwright MCP or similar) and the change is user-visible:
+When the project has a browser automation tool available (the agent-browser CLI or similar) and the change is user-visible:
 
 1. After implementation passes unit/integration tests, open the running application in the browser
 2. Navigate to the affected page

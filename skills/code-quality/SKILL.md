@@ -108,20 +108,40 @@ When a function takes 3+ parameters, use a named structure (options object in Ty
 
 ## Self-Documenting Code
 
-Code should be clear through naming and structure, not through comments.
+**Hard rule: do not write a comment unless the code cannot show what it does.** Not "prefer fewer
+comments" — write none, then add back only the ones that survive the test below. This applies to
+**test files exactly as it applies to production code**, and to docblocks exactly as to `//`.
 
-**Instead of comments:**
-- Extract functions with descriptive names
-- Use meaningful variable names that convey intent
-- Break complex expressions into named intermediate values
-- Use type aliases for domain concepts
+**The test — would this comment still be needed if the reader is looking at the code?**
+If yes, keep it. If it restates what the line does, delete it and fix the code instead:
 
-**Comments are acceptable for:**
-- Public API documentation (JSDoc, docstrings) when generating docs
-- Explaining *why* something unintuitive is necessary (not *what* it does)
+- Extract a function with a descriptive name
+- Name the intermediate value (`const floatArtefactCgst = …` beats a paragraph about float tails)
+- Use a type alias for a domain concept
+
+**A comment earns its place only when it states something the code cannot:**
+- A constraint a reader would otherwise "simplify" into a bug — *"an in-process call arrives
+  unauthenticated: the JWT is only parsed by middleware"*, *"compares in sub-units because
+  `Math.abs(0.57 - 1.07)` is `0.5000000000000001`"*
+- A unit, or a value that isn't the code's to choose — *"rupees; a materiality decision"*
+- When to change something — *"bump when a change alters a reported status"*
 - Regulatory or legal requirements
+- Public API docs (JSDoc/docstrings) **where the codebase already does this** — match its density,
+  don't import a new convention
 
-If you feel the need to write a comment explaining what code does, that's a signal to refactor — rename, extract, simplify.
+**Delete on sight:**
+- Section banners (`// --- setup ---`, `// A1`) and captions above an assertion
+- Anything restating the next line, the signature, or a well-named variable
+- Where the code came from, why your change is correct, what you tried — that is talk for the
+  reviewer, and it is noise the moment the PR merges. Put it in the commit message.
+- A paragraph explaining a fixture: name the fixture instead
+
+**Match the file you are in.** If every method around you carries a JSDoc block, yours does too —
+being the one exception is its own inconsistency. Density is the file's call; narration is never
+anyone's.
+
+If you feel the need to write a comment explaining what code does, that's a signal to refactor —
+rename, extract, simplify.
 
 ---
 
@@ -168,7 +188,8 @@ Before considering code complete, verify:
 - [ ] Declarative transformations over imperative loops
 - [ ] Early returns instead of nested conditionals
 - [ ] Named parameters for functions with 3+ arguments
-- [ ] No comments explaining *what* — code is self-documenting
+- [ ] No comments explaining *what* — every surviving comment states something the code cannot
+      (tests included; a docblock restating the signature is noise)
 - [ ] Explicit error types for expected failures (Result pattern)
 - [ ] Dependencies injected, not created internally
 - [ ] Schemas at trust boundaries, types internally

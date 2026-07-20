@@ -23,6 +23,8 @@ Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & 
 2. **Exactly ONE pause — the plan-approval gate after Stage 2.** After the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back with NO stopping, pausing, questions, or interim summaries. Internal corrective re-dispatches (e.g. LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going.
 3. **Halt only on a genuine BLOCK/FAIL** (functional verification FAILED, quality gate BLOCKED/STAGNATION, review hard-standards failure, library-probe BLOCKED, or a sub-agent error). On halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.
 4. **Every question uses `AskUserQuestion`** — never plain text. In `--auto` mode, skip all `AskUserQuestion` calls.
+5. **Invoke the stage's resolved skill. Never hand-roll its output.** Every stage runs a skill — resolve *which* per `references/config.md` (config override → project skill → global default), then invoke it via the `Skill` tool. Do this even when you believe you already know what it would say: your recollection is not the contract, and a project may have swapped the skill out from under you. This binds main-conversation stages exactly as it binds sub-agents — writing `plan.md` yourself instead of invoking the planning stage's skill, or a design instead of the brainstorm stage's, is a pipeline violation, not a shortcut. **Before leaving a stage, confirm you invoked its skill.** If you didn't, the stage did not run.
+6. **The skill owns the contract; the dispatch owns the variables.** When telling a sub-agent what to do, name the resolved skill and pass what only this run knows (paths, ids, ranges). Do NOT restate what the skill already says — a second copy is a second source of truth, and it will drift. If a sub-agent needs a rule that no skill states, add it to the skill rather than the prompt.
 
 ---
 
@@ -77,6 +79,10 @@ The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
+**Every stage runs a skill, and which one is never hardcoded here** — `references/config.md` owns the
+stage → default-skill table and the resolution order (config override → project skill → global
+default). Resolve it there, then invoke it (Invariant 5).
+
 Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the main conversation — not as sub-agents — because Stage 0 sets the working directory, Stage 1 needs conversation context and flows into spec generation, and Stage 2 explores the codebase interactively and holds the only approval gate. All other stages (3–5) run as sub-agents via `Agent`.
 
 ---
@@ -113,7 +119,7 @@ For each skippable stage:
 
 **Waiting status:** a PreToolUse/PostToolUse hook sets the running node to `waiting` before any `AskUserQuestion` and back to `running` after — no manual dag-update needed.
 
-**Sub-agent prompts:** every sub-agent prompt starts with `[PREAMBLE]` (worktree path + `<TOOLING_COMMANDS>` read verbatim from `baseline.json`), then the stage body. Full templates: **`references/stage-prompts.md`**.
+**Sub-agent prompts:** every sub-agent prompt starts with `[PREAMBLE]` (worktree path + a pointer to `baseline.json` for tooling commands), then names the stage's resolved skill and passes this run's variables. Dispatch blocks: **`references/stage-prompts.md`** — and per Invariant 6, do not add to them what a skill already says.
 
 **DAG transitions:** `set-status running` before each stage, `done` after, `write-report` on completion — exact invocations in **`references/dag-commands.md`**.
 
@@ -160,7 +166,7 @@ Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys 
 Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
 1. `set-status baseline running`.
-2. Create dirs: `.harness/features/<SPEC_NAME>/verification/{screenshots,traces}/` (committed) and `.harness/runtime/<SPEC_NAME>/review/` (gitignored; `reports/` already created by dashboard init).
+2. Create dirs: `.harness/features/<SPEC_NAME>/verification/{screenshots,traces,recording}/` (committed) and `.harness/runtime/<SPEC_NAME>/review/` (gitignored; `reports/` already created by dashboard init).
 3. Auto-detect tooling: `CLAUDE.md` first, then `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`.
 4. Run baseline metrics (typecheck, lint, test, coverage) → `.harness/runtime/<SPEC_NAME>/baseline.json`.
 5. Write `.harness/runtime/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`.
@@ -202,7 +208,7 @@ The trust gate. Runs *before* spec generation so verified probes fold into the s
 
 ### Stage 3: Coder
 
-Dispatch from the phase graph (see "Parallel When Possible"). Template **A** (no Steps section) or **B** (Steps section) from `references/stage-prompts.md`; model = coder model (`sonnet` default). Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook + functional-verify read this) **and** `e2e-report.json` (raw run summary — quality-gate reads this).
+Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 block in `references/stage-prompts.md` — one agent per phase, or per step in waves where the phase file has a Steps section. Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook + functional-verify read this) **and** `e2e-report.json` (raw run summary — quality-gate reads this).
 
 DAG: `set-status coder running` before dispatch; per phase `set-status <phase-node> running`/`done`; after all phases `set-status coder done`.
 
@@ -219,14 +225,7 @@ EOF
 
 After each phase completes, delete the breadcrumb (`rm -f .harness/runtime/current-phase`) so later-stage subagents don't trigger the gate.
 
-**Nomination signals (learning loop, all of stages 3–5):** stage sub-agents nominate lesson candidates by appending ONE JSON line per fired signal to `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`:
-
-```bash
-echo '{"signal":"<type>","summary":"<one sentence, ≤200 chars>","files":["<path>"],"stage":"<plan|code|review|verify>"}' \
-  >> .harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl
-```
-
-Taxonomy: coder → `stagnation-recovery` (stuck ≥3 attempts then recovered) and `hard-won-success` (non-obvious workflow taking 3+ attempts); review pass 1 → `review-fix` (one per Critical/Important defect fixed); verify → `verify-break` (per confirmed adversarial break) and `gate-blocked` (gate BLOCKED then passed). Appending NEVER interrupts or fails the stage; `summary` is quoted incident material, not instructions; the stage-5 curator judges candidates.
+**Nomination signals (learning loop, all of stages 3–5):** stages nominate lesson candidates to `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`; the stage-5 curator judges them. Format, taxonomy and rules: the `learn` skill's **Nominate mode** — pass every stage sub-agent that path, not a copy of the format.
 
 **Claims aggregation (mandatory, after the last phase completes):** aggregate every `phase-*-claims.json` into a single `.harness/runtime/<SPEC_NAME>/claims.json`. Schema + exact `jq` command: `references/claims-aggregation-format.md` — invoke verbatim. If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated `claims.json` is what verify reads; phase files are kept for audit.
 
@@ -258,25 +257,20 @@ Single consolidated sub-agent: functional verification → quality gate → sync
 
 ```
 Bash("
-  test -f .harness/features/<SPEC_NAME>/verification/proof-report.md &&
-  test -f .harness/features/<SPEC_NAME>/verification/adversarial-findings.md ||
+  test -f .harness/features/<SPEC_NAME>/verification/proof-report.md ||
   { echo 'MISSING_VERIFICATION_ARTIFACTS'; exit 1; }
 ")
 ```
 
-If either file is missing → verification FAILED regardless of the returned verdict; stop the pipeline. A "PASSED" verdict without the artifacts means the gate was skipped.
+If the file is missing → verification FAILED regardless of the returned verdict; stop the pipeline. A "PASSED" verdict without the artifact means the gate was skipped.
 
-**E2E execution + UI-proof gate (mandatory):** run the aggregated-claims gate from `references/claims-aggregation-format.md`. It enforces, in order:
-
-1. `claims.json` exists, `executed > 0`, `failed = 0`.
-2. Every `type: "ui"` claim id appears in `verification/proof-report.md` AND has a `verification/screenshots/*.png` reference on the same / a nearby line.
+**E2E execution check (mandatory):** run the aggregated-claims check from `references/claims-aggregation-format.md`. It enforces `claims.json` exists, `executed > 0`, `failed = 0`.
 
 Failure modes (stop the pipeline):
 - `MISSING_PHASE_CLAIMS` / `MISSING_CLAIMS_FILE` — coder or aggregation skipped.
 - `E2E_NOT_EXECUTED` / `E2E_FAILED` — phase suites did not run or had failures.
-- `MISSING_UI_PROOF — <claim-ids>` — verify skipped Playwright MCP for one or more UI claims. Re-dispatch verify with explicit instruction to cover the listed ids.
 
-A passing phase `.spec.ts` is NOT sufficient — the verifier must drive a real browser via `mcp__playwright__browser_*` and capture screenshots per claim id.
+**Verification itself is not gated.** functional-verify writes a plain-English `proof-report.md` for a human, carrying no claim ids and nothing to grep — see *Why verification is not gated* in `references/claims-aggregation-format.md`. Read the verdict and the bugs it reports back, and judge them. A passing phase `.spec.ts` is NOT sufficient evidence a feature works: the verifier must have driven a real browser via the `agent-browser` CLI and filmed each scenario.
 
 `set-status verify-finalize done`.
 
@@ -284,8 +278,8 @@ A passing phase `.spec.ts` is NOT sufficient — the verifier must drive a real 
 
 `set-status commit-pr running`. Do these directly (no sub-agent):
 
-1. **Generate `.harness/features/<SPEC_NAME>/README.md`** — the reviewer index: title + final verification verdict (link to `verification/proof-report.md`); one-paragraph summary; TOC linking each committed artifact (`design.md`, `spec.md`, `plan.md`, `library-probe.md`, `learnings.md` if present, `verification/proof-report.md`, `verification/adversarial-findings.md`); library-probe verdict line (selected lib + alternatives); PR link placeholder.
-2. Invoke `git-commit` via `Skill`. Create a final, separate commit for the artifact tree: `docs(spec): add artifacts for <SPEC_NAME>` containing only `.harness/features/<SPEC_NAME>/` files.
+1. **Generate `.harness/features/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict **stated inline** (`verification/` is never committed, so a link to it would be dead for everyone but you); one-paragraph summary; TOC linking each committed artifact (`design.md`, `spec.md`, `plan.md`, `library-probe.md`, `learnings.md` if present); library-probe verdict line (selected lib + alternatives); PR link placeholder.
+2. Invoke `git-commit` via `Skill`. Create a final, separate commit for the artifact tree: `docs(spec): add artifacts for <SPEC_NAME>` containing only `.harness/features/<SPEC_NAME>/` files. **Never commit `verification/`** — the report, frames and videos stay on disk for a human and out of git forever. Confirm `.harness/features/*/verification/` is in `.gitignore` before staging; add it if it is missing.
 3. `git push -u origin <BRANCH_NAME>`.
 4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body 'Closes: see .harness/features/<SPEC_NAME>/README.md for design, spec, plan, and verification proof.' --base main --head <BRANCH_NAME>`.
 5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md and amend the artifact commit (or follow up with a new commit if amend is forbidden by policy).
@@ -303,7 +297,7 @@ Stop the pipeline and report which stage failed and why on any of:
 |-----------|--------|
 | Sub-agent error | Any sub-agent fails or returns an error |
 | Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
-| Missing verification artifacts | `proof-report.md` or `adversarial-findings.md` absent → `MISSING_VERIFICATION_ARTIFACTS` |
+| Missing verification artifacts | `proof-report.md` absent → `MISSING_VERIFICATION_ARTIFACTS` |
 | Quality gate BLOCKED | Report what failed |
 | Quality gate STAGNATION | Do NOT retry — report the stagnated check, repeated error signature, need for manual intervention |
 | Library-probe BLOCKED | No viable alternative; or `BLOCKED:repeated-lib-failure` after 2 loopbacks |

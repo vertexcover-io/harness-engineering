@@ -1,209 +1,519 @@
 ---
 name: functional-verify
 description: >
-  MUST run after any coding/TDD stage and BEFORE claiming a feature done, opening a PR,
-  or moving to commit. Passing unit/e2e tests are NOT verification — this skill is the
-  gate where you try to BREAK the feature. Trigger on phrases like "tests pass",
-  "implementation done", "ready for review", "ship it", or when orchestrate enters
-  the verify stage. The only proof this skill ran is the file
-  .harness/features/<SPEC_NAME>/verification/proof-report.md. If that file does not exist for
-  the current spec, verification did not happen — the feature is not done.
+  The gate between "tests are green" and "feature is done" — MUST run before claiming a feature
+  complete, opening a PR, or moving to commit, and whenever orchestrate enters its verify stage.
+  Passing unit and e2e tests are not verification; this is where you drive the app through its UI,
+  the way the user and QA do, and try to break it. Trigger on "tests pass", "implementation done",
+  "ready for review", "ready to ship", "ship it", "verify this", "is this working", "can we merge",
+  or any other move toward calling a feature finished. The only proof this skill ran is
+  .harness/features/<SPEC_NAME>/verification/proof-report.md — if that file does not exist for the
+  current spec, verification did not happen and the feature is not done.
 user-invocable: true
 ---
 
 # Functional Verify: The Gate
 
-**Announce at start:** "Starting functional verification — running the app live and trying to break the feature."
+**Announce at start:** "Starting functional verification — driving the app through its UI and trying to break the feature."
 
-## Your contract (this is the whole skill)
+## Your Contract
 
-You are the gate between "tests are green" and "feature is done." Your job is **not** to confirm the happy path — the test suite already did that. Your job is to **produce `.harness/features/<SPEC_NAME>/verification/proof-report.md` containing evidence a reviewer can re-run.** No file → no verification → not done.
+You are the gate between "tests are green" and "feature is done." Confirming the happy path is not
+your job — the test suite already did that.
 
-Three non-negotiables:
+You verify **through the UI**, because that is where the user and the QA who wrote these scenarios
+actually work. A requirement reachable through a form, a page, or a click is proven by driving that
+form, page, or click. The API section exists for the surfaces a QA could never reach — a Bezz
+endpoint, a webhook, a cron job — and for nothing else. A claim tagged `type: "api"` that a user
+reaches through a screen is a UI scenario; the tag describes how it was built, not how it is proven.
 
-1. **Evidence, not adjectives.** Every claim cites a rect from `getBoundingClientRect()`, a quoted string, a computed style, an HTTP response, a console message, or a screenshot path. "Looks fine" / "feels off" / "polished" are verification failures.
-2. **The adversarial pass is mandatory and runs in a separate subagent.** Spec scenarios prove what was specified; adversarial testing finds what wasn't. See "Adversarial pass" below — you MUST dispatch it.
-3. **Skipping is detectable.** The Stop hook (`.claude/hooks/check-proof-report.mjs`) blocks session end when an active spec has no `proof-report.md`. Do not work around it.
+You produce **one file**: `.harness/features/<SPEC_NAME>/verification/proof-report.md`, and the
+evidence beside it. No proof report means no verification, which means not done.
+
+**The report is written for a QA reader, not for a machine.** They know the product; they have never
+heard of your claim ids. Nothing in it is gated, greped, or parsed, so write it the way you would
+write it for a person: plain English, no `VS-1.1`, no `PHASE1-C1`, no `REQ-005`. When a scenario
+comes from a spec requirement, say what the requirement *is* rather than naming it.
+
+**Verification artifacts are never committed.** The report, the frames, and the videos live on disk
+for a human to review and go no further. Before you write anything, make sure the project ignores
+them — `.harness/features/*/verification/` in the repo's `.gitignore`, added if it is missing. A
+screenshot in git is a mistake that outlives the branch.
+
+**One subject, one place.** A scenario, a bug, a gap — each is written once and referenced from
+anywhere else that needs it. Reference, never restate. Splitting a report by evidence type
+(API / UI / DB) shreds a single scenario across four sections and forces every bug to be retold in
+each: that is how these reports became unreadable. Evidence lives with the scenario it proves.
+
+Three things are non-negotiable, and each is a verification failure if you skip it:
+
+1. **Evidence, not adjectives.** Every claim cites something concrete — a rect from
+   `getBoundingClientRect()`, a quoted string, a computed style, an HTTP response, a console
+   message, a video. "Looks fine", "feels off", and "polished" are not evidence.
+2. **The adversarial pass runs.** Spec scenarios prove what was specified; the adversarial pass
+   (Step 5) finds what wasn't. It is mandatory.
+3. **Skipping is detectable.** The Stop hook (`.claude/hooks/check-proof-report.mjs`) blocks session
+   end when an active spec has no `proof-report.md`.
 
 ## Inputs
 
-- Spec: `.harness/features/<SPEC_NAME>/spec.md`
-- Plan: `.harness/features/<SPEC_NAME>/plan.md` (per-phase breakdowns live in `.harness/runtime/<SPEC_NAME>/phase-*.md`)
-- **Claims report (required when present): `.harness/runtime/<SPEC_NAME>/claims.json`** — aggregated from
-  per-phase `phase-*-claims.json` produced by the coder stage. Schema lives in
-  `skills/tdd/references/phase-claims-format.md` (per phase) and
-  `skills/orchestrate/references/claims-aggregation-format.md` (aggregated).
+- **Spec** — `.harness/features/<SPEC_NAME>/spec.md`
+- **Plan** — `.harness/features/<SPEC_NAME>/plan.md` (per-phase breakdowns in `.harness/runtime/<SPEC_NAME>/phase-*.md`)
+- **Claims** — `.harness/runtime/<SPEC_NAME>/claims.json` when orchestrate aggregated them, otherwise the per-phase `phase-*-claims.json`. Schemas: `skills/tdd/references/phase-claims-format.md` and `skills/orchestrate/references/claims-aggregation-format.md`. Required to read when present.
+- **E2E report** — `.harness/runtime/<SPEC_NAME>/e2e-report.json`, the coder's raw e2e run summary. Its `gaps` array names the blind spots the coder already knows about — you seed the adversarial pass (Step 5) from it.
 
-## Step 0 — Read claims and refuse double-runs
+Claim ids are how you keep track of what you have covered. They are working notes: none of them
+reach the report.
 
-- If `verification/proof-report.md` already exists for this spec in this session, **refuse to silently re-run.** Report the existing report path and stop. If the user wants a re-verify, they will ask.
-- Read `.harness/runtime/<SPEC_NAME>/claims.json` if present and classify each claim:
-  - `failed > 0` → BLOCKER. Report and stop.
-  - **`type: "ui"` claims are NOT considered proven** by the phase test. Every UI claim is a
-    *work item* for Step 4 — you MUST drive a real browser via Playwright MCP, capture a screenshot
-    under `verification/screenshots/`, and reference the claim id in the proof report. A passing
-    phase `.spec.ts` is corroborating evidence, not a substitute.
-  - `type: "api"` and `type: "db"` claims are `COVERED_BY_E2E`; cite the `proven_by` test in the
-    proof report without re-running them.
-  - Claims with no matching spec requirement are still in scope — verify them anyway.
-- If claims.json absent: note it; derive scenarios from the spec as before.
+## Step 0 — Read Claims, Route by Surface, Refuse Double-Runs
 
-## Step 1 — Verification scenarios
+If `verification/proof-report.md` already exists for this spec in this session, report the existing
+path and stop. The user will ask if they want a re-verify.
 
-Read the spec's `## Verification Scenarios` section. For each `### VS-N`, extract: type (api|ui|db), endpoint/route, payload, steps, expected, db check, screenshot path.
+Then read the claims. The **top-level** `passed` / `failed` counts are what carry the run's result —
+a `failed > 0` is a blocker: report and stop. Individual claims commonly have no status of their own,
+so read the totals rather than expecting a verdict per claim.
 
-If absent: derive one scenario per acceptance criterion (API endpoint → api, route → ui, persistence → db check).
+Route each claim by **the surface a QA can reach**, not by its `type` tag:
 
-If nothing can be derived: report "No functional verification scenarios — skipping" and stop. Do NOT fabricate.
+- **Reachable through a screen** → a UI scenario for Step 4, proven live in the browser. Every
+  `type: "ui"` claim lands here, and so does any `api`/`db`/`logic` claim whose behaviour surfaces
+  in a page. A validation rule enforced in a form is proven in that form.
+- **Reachable only headlessly** → an API scenario for Step 3. Machine-to-machine endpoints, webhooks,
+  scheduled jobs, and background writes with no rendered surface.
 
-## Step 2 — Start infrastructure
+When a claim has both a UI path and an API path, drive the UI path — that is the one the user
+travels — and reach for the API only to corroborate what the screen showed you. A claim with no
+matching spec requirement is still in scope: verify it anyway.
 
-See `references/infra-startup.md` for probe/start/health-poll commands and the worktree-safe DB-access snippet. Three rules: (1) prefer a self-provisioning command over a manual `infra:up` + dev server; (2) **capture the actual port** you started on and use it everywhere — never type `localhost:3000` from memory (it drifts); (3) every health-poll has a **30s hard deadline that stops with the server log** — a missing service must fail fast here, not turn into 120s selector timeouts in Step 4. If **you** started a process, **you** kill it in Step 7. If it was already running, leave it.
+Claims arrive in either of two shapes and both are normal: orchestrate writes an aggregated
+`claims.json` after the last coder phase, while a standalone run sees only `phase-*-claims.json`.
+Read whichever exists. If neither does, say so and derive scenarios from the spec instead.
 
-## Step 3 — API verification
+## Step 1 — Verification Scenarios
 
-For each api scenario:
+Read the spec's `## Verification Scenarios` section and take a scenario from each thing it asks you
+to prove. The shape varies: often `### VS-N` with numbered, tester-walkable steps, sometimes a table
+of one-line expectations with no steps at all. Both are normal — when the spec gives you an outcome
+without a walk, work out the walk yourself.
 
-- Run curl with `-w '\n%{http_code}'`; save full command + status + body (≤50 lines) to `verification/api/<scenario-id>.txt`.
-- Record verdict (PASSED/FAILED) by exact-matching the spec's expected response, not by "looks right."
-- For scenarios with a DB check: query the DB (MCP tool if available, else read connection string from `.env*` or compose), record actual vs expected.
+If that section is absent, derive one scenario per acceptance criterion, routing each by the same
+surface test as Step 0. If nothing can be derived, report "No functional verification scenarios —
+skipping" and stop. Every scenario traces to something the spec or the claims actually say.
 
-## Step 4 — UI verification (Playwright MCP) — MANDATORY per UI claim
+**Name each scenario for what it proves**, in kebab-case, as a phrase a QA would recognise:
 
-Drive a real browser via `mcp__playwright__browser_*`. Do NOT write `.spec.ts` files or run `npx playwright test` — that is the e2e suite, not this gate.
+```
+float-artefact-still-matches
+half-rupee-gap-matches
+51-paise-gap-stays-partial
+wrong-invoice-number-never-auto-matches
+```
 
-**Per-claim coverage rule.** For every `type: "ui"` entry in `.harness/runtime/<SPEC_NAME>/claims.json`, you MUST:
+That name is the scenario's evidence folder, and it is the first cell of its row in the report. It
+has to be fixed before you capture anything, so decide it now. `VS-1` and `PHASE4-C2` name nothing —
+a reader should learn what was tested from the folder alone.
 
-1. Navigate to the claim's `surface` (route), act out the `behavior`, and capture a screenshot.
-2. Save the PNG with the claim id in the filename (e.g. `PHASE7-C1-settings-enabled.png`).
-3. Reference the claim id and the screenshot path together in `observations.md` and ultimately in `proof-report.md`. The orchestrator's UI-proof gate greps for `<claim_id>` and a screenshot path on the same/nearby line — if either is missing, the pipeline fails with `MISSING_UI_PROOF`.
+## Step 2 — Start Infrastructure
 
-Spec-derived UI scenarios (`VS-*` with `type: ui`) are covered the same way. UI claims and spec UI scenarios are additive, not substitutes.
+Bring the app up the way the project says to. Most projects document this somewhere their
+`CLAUDE.md` points at — a skill, a `just` or `make` target, a compose file — and that documented
+path beats anything you would derive, because it already knows which services exist, what order they
+boot in, and which ports they take. Follow it. Only when nothing documents a procedure do you derive
+one yourself, and `references/infra-startup.md` carries that fallback: probe before assuming,
+allocate a free port rather than fighting for a default, health-poll with a hard deadline.
 
-**Group co-located claims into one capture.** Claims that render on the same surface/view share a single screenshot — reference all their ids on that screenshot's caption line in `observations.md` and the proof report (e.g. `REQ-005 REQ-006 — …/edit-mode.png`). The UI-proof gate greps per id, so one well-framed capture satisfies several claims. The goal is one real rendered view per surface, not one browser round-trip per id — that is the difference between ~5 captures and ~100, and it stays within the 5-screenshot cap below.
+However the stack came up, it reports back the same way — `.harness/runtime/<SPEC_NAME>/infra.json`,
+holding `worktree`, `services`, and `datastores`. Steps 3, 4, and 8 all read from it, and the shape
+is documented in `references/infra-startup.md`. Take every URL from that file rather than from
+memory: ports are commonly allocated per worktree, so a port you remember is a port that now belongs
+to someone else.
 
-If Playwright MCP is unavailable: this is a hard failure for any spec with UI claims. Report `BLOCKED:no-playwright-mcp` listing the unproven claim ids and stop. Do not paper over with adjacent API checks.
+If startup fails, read the log it names and stop. Driving a browser at a dead app is what turns a
+crashed service into a 120-second selector timeout that reads as "stuck" — you spend the next twenty
+minutes debugging the test instead of the crash. When you genuinely cannot get the app running,
+that is **BLOCKED:no-infra**: say which service failed and what you tried, and don't paper over UI
+scenarios with adjacent API checks.
 
-`mkdir -p .harness/features/<SPEC_NAME>/verification/{screenshots,traces}`. One browser session for all scenarios; `browser_close` once at the end.
+**A health check that passes is not a page that renders.** Port-based polling proves a process is
+listening, nothing more — a dev server whose file watcher died can report healthy while every route
+returns 404 inside a rendered app shell. Before you trust the stack, fetch the actual route you came
+to drive and confirm it returns the page you expect.
 
-**Before driving the browser:** read the project's page-level layout contract (typically the routing/layout section of CLAUDE.md, or the relevant page component file) and record — in `observations.md` as a one-line "expected ordering" note — the expected vertical ordering of the page's top-level sections. This becomes the layout invariant that screenshots must validate alongside the feature's own checks.
+**Write your artifacts beside the spec.** `verification/` goes in the same
+`.harness/features/<SPEC_NAME>/` directory you read `spec.md` from — which is inside the worktree when
+the spec lives there, and in the main checkout when it doesn't. A report that lands somewhere other
+than next to the thing it verifies is a report the next reader won't find.
 
-**Screenshot framing rule:** every UI screenshot MUST include at least one non-feature element on the top edge AND the bottom edge of the frame (e.g. the section above the feature and the section below it, or a sticky save bar / page footer / nav). Tight crops of the feature alone are explicitly insufficient — they hide neighbour-ordering bugs (sticky bars appearing mid-page, orphaned actions, broken header/footer alignment after the feature mounts).
+What you must not do is create a directory a launcher could mistake for a service. Launchers commonly
+decide what to boot by looking for service directories at the workspace root, so an output folder in
+the wrong place can make the next run try to start a service that was never there. That is a rule
+about the workspace root, not about the worktree.
 
-For each scenario: navigate → snapshot (a11y) → act → wait → screenshot. See `references/playwright-capture.md` for viewport sizing, slice rules for tall pages, and console/network capture. Save PNGs to `verification/screenshots/`; save network/console captures to `verification/traces/`.
+## Step 3 — API Verification: The Surfaces a QA Cannot Reach
 
-**Size guardrail (committed artifacts — keep diffs reasonable):**
-- Each screenshot ≤ 300KB. Prefer cropped/clipped over full-page; downscale if needed. (Raised from 200KB to accommodate the screenshot framing rule above — a frame that includes neighbour context is necessarily wider.)
-- Total ≤ 5 screenshots per spec (one per key verification scenario).
-- Trace files ≤ 100KB each.
-- If any cap is exceeded, fail the gate with `BLOCKED:artifact-size` and report which file(s).
+Only the scenarios Step 0 routed here. If a scenario reached this step because driving its screen
+looked slower than curling its endpoint, it is in the wrong step — send it back to Step 4.
 
-For every PNG saved, append an entry to `verification/screenshots/observations.md` covering two tracks:
+Run curl with `-w '\n%{http_code}'`, and capture the exact command, the status, and the body. There
+is no separate receipt file: what you capture here is transcribed directly into the report's API
+section in Step 6, so capture it in the shape that section wants — a short description, the request
+line and its status, the body that decides the verdict, and what actually happened. Truncate long
+bodies to the fields under test.
 
-1. **Spec-based check** — for each requirement this screenshot evidences: requirement, verdict (`MET` / `UNMET` / `CANNOT_ASSESS`), concrete evidence (rect / string / style / network response).
-2. **Open visual review** — describe what you see; flag anything wrong even if the spec doesn't mention it (alignment, contrast, clipping, overlap, broken empty state, copy issues). If nothing is wrong, say so explicitly. Passing spec checks do NOT let you skip this.
+Record the verdict by exact-matching the spec's expected response — Success or Failure, and a
+response either matches or it doesn't. When a scenario has a db check, query the database (an MCP
+tool if one is available, otherwise the URI from `datastores` in `infra.json`) and record actual
+against expected.
 
-Inline screenshot previews do NOT count as analysis — `Read` the PNG file path before grading it.
+## Step 4 — UI Verification: Film the Whole Life of the Scenario
 
-Block-level verdict is `UNMET` if any spec check is `UNMET` or any open-review finding is a real defect. Every `UNMET` must reach the proof report.
+Drive a real browser through the `agent-browser` CLI. This is where **every UI scenario is proven
+live** — the one thing the phase tests cannot do for you. A passing `.spec.ts` is corroborating
+evidence, never a substitute. The e2e suite is a different artifact with a different job: leave
+`.spec.ts` files and `npx playwright test` to it, and prove your scenarios by driving the browser
+yourself.
 
-## Step 5 — Adversarial pass (MANDATORY — role swap)
+Check the binary first. If `agent-browser` isn't on PATH, stop with **BLOCKED:no-agent-browser**,
+name the scenarios you couldn't prove, and print the install command:
+`npm i -g agent-browser && agent-browser install`. A spec with UI scenarios and no `agent-browser` is
+a hard failure, not something adjacent API checks can paper over.
+
+Open the UI service named in `services`. Which one that is comes from the project, not from this
+file — a repo with four frontends has four entries there and only its own docs know which one your
+spec means, so read what the project says before you guess.
+
+`references/agent-browser-capture.md` carries the driving craft — batching, the `eval` laws, what
+`--bail` really does. Read it before your first `open`; it is short, and every trap in it cost a
+previous run real time. It is deliberately app-agnostic: how *this* app handles login, and which of
+its surfaces lie about their own state, are things the project documents, and they will save you more
+time than anything here. Go find them first.
+
+Open one session and hold it for every scenario.
+
+### The Capture Loop
+
+Each scenario gets the folder you named in Step 1, and everything it produces lives there — its
+frames now, its video after Step 7:
+
+```
+verification/half-rupee-gap-matches/01-open-june-reconciliation.png
+verification/half-rupee-gap-matches/02-detailed-view.png
+verification/half-rupee-gap-matches/03-pair-reads-complete-match.png
+verification/half-rupee-gap-matches/proof.mp4
+```
+
+`NN` is zero-padded from `01` — Step 7 assembles frames in filename order, so `10-export.png` sorts
+before `2-filter.png` and the video tells a story that never happened. The slug says what the frame
+shows.
+
+**Film the whole life of the scenario, not a checklist of its steps.** The frames are what a reviewer
+watches to believe you, so shoot whatever it takes for the flow to make sense end to end: the state
+you started from, the data you seeded, each step of the walk, the intermediate render that explains
+why the next click works, the toast that confirms it. Every step earns at least one frame and many
+earn more. A scenario with more frames than steps is doing this right.
+
+For every action, run one batch that acts, asserts, and captures:
+
+```bash
+cat <<'EOF' | agent-browser batch --json
+[["eval","(()=>document.querySelector('[data-testid=add-more]').click())()"],
+ ["eval","(()=>({n: document.querySelectorAll('[data-testid^=row-]').length}))()"],
+ ["screenshot","/abs/path/to/verification/half-rupee-gap-matches/03-rows-added.png"]]
+EOF
+```
+
+**Write the screenshot path absolute.** The heredoc is quoted so nothing interpolates, and your shell's
+cwd resets between calls — a relative path in there either lands somewhere you didn't expect or writes
+a file literally named after your placeholder.
+
+Then **`Read` the PNG you just captured** and confirm it shows what you think it shows.
+
+Those are two different checks and you need both. **The assert answers whether the state took hold** —
+a click that silently no-ops looks identical to a click that worked until you ask the DOM. **The Read
+answers whether the frame shows it** — frames lag renders, and a frame that caught the previous state
+is a frame that will lie inside the video for the rest of this feature's life. Read at the moment you
+shoot, not at the end of the scenario: by then the app has moved on and a bad frame can no longer be
+re-shot.
+
+**When they disagree, one of them is lying — find out which.** The frame lagging a render is the
+common case, and then you `wait` on the condition and re-shoot. But the assert is wrong often enough
+to check first: it matched `innerText` across a line break the layout inserted, it measured a rect in
+the same batch as the scroll that moved it, or it passed vacuously over a selector that matched
+nothing. Settle it by asking the page a second way, not by deciding which one you trust. Two runs
+would have shipped a false claim by trusting a bad assert over an honest frame.
+
+**Wait on the condition you actually mean.** `wait --text`, `--url`, `--load networkidle`, or
+`wait @eN` return the moment it holds, so the fast path costs milliseconds and the slow path still
+gets its time. A fixed `sleep` pays its worst case every time and still races the render underneath
+it — one run spent 341 seconds sleeping and captured stale frames regardless.
+
+Frame a non-feature element at the top and bottom edge of each shot: a tight crop of the feature
+alone hides the neighbour-ordering bugs (a sticky bar landing mid-page, orphaned actions, a header
+misaligned once the feature mounts) that are half the reason to look. Before driving anything, read
+the project's page-level layout contract — usually the routing/layout section of CLAUDE.md or the
+page component — and note the expected vertical ordering of the page's top-level sections. That
+ordering is a layout invariant your frames must uphold alongside the feature's own checks.
+
+Prefer a cropped or clipped shot over a full-page one: it keeps the frame readable at video size,
+which is the only size most people will ever see it at.
+
+### The Frame That Proves It
+
+Every scenario turns on a few facts held together — *these two numbers differ by this much, and the
+verdict says this*. **Get them into one frame.** Evidence split across two shots asks the reader to
+trust your ordering, and a wide table is exactly where that happens: one frame carries the verdict
+while the amounts sit off-screen, the next carries the amounts with no way to tell which row they
+belong to.
+
+Work in this order, and stop as soon as the shot holds:
+
+1. **Use the app's own controls.** A column chooser, a density toggle, a collapse. Cheapest and most
+   honest, because it's a thing the user can do. **Restore what you changed** — these settings persist
+   for the account you're driving.
+2. **Set the viewport to fit** — `agent-browser set viewport 1600 900`. Yours to choose, and it costs
+   nothing.
+3. **Only if neither works, overlap.** Keep an identifying column in every frame so the shots stitch,
+   and say in the report that the evidence spans frames.
+
+Then check the shot actually shows what you think, because **a rect inside the viewport is not a
+visible cell.** `getBoundingClientRect()` is blind to occlusion: a sticky action overlay sitting over
+the value column measures `visible: true` and photographs as covered. Ask the page what is on top of
+each cell you are about to offer as evidence:
+
+```js
+(()=>{const r=el.getBoundingClientRect();
+      const top=document.elementFromPoint(r.x+r.width/2, r.y+r.height/2);
+      return {covered: !(el===top || el.contains(top))};})()
+```
+
+**Every cell the frame is offered as evidence for must be un-occluded at its own centre, and the row
+must be identifiable in that same frame.** A rule about what's "in frame" passes a shot whose numbers
+are hidden behind an overlay; occlusion is the failure mode that silently defeats it.
+
+### Grading: Two Tracks
+
+Grade each scenario on two tracks, because they answer different questions and flow to different
+places.
+
+The **spec-based check** answers the question you were given: do these frames show the requirement
+met? The verdict is Success or Failure, and it cites concrete evidence — a measured rect, a quoted
+string, a computed style, a network response. Layout claims cite a measurement; "no horizontal
+scroll" is one measurement, not proof that a layout is correct. This becomes the scenario's row in
+the report.
+
+The **open visual review** answers a question nobody asked: what's wrong here anyway? Alignment,
+contrast, clipping, overlap, a broken empty state, copy issues. Passing spec checks do not let you
+skip it — in a real run this track produced two bugs that no scenario would ever have caught. Treat
+`truncate` and `line-clamp` on a primary headline as a bug to justify, not a default to accept.
+Anything real you find here is a bug, and Step 5 owns it.
+
+**Step 4 is done when every UI scenario has a folder whose frames tell its whole story, and every
+frame has both a passing assert and your own eyes behind it.** A frame with no assert behind it is
+not evidence.
+
+## Step 5 — Adversarial Pass (MANDATORY — Role Swap)
 
 > **STOP. You are no longer the verifier. You are the critic.**
 >
 > The verifier you just were spent the last N tool calls confirming the
 > happy path works. They were almost certainly wrong about at least one
-> thing. Your job is to find it. You are graded on defects discovered,
+> thing. Your job is to find it. You are graded on bugs discovered,
 > not on agreement with the prior verdicts.
 
-This pass runs in the same context (subagents cannot spawn subagents), so the isolation has to come from discipline. Three mandatory mitigations:
+This pass runs in the same context — subagents can't spawn subagents — so its isolation comes from
+discipline. Three mitigations are mandatory. **Force a context break**: before generating scenarios,
+re-read only `spec.md`, the claims, and `e2e-report.json` (whichever are present), and leave any
+draft of the proof report closed — it biases you toward agreeing with what you already wrote.
+**Target the gaps**: start from the `gaps` array in `e2e-report.json` — those are the coder's own
+declared blind spots — then extend by diffing spec ACs against the claims to find requirements no
+claim covers. With neither file present, derive gaps from the spec's error paths, boundary values,
+out-of-order flows, concurrent actions, and stale-state operations. And **show your work**: a bare
+"no bugs found" is a verification failure. Name the attack you most expected to land and say why it
+didn't — that sentence is what distinguishes a pass from a shrug.
 
-1. **Forced context break.** Before generating adversarial scenarios, re-read ONLY: `.harness/features/<SPEC_NAME>/spec.md` and `.harness/runtime/<SPEC_NAME>/claims.json` (if present). Do NOT re-read `verification/screenshots/observations.md` or any draft of the proof report — they will bias you toward agreement with what you already wrote.
-2. **Targets are spec requirements NOT covered by `claims.json` `claims[]`** (gaps you compute by diffing spec ACs against claim ids), not from your own memory of what the verifier covered. If claims.json is absent, derive from the spec: error paths, boundary values, out-of-order multi-step flows, concurrent actions, stale-state operations.
-3. **You must list what you tried.** A bare "no defects found" is a verification failure. Section 2 of `adversarial-findings.md` is non-skippable.
+### 5.1 Derive Attack Surface and Generate Scenarios
 
-### 5.1 Derive attack surface and generate scenarios
-
-For each gap, generate ≥2 scenarios per category that applies:
+For each gap, generate at least two scenarios per category that applies:
 
 - **Boundary inputs** — empty, null, whitespace-only, max-length, max-length+1, wrong type, unicode/emoji, SQL/HTML/`<script>` (escaping check, not exploit), negative, zero, very large, leading/trailing zeros, dates in past/far-future/invalid.
 - **Unexpected sequences** — cancel mid-flow, double-submit, navigate back during save, reload mid-operation, two tabs submitting the same form, log out mid-flow.
-- **Broader surface** — if the change is one field on a settings page, exercise every other field on that page (regression catch).
-- **Error recovery** — after triggering an error, can the user recover? Stale state in UI / DB / cache?
-- **Status accuracy** — cancellations, timeouts, partial failures: does the visible status match the actual outcome? (Common bug: "Saved" toast on a 500.)
-- **Permissions / auth** — same action as a different role, expired session, missing token.
+- **Broader surface** — if the change is one field on a settings page, exercise every other field on that page to catch regressions.
+- **Error recovery** — after triggering an error, can the user recover, or is state left stale in UI, DB, or cache?
+- **Status accuracy** — on cancellations, timeouts, and partial failures, does the visible status match the actual outcome? (The classic bug: a "Saved" toast on a 500.)
+- **Permissions / auth** — the same action as a different role, an expired session, a missing token. The UI's rules are not the API's rules; a scope enforced only in a form is a scope the API will let you skip.
 - **Concurrency** — two writers, read-during-write, optimistic-lock conflicts.
 
-Do NOT duplicate happy-path scenarios already in `claims.json` `claims[]` (except UI claims, which you re-prove via Playwright MCP in Step 4 regardless).
+Find out what the stack actually isolates before you write any of these. A common arrangement gives
+each worktree its own ports while every worktree shares one database and one search index, and that
+changes what these scenarios mean: data you seeded in another tree is present in this one, a fixture
+name collides with a run you've forgotten about, and "the state is clean" becomes a claim you have
+to check rather than assume. The project's own docs say which of its datastores are shared —
+`datastores` in `infra.json` tells you what exists, not what's isolated. Read them, then name
+fixtures uniquely. Shared state is not purely a hazard, either: it is what makes concurrency and
+stale-data scenarios honest instead of theoretical.
 
-### 5.2 Run them
+Happy-path scenarios already proven in Step 4 are done; spend the pass elsewhere.
 
-Same tooling as Steps 3-4: curl, Playwright MCP, DB. Reuse the browser session. For each scenario, capture: exact input, actual response/state (HTTP + body, screenshot path, console errors, network, DB row), and a verdict — **DEFECT** (real user-facing bug), **EXPECTED** (feature correctly rejected the input), or **CANNOT_ASSESS** (with reason).
+### 5.2 Run Them, Then Route What You Find
 
-A `DEFECT` is: misleading message to user, lost/corrupted data, stale UI state, 500 reaching user, silent no-op, permission-boundary leak, broken recovery path. Cosmetic-only issues belong in Step 4's open visual review, not here.
+Drive them the same way you drove Step 4 — same open session, same folder-per-scenario named for what
+it probes, same frames, same Read. A probe that finds a bug is a scenario like any other: it earns a
+folder, a video, and a row in the same table. Where the probe has no screen to drive, it is an API
+scenario and follows Step 3.
 
-### 5.3 Write `verification/adversarial-findings.md`
+Then route each result by **provenance, not verdict**:
 
-Required sections:
+- It probed a scenario you were **given** — a boundary on a validation rule the spec names, a country
+  the spec lists, an error path a claim asserts. The result is evidence for **that scenario's row**,
+  not a row of its own. **Expect most probes to land here.**
+- It probed something **nobody asked about** and found a real bug. That earns its own row and a
+  write-up under the table.
+- It probed something nobody asked about and the feature held. It does not appear in the report at
+  all. Say so in the sentence that names your best attack.
 
-1. **Attack surface derived** — bullets of inputs/transitions/boundaries, with source (spec-gap vs. claim-coverage-gap vs. derived).
-2. **Scenarios attempted** — table: ID | category | description | inputs | verdict. Every scenario appears, including EXPECTED ones — they are evidence of genuine attempt.
-3. **Defects** — for each `DEFECT`: full reproduction, actual vs expected, evidence (response body / screenshot path / console / DB result), severity (blocker/major/minor).
-4. **Cannot assess** — scenarios you couldn't run, with reason.
-5. **Honest declaration** — one of:
-   - "Defects found: N. See section 3." (preferred outcome — the skill working)
-   - "No defects found across N scenarios attempted. Categories exercised: [list]. I genuinely tried to break this; here is what I tried." Then 2-3 sentences narrating the most promising attack and why it didn't land. Bare "no defects" without this narrative = verification failure.
+A rejection you provoked is the feature working: a 400 on bad input is evidence for whichever
+scenario owns that rule, not a bug. Check the spec's `## Out of Scope` before calling anything a bug
+— a behaviour the spec deliberately excludes is expected, though it still needs a decision if another
+artifact of the same feature contradicts it.
 
-## Step 6 — Generate proof report
+**Every bug is filmed by re-running its repro.** You cannot capture a bug prospectively — you don't
+know a probe landed until it lands — so once one does, write its steps, then drive them again as its
+own scenario, filming the whole thing. Re-running is not waste: it is how you learn your repro
+reproduces. Steps that fail on the second pass are steps that would have failed for the reviewer, and
+you find that out now rather than in review. A bug that survives its own re-run arrives with a video
+an engineer can watch instead of reconstruct.
 
-Before writing:
+**Done when every bug has a row and reproduces from its own steps — demonstrated by the re-run, not
+asserted.**
 
-1. Read `verification/screenshots/observations.md` end-to-end.
-2. Confirm every PNG has an entry. Missing → return to Step 4.
-3. Build the spec coverage table: every REQ-N / EDGE-N → scenario → evidence file. Gaps are listed as `NOT VERIFIED` with the reason — never silently dropped.
-4. Confirm `verification/adversarial-findings.md` exists and section 2 (scenarios attempted) is non-empty. Missing → return to Step 5.
-5. Escalate any confirmed `DEFECT` from adversarial-findings to `UNMET` in the proof report. Quote findings verbatim; do not paraphrase.
+## Step 6 — Write the Proof Report
 
-Write `.harness/features/<SPEC_NAME>/verification/proof-report.md`. Use `references/proof-report-template.md` for the section list and ordering.
+One file, `verification/proof-report.md`, written for someone who knows the product and has never
+seen your claim ids. **No summary section above the table** — no "bottom line", no findings digest, no
+executive paragraph. One line naming where you drove and as what, then the table.
 
-**Pre-flight the UI-proof gate before you hand off.** The orchestrator's gate greps the proof report for each `type:"ui"` claim id next to a `verification/screenshots/<file>.png` path, and fails the whole pipeline with `MISSING_UI_PROOF` if any is missing — each failure costs a resume cycle. Catch it here instead. Run, and fix any gap before finishing:
+```markdown
+# Proof Report — GSTR-2B Monetary Match
+
+Driven on the reconciliation report at `/app/<business>/reports/gstr2breconciliation`, June 2026.
+
+| What is to be tested | Steps | Success/Failure | Reason/Details | Reference |
+|---|---|---|---|---|
+| An invoice whose tax total carries a floating-point artefact still reconciles against the supplier's filed entry | 1. Open the June 2026 reconciliation report<br>2. Switch to Detailed View<br>3. Find the invoice filed at ₹7,127.20 | Success | Books stored `7127.200000000001`; both sides render ₹7,127.20 and the pair reads **Complete Match** | `verification/float-artefact-still-matches/proof.mp4` |
+| A pair whose amounts differ by exactly ₹0.50 is treated as a match | 1. Open the July 2026 report<br>2. Find the invoice booked at ₹10,000 against ₹10,000.50 filed | Success | Screen shows the ₹0.50 difference and still reads **Complete Match** — the boundary is inclusive | `verification/half-rupee-gap-matches/proof.mp4` |
+| A pair with the same GSTIN and date but a different invoice number is never auto-matched, even within ₹0.50 | 1. Open the September 2026 report<br>2. Find the pair booked at ₹10,000 against ₹10,000.40 filed | Success | Reads **Partial Match** — the amounts were compared exactly because the invoice numbers differ | `verification/wrong-invoice-number-never-auto-matches/proof.mp4` |
+| Reconciliation results are cached under a fresh key so stale pre-deploy results are not served | see *Cached under a new key* below | Success | Both cache keys carry the new version segment | [below](#cached-under-a-new-key) |
+```
+
+**Write the first cell as a sentence**, the one a QA would use to describe the test. Not an id, not a
+label — what is actually being proven. The Reference cell points at the scenario's video, and the
+folder name in that path says the same thing in miniature.
+
+Steps are the walk you actually drove, numbered. They do not map one-to-one onto the frames, and they
+are not meant to: the frames film the whole flow, the steps summarise it.
+
+Reason/Details is a sentence naming the observation that decided the verdict — the rendered string,
+the measured value, the status code. A paragraph in a table cell is a paragraph that lost its
+formatting: when something needs more room, put it under the table and point the row at it.
+
+Then the API section, one block per API scenario, titled for what it proves:
+
+```markdown
+### Cached under a new key
+Description: A reconciliation run writes its result under a versioned cache key, so results cached
+before the deploy are never served.
+Request: GET /businesses/$B/gstr2b-reconciliation/detailedview?period=062026 → 200
+{"redis":{"get":"serana:gstr2brecon:v2:6a59…:062026",
+          "set":"serana:gstr2brecon:v2:6a59…:062026","ttl":604800}}
+Both keys carried the v2 segment and no unversioned key was touched. This has no screen — the cache
+is invisible to the user — so it is proven at the API.
+```
+
+Description, the request line with its status, the body that decides the verdict, and a closing
+sentence on what actually happened. That block is the receipt — there is no separate receipt file.
+
+### Bugs
+
+Below the table, a section for **bugs in the application** — defects that will bite a user or a
+developer. A misleading message, lost or corrupted data, stale UI state, a 500 reaching the user, a
+silent no-op, a permission leak, a broken recovery path; or, for developers, a claim citing a test
+file that no longer exists, a documented command that is gone, an artifact contradicting the tree.
+
+Each is a bug report a maintainer could act on without asking you a question: what it is, its
+severity (blocker / major / minor) and why that rung and not the one above, the repro, what happens,
+what should happen, and the video. Most consequential first.
+
+**What is not a bug, and does not belong in this report:** your infrastructure adventures, the data
+you couldn't find, the workaround that got the stack up, the thing that took three tries. None of
+that is a defect in the product, and a reader looking for what's broken should not have to wade
+through your journey to find it. Put it in what you report back to whoever dispatched you (Step 7).
+
+Found none? Say so in one line, with the sentence from Step 5 naming your best attack and why it
+didn't land.
+
+**Done when all of these hold:**
+
+- Every scenario has a row and a verdict, and every requirement you were given is covered by one. A
+  requirement you could not verify is a row reading `NOT VERIFIED` with the reason and what would
+  close it — never dropped, and never quietly backfilled with an adjacent passing check. Name the
+  gap.
+- Every verdict cites a live observation from this run: a DOM assert, an HTTP status and body, a DB
+  read-back, a measured rect. This is what makes the report re-runnable and is the only thing
+  separating a real verification from a plausible one.
+- Every UI scenario's row points at its video.
+- Things this skill genuinely cannot reach (touch-hold gestures, real-device sensors, visual diffs
+  against last week's build) are rows too, marked `NOT VERIFIED`.
+- No claim ids, scenario ids, or requirement labels appear anywhere in the file.
+- Nothing is said twice.
+
+## Step 7 — Build the Videos, Then Report Back
+
+The videos are **assembled, not captured**: ffmpeg builds each one from the frames you already read
+and graded. That is what makes a clip evidence — every frame in it is a frame you asserted against,
+in the order you drove it. The browser's own `record` verb plays no part here.
+
+For each scenario folder:
 
 ```bash
-spec=<SPEC_NAME>
-for id in $(jq -r '.claims[] | select(.type=="ui") | .id' .harness/runtime/$spec/claims.json 2>/dev/null); do
-  grep -qE "$id.*verification/screenshots/.*\.png" .harness/features/$spec/verification/proof-report.md \
-    && echo "ok  $id" || echo "MISSING $id"
+for d in verification/*/; do
+  ls "$d"*.png >/dev/null 2>&1 || continue
+  ffmpeg -v error -y -framerate 1/2 -pattern_type glob -i "$d*.png" \
+    -vf "scale=1280:720:force_original_aspect_ratio=decrease,\
+pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p" \
+    -c:v libx264 -preset veryfast -r 30 "$d/proof.mp4" \
+    && echo "ok  $d/proof.mp4" || echo "FAILED $d"
 done
 ```
 
-Every line must read `ok`. No placeholders (`COVERED_BY_E2E` on a ui line will not pass the gate) — each UI claim needs a real screenshot path you captured in Step 4.
+Two seconds a frame, padded to a common 1280×720 so a mobile-viewport frame and a full-page frame can
+sit in one timeline without ffmpeg refusing the mismatch. h264/mp4 because it plays anywhere. It
+iterates the folders that exist rather than the paths the report mentions, so a scenario name can
+hold any character a directory can.
 
-## Step 7 — Honest non-verification + cleanup
+**The frames stay.** They are the only evidence a machine can read — a reviewer, a re-grade, or your
+own second look all need the PNGs, and the video cannot be reopened by any of them. Nothing here
+deletes them.
 
-- Under "Not executed," list anything this skill genuinely cannot verify (touch-hold gestures, real-device sensors, manual visual diffs vs last week's build, no-new-deps assertions). State the reason. Do not paper over with adjacent passing checks.
-- Kill processes you started in Step 2. Leave anything that was already running. Leave `verification/` artifacts in place.
+If a merge fails, say which scenario and move on. Its frames are still there and still prove the
+scenario; a missing video costs a reviewer convenience, not proof.
 
-## Anti-patterns (each one is a verification failure)
+Then **report back to whoever dispatched you** — this is where everything the report deliberately
+excludes belongs:
 
-- Skipping this skill because the test suite passed. Tests prove what was specified; this skill finds what wasn't.
-- Skipping Step 5 because Steps 3-4 passed. The happy-path verdicts are exactly the bias the adversarial pass exists to counter.
-- Re-reading `observations.md` or the draft proof report before Step 5. That re-anchors you to the verifier's verdicts — the whole point of the role swap is to drop them.
-- Reporting "no defects" in Step 5.3 without the scenarios-attempted table and the narrative of what you tried. Empty effort is the failure mode this step exists to prevent.
-- Treating EXPECTED rejections as defects. A 400 on bad input is correct behavior; record it under "Scenarios attempted," not "Defects."
-- Bare adjectives as evidence — "looks polished", "feels off".
-- Skipping the open visual review when all spec checks pass.
-- Re-running API/DB scenarios already in `claims.json` claims (UI claims are exempt — they MUST be re-proven via Playwright MCP).
-- Treating a passing phase `.spec.ts` as substitute for Playwright MCP browser-driven UI verification.
-- Silently dropping an `UNMET` finding from the report.
-- Treating `truncate` / `line-clamp` on primary headlines as automatically fine.
-- Counting "no horizontal scroll" as proof of correct layout.
-- Re-reading spec/plan files already loaded by the orchestrator.
+- The verdict per scenario, and whether the feature does what it was supposed to.
+- Every bug you found, and what needs a decision rather than a fix.
+- The paths of the videos and their folders.
+- What it took to get here: the infrastructure that fought you, the fixtures you seeded and left
+  behind, the workaround the next run shouldn't have to rediscover, the project docs that were wrong.
+- Anything about *this skill* that was ambiguous, wrong, or cost you time.
 
-## References
+## Step 8 — Cleanup
 
-- `references/infra-startup.md` — fail-fast probe/start/health-poll + worktree-safe DB access
-- `../testing/references/hermetic-e2e.md` — the self-provisioning, ephemeral-port app pattern to prefer over manual `infra:up`
-- `references/playwright-capture.md` — viewports, slicing, console/network, capture rules
-- `references/proof-report-template.md` — section ordering for `proof-report.md`
-- `../tdd/references/phase-claims-format.md` — per-phase `phase-<N>-claims.json` schema (input source)
-- `../orchestrate/references/claims-aggregation-format.md` — aggregated `claims.json` schema + the UI-proof gate that runs after this skill
+Close the session (`agent-browser --session <SPEC_NAME> close`). If you started the stack in Step 2,
+shut it down the way the project says to, passing it `worktree` from `infra.json` — the same
+documented procedure that brought it up, so teardown can't drift from startup. Anything already
+running when you arrived stays running: never kill a server you didn't start.
+
+Leave `verification/` in place, uncommitted. It is the deliverable, and it is for a human to read,
+not for the repo to carry.

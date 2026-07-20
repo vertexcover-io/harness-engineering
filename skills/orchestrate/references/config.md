@@ -49,8 +49,8 @@ FAILURE/BLOCKED.
 | `planning` | `planning` | — |
 | `coder` | `tdd` (+ `testing` for stepped phases) | phase `…-claims.json` (`executed>0`, `failed=0`) |
 | `code-review` | `code-review` | `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
-| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.md` + `adversarial-findings.md`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
+| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.md`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 
-Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N = 1–11).
+Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N = 1–10).
 `verify-finalize` is a bundle — overriding its `skill` replaces all four sub-skills and their
 contracts; override `quality-gate` (etc.) to swap just one.

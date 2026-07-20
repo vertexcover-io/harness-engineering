@@ -31,6 +31,12 @@ eslint-config concern.
 
 TDD is the fundamental practice. Every line of production code must be written in response to a failing test.
 
+**Load the `code-quality` skill before you write anything** — production code and tests alike. It
+carries the rules for how the code you are about to write should read (naming over comments, purity,
+immutability, early returns). TDD governs the *order* you write in; `code-quality` governs *what you
+write*. Neither substitutes for the other, and the tests you produce here are held to the same bar as
+the source.
+
 **Primary input: a `phase-N.md`** (from the planning skill, at `.harness/runtime/<SPEC_NAME>/`; its
 committed overview is `plan.md` under `.harness/features/<SPEC_NAME>/`). Read its four sections and
 map them: `## Implementation` = the build steps to execute; `## Test Scenarios` (`### Unit` / `### API`
@@ -47,11 +53,27 @@ Write one minimal test describing the behavior you want. Run it. Watch it fail.
 
 **Requirements:**
 - Test describes one behavior
-- Clear name stating what should happen
 - Uses real code, not mocks (unless unavoidable)
 - Fails for the right reason (feature missing, not a typo or import error)
-- The test comes from a scenario in the phase's `## Test Scenarios`; name it after that scenario's id
-  (`test_S12_<behavior>`) so the reviewer can trace it
+- The test comes from a scenario in the phase's `## Test Scenarios`. Carry that scenario's id in the
+  title (`S12: …`) so a reviewer can trace it — the id is for tracing, and that is all it is for.
+- **The title states the claim, not the topic.** Name the concrete input and the expected outcome, so
+  a failure is legible from CI output without opening the file. Where the test guards against a
+  specific wrong result, name that result — it is usually the most informative token available.
+  **Match the surrounding tests' format** (`it('…')`, `test('…')`, a snake_case function): the id is
+  the only thing this skill dictates, and a file whose neighbours all disagree with you is a file you
+  named wrong.
+
+  ```
+  ✗ test_S3_pagination_handles_the_last_page              ← names the topic
+  ✓ S3: page 4 of 31 items at 10 per page returns the
+        final 1 item - not the empty list an off-by-one
+        gives                                            ← names the claim
+  ```
+
+  Both trace to S3; both describe one behavior; both state "what should happen". Only one tells you
+  what broke. The ✗ is what you write when you treat the id as the title's job — so treat legibility
+  as the job, and the id as a prefix.
 
 Run only this test's file (the scoped `test_file` command, substituting `{FILE}`) and confirm it
 **fails** — not errors — with a message that matches, because the feature is missing.
@@ -110,7 +132,7 @@ Refactoring is not mandatory after every green. Assess whether it adds value:
 **Suite consolidation (part of every REFACTOR pass):**
 - Merge near-duplicate tests of one behavior into one parameterized table (equivalence partitions + boundaries)
 - Delete any test fully subsumed by a stronger or higher-level test
-- Record what moved in the phase report: `S3,S4 merged into test_S3; S7 deleted, behavior covered by E2E S12` — the quality gate uses this note to confirm every scenario still maps to a passing test
+- Record what moved in the phase report, naming the surviving test as it is actually titled: `S3,S4 merged into S3's test; S7 deleted, behavior covered by E2E S12` — the quality gate uses this note to confirm every scenario still maps to a passing test
 - Test count may drop. That is expected, not a regression — the gate checks behavior coverage, not test count
 
 For detailed refactoring methodology, load the `refactor` skill.
@@ -237,8 +259,8 @@ scenarios; the RED-GREEN-REFACTOR cycle is unchanged, just narrower.
 ## Behavior Coverage (not line coverage)
 
 Done = every scenario in the phase's `## Test Scenarios` was **executed by the runner and observed to
-pass at its assigned altitude** (Unit / API / E2E): each `S<n>` has its ONE test, named after the
-scenario it proves (`test_S12_...` or a name the reviewer can trace to the id), that actually ran green.
+pass at its assigned altitude** (Unit / API / E2E): each `S<n>` has its ONE test, carrying that
+scenario's id in its title so a reviewer can trace it, that actually ran green.
 
 **Passing at altitude is not optional.** A scenario placed under `### API` or `### E2E` is done only
 when a test *at that altitude* ran green. "The behavior is already covered by a Unit test" does **not**
