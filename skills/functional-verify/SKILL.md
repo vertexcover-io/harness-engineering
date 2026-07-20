@@ -558,6 +558,50 @@ top hit if that finds nothing — so a stray task that merely mentions the numbe
 upload. If the search returns more than one exact match, that is a real ambiguity: name both in your
 report-back and let a human pick.
 
+## Step 7.6 — Publish to Claude Sessions
+
+Give the same evidence a second home: the Claude Code session you are running in. Pushing the proof
+report and the videos here makes them show up in the Sessions web UI's Artifacts tab, so anyone
+reading the session sees what you verified without opening the worktree.
+
+**Check authentication first, and only then proceed.** If the `claude-sessions` CLI isn't installed
+or you aren't logged in, this step does nothing — it prints one line and moves on.
+
+**This step is best-effort. It never fails the verification.** Not authenticated, no local
+transcript, session not yet captured on the server, or a failed upload → say so in one line and move
+on. The proof report on disk is still the source of truth.
+
+The session id is not passed to you — you derive it. A session's transcript is a `<session-id>.jsonl`
+file under `~/.claude/projects/<encoded-cwd>/`, where `<encoded-cwd>` is the current working directory
+with every `/` replaced by `-`. The session you are in is the newest transcript in that directory.
+
+```bash
+# Only proceed when the CLI is installed AND authenticated.
+if command -v claude-sessions >/dev/null 2>&1 && claude-sessions status >/dev/null 2>&1; then
+  # Derive THIS session's id: encode the cwd (every / → -), take the newest transcript there.
+  ENC=$(pwd | sed 's#/#-#g')
+  SID=$(basename "$(ls -t ~/.claude/projects/$ENC/*.jsonl 2>/dev/null | head -1)" .jsonl)
+
+  if [ -n "$SID" ]; then
+    # --file/--glob replace auto-derivation, so only the report and the videos go up.
+    # Both .md and .mp4 are artifact types, so one call sends them together.
+    claude-sessions artifacts "$SID" \
+      --file verification/proof-report.md \
+      --glob 'verification/*/proof.mp4' \
+      && echo "published proof report + videos to claude-sessions ($SID)" \
+      || echo "claude-sessions push failed — skipping (proof report on disk is the source of truth)"
+  else
+    echo "no local session transcript found — skipping claude-sessions publish"
+  fi
+else
+  echo "claude-sessions not installed or not authenticated — skipping claude-sessions publish"
+fi
+```
+
+Unlike `summarize`, the `artifacts` command has no `--current` flag — it needs the session id
+explicitly, which is why you derive it above. As with Asana, only the report and the `proof.mp4`
+videos are published; the screenshots stay on disk as machine-readable evidence (Step 7).
+
 ## Step 8 — Cleanup
 
 Close the session (`agent-browser --session <SPEC_NAME> close`). If you started the stack in Step 2,
