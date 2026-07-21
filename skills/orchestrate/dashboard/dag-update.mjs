@@ -15,9 +15,19 @@ const BREADCRUMB = join(tmpdir(), ".claude-harness-active");
 
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
+class DagExit {
+  constructor(exitCode, stderr = "") {
+    this.exitCode = exitCode;
+    this.stderr = stderr;
+  }
+}
+
 const die = (msg, code = 1) => {
-  process.stderr.write(`${msg}\n`);
-  process.exit(code);
+  throw new DagExit(code, `${msg}\n`);
+};
+
+const exitOk = () => {
+  throw new DagExit(0);
 };
 
 // ── Atomic write with mkdir-based spinlock ───────────────────────────────────
@@ -285,16 +295,16 @@ const cmdFinalize = async (outcome = "interrupted") => {
         }
       }
     } catch {}
-    if (candidates.length === 0) process.exit(0);
+    if (candidates.length === 0) exitOk();
     harnessDir = candidates[0];
     process.env.HARNESS_DIR = harnessDir;
   }
 
   const dagFile = join(harnessDir, "dag.json");
-  if (!existsSync(dagFile)) process.exit(0);
+  if (!existsSync(dagFile)) exitOk();
 
   const current = JSON.parse(readFileSync(dagFile, "utf8"));
-  if (current.meta?.outcome !== "running") process.exit(0);
+  if (current.meta?.outcome !== "running") exitOk();
 
   const now = nowIso();
   await withLock(dagFile, (dag) => {
@@ -322,7 +332,6 @@ const cmdFinalize = async (outcome = "interrupted") => {
 };
 
 // ── Dispatch ─────────────────────────────────────────────────────────────────
-const [, , sub, ...rest] = process.argv;
 const dispatch = {
   init: cmdInit,
   "add-node": cmdAddNode,
@@ -334,15 +343,27 @@ const dispatch = {
   finalize: cmdFinalize,
 };
 
-const handler = dispatch[sub];
-if (!handler) {
-  die(
-    "Usage: dag-update.mjs <init|add-node|add-edge|set-status|set-artifact|write-report|serve|finalize> [args...]",
-  );
-}
+export const run = async (argv = []) => {
+  const [sub, ...rest] = argv;
+  const handler = dispatch[sub];
+  try {
+    if (!handler) {
+      die(
+        "Usage: dag-update.mjs <init|add-node|add-edge|set-status|set-artifact|write-report|serve|finalize> [args...]",
+      );
+    }
+    await handler(...rest);
+    return { exitCode: 0, stderr: "" };
+  } catch (e) {
+    if (e instanceof DagExit) return { exitCode: e.exitCode, stderr: e.stderr };
+    return { exitCode: 1, stderr: `ERROR: ${e?.message || e}\n` };
+  }
+};
 
-try {
-  await handler(...rest);
-} catch (e) {
-  die(`ERROR: ${e?.message || e}`);
+const isMain = () => import.meta.url === `file://${process.argv[1]}`;
+
+if (isMain()) {
+  const { exitCode, stderr } = await run(process.argv.slice(2));
+  if (stderr) process.stderr.write(stderr);
+  process.exit(exitCode);
 }
