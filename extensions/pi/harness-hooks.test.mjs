@@ -1,0 +1,123 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import registerHarnessHooks from "./harness-hooks.ts";
+
+const BREADCRUMB = join(tmpdir(), ".claude-harness-active");
+
+const makeFakePi = () => {
+  const handlers = {};
+  return { pi: { on(event, handler) { handlers[event] = handler; } }, handlers };
+};
+
+const makeFakeCtx = (cwd) => {
+  const notifications = [];
+  return {
+    ctx: { cwd: cwd ?? process.cwd(), ui: { notify: (message, type) => notifications.push({ message, type }) } },
+    notifications,
+  };
+};
+
+const gitInit = (dir) => {
+  for (const args of [["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"], ["commit", "--allow-empty", "-q", "-m", "i"]]) {
+    spawnSync("git", args, { cwd: dir });
+  }
+};
+
+const makeDagDir = (nodes) => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-ext-dag-"));
+  writeFileSync(join(dir, "dag.json"), JSON.stringify({ meta: { outcome: "running" }, nodes }, null, 2));
+  return dir;
+};
+const status = (dir, id) => JSON.parse(readFileSync(join(dir, "dag.json"), "utf8")).nodes[id].status;
+
+test("S8: registers handlers for agent_end, input, session_shutdown", () => {
+  const { pi, handlers } = makeFakePi();
+  registerHarnessHooks(pi);
+  assert.deepEqual(Object.keys(handlers).sort(), ["agent_end", "input", "session_shutdown"]);
+});
+
+test("S8: agent_end flips the running node to waiting (ask-user pre) via in-process dag call", async () => {
+  const dir = makeDagDir({ n1: { status: "running", label: "P1" } });
+  writeFileSync(BREADCRUMB, dir);
+  const { pi, handlers } = makeFakePi();
+  registerHarnessHooks(pi);
+  const { ctx } = makeFakeCtx(dir);
+  try {
+    await handlers.agent_end({ type: "agent_end" }, ctx);
+    assert.equal(status(dir, "n1"), "waiting");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(BREADCRUMB, { force: true });
+  }
+});
+
+test("S8: input flips the waiting node back to running (ask-user post)", async () => {
+  const dir = makeDagDir({ n1: { status: "waiting", label: "P1" } });
+  writeFileSync(BREADCRUMB, dir);
+  const { pi, handlers } = makeFakePi();
+  registerHarnessHooks(pi);
+  const { ctx } = makeFakeCtx(dir);
+  try {
+    await handlers.input({ type: "input" }, ctx);
+    assert.equal(status(dir, "n1"), "running");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(BREADCRUMB, { force: true });
+  }
+});
+
+test("S8: agent_end maps coder-e2e-gate exit 2 to an error notify (block), never process.exit", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-ext-gate-"));
+  gitInit(dir);
+  mkdirSync(join(dir, ".harness", "runtime"), { recursive: true });
+  writeFileSync(join(dir, ".harness", "runtime", "current-phase"), "SPEC_NAME=s\nPHASE_N=1\nSTART_SHA=HEAD\n");
+  const { pi, handlers } = makeFakePi();
+  registerHarnessHooks(pi);
+  const { ctx, notifications } = makeFakeCtx(dir);
+  const prev = process.env.HARNESS_CURRENT_PHASE_FILE;
+  process.env.HARNESS_CURRENT_PHASE_FILE = join(dir, ".harness", "runtime", "current-phase");
+  try {
+    await handlers.agent_end({ type: "agent_end" }, ctx);
+    const err = notifications.find((n) => n.type === "error");
+    assert.ok(err, `expected an error notify, got ${JSON.stringify(notifications)}`);
+    assert.ok(err.message.includes("MISSING_PHASE_CLAIMS") || err.message.includes("BLOCK"));
+  } finally {
+    if (prev === undefined) delete process.env.HARNESS_CURRENT_PHASE_FILE;
+    else process.env.HARNESS_CURRENT_PHASE_FILE = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("S8: agent_end is silent (no error notify) when there is no active phase breadcrumb", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-ext-nogate-"));
+  gitInit(dir);
+  const { pi, handlers } = makeFakePi();
+  registerHarnessHooks(pi);
+  const { ctx, notifications } = makeFakeCtx(dir);
+  const prev = process.env.HARNESS_CURRENT_PHASE_FILE;
+  process.env.HARNESS_CURRENT_PHASE_FILE = join(dir, "nope");
+  try {
+    await handlers.agent_end({ type: "agent_end" }, ctx);
+    assert.equal(notifications.filter((n) => n.type === "error").length, 0);
+  } finally {
+    if (prev === undefined) delete process.env.HARNESS_CURRENT_PHASE_FILE;
+    else process.env.HARNESS_CURRENT_PHASE_FILE = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("S8: session_shutdown finalize does not throw when no run is active", async () => {
+  const { pi, handlers } = makeFakePi();
+  registerHarnessHooks(pi);
+  const dir = mkdtempSync(join(tmpdir(), "pi-ext-shutdown-"));
+  const { ctx } = makeFakeCtx(dir);
+  try {
+    await handlers.session_shutdown({ type: "session_shutdown" }, ctx);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

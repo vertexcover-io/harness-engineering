@@ -76,7 +76,26 @@ The `pi.skills` shape (`["./skills"]`) matches the working `pi-subagents` packag
   activation is model-driven and non-deterministic when multiple skills cover the same capability —
   do not gate a test on it.
 
+## Hooks: PI has no AskUserQuestion tool — map to the turn boundary
+
+PI hooks are TypeScript extensions (`export default function (pi: ExtensionAPI)`), not JSON command
+hooks. Two findings when bridging harness's hooks:
+
+- **PI has no `AskUserQuestion` tool** (its tools are bash/edit/read/write/grep/find/ls). A
+  `tool_call` matcher on `"AskUserQuestion"` never fires. The Claude-Code AskUserQuestion hook (which
+  flips a dashboard node waiting↔running) maps to PI's **turn boundary** instead: `agent_end` → "pre"
+  (waiting), the `input` event → "post" (running). `session_shutdown` is the Stop/SessionEnd analogue.
+- **A `tool_call` handler can block** via `ToolCallEventResult { block?: boolean; reason?: string }`,
+  but `agent_end` cannot — so a gate that must signal on `agent_end` surfaces via
+  `ctx.ui.notify(msg, "error")`, not a hard block.
+
+To call existing exit-code hook scripts in-process from an extension **without `process.exit`
+killing the PI host**, refactor each script to `export run(argv) → {exitCode, stdout}` with a throw-
+and-catch sentinel for the terminal cases, keeping an `if (isMain(import.meta.url)) …` CLI wrapper so
+Claude Code / Codex JSON hooks are unchanged. Verified: the extension loads (`pi -e ext.ts`) and
+`agent_end` flipped a live `dag.json` node running→waiting in-process.
+
 ## Related
 
-- `references/pi-tools.md` — the PI compatibility guide this lesson backs
+- `references/pi-tools.md` — the PI compatibility guide this lesson backs (skills + hooks + mapping table)
 - `references/codex-tools.md` — the analogous Codex mapping

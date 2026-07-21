@@ -9,6 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { run } from "./coder-e2e-gate.mjs";
 
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), "coder-e2e-gate.mjs");
 
@@ -316,5 +317,54 @@ test("playwright runner shape parsed", () => {
     );
     const { code, out } = runHook(dir);
     expect(out, code, 0, "e2e gate OK");
+  } finally { cleanup(dir); }
+});
+
+const runInProcess = (cwd) => {
+  const prev = process.cwd();
+  process.chdir(cwd);
+  try {
+    return run([], cwd);
+  } finally {
+    process.chdir(prev);
+  }
+};
+
+test("S6: run() in-process returns exit 0 empty stdout when no breadcrumb - never calls process.exit", () => {
+  const dir = makeSandbox();
+  try {
+    const { exitCode, stdout } = runInProcess(dir);
+    assert.equal(exitCode, 0);
+    assert.equal(stdout, "");
+  } finally { cleanup(dir); }
+});
+
+test("S6: run() in-process returns exitCode 2 + BLOCK token when claims file is missing", () => {
+  const dir = makeSandbox();
+  try {
+    writeBreadcrumb(dir, "myspec", 1, headSha(dir));
+    const { exitCode, stdout } = runInProcess(dir);
+    assert.equal(exitCode, 2);
+    assert.ok(stdout.includes("CODER_E2E_GATE:BLOCK"), `expected BLOCK token, got:\n${stdout}`);
+    assert.ok(stdout.includes("MISSING_PHASE_CLAIMS"), `expected MISSING_PHASE_CLAIMS, got:\n${stdout}`);
+  } finally { cleanup(dir); }
+});
+
+test("S6: run() in-process returns exit 0 + INFO OK for a passing gate with no code touched", () => {
+  const dir = makeSandbox();
+  try {
+    writeBreadcrumb(dir, "myspec", 1, headSha(dir));
+    mkdirSync(join(dir, ".harness", "runtime", "myspec"), { recursive: true });
+    writeFileSync(
+      join(dir, ".harness", "runtime", "myspec", "run.json"),
+      '{"executed":1,"passed":1,"failed":0}',
+    );
+    writeClaims(
+      dir, "myspec", 1,
+      '{"executed":1,"passed":1,"failed":0,"e2e_run":{"runner":"generic","report_path":".harness/runtime/myspec/run.json"},"claims":[]}',
+    );
+    const { exitCode, stdout } = runInProcess(dir);
+    assert.equal(exitCode, 0);
+    assert.ok(stdout.includes("e2e gate OK"), `expected OK, got:\n${stdout}`);
   } finally { cleanup(dir); }
 });

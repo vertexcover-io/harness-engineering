@@ -2,6 +2,7 @@
   "name": "harness-engineering",
   "version": "1.15.0",
   "private": true,
+  "type": "module",
   "pi": {
     "skills": ["./skills"]
   }

@@ -49,4 +49,26 @@ PI's built-in tools (read, bash, edit, write) match the Claude Code / Codex sema
 assume. The tool-name differences documented in [`codex-tools.md`](./codex-tools.md) apply to PI as
 well where a skill references a Claude-Code tool name.
 
-<!-- Hooks and install/manifest sections are added by Phases 2 and 3. -->
+## Hooks (via a TypeScript extension)
+
+PI has no JSON command-hook file — hooks are TypeScript extensions that subscribe to lifecycle
+events. Harness ships `extensions/pi/harness-hooks.ts`, a bridge that imports the hook scripts'
+`run()` functions and calls them **in-process** on PI events (no `node` subprocess, no `process.exit`
+reaching the host). It is loaded via the `pi.extensions` field of the root `package.json` (installed
+path) or `pi -e extensions/pi/harness-hooks.ts` (dev).
+
+The three hook scripts each export `run(argv) → { exitCode, stdout|stderr }` alongside an `isMain`
+CLI wrapper, so Claude Code / Codex JSON hooks keep working unchanged while PI calls `run()` directly.
+
+**Event mapping (verified against pi 0.80.10).** PI's events do not match Claude Code's names 1:1,
+and PI has **no `AskUserQuestion` tool** (its tools are bash/edit/read/write/grep/find/ls), so the
+Claude-Code AskUserQuestion hook is mapped to PI's turn boundary instead:
+
+| Claude Code hook | PI event | Bridged call | Effect |
+|---|---|---|---|
+| PreToolUse (AskUserQuestion) | `agent_end` | `ask-user-hook.run(["pre"])` | dashboard node → waiting |
+| SubagentStop | `agent_end` | `coder-e2e-gate.run([])` | exit 2 → `ctx.ui.notify(..., "error")` |
+| PostToolUse (AskUserQuestion) | `input` | `ask-user-hook.run(["post"])` | dashboard node → running |
+| Stop / SessionEnd | `session_shutdown` | `dag-update.run(["finalize","interrupted"])` | finalize the dag |
+
+All hook failures are swallowed with a `warning` notify — the bridge never aborts a PI turn.
