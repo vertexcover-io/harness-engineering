@@ -1,0 +1,8 @@
+{
+  "name": "harness-engineering",
+  "version": "1.15.0",
+  "private": true,
+  "pi": {
+    "skills": ["./skills"]
+  }
+}
