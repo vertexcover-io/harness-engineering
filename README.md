@@ -84,6 +84,38 @@ cat references/codex-config.toml >> ~/.codex/config.toml
 - Hooks are supported via `hooks/hooks.json`; requires `[features] plugin_hooks = true` in `config.toml`.
 - Named subagent types map to TOML agent files at `.codex/agents/` (`explore.toml`, `plan.toml`, `worker.toml`).
 
+### PI
+
+Install Harness into the [PI coding agent](https://github.com/earendil-works/pi) with one command — it writes to `~/.pi/agent/settings.json` automatically and installs skills **and** the hook extension for full orchestrate parity:
+
+```bash
+pi install git:github.com/vertexcover-io/harness-engineering@main
+```
+
+Use `-l` to install into project-local `.pi/settings.json` instead. Manage with `pi list`, `pi update git:github.com/vertexcover-io/harness-engineering`, and `pi remove git:github.com/vertexcover-io/harness-engineering`.
+
+For skills only (no hooks / orchestrate dashboard):
+
+```bash
+npx skills add vertexcover-io/harness-engineering --agent pi
+```
+
+**PI compatibility notes:**
+- Skills are drop-in (same Agent-Skills `SKILL.md`); discovery is via the `pi.skills` field in `package.json` (installed) or `--skill <path>` (dev). A `.pi/skills` symlink is **not** discovered.
+- Hooks run in-process via `extensions/pi/harness-hooks.ts` — PI events map to harness hooks (`agent_end` → e2e gate + dashboard "waiting", `input` → dashboard "running", `session_shutdown` → dag finalize). Full mapping in [`references/pi-tools.md`](./references/pi-tools.md).
+
+### Skills-only install (any agent)
+
+The open-standard [`skills` CLI](https://github.com/vercel-labs/skills) installs Harness's skills into any supported agent — it auto-discovers `SKILL.md` and needs no manifest:
+
+```bash
+npx skills add vertexcover-io/harness-engineering --agent claude-code
+npx skills add vertexcover-io/harness-engineering --agent codex
+npx skills add vertexcover-io/harness-engineering --agent pi
+```
+
+**Caveat (all three):** the `npx skills` path installs **skills only** — hooks, quality gates, and the orchestrate dashboard require the agent's native plugin install (`/plugin install harness` for Claude Code, `codex plugin add harness` for Codex, `pi install git:…` for PI).
+
 ## Quick Start
 
 Tell Claude Code or Codex what you want to build. For the full pipeline:
