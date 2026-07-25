@@ -76,6 +76,177 @@
         "Does not leave module-level mutable state (the global Map) — state is injected or encapsulated",
         "Does not add explanatory comments — relies on clear function and variable names"
       ]
+    },
+    {
+      "id": 4,
+      "name": "react-export-premature-extraction",
+      "prompt": "Implement the CSV export TODO in skills/code-quality/evals/files/eval4_export_provider.jsx following the rules in the comment block.",
+      "expected_output": "An implemented exportLineItems where the >100 threshold and the selection-vs-total count fallback are written inline against named constants, the zero-count short-circuit is a plain inline check, and the paginated fetch loop is extracted as the one abstraction that earns its keep. No single-use predicate helpers, no separate .helpers.js module, and no spec IDs carried into comments.",
+      "files": [
+        "skills/code-quality/evals/files/eval4_export_provider.jsx"
+      ],
+      "expectations": [
+        "Writes the >100 queue-vs-inline threshold as an inline comparison against a named constant (e.g. `count > LINE_ITEM_CSV_LIMIT`), not wrapped in a predicate function",
+        "Writes the selection-vs-total count fallback inline (e.g. `documentIds.length || totalRecords`) rather than as a named resolver function",
+        "Implements the paginated fetch correctly — either inline as a loop with early termination on a short page, or as a single extracted function; both are acceptable",
+        "Defines the 100 threshold as a named constant rather than a bare literal",
+        "Excludes `billType` from the active-filter check so a forced filter key is not treated as user-applied",
+        "Returns an empty result without calling the API when the export count is zero",
+        "Uses the documented `api.queueExport` for the over-threshold path rather than inventing an API name"
+      ],
+      "anti_expectations": [
+        "Does not create `shouldQueueLineItemExport`, `resolveLineItemExportCount`, or `shouldOwnLoadingState` as named single-use helper functions",
+        "Does not create a separate `.helpers.js` (or similar) module for single-use helpers",
+        "Does not define a function that receives its own body as a parameter (e.g. `fetchLineItemExportRows({ knownCount, fetchRows })`)",
+        "Does not carry spec identifiers (REQ-013, AC7, FL6, EC2, HANDOFF, phase numbers) into comments in the implementation",
+        "Does not export functions solely so that tests can import them"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "inline-unearned-abstractions",
+      "prompt": "Review and clean up skills/code-quality/evals/files/eval5_pricing.js. Remove abstractions that do not earn their keep and fix the comments, without changing behavior.",
+      "expected_output": "A pricing module where isAboveTierLimit, resolveEffectiveQuantity, shouldChargeShipping and hasAnyItems are inlined at their single call sites, while toRateMultiplier and the exported named constants are kept. The REQ-004 spec tag and the BUG 3 review note are deleted. Behavior is unchanged.",
+      "files": [
+        "skills/code-quality/evals/files/eval5_pricing.js"
+      ],
+      "expectations": [
+        "Inlines `isAboveTierLimit` — single call site, body `quantity > TIER_UNIT_LIMIT` already reads clearly",
+        "Inlines `resolveEffectiveQuantity` — single call site, the fallback restates rather than compresses; the inlined form must preserve the existing falsy-zero behavior",
+        "Inlines `shouldChargeShipping` — single call site, the comparison against the named constant is the clearest statement",
+        "Inlines `hasAnyItems` — the name restates `items.length > 0`",
+        "Keeps `toRateMultiplier` — it compresses an opaque basis-points convention and has multiple call sites",
+        "Deletes the `REQ-004/AC3` spec reference in the header comment",
+        "Deletes the `// BUG 3 (found in review)` work-history comment",
+        "Deletes the comments that merely restate the names of the inlined helpers",
+        "Preserves existing behavior, including that an empty cart is charged no shipping"
+      ],
+      "anti_expectations": [
+        "Does not delete or inline `toRateMultiplier` — it passes the gate and must survive",
+        "Does not inline `FREE_SHIPPING_THRESHOLD_CENTS`, `TIER_UNIT_LIMIT`, or `SHIPPING_FLAT_CENTS` into bare magic numbers at call sites",
+        "Does not replace the removed helpers with a new layer of differently-named single-use helpers",
+        "Does not add comments restating what the remaining code does",
+        "Does not change the computed subtotal, shipping, or total for any input"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "inject-only-real-boundaries",
+      "prompt": "Implement archiveHighScoreEvents in skills/code-quality/evals/files/eval6_report_archiver.ts following the rules in the comment block.",
+      "expected_output": "An implementation that takes the AnalyticsClient and ObjectStore as injected parameters (both cross an I/O boundary), filters rows inline against MIN_SCORE, builds the object key inline, always writes even when the filtered result is empty, and returns the count written.",
+      "files": [
+        "skills/code-quality/evals/files/eval6_report_archiver.ts"
+      ],
+      "expectations": [
+        "Injects the AnalyticsClient as a parameter rather than importing or constructing one internally",
+        "Injects the ObjectStore as a parameter rather than importing or constructing one internally",
+        "Writes the score filter inline (e.g. `rows.filter(r => r.score >= MIN_SCORE)`) against the existing MIN_SCORE constant",
+        "Writes the result to the object store even when the filtered array is empty, so an empty archive is still recorded",
+        "Returns the number of rows written",
+        "Builds the `reports/<since>.json` key inline at its single use"
+      ],
+      "anti_expectations": [
+        "Does not inject the score predicate, comparison, or filter function as a parameter",
+        "Does not inject or parameterize the key-building expression",
+        "Does not add an early return that skips the write when the filtered result is empty",
+        "Does not extract single-use helpers such as `isHighScore`, `buildReportKey`, or `shouldWriteReport`",
+        "Does not use `any` or type assertions to satisfy the interfaces"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "single-use-gate-decoding-cost",
+      "prompt": "Review skills/code-quality/evals/files/eval7_single_use_gate.js and inline any function that does not earn its keep. Every function in the file is used exactly once.",
+      "expected_output": "isEligible, hasItems and isPositive inlined at their call sites; normalizeAngle and parseContentRange kept, because each has a body that takes a step of inference to decode even though it is used only once.",
+      "files": [
+        "skills/code-quality/evals/files/eval7_single_use_gate.js"
+      ],
+      "expectations": [
+        "Inlines `isEligible` — `user.age >= 18` reads on sight, so it removes no decoding cost",
+        "Inlines `hasItems` — `rows.length > 0` restates itself",
+        "Inlines `isPositive` — `n > 0` restates itself",
+        "Keeps `normalizeAngle` — the negative-modulo correction is unexplained arithmetic the name decodes",
+        "Keeps `parseContentRange` — the regex encodes an HTTP protocol detail the name makes legible",
+        "Preserves behavior for negative angles (result stays in [0,360)) and for the parsed range fields"
+      ],
+      "anti_expectations": [
+        "Does not inline `normalizeAngle` or `parseContentRange` on the grounds that they have only one call site",
+        "Does not treat single use as sufficient reason to inline a function that removes decoding cost",
+        "Does not keep `isEligible`, `hasItems`, or `isPositive` on the grounds that they are well named",
+        "Does not add comments restating what the remaining functions do"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "no-helper-proliferation-on-fresh-code",
+      "prompt": "Implement `settleInvoice` in skills/code-quality/evals/files/eval8_settle_invoice.js following the rules in its header comment.",
+      "expected_output": "A single settleInvoice function of roughly 15-20 lines containing the guards, late-fee calculation and payment application inline, using named constants and named intermediate values rather than a set of short single-use predicate helpers.",
+      "files": [
+        "skills/code-quality/evals/files/eval8_settle_invoice.js"
+      ],
+      "expectations": [
+        "Implements all six rules: status guard, non-positive payment guard, full settlement, partial payment, once-only late fee applied before the payment, and returns the amount actually applied",
+        "Applies the late fee before the payment and only when `lateFeeApplied` is false and `now` is past `dueDate`",
+        "Uses the existing LATE_FEE_BPS constant for the fee rate rather than a bare 150 or 0.015",
+        "Keeps the guards inline as early returns rather than wrapping each condition in a named predicate",
+        "Names intermediate values (e.g. a balance-with-fee variable) instead of extracting short single-use helper functions",
+        "Does not mutate the passed-in invoice — returns a new object"
+      ],
+      "anti_expectations": [
+        "Does not define short single-use predicate helpers such as `isOpen`, `isValidPayment`, `isPastDue`, `shouldApplyLateFee`, or `isFullPayment`",
+        "Does not define a single-use `calculateLateFee` wrapper when a named intermediate value carries the same meaning",
+        "Does not produce a module of several two- and three-line helper functions around a thin orchestrator",
+        "Does not create a separate helpers module",
+        "Does not add comments restating what the code does or citing the rule numbers from the header"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "repeated-complexity-vs-repeated-triviality",
+      "prompt": "Review skills/code-quality/evals/files/eval9_repeated_complexity.js and extract anything that earns extraction. Two different expressions each repeat three times.",
+      "expected_output": "The wrap-around modulo expression extracted into a single named helper (repeated AND complex, so every call site would otherwise re-decode it), while the repeated `items.length > 0` check stays inline or is bound to a local variable — it reads on sight, so repetition alone does not earn it a function.",
+      "files": [
+        "skills/code-quality/evals/files/eval9_repeated_complexity.js"
+      ],
+      "expectations": [
+        "Extracts the `(((x % len) + len) % len)` wrap-around into one named helper used by all three call sites",
+        "Names that helper for what the arithmetic means (e.g. wrapIndex), not for what it does step by step",
+        "Leaves `items.length > 0` inline, or binds it to a local variable inside the function, rather than extracting a module-level predicate",
+        "Preserves behavior for negative and out-of-range cursor values",
+        "Ends with at most one new named function in the file"
+      ],
+      "anti_expectations": [
+        "Does not extract `items.length > 0` into a named function such as `hasItems` or `hasResults` merely because it appears three times",
+        "Does not leave the modulo expression duplicated at all three call sites",
+        "Does not extract single-use helpers for `visible`, `footer`, or `showPager`",
+        "Does not add comments restating what the extracted helper does"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "repo-standards-override-defaults",
+      "prompt": "Implement CreateUserSession in skills/code-quality/evals/files/eval10_standards/session.ts following the rules in its TODO. The repo documents its conventions in skills/code-quality/evals/files/eval10_standards/CONTRIBUTING.md.",
+      "expected_output": "An implementation that follows the repo's documented conventions where they conflict with the skill defaults — throwing a typed AppError subclass instead of returning a Result, using the PascalCase export name, and carrying a JSDoc block with @since — while still applying the skill's rules on everything CONTRIBUTING.md does not mention (injected store, immutability, no spec IDs or work-history comments).",
+      "files": [
+        "skills/code-quality/evals/files/eval10_standards/session.ts",
+        "skills/code-quality/evals/files/eval10_standards/CONTRIBUTING.md"
+      ],
+      "expectations": [
+        "Reads CONTRIBUTING.md and follows it over the conflicting skill defaults",
+        "Throws a typed AppError subclass (e.g. SessionExpiredError) for the expired/missing case instead of returning a Result or discriminated union",
+        "Names the export in PascalCase per the repo convention rather than camelCase",
+        "Includes a JSDoc block with a `@since` tag on the exported function, per the repo convention",
+        "Still injects the session store as a parameter — CONTRIBUTING.md is silent on dependencies, so the skill default applies",
+        "Still avoids spec IDs and work-history narration in comments — CONTRIBUTING.md is silent on those, so the skill default applies",
+        "States which source it followed where the repo convention overrode a default"
+      ],
+      "anti_expectations": [
+        "Does not return a Result/discriminated union for the expired case on the grounds that the skill prefers it",
+        "Does not skip the JSDoc block on the grounds that comments should be rare",
+        "Does not treat CONTRIBUTING.md's silence on dependency injection as permission to construct the store internally",
+        "Does not ignore CONTRIBUTING.md and apply the skill defaults throughout",
+        "Does not use `any` or type assertions to satisfy the error types"
+      ]
     }
   ]
 }

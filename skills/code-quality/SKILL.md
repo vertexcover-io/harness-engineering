@@ -3,36 +3,29 @@ name: code-quality
 description: High-quality code patterns with strict types, functional programming, and immutability. Use when writing ANY code in any language. Trigger whenever the user writes, reviews, or refactors code — even if they don't explicitly ask for "quality" or "strict" patterns. This skill applies to TypeScript, Python, and any future languages. Always load this skill for implementation tasks.
 ---
 
-## Project-Specific Guidelines
-
-1. If `$ARGUMENTS` is a path to an existing file, read it and prioritize
-   its guidelines over the defaults below.
-2. Otherwise, check if `.claude/harness/code-quality-reference.md` exists in the
-   project root. If it does, read it and apply its guidelines.
-3. If neither exists, use the defaults below.
-
-User-provided guidelines take precedence on conflicts with defaults.
-
 # Code Quality
 
-Write code that is correct, predictable, and simple. These principles are language-agnostic — they apply everywhere. Language-specific guidance lives in reference files loaded on demand.
+Write code that is correct, predictable, and simple.
 
-## Language References
+## What Governs This Code
 
-When working in a specific language, read the corresponding reference for detailed patterns and examples:
+**This skill never gets skipped.** Its rules are the floor; the project's own standards are the ceiling and win every conflict.
 
-- **TypeScript**: Read `references/typescript.md` — strict mode, schema-first boundaries, branded types
-- **Python**: Read `references/python.md` — strict type checking, Pydantic validation, frozen dataclasses
+Read these in order, highest priority first. Later sources fill gaps; they never relax a rule an earlier one set:
 
-Read the relevant reference file before writing code in that language. The principles below apply universally.
+1. `$ARGUMENTS`, when it is a path to an existing file
+2. `.claude/harness/code-quality-reference.md` in the project root
+3. Any standards the repo already documents — `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `STYLE_GUIDE.md`, `docs/` equivalents, or the conventions section of `CLAUDE.md`/`AGENTS.md`
+4. The language reference for the file you are writing — `references/typescript.md` (strict mode, schema-first boundaries, branded types) or `references/python.md` (strict type checking, Pydantic validation, frozen dataclasses). Read it before writing that language
+5. The defaults below, which apply universally
+
+A repo's documented standards may **add** rules or **override** any default here — including naming, formatting, layering, or a house pattern that contradicts a default. Follow them and say which source you followed. What they cannot do is silently remove a rule by not mentioning it: absence is a gap, filled by the next source down.
 
 ---
 
 ## Strict Types
 
-Every language has escape hatches that bypass the type system. Do not use them.
-
-**The rule**: If you don't know the type, use the language's safe unknown type (`unknown` in TypeScript, `object` in Python). Never silence the type checker.
+Never silence the type checker. If you don't know a type, use the language's safe unknown type.
 
 | Language   | Banned                                      | Use instead                        |
 |------------|---------------------------------------------|------------------------------------|
@@ -45,60 +38,94 @@ Type assertions and ignore directives are a sign that the code's design doesn't 
 
 ## Functional Patterns
 
-Functional programming produces code that is easier to test, easier to reason about, and harder to break. These patterns work in any language.
-
 ### Immutability
 
-Never mutate data. Always return new values.
+Never mutate data — return new values.
 
-Mutable code creates hidden coupling — one function changes data that another function depends on, and debugging becomes archaeology. Immutable code is predictable: the value you passed in is the value you still have.
-
-**In practice:**
-- Return new objects/collections instead of modifying existing ones
-- Use `readonly` (TypeScript) or `frozen=True` (Python dataclasses) to enforce at the type level
+- Enforce at the type level: `readonly` (TypeScript), `frozen=True` (Python dataclasses)
 - Copy-then-modify: spread operators, `dataclasses.replace()`, `dict | updates`
 
 ### Pure Functions
 
-A pure function has no side effects and always returns the same output for the same input. Pure functions are trivially testable, naturally composable, and safe to run in any order.
-
-**What makes a function impure:**
-- Mutating arguments or external state
-- I/O (network, filesystem, console)
-- Depending on non-deterministic values (current time, random numbers)
-
-**Strategy**: Keep impure operations at the boundaries (API handlers, CLI entry points, database adapters). Keep core logic pure. This is sometimes called "functional core, imperative shell."
+Keep impure operations — I/O, mutation, time, randomness — at the boundaries (API handlers, CLI entry points, database adapters). Keep core logic pure: "functional core, imperative shell."
 
 ### Composition Over Complexity
 
 Build programs from small, focused functions that compose together. Each function does one thing.
 
-Signs you need to decompose:
-- Function body exceeds ~20 lines
-- More than 2 levels of nesting
-- You need a comment to explain what a section does
+Signs you need to decompose: a body over ~20 lines, more than 2 levels of nesting, or a section that needs a comment to explain it. In that last case prefer a well-named function over the comment — but only one that passes the gate below. Read the next section before extracting.
 
-Extract a well-named function instead of writing a comment.
+### The Cost of Abstraction
+
+Extraction **relocates** reading cost rather than removing it: the call site gets shorter by the lines moved out, and every reader who needs the detail pays one jump. It is worth it when the lines saved exceed that jump.
+
+#### The gate (mandatory)
+
+Extract for one of three reasons. If none applies, the default is **do not extract**.
+
+**1. Reuse** — the same code exists in 2+ places. Either because a block must change together (DRY), or because a short expression is complex enough that every call site re-pays the cost of decoding it.
+
+**2. Organizing a large function** — a long body splits into named steps that each make sense on their own.
+
+**3. Undecodable body (rare)** — a short, single-use body a reader cannot decode on sight: unexplained arithmetic, a magic format or protocol detail, a sequence whose *purpose* isn't visible from the operations.
+
+Reasons 1 and 2 are what should produce most of your extractions. Reason 3 is a genuine exception held to a high bar: not "this could have a name" — nearly anything could — but "a competent reader stops and works out what this achieves." If you find yourself arguing for it, the answer is no.
+
+Repetition alone doesn't justify a function when the repeated thing reads on sight — `rows.length > 0` at five call sites is still five clear lines. Repetition matters when the code is *complex*, or when the copies must stay in sync.
+
+```js
+// REASON 1 — GOOD. One line, but negative-modulo is invisible arithmetic and every
+// call site would otherwise re-decode it. Complexity + repetition, not repetition alone.
+const wrapIndex = (i, len) => ((i % len) + len) % len;
+
+// REASON 1 — GOOD. One definition of a domain rule that must change in one place.
+const isOverdue = (invoice, now) => invoice.dueDate < now && invoice.status !== 'PAID';
+
+// REASON 3 — GOOD. Two lines, one call site. The operations don't reveal that this
+// means "start of the billing week in the account's timezone".
+const billingWeekStart = (date, tz) => {
+  const local = utcToZonedTime(date, tz);
+  return startOfWeek(subDays(local, BILLING_WEEK_OFFSET_DAYS), { weekStartsOn: 1 });
+};
+
+// BAD — these read on sight. A name adds a jump and removes nothing, at 1 call
+// site and at 100.
+const shouldQueueExport = (count, limit = LINE_ITEM_CSV_LIMIT) => count > limit;
+const resolveExportCount = ({ documentIds = [], totalRecords = 0 }) =>
+  documentIds.length ? documentIds.length : totalRecords;
+const hasItems = (rows) => rows.length > 0;
+
+// Instead — the constant IS the shared knowledge; the expressions inline.
+export const LINE_ITEM_CSV_LIMIT = 100;
+if (count > LINE_ITEM_CSV_LIMIT) { ... }
+const count = documentIds.length || totalRecords;
+```
+
+**The substitution test:** replace the call with the body at the call site. If the call site reads *worse*, the name earned its keep. If it reads the same or better, inline it.
+
+**A file full of two-line helpers is the failure this gate exists to prevent.** If applying it leaves you with several short single-use functions, you have used reason 3 as the rule — and the jumps compound:
+
+```js
+// BAD — six jumps to read fifteen lines, and no jump teaches you anything.
+const handleExport = () => {
+  const count = resolveExportCount({ documentIds, totalRecords });
+  if (shouldQueueExport(count)) return queueExport();
+  if (shouldOwnLoadingState(documentIds)) setLoading(true);
+};
+```
+
+**Never extract for these reasons:**
+
+- **To create a test hook.** An export that exists so a test can import it serves the test, not the caller. Test the behavior through the code that actually calls it.
+- **To satisfy "one thing per function"** when nothing calls it twice and the name restates the body.
 
 ### Declarative Data Transformations
 
-Use `map`, `filter`, `reduce` (or language equivalents like list comprehensions) over imperative loops. Declarative code expresses *what* you want, not *how* to compute it.
-
-Imperative loops are acceptable when:
-- Early termination is essential and no declarative alternative exists
-- Performance is measured and matters (profile first)
+Use `map`, `filter`, `reduce` (or list comprehensions) over imperative loops. Loops are acceptable for early termination with no declarative alternative, or where performance is measured and matters.
 
 ### Early Returns Over Nesting
 
-Flatten control flow with guard clauses. Check for invalid conditions and return early, keeping the main logic at the top indentation level.
-
-```
-# Pseudocode
-if not valid_input: return error
-if not authorized: return forbidden
-if not found: return not_found
-# main logic here, flat and clear
-```
+Flatten control flow with guard clauses — check invalid conditions and return early, so the main logic stays at the top indentation level.
 
 ### Options Objects / Keyword Arguments
 
@@ -108,72 +135,62 @@ When a function takes 3+ parameters, use a named structure (options object in Ty
 
 ## Self-Documenting Code
 
-**Hard rule: do not write a comment unless the code cannot show what it does.** Not "prefer fewer
-comments" — write none, then add back only the ones that survive the test below. This applies to
-**test files exactly as it applies to production code**, and to docblocks exactly as to `//`.
+**Comments should be rare.** Write one only when the code is genuinely hard to understand and cannot be made easier — a non-obvious algorithm, a workaround for an upstream bug, a constraint imposed from outside the code (a protocol quirk, a legal requirement, a performance trade-off that looks wrong until you know why). The test is whether a competent reader would otherwise stop and puzzle over it. Rarity is the point: when comments are rare, the ones that exist get read.
 
-**The test — would this comment still be needed if the reader is looking at the code?**
-If yes, keep it. If it restates what the line does, delete it and fix the code instead:
+This applies to **test files exactly as to production code**, and to docblocks exactly as to `//`. Everything else is a signal to refactor — rename, name the intermediate value, use a type alias — not to annotate.
 
-- Extract a function with a descriptive name
-- Name the intermediate value (`const floatArtefactCgst = …` beats a paragraph about float tails)
-- Use a type alias for a domain concept
+Never write a comment that:
 
-**A comment earns its place only when it states something the code cannot:**
-- A constraint a reader would otherwise "simplify" into a bug — *"an in-process call arrives
-  unauthenticated: the JWT is only parsed by middleware"*, *"compares in sub-units because
-  `Math.abs(0.57 - 1.07)` is `0.5000000000000001`"*
-- A unit, or a value that isn't the code's to choose — *"rupees; a materiality decision"*
-- When to change something — *"bump when a change alters a reported status"*
-- Regulatory or legal requirements
-- Public API docs (JSDoc/docstrings) **where the codebase already does this** — match its density,
-  don't import a new convention
+- **Restates an adjacent name** — two things to keep in sync.
+- **Cites a spec, plan, or ticket** — `REQ-013`, `AC7`, `EC2`, `TC-F2`, `FL3`, phase numbers, handoff notes. These go in test names, where they're checked and stay current; in source they're stale the moment the spec is archived.
+- **Narrates the work's history** — `// BUG 2 (fixed in review)`, `// break risk called out in the handoff`. That's the commit message's job.
 
-**Delete on sight:**
-- Section banners (`// --- setup ---`, `// A1`) and captions above an assertion
-- Anything restating the next line, the signature, or a well-named variable
-- Where the code came from, why your change is correct, what you tried — that is talk for the
-  reviewer, and it is noise the moment the PR merges. Put it in the commit message.
-- A paragraph explaining a fixture: name the fixture instead
+```js
+// BAD — restates the name, cites a spec the reader cannot see, narrates a review.
+// BUG 2 (REQ-013/AC7): a selection always wins over the table's total.
+const resolveExportCount = ({ documentIds, totalRecords }) => ...
 
-**Match the file you are in.** If every method around you carries a JSDoc block, yours does too —
-being the one exception is its own inconsistency. Density is the file's call; narration is never
-anyone's.
+// GOOD — the reason is invisible in the code, so the comment earns its place.
+// Server returns totals one page behind under concurrent writes; re-reading after
+// the final page is the only way to get a consistent count. Upstream issue #4471.
+const total = await refetchTotal();
+```
 
-If you feel the need to write a comment explaining what code does, that's a signal to refactor —
-rename, extract, simplify.
+**Match the file you are in.** If every method around you carries a JSDoc block, yours does too. Density is the file's call; narration is never anyone's.
 
 ---
 
 ## Error Handling
 
-Prefer explicit error types over exceptions for expected failure cases. Exceptions are for truly exceptional situations (programming errors, resource exhaustion). Business logic errors (validation failures, not-found, permission denied) should be represented as values.
+Represent expected failures as values, not exceptions. Business logic errors (validation failures, not-found, permission denied) are a Result type — a discriminated union `Success(data: T) | Failure(error: E)` — so the type system forces callers to handle both cases.
 
-**Pattern**: Result types — a discriminated union of success and failure:
-
-```
-Result<T, E> = Success(data: T) | Failure(error: E)
-```
-
-This forces callers to handle both cases. The type system prevents forgetting to check for errors.
-
-Use exceptions for programmer errors (assertions, invariant violations) where recovery isn't expected.
+Reserve exceptions for programmer errors and truly exceptional situations (assertions, invariant violations, resource exhaustion) where recovery isn't expected.
 
 ---
 
 ## Dependency Injection
 
-Inject dependencies through function parameters, not by importing and instantiating them internally. This makes code testable (inject mocks), flexible (swap implementations), and honest about its dependencies.
+Inject dependencies through function parameters, not by importing and instantiating them internally. This keeps the dependency graph explicit and lets you swap implementations without touching business logic.
 
 **The rule**: If a function uses an external service (database, API, cache, file system), that service is a parameter — not something created inside the function.
+
+**Scope it to real boundaries.** A dependency worth injecting is a *substitutable collaborator that crosses a process or I/O boundary* — something with more than one legitimate implementation. Ordinary calls within your own module are not dependencies; passing one in doesn't invert anything, it just moves the call up a level and forces every caller to supply it.
+
+```js
+// NOT dependency injection — `fetchRows` is this function's own body, passed in as an argument.
+const fetchLineItemExportRows = async ({ knownCount, fetchRows }) => {
+  if (!knownCount) return { rows: [], total: 0 };
+  return fetchRows();
+};
+```
+
+Injecting purely to make something mockable is the same mistake in another direction — see the gate in **The Cost of Abstraction**. If a test is the only reason a seam exists, the seam serves the test, not the design.
 
 ---
 
 ## Schema-First Validation
 
-Validate data at trust boundaries — where external data enters your system (API requests, file reads, environment variables, user input). Define schemas once and derive types from them.
-
-Inside the system, between your own functions, trust the type system. Don't re-validate data that was already validated at the boundary.
+Validate where external data enters the system (API requests, file reads, environment variables, user input). Define schemas once and derive types from them. Inside the system, trust the type system — don't re-validate what the boundary already checked.
 
 ---
 
@@ -185,12 +202,15 @@ Before considering code complete, verify:
 - [ ] All data structures are immutable (readonly properties, frozen dataclasses)
 - [ ] Core logic is pure (side effects at boundaries only)
 - [ ] Functions are small and compose well (max ~20 lines, max 2 nesting levels)
+- [ ] Every extracted function passes the gate — it removes decoding cost or repeated lines
+- [ ] No function exists solely to give a test something to import
+- [ ] Comments are rare and explain genuinely hard code — none restate a name, cite a spec/ticket,
+      or narrate the work's history
 - [ ] Declarative transformations over imperative loops
 - [ ] Early returns instead of nested conditionals
 - [ ] Named parameters for functions with 3+ arguments
-- [ ] No comments explaining *what* — every surviving comment states something the code cannot
-      (tests included; a docblock restating the signature is noise)
 - [ ] Explicit error types for expected failures (Result pattern)
 - [ ] Dependencies injected, not created internally
 - [ ] Schemas at trust boundaries, types internally
+- [ ] The repo's own documented standards were read and followed where they differ from these defaults
 - [ ] Language-specific checklist from the reference file also passes

@@ -40,6 +40,9 @@ Nothing else is universal. Resist adding to this block.
 Dispatch one agent per phase; where the phase file has a Steps section, dispatch per step in waves
 (all independent steps in parallel → wait → next wave) and also invoke the `testing` skill.
 
+Every coder agent also invokes the `code-quality` skill before writing production code — it governs
+how the implementation is written, not whether it is tested.
+
 **Pass:**
 - Spec `<SPEC_PATH>`, plan `.harness/features/<SPEC_NAME>/plan.md`, phase file
   `.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md` (and `<STEP_DETAILS>` for a step-level dispatch)
