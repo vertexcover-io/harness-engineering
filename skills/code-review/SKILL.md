@@ -83,17 +83,29 @@ files, build output) entirely.
 ## Step 2 — Select the team
 
 Two personas always run. Spawn the conditional ones only when the diff earns it — read the
-diff and reason about it; this is judgement, not extension matching.
+diff and reason about it; this is judgement, not keyword matching.
 
 | Persona | Asks | When |
 |---|---|---|
 | `spec` | Does it do what was asked? | Always — with no spec, it infers intent rather than skipping |
 | `code-quality` | Is it written correctly? | Always |
 | `testing` | Do the tests prove it works? | Diff contains test files, **or** changes behaviour and adds none |
-| `security` | Can it be exploited? | Diff touches auth, permission checks, public endpoints, user input crossing a trust boundary, secrets, crypto, deserialization, or file paths |
+| `security` | Can it be exploited? | The diff **changes a trust decision** — see below |
+
+**The security gate is about change, not subject matter.** Spawn it when the diff adds or
+alters an authentication or authorization check, exposes a new endpoint or input source,
+introduces deserialization or dynamic evaluation, moves data across a trust boundary that
+didn't cross one before, or touches secrets and crypto.
+
+Do **not** spawn it because security-adjacent nouns appear in the diff. Code that already
+sent a client-built payload and still does, already rendered user data and still does, or
+already called that endpoint and still does has not changed a trust decision — refactoring it
+is not a security event. Pre-existing exposure belongs in a security audit of the codebase,
+not in a review of this change, and a persona pointed at it will report the architecture back
+to you as though the diff caused it.
 
 Announce the team before spawning, with a one-line justification per conditional persona
-selected.
+selected. If you spawn `security`, name the trust decision that changed.
 
 ## Step 3 — Dispatch in parallel
 
