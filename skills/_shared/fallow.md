@@ -1,11 +1,14 @@
 # Fallow Contract (shared)
 
 Canonical contract for invoking [fallow](https://fallow.tools) and mapping its JSON into
-harness findings. Both `tech-debt-finder` and `code-review` read this file so they cannot
-drift. Fallow is deterministic codebase intelligence for **TypeScript/JavaScript only**.
+harness findings. Fallow is deterministic codebase intelligence for **TypeScript/JavaScript
+only**.
 
-Consuming skills (`tech-debt-finder`, `code-review`) read this file at
-`../_shared/fallow.md` relative to their own skill directory.
+`tech-debt-finder` reads this file at `../_shared/fallow.md` relative to its own skill
+directory. `code-review` no longer consumes fallow: structural debt is a codebase property,
+not a diff property, and every category fallow reports was either barred from the review or
+capped below the verdict threshold. The `audit` command and its envelope mapping stay
+documented here for that skill's use.
 
 ---
 

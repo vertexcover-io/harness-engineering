@@ -301,9 +301,9 @@ Stop the pipeline and report which stage failed and why on any of:
 | Quality gate BLOCKED | Report what failed |
 | Quality gate STAGNATION | Do NOT retry — report the stagnated check, repeated error signature, need for manual intervention |
 | Library-probe BLOCKED | No viable alternative; or `BLOCKED:repeated-lib-failure` after 2 loopbacks |
-| Review hard-standards failure | Pass-2 still `REQUEST CHANGES` **and** pass-2.md has an unresolved `S-VIOLATION:<id>` (uncited `enforced_by: convention`) → stop; report the `S-*` id + `file:line` |
+| Review hard-standards failure | Pass-2 still `REQUEST CHANGES` **and** pass-2.md has an unresolved hard violation (a breach of a documented standard, cited to its source file + rule) → stop; report the cited rule + `file:line` |
 
-Review pass 2 returning `REQUEST CHANGES` with only subjective Critical/Important defects (no `S-VIOLATION`) → **log a warning but proceed** to Stage 5; verification and gate catch the rest. On any halt, the worktree is preserved for manual intervention — present what was accomplished and suggest next steps.
+Review pass 2 returning `REQUEST CHANGES` with only judgement-call defects (no cited standard) → **log a warning but proceed** to Stage 5; verification and gate catch the rest. On any halt, the worktree is preserved for manual intervention — present what was accomplished and suggest next steps.
 
 ---
 
