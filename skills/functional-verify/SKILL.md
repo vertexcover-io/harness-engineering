@@ -59,7 +59,7 @@ Three things are non-negotiable, and each is a verification failure if you skip 
 
 - **Spec** — `.harness/features/<SPEC_NAME>/spec.md`
 - **Plan** — `.harness/features/<SPEC_NAME>/plan.md` (per-phase breakdowns in `.harness/runtime/<SPEC_NAME>/phase-*.md`)
-- **Claims** — `.harness/runtime/<SPEC_NAME>/claims.json` when orchestrate aggregated them, otherwise the per-phase `phase-*-claims.json`. Schemas: `skills/tdd/references/phase-claims-format.md` and `skills/orchestrate/references/claims-aggregation-format.md`. Required to read when present.
+- **Claims** — `.harness/runtime/<SPEC_NAME>/claims.json` when orchestrate aggregated them, otherwise the per-phase `phase-*-claims.json`. Schemas: `skills/orchestrate/references/phase-claims-format.md` and `skills/orchestrate/references/claims-aggregation-format.md`. Required to read when present.
 - **E2E report** — `.harness/runtime/<SPEC_NAME>/e2e-report.json`, the coder's raw e2e run summary. Its `gaps` array names the blind spots the coder already knows about — you seed the adversarial pass (Step 5) from it.
 
 Claim ids are how you keep track of what you have covered. They are working notes: none of them

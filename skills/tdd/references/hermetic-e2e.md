@@ -9,8 +9,6 @@
 | **Slow hangs** | 120–360s stalls on a wrong selector or dead port | No fail-fast gate; per-test timeout is minutes, so every failure waits the full ceiling |
 | **No isolation** | Specs pass in isolation, fail in the suite | All specs share one DB with no reset between them; seeded rows pollute later specs |
 
-A correctly-built hermetic suite turns "one command, ~60 min of wrangling, flaky" into **"one command, fast bring-up, deterministic, self-cleaning."**
-
 ## The invariants (true for every stack)
 
 1. **Ephemeral ports, allocated at runtime.** Never hardcode a host port. Bind to an OS-assigned free port and use it. With a per-worktree resource name, N worktrees run e2e concurrently with zero collisions.
@@ -55,17 +53,11 @@ Two non-obvious traps worth checking on any framework:
 - **Is config evaluated once or per worker?** If the runner re-imports the config in each worker process, allocating ports inside the config makes workers disagree. Allocate in the entrypoint; the config only *reads* env.
 - **Does a one-off script resolve the project's DB driver?** In symlinked/monorepo layouts a bare `require('<driver>')` may not resolve. Invoke through the project's own tooling, or resolve the driver from the package that declares the dependency.
 
-## Emit `e2e-report.json` (don't hand-author it)
+## Report from machine output, never by hand
 
-The quality gate (Check 9) requires `.harness/runtime/<SPEC_NAME>/e2e-report.json` with `failed: 0`. Generate it from the framework's machine output (most runners have a JSON reporter), not by hand:
-
-```json
-{ "failed": 0, "passed": 12, "coverage": ["REQ-001", "REQ-002", "EDGE-003"],
-  "gaps": ["EDGE-002 needs a live SMTP server — not covered in dev"],
-  "timestamp": "<ISO>", "command": "<the e2e command>" }
-```
-
-`coverage` maps to REQ/EDGE IDs in the spec; `gaps` is the honest list of what the suite can't cover. Machine-generated removes the hand-edit churn and makes the gate trustworthy.
+Derive any pass/fail report from the runner's JSON reporter, not hand-authored counts — that is
+what makes a gate trustworthy. Pipeline runs have a required schema and path: see
+`skills/orchestrate/references/coder-contracts.md`.
 
 ## Checklist before calling an e2e suite "done"
 

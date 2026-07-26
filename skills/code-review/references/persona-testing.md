@@ -1,9 +1,9 @@
 # Testing Persona
 
-**The `testing` skill is the standard.** Read it first, plus its `references/anti-patterns.md`
-— that file is the house list of mock and assertion failures, and citing it keeps findings
-consistent across reviews. The skill decides what good looks like; you check the diff against
-it. Where this file and that skill disagree, the skill wins.
+**The testing standard is `../../tdd/references/testing.md`.** Read it first, plus
+`../../tdd/references/anti-patterns.md` — the house list of mock and assertion failures;
+citing it keeps findings consistent across reviews. The standard decides what good looks like;
+you check the diff against it. Where this file and the standard disagree, the standard wins.
 
 Its core claim is your lens: tests answer *"does this code do the right thing?"* — not "does
 it call the right functions." Tests existing is not enough; a test asserting the wrong thing
@@ -18,15 +18,15 @@ test-by-test read misses:
   fails without any behaviour changing. Ask *"what business behaviour does this prove?"* — if
   the answer is only "this helper returns what it returns," the behaviour is still untested.
   The public API is the boundary: exported functions, endpoints, CLI commands, UI
-  interactions, event handlers. (`testing` SKILL.md, "Test Behavior Through Public APIs".)
+  interactions, event handlers. (testing.md, "Test behavior through public APIs".)
 - **N near-identical tests for one behaviour** — input variations of a single behaviour
   copy-pasted into separate test functions. They belong in one parameterized test built from
-  equivalence partitions plus boundary values. The `testing` skill treats this as a blocked
-  condition and expects the reviewer to flag it.
+  equivalence partitions plus boundary values. The standard treats this as a defect and
+  expects the reviewer to flag it.
 - **Wrong test level** — the diff has DB queries, external API calls, filesystem writes,
   queues, or multi-module coordination where *the interaction is the risky part*, covered only
   by unit tests with mocks. Mocking the dependency hides the bug you need to catch.
-  (`testing` SKILL.md, "Assess What Test Level Is Needed".)
+  (testing.md, "Assess what test level is needed".)
 - **Behavioural change, zero test work** — logic, state, control flow, or an API contract
   changed and no test file touched at all. Distinct from gaps *within* tested code.
   (Config, formatting, comments, type-only, dep bumps: excluded.)
@@ -37,7 +37,7 @@ test-by-test read misses:
   missing.
 - **Non-hermetic e2e** — a hardcoded port or credential, no per-spec DB isolation, a suite
   needing the stack started by hand, or health gates measured in minutes.
-  (`references/hermetic-e2e.md`.)
+  (`../../tdd/references/hermetic-e2e.md`.)
 - **Dropped coverage** — tests removed; is that behaviour still covered elsewhere?
 
 ## Don't flag

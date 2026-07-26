@@ -47,7 +47,7 @@ FAILURE/BLOCKED.
 | `library-probe` | `library-probe` | `<!-- LP:VERDICT:PASS -->` / `BLOCKED` |
 | `spec-gen` | `spec-generation` | — |
 | `planning` | `planning` | — |
-| `coder` | `tdd` + `code-quality` (+ `testing` for stepped phases) | phase `…-claims.json` (`executed>0`, `failed=0`) |
+| `coder` | `tdd` + `code-quality` | phase `…-claims.json` (`executed>0`, `failed=0`) |
 | `code-review` | `code-review` | `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
 | `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.md`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 

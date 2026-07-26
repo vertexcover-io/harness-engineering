@@ -38,7 +38,9 @@ Nothing else is universal. Resist adding to this block.
 **Skill:** `<SKILL:coder>` · **Model:** `CFG.model` → `sonnet`
 
 Dispatch one agent per phase; where the phase file has a Steps section, dispatch per step in waves
-(all independent steps in parallel → wait → next wave) and also invoke the `testing` skill.
+(all independent steps in parallel → wait → next wave). Every coder agent reads
+`references/coder-contracts.md` — the phase-input mapping, E2E gates, report artifacts, and
+`LIB_SUSPECT` signal it must honor.
 
 Every coder agent also invokes the `code-quality` skill before writing production code — it governs
 how the implementation is written, not whether it is tested.

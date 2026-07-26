@@ -1,6 +1,6 @@
 # Claims Aggregation Format & UI-Proof Gate
 
-After every coder phase has produced `.harness/runtime/<SPEC_NAME>/phase-<N>-claims.json` (see `skills/tdd/references/phase-claims-format.md` for the per-phase shape), orchestrate aggregates them into a single `.harness/runtime/<SPEC_NAME>/claims.json` that functional-verify consumes.
+After every coder phase has produced `.harness/runtime/<SPEC_NAME>/phase-<N>-claims.json` (see `skills/orchestrate/references/phase-claims-format.md` for the per-phase shape), orchestrate aggregates them into a single `.harness/runtime/<SPEC_NAME>/claims.json` that functional-verify consumes.
 
 ## Aggregated `claims.json` schema
 

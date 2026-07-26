@@ -23,8 +23,9 @@ Reports uncovered code mapped to spec behaviors. Line coverage is a diagnostic, 
 gate — the test budget is the spec's verification matrix, and test quality is enforced by
 the quality-gate's behavior-coverage and mutation checks.
 
-**REQUIRED SUB-SKILL:** Load the `testing` skill before analyzing coverage gaps. This
-ensures any recommendation follows project testing conventions.
+**The one rule that governs every recommendation:** coverage gaps are behavior gaps, not line
+gaps — the question is never "what line am I missing?", always "what business behavior is
+untested?" (The full standard, if needed: `skills/tdd/references/testing.md`.)
 
 ---
 
@@ -41,11 +42,7 @@ ensures any recommendation follows project testing conventions.
 
 ## Execution Flow
 
-### Step 1: Load Testing Skill
-
-Before any analysis, invoke the `testing` skill to load test patterns and conventions.
-
-### Step 2: Run Coverage
+### Step 1: Run Coverage
 
 Run the test command:
 
@@ -55,13 +52,13 @@ uv run pytest packages/tarash-gateway/tests/unit --cov=tarash.tarash_gateway --c
 
 If pytest fails (non-zero exit for reasons other than coverage), report the error and **stop**.
 
-### Step 3: Parse Results
+### Step 2: Parse Results
 
 Read `coverage.json` (written to the repo root by pytest-cov). Extract:
 - `totals.percent_covered` — the overall coverage percentage
 - Per-file breakdown: `files.<path>.summary.percent_covered`, `missing_lines`, `missing_branches`
 
-### Step 4: Map Uncovered Code to Behaviors
+### Step 3: Map Uncovered Code to Behaviors
 
 For each file with uncovered regions:
 
@@ -73,7 +70,7 @@ For each file with uncovered regions:
      (intentionally untested; no action)
    - **Possible missing REQ** — real logic no spec behavior covers (surface to the user)
 
-### Step 5: Report and Ask
+### Step 4: Report and Ask
 
 Print the diagnostic report:
 

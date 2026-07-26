@@ -1,14 +1,12 @@
-# Test Granularity: Integration and E2E Testing
+# Integration and E2E Testing
 
-**Read this reference when:** the analysis step in the main skill identified that integration or e2e tests are needed, or when reviewing a test suite's overall balance.
-
-This file covers **how to write good integration and e2e tests** — the principles, patterns, and the analyze-test cycle that applies to each level.
+**Read this when** the analysis step in `testing.md` identified that integration or e2e tests are needed, or when reviewing a test suite's overall balance.
 
 ---
 
 ## The Analyze-Test Cycle
 
-Writing integration and e2e tests follows the same behavioral testing principles as unit tests, but adds an analysis phase to handle the additional complexity of real infrastructure and multi-component interactions.
+Same behavioral principles as unit tests, plus an analysis phase for real infrastructure and multi-component interactions.
 
 ### The Cycle
 
@@ -31,10 +29,10 @@ Writing integration and e2e tests follows the same behavioral testing principles
 
 The choice depends on the user's context — they may have a local instance running, a sandbox environment, or prefer to hit the real service for confidence. Ask before assuming.
 
-**3. Write** — Write the test following the same Arrange-Act-Assert pattern as unit tests. One behavior per test. Descriptive name.
+**3. Write** — One behavior per test, named for it.
 
 **4. Verify** — Run the test. Check:
-- Does it fail for the right reason when the behavior is broken? (Introduce a deliberate bug and confirm the test catches it.)
+- Does it survive mutation? (Break the behavior under test and confirm this test catches it.)
 - Does it pass deterministically? Run it 3 times. If it fails intermittently, fix the flakiness before moving on.
 - Is the failure message useful? When it fails, can you tell what went wrong without reading the test source?
 
@@ -57,9 +55,7 @@ An integration test exercises **real interactions between your code and its depe
 
 **1. Use real dependencies wherever practical.**
 
-The point of an integration test is to catch bugs that live *between* components. Mocking the database in an integration test defeats the purpose entirely — you are testing your assumptions about the database, not the database.
-
-Modern tooling has made this cheap:
+Integration tests catch bugs that live *between* components; mocking the database means testing your assumptions about it rather than the database. The cheap options:
 - **In-memory databases:** SQLite (`:memory:`), H2 for Java, or test-specific Postgres/MySQL via Testcontainers
 - **Embedded services:** Redis in test mode, LocalStack for AWS services, MinIO for S3
 - **Testcontainers:** Spin up real Docker containers (Postgres, Redis, Kafka) for the test run, tear them down after
@@ -183,7 +179,7 @@ page.getByText('Order confirmed')
 
 **4. Use smart waits, never hard-coded delays.**
 
-`sleep(3000)` either waits too long (slow suite) or not long enough (flaky test). Wait for a specific condition:
+Wait for a specific condition — a fixed `sleep` either waits too long or not long enough:
 
 ```python
 # Bad
@@ -201,8 +197,6 @@ When an e2e test fails, you need:
 - **Video** of the full test run (most frameworks support this)
 - **Browser console logs** for JavaScript errors
 - **Network trace** for failed API calls
-
-Without these, debugging e2e failures becomes guesswork and developers stop investigating.
 
 **6. Isolate test state.**
 
@@ -257,9 +251,9 @@ E2e tests need a more careful analysis phase because failures are expensive to d
 4. **Plan authentication** — how will the test get past login without repeating the login flow every time?
 
 **After writing:**
-1. **Run 5 times locally** — if it fails even once, fix the flakiness before committing
+1. **Run 5 times locally** (5× here vs 3× for integration — more moving parts, more flake) — if it fails even once, fix the flakiness before committing
 2. **Run in CI** — environment differences often reveal real flakiness (different timing, screen size, network)
-3. **Break it intentionally** — remove a UI element or break an API endpoint and confirm the test fails with a useful message
+3. **Mutate it** — remove a UI element or break an API endpoint and confirm the test fails with a useful message
 4. **Check artifacts** — does the screenshot show the right moment? Does the video tell you what happened?
 
 ### E2E Anti-Patterns
@@ -292,48 +286,6 @@ Ask these questions in order:
 
 **Push every test to the lowest level that provides the confidence you need.** Higher-level tests cost more to write, run, and maintain.
 
-### Architecture-Driven Test Distribution
+**Default sociable, not solitary:** let real collaborators run; introduce mocks only at awkward boundaries (network, time, randomness, expensive resources). Needing many mocks is design feedback — the code has too many dependencies.
 
-There is no universal ratio. The right shape depends on where your complexity lives:
-
-| System Type | Where Complexity Lives | Emphasis |
-|-------------|----------------------|----------|
-| Algorithm library | Pure logic, many input combinations | Unit-heavy |
-| Frontend application | Component interactions, user flows | Integration-heavy |
-| Microservices / API-first | Service boundaries, network contracts | Integration-heavy + contract tests |
-| Full-stack monolith | Mix of logic and integration | Balanced |
-
-### Sociable vs. Solitary Tests
-
-Tests exist on a spectrum from fully solitary (every collaborator mocked) to fully sociable (nothing mocked except process-external dependencies):
-
-| | Sociable | Solitary |
-|---|---|---|
-| Refactoring resilience | High | Low |
-| Fault isolation | Lower | High |
-| Mock maintenance | Low | High |
-
-**Practical default:** Use sociable tests. Only introduce mocks at awkward boundaries (network, time, randomness, expensive resources). If you need many mocks, that is design feedback — the code may have too many dependencies.
-
----
-
-## Testing Health Metrics
-
-| Metric | Target | What It Measures |
-|--------|--------|-----------------|
-| Bugs that create new tests | 100% | Every production bug produces a regression test |
-| Tests that verify behavior | 100% | Outcomes, not implementation details |
-| Tests that are deterministic | 100% | No flaky tests |
-| Integration test suite time | < 5 min | Parallelization keeps feedback fast |
-| E2e test suite time | < 15 min | Small suite, parallelized |
-
----
-
-## Further Reading
-
-- **Testing models compared:** [web.dev — Pyramid or Crab?](https://web.dev/articles/ta-strategies)
-- **Anti-patterns catalog:** [Codepipes — Software Testing Anti-patterns](https://blog.codepipes.com/testing/software-testing-antipatterns.html)
-- **Sociable vs. solitary:** [Martin Fowler — UnitTest](https://martinfowler.com/bliki/UnitTest.html)
-- **Trophy model:** [Kent C. Dodds — The Testing Trophy](https://kentcdodds.com/blog/the-testing-trophy-and-testing-classifications)
-- **Microservices testing:** [Spotify — Testing of Microservices](https://engineering.atspotify.com/2018/01/testing-of-microservices)
-- **Contract testing:** [Pact Documentation](https://docs.pact.io/)
+**Suite time budgets:** integration < 5 min, e2e < 15 min — parallelize and keep the e2e set small (5–10 journeys) to stay under them.

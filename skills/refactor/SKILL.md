@@ -45,7 +45,7 @@ Refactoring doesn't happen in isolation. During assessment, also apply patterns 
   working in a specific language, consult its reference file (`references/typescript.md`
   or `references/python.md`) for language-specific quality patterns.
 
-- **`testing` skill** — Assess test code alongside production code. Check for: tests
+- **Testing standard** (`../tdd/references/testing.md`) — Assess test code alongside production code. Check for: tests
   asserting on mock behavior instead of outcomes, missing factory functions, test names
   that describe implementation instead of behavior, tests that would break on refactoring.
   Test code deserves the same quality standards as production code.
@@ -179,7 +179,7 @@ the tests for the module being refactored):
 - **Mock discipline**: Are mocks only at external boundaries, or is internal code mocked?
 - **Test structure**: Does each test have clear Arrange-Act-Assert phases?
 
-For the full anti-pattern catalog, load the `testing` skill.
+For the full anti-pattern catalog, read `../tdd/references/anti-patterns.md`.
 
 ---
 
