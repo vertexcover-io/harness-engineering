@@ -1,218 +1,224 @@
 ---
 name: brainstorm
 description: >
-  Explore a problem and design it before implementation — surfacing every decision the
-  design turns on, then producing an architectural design doc (no code). Use when the user
-  wants to brainstorm, think through, or design a non-trivial feature, architecture change,
-  or migration; when they hand over a design to interrogate ("grill me", "poke holes in
-  this" — see Grill Mode); or before jumping into implementation of something structural
-  they haven't explored yet.
+  Grill an idea into an approved design.md. Use for structural change — a new boundary or
+  component, an unresolved fork with live alternatives, a user-facing surface with unstated
+  behavior, or an external dependency. Also use when the user hands over an existing design or
+  plan to interrogate ("grill this", "poke holes"). Work with nothing to decide skips this
+  skill entirely — route it to `planning`. Invoked standalone or as orchestrate's first stage.
 ---
 
-# Brainstorm: Deep Problem Understanding and Design
+# Brainstorm — grill the idea into a design
 
-**The job: open the decision tree, then close it.** A design is done when every decision it
-turns on is either resolved or consciously parked — not when questioning feels thorough. You
-open the tree by discovering decisions (Phases 1-5), close it at the completeness gate, then
-synthesize the design doc. The design is conceptual — boundaries, contracts, trade-offs, no code.
+The **grill** closes the decision tree: every decision the design turns on is resolved or
+consciously **parked**, including the ones the user did not think of. Output is
+`.harness/<name>/design.md`, grounded in a **dossier** of verbatim code quotes. `<name>`
+comes from the pipeline (`SPEC_NAME`) when orchestrate invokes; standalone, derive a short
+kebab-case name from the topic **before dispatching scouts** — they write into the same
+directory.
 
-<HARD-GATE>
-Do NOT write code, scaffold, or invoke an implementation skill until the design doc is
-written AND (unless bypassed) approved by the user. Applies to EVERY project, however
-"simple" it seems.
-</HARD-GATE>
+A user arriving with an existing design or plan is the same job — the tree just starts partly
+populated: extract its decisions as `D<n>` entries, mark what's already resolved, and grill
+the rest.
 
-## Questioning Discipline
+## Triage — run before anything else
 
-Applies to every question in every phase:
+Brainstorm is for **structural** change. Run it when **any** holds:
 
-- **Explore before asking.** Resolve a question from the cheapest authoritative source first:
-  1. **Code and git history** — code is authoritative when it conflicts with stated assumptions.
-  2. **The user** — only for decisions they alone can make: preferences, priorities, business
-     context, unknowable intent.
-- **Every question carries a recommendation.** State your recommended answer and the one-clause
-  why. In `AskUserQuestion`, the recommended option goes first, labeled "(Recommended)".
-  Forming a recommendation forces the thinking; the user accepts or corrects instead of
-  authoring from scratch.
-- **Write the decision tree down.** Keep an explicit written list of open decisions — not a
-  mental model. Tag each `blocks:` / `blocked-by:` and resolve top-down: ask the decision that
-  unblocks the most downstream ones first, never one whose best form depends on an unanswered
-  upstream one. A decision you were forced to write cannot be silently forgotten. Batch 2-4
-  questions in one `AskUserQuestion` call only for independent context facts; any question whose
-  answer could reshape another is asked alone. (Format and derivation: `references/question-completeness.md`.)
-- **Exit on a closed decision tree, not stamina.** Questioning ends only after the completeness
-  gate (see Phase 2) confirms no material decision is still open — every one resolved or
-  consciously parked in Open Questions. "The list feels long enough" is not the exit condition.
+- an unresolved **fork** — a decision with live alternatives
+- a new boundary, component, or contract
+- a user-facing surface with unstated behavior
+- a non-functional target nobody has named
+- an external dependency
 
-## Scope of This Skill
+**Skip to `planning`** when **all** hold: the change stays inside existing code paths · one
+obvious way to do it · acceptance criterion already stated · no new interface.
 
-Brainstorm applies to **structural changes**: extractions, rearchitectures, new components
-inside existing systems, migration paths. Output is a design (what changes, where boundaries
-move, how things connect).
+The skip target is `planning`, never `implement` — "nothing to decide" is not "nothing to
+plan". A rename across 30 files skips the grill and still needs a slice graph. Only planning's
+own gate can route to `implement`.
 
-Brainstorm does **not** apply to:
-- **Bug investigation** — use direct exploration. Output should be a root cause and fix.
-- **Tactical refactoring** (rename, extract function, restructure one file) — use `harness:refactor`.
-- **Performance investigation** — profile first; brainstorm only if the fix is structural.
+The stress test that keeps the gate from being talked past:
 
-Rule of thumb: "change these 10 lines" is not brainstorm; "this changes how three components
-talk to each other" is.
+> *"Add caching to this endpoint"* — sounds mechanical, but TTL, invalidation, key shape, and
+> backing store are four forks. **Grill it.**
+> *"Rename `getUserData` to `fetchUser` across the repo"* — no fork, no boundary, criterion
+> obvious. **Straight to planning.**
 
-## Grill Mode — User Arrives With a Plan
+**When the call is genuinely close, grill** — the costs are asymmetric: a short design on
+small work is mild ceremony; a skipped design that was warranted builds the wrong thing. Let
+the design be three paragraphs.
 
-When the user already has a plan or design ("grill me", "stress-test my plan", "poke holes
-in this"), do not re-derive it from scratch. Flip the flow:
+**Scope check, before the first question:** if the request spans multiple independently-
+shippable subsystems, decompose and grill the first one. Don't split when the pieces share
+>30% of files and ship together.
 
-1. Read their plan; explore the codebase to verify its claims (Questioning Discipline applies —
-   verify in code what code can verify).
-2. Interview the user relentlessly: walk each branch of *their* design tree, resolving
-   dependencies between decisions one-by-one, one question at a time, each with your
-   recommended answer.
-3. Run the Phase 5 stress-test lenses against their plan, not a fresh design.
-4. Output: the agreed result captured as a design doc — then the normal Phase 6-8 pipeline.
+## Inputs — cite, never restate
 
-Greenfield Phases 2-4 are skipped; the goal is shared understanding of their design, not a
-competing alternative.
+When a PRD, issue, or brief already states something, **cite it and move on**
+(`<path>#<section>`). The design holds only what the grill *added*: forks resolved, gaps
+found, structure chosen. A design that restates its PRD has added nothing and costs the next
+reader two reads of the same content.
 
-## Depth Scaling
+## Scouts — dispatch first, never wait
 
-| Phase | Minor (small feature) | Medium (new feature, moderate refactor) | Major (new system, redesign) |
-|-------|----------------------|------------------------------------------|------------------------------|
-| 1 Context & scope | one AskUserQuestion round | full | full |
-| 2 Problem & requirements | folded into that round | focused | full depth |
-| 2 Completeness gate | inline self-check | subagent | subagent |
-| 3 Architectural challenges | skip unless boundaries move | focused | full |
-| 4 Approach comparison | skip — state the approach in one line | 2 approaches | 2-3 approaches |
-| 5 Stress test | 2-3 most relevant lenses | all lenses, brief | all lenses, full |
-| 6 YAGNI + design doc | a few paragraphs | key sections | thorough |
-| 7 Spec review | self-review against the rubric (no subagent) | subagent review | subagent review |
-| 8 User review gate | always | always | always |
+Dispatch both sub-agents **before the first question** — they run during the user's
+think-time. **Read `references/scouts.md` for the briefs before dispatching.** Without the
+brief's four questions and the intent-withholding rule, the scout returns interpretation
+instead of evidence — and evidence is the only thing the grill can ground on.
 
-## External Dependency Declaration (continuous — not a phase)
+- **Codebase scout** — always. Writes `.harness/<name>/dossier.md`; returns a 3-5 line gist.
+- **External scout** — only on thin local patterns; evaluate the trigger yourself with a
+  fast pattern scan (`rg` for the pattern this design needs) before dispatching. Returns
+  findings inline as quotes with source URLs — no file; cite the URLs in the sections they
+  shape.
 
-Brainstorm *declares* dependencies; the `library-probe` skill *verifies* them (health
-heuristics + live smoke tests) right after brainstorm. Do not investigate library health
-here — that's probe work. Whenever an external library or third-party API enters the
-conversation, record the design-time decisions only:
+The conversation carries only the gist. When the grill needs a specific, read the dossier on
+demand — the quotes are already verified.
 
-- **Distinct use cases to probe:** each flow we depend on is a separate probe.
-- **Auth surface:** none / api-key / oauth / cookies + exact env keys (loaded from
-  project-root `.env.harness`, gitignored).
-- **Fallback chain:** ordered alternatives. MUST end in a paid API or build-our-own —
-  the probe walks this chain automatically when a library fails verification.
+**Verify before claiming absence:** any claim that something is *absent* — no such table, no
+such endpoint — is checked against the code before it is stated, or labeled an unverified
+assumption. Absence claims are where confident agents are most often wrong.
 
-Finalize as the `## External Dependencies & Fallback Chain` section of the design doc during
-Phase 6 — the dependency set is only settled once the approach is chosen. If none, write
-`None — pure-internal feature.` (This section is library-probe's input contract; it blocks
-without it.)
+## The grill
 
-## The Brainstorming Flow
+Ask via `AskUserQuestion` wherever the surface provides it; on surfaces that don't (Codex —
+see `references/codex-tools.md` at the repo root), ask in plain text preserving the same
+shape. Every menu question carries a recommendation and its one-clause why, recommended
+option first, labeled `(Recommended)`; an open-ended question has no options to order — state
+the recommendation in its framing when one is meaningful. **Batch up to 4 questions when they
+are unrelated** — dependence, not count, is the limit: any question whose answer could
+reshape another is asked **alone**, in its own turn.
 
-### Phase 1 — Context Gathering & Scope Check
+**Open vs. menu:** use an open-ended question only when you cannot write 3-4 genuinely
+distinct, plausibly-correct options without padding. Straining to fill the option slots means
+ask it open.
 
-Review relevant files, docs, and recent changes. Build a mental model.
+### The written tree
 
-**Scope decomposition check** — if the request spans multiple independent subsystems
-(own data model + API + auth/contract, each independently shippable), flag it. Each
-sub-project gets its own design cycle. Tells: title contains "system"/"platform"/"overhaul";
-author drafting Phase 1/Phase 2 internally; 2+ items with own data model + API + auth;
-sub-piece A ships and provides value while B waits.
+An explicit written list, not a mental model:
 
-Don't split if sub-pieces share >30% of files and ship together — that's delivery
-sequencing, not scope.
+```
+D<n>: <the decision> — blocks: D<a>, D<b> · blocked-by: D<c> · [open|resolved|parked]
+```
 
-Use `AskUserQuestion` for every question (2-3 related Qs to establish context — independent
-facts only, per Questioning Discipline). Focus: what triggered this, who is affected, what
-success looks like.
+Resolve top-down: the decision unblocking the most downstream ones first, never one whose best
+form depends on an unanswered upstream. A decision you were forced to write down cannot be
+silently forgotten.
 
-**Visual companion (sidebar — UI-facing work only).** If upcoming questions will involve
-visual content (mockups, layouts, diagrams, side-by-side designs), offer the visual companion
-**as its own standalone message** before further questions:
+### Question sources
 
-> "Some of what we're working on might be easier to explain visually. I can put together
-> mockups, diagrams, and comparisons in a browser as we go. Want to try it?
-> (Requires opening a local URL)"
+Walk the lens catalog — **read `references/lenses.md` before the first lens pass**; without it,
+completeness is recalled instead of derived, and the gap the user didn't mention stays
+unfound. Each lens states when it fires and what to ask.
 
-The message must contain ONLY the offer — no other content. Wait for response. If declined,
-proceed text-only. If accepted, decide **per question** whether browser or terminal fits —
-the test: would the user understand this better by *seeing* it? Browser for mockups,
-wireframes, layout comparisons; terminal for requirements, tradeoffs, scope decisions. A
-question about UI is not automatically a visual question. Skip entirely for backend-only work.
+### The integration check
 
-### Phase 2 — Problem & Requirements Exploration (open the tree)
+Before exiting, combine what the user has said and surface consequences the dialogue never
+probed. If stated-X plus stated-Y plus your-default-Z produces a downstream effect the user is
+unlikely to have tracked one question at a time, probe it **now**. Open Questions is a safety
+net for genuine residuals, not a punt list for consequences you could have asked about.
 
-Requirements rarely arrive complete. **Seed the decision tree from two sources** so
-completeness is derived, not recalled: walk every section of `references/design-template.md`
-(an empty or hand-wavy section is an unasked question — this covers problem space,
-functional/non-functional requirements, edge cases, the hard structural questions, and
-personas/non-goals for user-facing work) and walk the stress-test lenses as question sources.
-Both feed the written tree.
+### Exit condition — checkable, not stamina
 
-Ask **one question at a time**, in dependency order, each with a recommendation
-(Questioning Discipline). Multiple-choice when possible. Always via `AskUserQuestion`.
+- [ ] the actor is identified or marked unknown
+- [ ] the desired outcome is stated
+- [ ] the in-scope/out-of-scope boundaries that matter are known
+- [ ] success criteria or acceptance signals are known, or recorded as assumptions
+- [ ] every lens that fired has been probed or parked
+- [ ] no integration-check question is pending
+- [ ] every `D<n>` is resolved or parked
 
-**Completeness gate (exit criterion).** Before leaving questioning, confirm no material
-decision is still open. Minor: inline self-check re-walking both sources. Medium/Major:
-dispatch a fresh completeness sub-agent. Anything it surfaces re-enters the tree and must be
-resolved or parked. Full rubric and sub-agent prompt: `references/question-completeness.md`.
+## Visual companion — for genuinely visual questions
 
-### Phase 3 — Architectural Challenges
+When a question is faster judged by seeing — layouts, wireframes, architecture diagrams,
+state machines — offer a browser companion that renders mockups and captures clicks. **Read
+`references/visual-companion.md` before the first offer**; offering it wrong (upfront, or for
+conceptual questions) turns a tool into a nuisance. The gate in brief:
 
-The hard structural questions (boundaries, data ownership, state, concurrency, migration,
-integration seams) are surfaced by the Phase 2 template walk — see the High-Level Design
-entry in `references/question-completeness.md`. This phase is where you resolve them into
-the chosen structure; at Minor depth skip unless boundaries actually move.
+1. **Offer just-in-time, never upfront**, as its own message, naming the token cost. No visual
+   question ever arises → never offer. An ASCII preview inside `AskUserQuestion` options does
+   **not** satisfy the offer — the offer is its own prior question.
+2. **Per-question, even after acceptance.** A question *about* a UI topic is not automatically
+   visual: "what kind of wizard?" is conceptual — terminal; "which of these wizard layouts?"
+   is visual — browser.
+3. **Unload explicitly.** When the conversation returns to the terminal, push a waiting screen
+   so the user isn't staring at a resolved choice.
 
-### Phase 4 — Approach Comparison
+## Approaches
 
-Present 2-3 distinct approaches **only when real alternatives exist**. For each: core idea,
-how it maps to requirements, how it handles edge cases, trade-offs, risks, relative effort.
-Include a recommendation, held loosely.
+**2-3 approaches, only when real alternatives exist.** One viable option → two lines of "why
+not X, Y" and move on.
 
-If only one approach is viable, write a 2-line "Why not X, Y" instead of parallel
-Pros/Cons blocks for losers.
+- **Granularity is mechanism, not architecture.** Name product-shape distinctions ("pause as a
+  rule property" vs "pause as its own entity"), never table names, file paths, or class names —
+  those force architectural decisions on brainstorm-depth research.
+- **Present all, then recommend.** Leading with the recommendation anchors the user before
+  they've seen the alternatives.
+- **Anti-genericness.** An approach that would appear in a generic listicle for this problem
+  category is sharpened against the dossier or dropped.
 
-### Phase 5 — Approach Stress Test
+Frame each approach as **reuse / extend / build new**. Optionally add one deliberately
+higher-upside **challenger** alongside the baseline.
 
-Stress-test the chosen approach before writing the doc. Walk the lenses in
-`references/stress-test-lenses.md` against it — generative, not just review. Each finding
-flows into Requirements, Edge Cases, Risks, or Decisions.
+**Stress pass** on the chosen approach: walk `references/lenses.md` again as *review* rather
+than generation — the catalog states where findings land.
 
-### Phase 6 — YAGNI Pass + Design Synthesis
+**YAGNI, last.** Every knob, flag, and option answers: needed now, or hardcode and add when
+the need is real? Hardcode by default. A knob survives only when the right value is genuinely
+empirical — then defer the value, not the knob.
 
-**YAGNI pass first.** Every knob, flag, optional feature must answer: "needed now, or can
-we hardcode and add it when the need is real?" Hardcode by default. Knobs survive only if
-the right value is genuinely empirical (then defer the value, not the knob).
+## Write design.md
 
-**Then write the doc.** Read `references/design-template.md`. Save to
-`.harness/features/<SPEC_NAME>/design.md` (the orchestrator passes `SPEC_NAME`; if invoked
-standalone without a `SPEC_NAME`, slugify the topic and create `.harness/features/<slug>/design.md`).
+**Read `references/design-sections.md` before writing the doc.** Without the section contract
+loaded, the design drifts into restating its PRD and burying decisions in prose — the two
+failures the contract exists to prevent.
 
-The section list, output rules (keep docs tight), and required mermaid diagrams all live
-in `references/design-template.md` — follow it; do not restate it here. The External
-Dependencies & Fallback Chain section is finalized here from the continuous External
-Dependency Declaration notes. "What this does NOT do" lives in the PRD's Non-Goals.
+One rule worth carrying here because it is the easiest to skip: forks you closed on the
+user's behalf are written into `## Decisions` marked `— inferred` — they are bets, and the
+highest-value thing a reviewer can correct.
 
-### Phase 7 — Spec Review
+## Self-review — two passes, different in kind
 
-Dispatch a fresh subagent with the design doc + the rubric in
-`references/spec-review-rubric.md` (NOT session history). Iterate fixes; max 5
-iterations, then surface to human.
+**Pass 1 — fresh-context claim verifier. Always runs — `--auto` included.** It receives the
+design's factual claims and the dossier path — never the session history. Budget ~15 targeted
+reads; per claim: **confirmed** (`file:line`) · **refuted** · **unverifiable**. The author
+confirming its own claims is anchored; the verifier never saw the dialogue.
 
-### Phase 8 — User Review Gate (configurable)
+Interactively, dispatch it at the same moment the approval question goes up (it runs during
+the user's think-time) and **fold the verdict in before hand-off** — a refutation arriving
+after approval re-opens the gate with the correction. In `--auto`, run it to completion and
+correct refuted claims before proceeding to planning.
 
-**Default ON.** Present the design path to the user and pause:
-> "Design at `<path>`. Review and confirm before I hand off to spec-generation."
+**Pass 2 — re-read as the reader.** One inline act: coverage (every requirement traceable to a
+decision) · placeholders · contradiction-in-one-pass · ambiguity ("could any requirement be
+read two ways? pick one and make it explicit"). Fix inline; no re-review loop.
 
-**Bypass** when:
-- `--auto` flag set (orchestrate / CI mode)
-- Prompt contains "don't wait for approval", "skip review", "no review gate"
+**Calibration for both:** flag only what would cause a real problem downstream — a missing
+section, a contradiction, a requirement someone could build wrong. Wording preferences are not
+findings.
 
-On approval (or bypass), flow to spec-generation.
+## Approval gate
 
-## Anti-Patterns
+One pause: present the design path, noting the verifier is running; its verdict folds in
+before hand-off. The pause — not the verifier — is bypassed by `--auto` or an explicit "skip
+review". On approval (and a clean or corrected verdict) → `planning`.
 
-- **Premature completion** — closing the tree because the list feels long, before the gate
-  confirms no material decision is open. The failure this skill exists to prevent.
-- **Premature solutioning** — jumping to "here's how to implement" before the tree is open.
-- **Skipping for "simple" problems** — simple-seeming problems harbor unexamined assumptions.
+**A revision is not a confirmation.** After any change the user asks for — however simple —
+integrate it, re-present what changed, and wait for explicit approval.
+
+**Soft-cut on circularity, not iteration count.** Revising *different* aspects across rounds
+is the gate working. When the **same decision** is revised a second time, stop and ask
+directly: the decision is unresolved, not the wording. Identity is by decision, not by
+section; a merged item inherits its parents' revision history.
+
+## Rationalizations
+
+| Excuse | Reality |
+|---|---|
+| "The user seems impatient" | A wrong design costs more than three more questions. Ask the highest-leverage one. |
+| "I can infer this from the code" | Then infer it, state it as a recommendation, and confirm — don't skip the question. |
+| "This is an implementation detail" | If it changes what gets built, it is a fork. If it doesn't, it isn't a question. |
+| "The PRD covers it" | Then cite the section. Can't point at it → it isn't covered. |
+| "The list feels thorough" | The exit condition is the checklist above, not a feeling. |
+| "I'll note it as an open question" | Open Questions is for genuine residuals, not for a decision you could resolve now. |
