@@ -336,6 +336,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/brainstorm` | Deep problem exploration, produces design doc |
 | `/planning` | Breaks work into phases with dependency graph |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
+| `/implement` | Manual coding entry point: TDD + code-quality, review when green |
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md |
 | `/git-commit` | Groups changes into logical conventional commits |
 | `/tech-debt-finder` | Finds code smells, creates GitHub issues |
@@ -368,6 +369,7 @@ harness/
     ├── coverage-guard/
     ├── doc-quality-guard/
     ├── git-commit/
+    ├── implement/
     ├── learn/
     ├── orchestrate/
     ├── pipeline-setup/
