@@ -1,11 +1,10 @@
 dot-not-commit
 .DS_Store
 .worktrees/
-.harness/runtime/
-# Verification evidence: reports, frames and videos are for a human to review, never for git.
-.harness/features/*/verification/
 docs/*
 orchestrate-workspace
 code-review-workspace
 dev-docs
-.harness/.linear-config.json
+.harness/*
+!.harness/knowledge/
+!.harness/README.md
