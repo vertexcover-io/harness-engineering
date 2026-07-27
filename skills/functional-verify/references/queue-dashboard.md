@@ -76,7 +76,7 @@ same entry returns the old panel.
 
 Start the board host the project documents (often a separate service) and clear the registration and prefix traps
 above first. **Only when the board truly can't be brought up** does a `redis-cli` / log capture become the receipt —
-and then say in the row what the board was, why it wouldn't come up, and what you tried.
+and then say in the scenario what the board was, why it wouldn't come up, and what you tried.
 
-**Done when the row links a frame showing the queue, the job, and its outcome — the counts read from the bar, and
-the queue confirmed present before those counts were believed.**
+**Done when the scenario carries a frame showing the queue, the job, and its outcome — the counts read from the
+bar, and the queue confirmed present before those counts were believed.**

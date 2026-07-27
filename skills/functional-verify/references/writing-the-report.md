@@ -9,7 +9,7 @@ Grade each scenario on two tracks; they answer different questions and flow to d
 
 The **documented check** answers the question you were given: do these frames show the behaviour the docs describe?
 The verdict is Success or Failure, and it cites concrete evidence — a measured rect, a quoted string, a computed
-style, a network response. Layout claims cite a measurement. This becomes the scenario's row in the report.
+style, a network response. Layout claims cite a measurement. This becomes the scenario's `verdict` and `reason`.
 
 The **open visual review** asks what's wrong regardless of what was asked for: alignment, contrast, clipping,
 overlap, a broken empty state, copy issues. Run it on every scenario, including the ones that passed cleanly. Treat
@@ -35,43 +35,60 @@ done
 
 Three seconds a frame, the last frame held two seconds longer, so a reviewer can follow each step. The `sed` strips
 the directory and everything from `__` on, leaving the `NN_<slug>` prefix, so each scenario's frames assemble into
-`NN_<slug>.mp4` — the exact name the report's Evidence cell links.
+`NN_<slug>.mp4` — the exact name the scenario's `video` names.
 
 **Keep the frames** — they are the only machine-readable evidence, and a re-grade or second look needs the PNGs. If
 a merge fails, name the scenario and move on; its frames still prove it.
 
 ## The report format
 
-`verification/proof-report.md` is for someone who knows the product and is reading to decide whether this ships —
-and they will only read the whole thing if it is short. Three questions are what they came for: what worked, what
-didn't and why, and how you know. The table answers the first two, the proofs answer the third, and anything serving
-none of them gets cut however true it is. Failing rows earn more words than passing ones; that is where a reader
-slows down.
+Copy `references/proof-report-template.html` to `verification/proof-report.html` and **fill its JSON island — the
+`<script type="application/json" id="report-data">` block. Change nothing else in the file.** You write data, not
+markup; the template renders it. Its header comment is the field-by-field guide, and it stays in the file you ship.
 
-One line naming where you drove and as what, then the table:
+The reader knows the product and is deciding whether this ships. Three questions are what they came for: what
+worked, what didn't and why, and how you know. Anything serving none of them gets cut however true it is. Failing
+scenarios earn more words than passing ones; that is where a reader slows down.
 
-```markdown
-# Proof Report — GSTR-2B Monetary Match
-
-Driven on the reconciliation report at `/app/<business>/reports/gstr2breconciliation`, June 2026.
-
-| # | What is to be tested | Steps | Success/Failure | Reason/Details | Evidence |
-|---|---|---|---|---|---|
-| 01 | An invoice whose tax total carries a floating-point artefact still reconciles against the supplier's filed entry | 1. Open the June 2026 reconciliation report<br>2. Switch to Detailed View<br>3. Find the invoice filed at ₹7,127.20 | Success | Books stored `7127.200000000001`; both sides render ₹7,127.20 and the pair reads **Complete Match** | [video](01_float_artefact_still_matches.mp4) |
-| 02 | A pair whose amounts differ by exactly ₹0.50 is treated as a match | 1. Open the July 2026 report<br>2. Find the invoice booked at ₹10,000 against ₹10,000.50 filed | Success | Screen shows the ₹0.50 difference and still reads **Complete Match** — the boundary is inclusive | [video](02_half_rupee_gap_matches.mp4) |
-| 04 | Reconciliation results are cached under a fresh key so stale pre-deploy results are not served | see *Cached under a new key* below | Success | Both cache keys carry the new version segment | [proofs](#04-cached-under-a-new-key) |
+```json
+{
+  "title": "GSTR-2B monetary match",
+  "drivenOn": "The reconciliation report at `/app/<business>/reports/gstr2breconciliation`, June 2026.",
+  "scenarios": [
+    {
+      "n": "01",
+      "slug": "01_float_artefact_still_matches",
+      "short": "Float artefact matches",
+      "title": "An invoice whose tax total carries a floating-point artefact still reconciles against the supplier's filed entry",
+      "verdict": "Success",
+      "reason": "Books stored `7127.200000000001`; both sides render ₹7,127.20 and the pair reads **Complete Match**.",
+      "steps": ["Open the June 2026 reconciliation report", "Switch to Detailed View",
+                "Find the invoice filed at ₹7,127.20"],
+      "video": "01_float_artefact_still_matches.mp4",
+      "frames": [{ "src": "screenshots/01_float_artefact_still_matches__01_report_open.png",
+                   "label": "June report, detailed view" }]
+    }
+  ]
+}
 ```
 
-**The `#` is the scenario's stable number**, so a reader jumps from a row straight to its files. **Write the "what is
-to be tested" cell as a sentence** a QA would use. Steps are the walk you actually drove, numbered — they summarise
-the flow rather than mapping onto frames. Reason/Details is a sentence naming the observation that decided the
-verdict — the rendered string, the measured value, the status code. When something needs more room, put it under the
-table and point the row at it.
+**`n` is the scenario's stable number** and `slug` is the prefix every one of its artifacts carries, so a reader
+reaches its files from the scenario alone. **Write `title` as a sentence** a QA would use, and `short` as the three
+or four words that identify it in the left rail. `steps` is the walk you actually drove, one plain sentence each —
+they summarise the flow rather than mapping onto frames. `reason` is what decided the verdict — the rendered string,
+the measured value, the status code — and a blank line inside it starts a new paragraph.
+
+Two shapes are fixed, because they are what makes two reports comparable: **`steps` renders numbered in order**, and
+**`video` + `frames[]` render as Visual proof**, the video leading with the screenshots folded behind a toggle.
+Everything else is prose you shape yourself. When something fits none of the sections, put it in `extra[]` —
+`{heading, body, capture}`, all optional, no imposed shape.
+
+`` `code` `` and `**bold**` work in every prose field.
 
 ### Proofs
 
-The frame proves the **surface**; a `## Proofs` block proves the **mechanism** underneath it. A scenario earns a
-block when it has one of two things a video cannot carry:
+The frame proves the **surface**; a `proofs[]` entry proves the **mechanism** underneath it. A scenario earns one
+when it has one of two things a video cannot carry:
 
 - **No surface** — it never renders anywhere. A cache key, a queue write, a webhook body, a row written by a job.
 - **The mechanism behind a surface that did render** — the frame shows the outcome, the block shows it was reached
@@ -81,60 +98,64 @@ block when it has one of two things a video cannot carry:
 Everything a QA could screenshot stays out — the board, the modal count, the toast, the received email are already
 proven in `screenshots/`. When a capture is half visible, quote only the fields the frame couldn't show.
 
-Heading is `### NN <name>`, so the row links it as `[proofs](#NN-name)`:
+`tag` is the one-word kind shown as a chip — `queue`, `email`, `http`, `db`, `cache`, `file`:
 
-```markdown
-## Proofs
-
-### 04 Cached under a new key
-**Reconciliation request** — `GET /businesses/$B/gstr2b-reconciliation/detailedview?period=062026` → `200`
-{"redis":{"get":"serana:gstr2brecon:v2:6a59…:062026",
-          "set":"serana:gstr2brecon:v2:6a59…:062026","ttl":604800}}
-Both keys carry the v2 segment and no unversioned key was touched. The screen showed the right total
-either way — this is what proves it was recomputed rather than served from the pre-deploy key.
+```json
+"proofs": [
+  {
+    "tag": "cache",
+    "heading": "Cached under a new key",
+    "body": "Both keys carry the v2 segment and no unversioned key was touched. The screen showed the right total either way — this is what proves it was recomputed rather than served from the pre-deploy key.",
+    "capture": "GET /businesses/$B/gstr2b-reconciliation/detailedview?period=062026 → 200\n{\"redis\":{\"get\":\"serana:gstr2brecon:v2:6a59…:062026\",\n          \"set\":\"serana:gstr2brecon:v2:6a59…:062026\",\"ttl\":604800}}"
+  }
+]
 ```
 
-Each entry is three parts: where it came from and its status, the excerpt that decides it, one sentence on what that
-excerpt settled — the same shape whether it's HTTP, a log, a query, or a file. Save the full capture beside the
-report under its `NN_<slug>` prefix and link it: the block holds what you concluded, the file holds what a reader
-needs to reach the thing themselves — where it came from, whatever marks it as this run's rather than an earlier
-one, and anything the sink recorded alongside it. Write it as it arrived rather than summarised, keep excerpts
-short — twenty lines is plenty, the full file is one click away — redact secrets as `<redacted>`, and when the
-artifact came from a stand-in for the real thing, say so in the file.
+Each entry is three parts: `heading` names what it settles, `capture` is the excerpt that decides it — where it came
+from and its status included — and `body` is what that excerpt settled. The same shape whether it's HTTP, a log, a
+query, or a file. Save the full capture beside the report under its `NN_<slug>` prefix and list it in `artifacts[]`:
+the entry holds what you concluded, the file holds what a reader needs to reach the thing themselves — where it came
+from, whatever marks it as this run's rather than an earlier one, and anything the sink recorded alongside it. Write
+it as it arrived rather than summarised, keep excerpts short — twenty lines is plenty, the full file is one click
+away in the modal — redact secrets as `<redacted>`, and when the artifact came from a stand-in for the real thing,
+say so in the file.
 
-**Read the row's video, then its block: a block that told you nothing the video left open should not have been
-written.**
+**Read the scenario's video, then its proofs: an entry that told you nothing the video left open should not have
+been written.**
 
-### Bugs section
+### Bugs
 
-Below the table, a section for **bugs in the application** — defects that will bite a user or a developer. A
-misleading message, lost or corrupted data, stale UI state, a 500 reaching the user, a silent no-op, a permission
-leak, a broken recovery path; or, for developers, a documented command that is gone, an artifact contradicting the
-tree.
+`bugs[]` at the top level, each `{severity, title, body}` — **bugs in the application**, defects that will bite a
+user or a developer. A misleading message, lost or corrupted data, stale UI state, a 500 reaching the user, a silent
+no-op, a permission leak, a broken recovery path; or, for developers, a documented command that is gone, an artifact
+contradicting the tree.
 
 Each is a bug report a maintainer could act on without asking you a question: what it is, its severity (blocker /
 major / minor) and why that rung and not the one above, the repro, what happens, what should happen, and the video.
 Most consequential first. Your infrastructure adventures, the data you couldn't find, and the workaround that got
-the stack up go in what you report back to whoever dispatched you (Step 6). Found no bugs? Say so in one line, with
-the sentence from Step 4 naming your best attack and why it didn't land.
+the stack up go in what you report back to whoever dispatched you (Step 6). Found no bugs? Leave `bugs` empty; the
+sentence from Step 4 naming your best attack and why it didn't land goes in `bugsNote`, which renders either way.
+
+What this run could not reach goes in `gaps[]` — one entry each, naming where it belongs instead.
 
 ## Completion checklist — the report is done when all of these hold
 
-- Every scenario has a stable `#`, a row, and a verdict, and every behaviour the docs describe is covered. One you
-  could not verify is a row reading `NOT VERIFIED` with the reason and what would close it; one that turned out not
-  to apply is `INVALID` with why. Neither is dropped, and neither is quietly backfilled with an adjacent passing
+- The JSON island parses, and the file opens in a browser showing every scenario. A report that does not render is
+  not a report — open it and look before you call this done.
+- Every scenario has a stable `n`, a `verdict`, and a `reason`, and every behaviour the docs describe is covered. One
+  you could not verify is a scenario with `NOT VERIFIED` and a reason saying what would close it; one that turned out
+  not to apply is `INVALID` with why. Neither is dropped, and neither is quietly backfilled with an adjacent passing
   check.
 - Every verdict cites a live observation from this run — a DOM assert, an HTTP status and body, a DB read-back, a
   measured rect, a captured webhook body. This is the only thing separating a real verification from a plausible
-  one. Where that observation is mechanism rather than surface, its row links a `[proofs]` block, and it is written
-  there once.
-- Every UI row links its video with a report-relative path, and every downloaded file or API capture the report
-  names exists beside it under the same `NN_<slug>` prefix.
-- Every side-effect row carries the right receipt: an **email** links the mail-viewer frames and its video; a
-  **job-queue** row links a bull-board screenshot (queue card + job), or — only when the board couldn't be brought
-  up — a log/Redis capture with a note saying why; a **webhook or delivered file** links its captured artifact
+  one. Where that observation is mechanism rather than surface, it is a `proofs[]` entry, written once.
+- Every UI scenario names its `video`, every path is report-relative, and every file named in `artifacts[]` exists
+  beside the report under the same `NN_<slug>` prefix. No frame or file resolves to a broken link.
+- Every side-effect scenario carries the right receipt: an **email** shows the mail-viewer frames and its video; a
+  **job-queue** scenario shows a bull-board frame (queue card + job), or — only when the board couldn't be brought
+  up — a log/Redis capture with a note saying why; a **webhook or delivered file** lists its captured artifact
   (`NN_<slug>.<ext>`).
 - Things this skill genuinely cannot reach (touch-hold gestures, real-device sensors, visual diffs against last
-  week's build) are rows too, marked `NOT VERIFIED`.
-- No internal ids appear anywhere — the `#` column's plain sequential numbers are the only identifiers a reader
-  needs. Nothing is said twice.
+  week's build) are scenarios too, marked `NOT VERIFIED`.
+- No internal ids appear anywhere — the plain sequential `n` values are the only identifiers a reader needs. Nothing
+  is said twice.

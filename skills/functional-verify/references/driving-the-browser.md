@@ -114,7 +114,7 @@ EOF
 Then **`Read` the staged PNG and confirm it shows what you think** — the round-trip you never skip. Once the assert
 passed and your eyes confirmed the frame, **promote it**: `mv` it into `verification/screenshots/` under its
 `NN_<slug>__SS_<step>.png` name, and record the assert's deciding value (the returned `{n: …}`, the measured rect,
-the quoted string) for the Reason/Details cell.
+the quoted string) for the scenario's `reason`.
 
 You need both checks. **The assert answers whether the state took hold** — a click that silently no-ops looks
 identical to one that worked until you ask the DOM. **The Read answers whether the frame shows it.** When they
@@ -124,7 +124,7 @@ the scroll that moved it, or passed vacuously over a selector that matched nothi
 second way.
 
 **A file the scenario downloads is evidence — keep it** beside the report as `verification/NN_<slug>.<ext>`, the
-same prefix as its video, and link it from the row.
+same prefix as its video, and list it in the scenario's `artifacts[]`.
 
 Frame a non-feature element at the top and bottom edge of each shot, so the frame carries the feature's neighbours:
 a sticky bar landing mid-page, orphaned actions, and a header misaligned once the feature mounts are all bugs only a

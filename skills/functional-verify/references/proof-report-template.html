@@ -1,0 +1,1087 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proof Report</title>
+
+<!-- ==========================================================================
+     PROOF REPORT · fill the JSON island below, change nothing else.
+     Every path is relative to this file, which sits in verification/.
+     Omit any key you have nothing for and its section disappears.
+
+     A scenario renders in this order:
+       reason         free prose, under the verdict
+       Steps          FIXED FORMAT   steps[]
+       Visual proof   FIXED FORMAT   video + frames[]
+       Extra proofs   proofs[]       collapsed
+       Files          artifacts[]
+       free blocks    extra[]        anything the above does not fit
+
+     Steps and Visual proof are shaped on purpose — they are what makes two
+     reports comparable. Everything else is prose you shape yourself.
+
+     TOP LEVEL
+       title       the feature, as a short phrase
+       drivenOn    where you drove, as what user, against which data
+       fields[]    {label,value} shown behind "Stack · ports · sinks" in the bar
+       labels{}    rename a section: steps, media, frames, proofs, files,
+                   extra, bugs, gaps  (extra has no heading unless you name it)
+       scenarios[] see below
+       bugs[]      {severity,title,body}  severity: blocker | major | minor
+       bugsNote    the attack you most expected to land, and why it did not
+       gaps[]      what this run could not reach
+
+     SCENARIO
+       n           stable two-digit number — the scenario's identity
+       slug        NN_<slug>, the prefix carried by all of its artifacts
+       short       3-4 words, for the left rail
+       title       the behaviour, as a sentence a QA would use
+       verdict     Success | Failure | NOT VERIFIED | INVALID
+                   Failure and NOT VERIFIED colour the row in the rail
+       reason      what decided it. Blank line starts a new paragraph.
+       steps[]     plain sentences, in the order you drove them
+       video       NN_<slug>.mp4 — the first frame becomes its poster
+       videoLabel  caption under the video (default "Watch the whole run")
+       frames[]    {src,label} in order. A bare path works too — the label is
+                   then derived from the filename.
+       framesOpen  true to leave the Screenshots toggle open on load
+       proofs[]    {tag,heading,body,capture} — what a frame cannot show.
+                   tag is a one-word kind: queue, email, http, db, cache, file
+       artifacts[] {label,href,note} files sitting beside the report
+       extra[]     {heading,body,capture} — free blocks, no imposed shape
+
+     `code` and **bold** work in every prose field.
+
+     TO ADD A COMPONENT: see the SECTIONS registry in the script below. One
+     entry plus one render function; nothing else moves.
+
+     The video, every frame and every file open in a modal. Previews of text
+     files (csv, json, log) need the report served over http — opened straight
+     off disk the browser blocks file-to-file reads and the modal says so.
+     ========================================================================== -->
+
+<script type="application/json" id="report-data">
+{
+  "title": "<feature name>",
+  "drivenOn": "<where you drove, as what user, against which data>",
+  "fields": [
+    {
+      "label": "Stack",
+      "value": "<service :port → service :port>"
+    },
+    {
+      "label": "Driven",
+      "value": "<date>"
+    }
+  ],
+  "scenarios": [
+    {
+      "n": "01",
+      "slug": "01_<slug>",
+      "short": "<3-4 words>",
+      "title": "<the behaviour, as a sentence a QA would use>",
+      "verdict": "Success",
+      "reason": "<what decided it — the rendered string, the measured value, the status code>\n\n<a second paragraph if one observation is not enough>",
+      "steps": [
+        "<the walk you drove>",
+        "<one line per step>"
+      ],
+      "video": "01_<slug>.mp4",
+      "videoLabel": "Watch the whole run",
+      "frames": [
+        {
+          "src": "screenshots/01_<slug>__01_<step>.png",
+          "label": "<what this frame shows>"
+        },
+        {
+          "src": "screenshots/01_<slug>__02_<step>.png",
+          "label": "<what this frame shows>"
+        }
+      ],
+      "proofs": [
+        {
+          "tag": "<queue | email | http | db | cache | file>",
+          "heading": "<what this settles>",
+          "body": "<why a frame cannot carry it>",
+          "capture": "<the excerpt, as it arrived>"
+        }
+      ],
+      "artifacts": [
+        {
+          "label": "<file>",
+          "href": "01_<slug>.<ext>",
+          "note": "<size or kind>"
+        }
+      ],
+      "extra": [
+        {
+          "heading": "<anything the sections above do not fit>",
+          "body": "<free prose — as many paragraphs as it needs>",
+          "capture": "<optional raw output>"
+        }
+      ]
+    },
+    {
+      "n": "02",
+      "slug": "02_<slug>",
+      "short": "<3-4 words>",
+      "title": "<a behaviour you could not verify>",
+      "verdict": "NOT VERIFIED",
+      "reason": "<why it could not be driven, and what would close it>",
+      "steps": [
+        "<how far you got>"
+      ]
+    }
+  ],
+  "bugs": [
+    {
+      "severity": "blocker",
+      "title": "<what a maintainer would call it>",
+      "body": "<what it is>\n\n**Repro:** <steps> **Expected:** <what should happen> **Actual:** <what happens>"
+    }
+  ],
+  "bugsNote": "<the attack you most expected to land, and why it did not>",
+  "gaps": [
+    "<what this run did not reach, and where it belongs>"
+  ]
+}
+</script>
+
+<style>
+:root {
+  --bg:      #F4F6F8;
+  --pane:    #FFFFFF;
+  --rail:    #FAFBFC;
+  --bar:     #FFFFFF;
+  --line:    #DFE4EA;
+  --line-2:  #EDF0F3;
+  --fg:      #16202B;
+  --fg-2:    #59677A;
+  --fg-3:    #8A97A6;
+  --accent:  #2F5BD0;
+  --accent-w:#EAF0FD;
+  --pass:    #16794C;
+  --fail:    #C03221;
+  --hold:    #96660A;
+  --skip:    #6B7885;
+  --code-bg: #F1F4F7;
+  --pre-bg:  #171C24;
+  --pre-fg:  #D6DEE8;
+
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
+  --mono: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --bar-h: 46px;
+  --rail-w: 272px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151A; --pane: #1A1E25; --rail: #15181E; --bar: #1A1E25;
+    --line: #2B313A; --line-2: #232830;
+    --fg: #E3E8EE; --fg-2: #98A4B3; --fg-3: #6E7C8C;
+    --accent: #7FA0FF; --accent-w: #1E2740;
+    --pass: #4FBF8B; --fail: #F1705C; --hold: #E0A93B; --skip: #8895A5;
+    --code-bg: #232A33; --pre-bg: #0E1218; --pre-fg: #C6D1DE;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151A; --pane: #1A1E25; --rail: #15181E; --bar: #1A1E25;
+  --line: #2B313A; --line-2: #232830;
+  --fg: #E3E8EE; --fg-2: #98A4B3; --fg-3: #6E7C8C;
+  --accent: #7FA0FF; --accent-w: #1E2740;
+  --pass: #4FBF8B; --fail: #F1705C; --hold: #E0A93B; --skip: #8895A5;
+  --code-bg: #232A33; --pre-bg: #0E1218; --pre-fg: #C6D1DE;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 13.5px/1.55 var(--ui);
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+a { color: var(--accent); }
+
+/* ── sticky bar ─────────────────────────────────────────── */
+.bar {
+  position: sticky; top: 0; z-index: 20; height: var(--bar-h);
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 14px; background: var(--bar);
+  border-bottom: 1px solid var(--line);
+}
+.bar__title {
+  font-size: 14px; font-weight: 650; margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bar__spacer { flex: 1 1 auto; min-width: 8px; }
+.bar__counts { display: flex; gap: 4px; flex: none; }
+.count {
+  display: flex; align-items: baseline; gap: 5px;
+  padding: 4px 9px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--pane); white-space: nowrap;
+  color: inherit; font: inherit; cursor: pointer;
+}
+.count:hover { border-color: var(--fg-3); }
+.count__n { font: 600 13px/1 var(--mono); }
+.count__l { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--fg-2); }
+.count--pass .count__n { color: var(--pass); }
+.count--fail .count__n { color: var(--fail); }
+.count--hold .count__n { color: var(--hold); }
+.count--on { border-color: var(--accent); }
+.bar__btn {
+  flex: none; background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--fg-2); font: 11px/1 var(--ui); letter-spacing: .04em;
+  padding: 7px 10px; cursor: pointer; text-transform: uppercase;
+}
+.bar__btn:hover { color: var(--fg); border-color: var(--fg-3); }
+
+/* ── shell ──────────────────────────────────────────────── */
+.shell {
+  display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  height: calc(100vh - var(--bar-h));
+}
+
+/* ── rail ───────────────────────────────────────────────── */
+.rail {
+  background: var(--rail); border-right: 1px solid var(--line);
+  overflow-y: auto; padding-bottom: 24px;
+}
+.rail__h {
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--fg-3); padding: 14px 14px 7px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+}
+.rail__h b { font: 600 11px/1.5 var(--mono); color: var(--fg-3); }
+.item {
+  display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: start;
+  width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 0; border-left: 3px solid transparent;
+  padding: 8px 12px 8px 9px; color: inherit; font: inherit;
+  border-bottom: 1px solid var(--line-2);
+}
+.item:hover { background: var(--pane); }
+/* only problems carry colour, so the rail is scanned for what is wrong */
+.item--fail { border-left-color: var(--fail); }
+.item--hold { border-left-color: var(--hold); }
+.item.is-on { background: var(--accent-w); border-left-color: var(--accent); }
+.item__n { font: 600 11.5px/1.5 var(--mono); color: var(--fg-3); }
+.item.is-on .item__n { color: var(--accent); }
+.item__t {
+  font-size: 12.5px; line-height: 1.4; min-width: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.item.is-on .item__t { font-weight: 600; }
+.item__v {
+  font: 700 9.5px/1.6 var(--ui); letter-spacing: .08em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap;
+}
+.item__v.v--fail { background: var(--fail); color: #fff; }
+.item__v.v--hold { background: var(--hold); color: #fff; }
+.v--pass { color: var(--pass); }
+.v--fail { color: var(--fail); }
+.v--hold { color: var(--hold); }
+.v--skip { color: var(--skip); }
+.item.is-hidden { display: none; }
+.rail__sep { height: 1px; background: var(--line); margin: 10px 0 0; }
+.item--aux { grid-template-columns: 1fr auto; }
+.item--aux .item__t { -webkit-line-clamp: 1; font-size: 12.5px; color: var(--fg-2); }
+.item--aux.is-on .item__t { color: var(--fg); }
+.item__c { font: 600 11.5px/1.5 var(--mono); color: var(--fg-3); }
+.item__c.is-hot { color: var(--fail); }
+
+/* ── detail pane ────────────────────────────────────────── */
+.pane { overflow-y: auto; background: var(--pane); }
+.pane__in { padding: 18px 26px 80px; max-width: 1120px; margin-inline: auto; }
+
+.head { display: flex; gap: 12px; align-items: flex-start; }
+.head--fail, .head--hold { border-left: 3px solid var(--fail); padding-left: 11px; margin-left: -14px; }
+.head--hold { border-left-color: var(--hold); }
+.head__n { font: 600 13px/1.5 var(--mono); color: var(--fg-3); flex: none; padding-top: 2px; }
+.head__t { font-size: 16px; font-weight: 600; line-height: 1.4; margin: 0; flex: 1; max-width: 90ch; }
+.head__v {
+  flex: none; font: 700 10.5px/1 var(--ui); letter-spacing: .1em; text-transform: uppercase;
+  padding: 6px 10px; border: 1px solid currentColor; border-radius: 4px;
+}
+.summary { margin: 14px 0 0; font-size: 14px; color: var(--fg); max-width: 92ch; }
+.summary p { margin: 0 0 9px; }
+.summary p:last-child { margin: 0; }
+
+.sec { margin-top: 22px; }
+.sec__h {
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--fg-3); margin: 0 0 9px; display: flex; align-items: center; gap: 10px;
+}
+.sec__h::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+.steps { margin: 0; padding: 0; list-style: none; max-width: 96ch; }
+.steps li {
+  display: grid; grid-template-columns: 20px 1fr; gap: 8px;
+  padding: 4px 0; font-size: 13.5px; line-height: 1.5;
+  border-bottom: 1px solid var(--line-2);
+}
+.steps li:last-child { border-bottom: 0; }
+.steps b { font: 600 11.5px/1.65 var(--mono); color: var(--fg-3); }
+
+/* video + frames */
+.strip {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.fr {
+  background: none; border: 0; padding: 0; cursor: zoom-in;
+  color: inherit; font: inherit; text-align: left; min-width: 0;
+}
+.fr img {
+  width: 100%; aspect-ratio: 16/10; object-fit: cover; object-position: top left;
+  border: 1px solid var(--line); border-radius: 3px; display: block; background: var(--code-bg);
+}
+.fr:hover img { border-color: var(--accent); }
+.fr.is-missing img { display: none; }
+.fr.is-missing::before {
+  content: "frame missing"; display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 16/10; border: 1px dashed var(--fail); border-radius: 3px;
+  color: var(--fail); font-size: 11.5px; letter-spacing: .04em;
+}
+.fr__c { display: flex; gap: 6px; padding: 5px 1px 0; font-size: 11.5px; color: var(--fg-2); }
+.fr__n { font: 600 10.5px/1.5 var(--mono); color: var(--fg-3); flex: none; }
+.fr__l { line-height: 1.35; }
+
+/* the video leads the section; screenshots fold away beneath it */
+.vid { max-width: 336px; margin-bottom: 12px; }
+.shots { border: 1px solid var(--line); border-radius: 4px; background: var(--rail); }
+.shots > summary {
+  cursor: pointer; list-style: none; padding: 8px 12px;
+  font-size: 12.5px; font-weight: 600; color: var(--fg-2);
+  display: flex; gap: 9px; align-items: center;
+}
+.shots > summary::-webkit-details-marker { display: none; }
+.shots > summary::before { content: "▸"; color: var(--fg-3); font-size: 10px; flex: none; }
+.shots[open] > summary::before { content: "▾"; }
+.shots > summary:hover { color: var(--fg); }
+.shots[open] > summary { border-bottom: 1px solid var(--line); }
+.shots__n { font: 600 11.5px/1.5 var(--mono); color: var(--fg-3); }
+.shots__b { padding: 12px; background: var(--pane); border-radius: 0 0 3px 3px; }
+
+.fr--v { cursor: pointer; }
+.fr__wrap { position: relative; }
+.fr--v .fr__wrap::after {
+  content: ""; position: absolute; inset: 0; border-radius: 3px;
+  background: linear-gradient(180deg, rgba(10,14,20,.16), rgba(10,14,20,.62));
+}
+.fr--v img { border-color: var(--accent); }
+.fr__blank {
+  aspect-ratio: 16/10; border: 1px solid var(--accent); border-radius: 3px;
+  background: var(--pre-bg); display: block;
+}
+.fr__play {
+  position: absolute; inset: 0; z-index: 1; display: flex;
+  align-items: center; justify-content: center;
+}
+.fr__play span {
+  width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.94);
+  color: #16202B; display: flex; align-items: center; justify-content: center;
+  font-size: 15px; padding-left: 3px; box-shadow: 0 2px 10px rgba(0,0,0,.34);
+}
+.fr--v:hover .fr__play span { background: #fff; transform: scale(1.06); }
+.fr__tag {
+  position: absolute; left: 7px; top: 7px; z-index: 1;
+  font: 700 9.5px/1.6 var(--ui); letter-spacing: .1em; text-transform: uppercase;
+  background: var(--accent); color: #fff; border-radius: 3px; padding: 2px 6px;
+}
+
+/* proofs */
+.proof { border: 1px solid var(--line); border-radius: 4px; margin-bottom: 8px; background: var(--rail); }
+.proof > summary { cursor: pointer; list-style: none; padding: 9px 12px; display: block; }
+.proof > summary::-webkit-details-marker { display: none; }
+.proof > summary:hover { background: var(--line-2); }
+.proof__top {
+  display: flex; gap: 9px; align-items: center;
+  font-size: 13.5px; font-weight: 600;
+}
+.proof__top::before { content: "▸"; color: var(--fg-3); font-size: 10px; flex: none; }
+.proof[open] .proof__top::before { content: "▾"; }
+.proof__tag {
+  flex: none; font: 700 9px/1.6 var(--ui); letter-spacing: .1em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 3px; background: var(--accent-w); color: var(--accent);
+}
+.proof__h { min-width: 0; }
+.proof__meta {
+  margin-left: auto; flex: none; font: 10.5px/1.6 var(--mono); color: var(--fg-3);
+  border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px;
+}
+.proof__peek {
+  margin: 5px 0 0 19px; font-size: 12.5px; line-height: 1.5; color: var(--fg-2);
+  font-weight: 400;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.proof[open] .proof__peek { display: none; }
+.proof__b { padding: 0 12px 12px 30px; }
+.proof__b p { margin: 0 0 10px; font-size: 13.5px; max-width: 92ch; }
+.cap {
+  font: 11.5px/1.6 var(--mono); background: var(--pre-bg); color: var(--pre-fg);
+  border-radius: 3px; padding: 10px 12px; margin: 0;
+  max-height: 240px; overflow: auto; white-space: pre;
+}
+
+/* free blocks (s.extra) — prose with no imposed shape */
+.blk { max-width: 92ch; margin-bottom: 18px; }
+.blk:last-child { margin-bottom: 0; }
+.blk__h { font-size: 14px; font-weight: 650; margin: 0 0 7px; }
+.blk p { margin: 0 0 10px; font-size: 13.5px; }
+.blk .cap { margin-top: 4px; }
+
+/* files */
+.files { display: flex; flex-wrap: wrap; gap: 6px; }
+.file {
+  display: inline-flex; align-items: baseline; gap: 7px; text-decoration: none;
+  border: 1px solid var(--line); border-radius: 4px; padding: 5px 10px;
+  color: var(--fg); font: 12.5px/1.55 var(--ui); background: var(--rail); cursor: pointer;
+}
+.file:hover { border-color: var(--accent); }
+.file span { font: 11px/1.5 var(--mono); color: var(--fg-3); }
+
+/* prose views (bugs / gaps) */
+.prose { max-width: 84ch; font-size: 14px; }
+.prose p { margin: 0 0 12px; }
+.bug { border: 1px solid var(--line); border-left: 3px solid var(--fail); border-radius: 4px; padding: 12px 14px; margin-bottom: 10px; }
+.bug--minor { border-left-color: var(--hold); }
+.bug__h { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; flex-wrap: wrap; }
+.bug__s {
+  font: 700 9.5px/1.6 var(--ui); letter-spacing: .1em; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: 3px; padding: 1px 5px; color: var(--fail);
+}
+.bug--minor .bug__s { color: var(--hold); }
+.bug__t { font-size: 14.5px; font-weight: 650; margin: 0; }
+.empty { color: var(--fg-2); font-size: 13.5px; }
+
+/* run details popover */
+.run { border-bottom: 1px solid var(--line); background: var(--rail); display: none; }
+.run.is-open { display: block; }
+.run__in {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 2px 22px; padding: 11px 14px;
+}
+.run__k { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-3); }
+.run__v { font: 12px/1.5 var(--mono); color: var(--fg); margin-bottom: 7px; }
+.run__note { grid-column: 1 / -1; font-size: 12.5px; color: var(--fg-2); border-top: 1px solid var(--line); padding-top: 8px; }
+
+code {
+  font: .875em/1.4 var(--mono); background: var(--code-bg);
+  padding: 1px 4px; border-radius: 3px;
+}
+
+/* modal */
+.mo {
+  position: fixed; inset: 0; z-index: 40; background: rgba(8,12,18,.72);
+  display: none; align-items: center; justify-content: center; padding: 24px;
+}
+.mo.is-open { display: flex; }
+.mo__box {
+  background: var(--pane); border: 1px solid var(--line); border-radius: 6px;
+  max-width: min(1280px, 94vw); max-height: 92vh; width: 100%;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0,0,0,.34);
+}
+.mo__bar {
+  display: flex; align-items: center; gap: 10px; flex: none;
+  padding: 9px 12px; border-bottom: 1px solid var(--line); background: var(--rail);
+}
+.mo__t { font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mo__meta { font: 11.5px/1.5 var(--mono); color: var(--fg-3); flex: none; }
+.mo__sp { flex: 1; }
+.mo__btn {
+  flex: none; background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--fg-2); font: 11px/1 var(--ui); letter-spacing: .05em; text-transform: uppercase;
+  padding: 7px 10px; cursor: pointer; text-decoration: none;
+}
+.mo__btn:hover { color: var(--fg); border-color: var(--fg-3); }
+.mo__btn[disabled] { opacity: .35; cursor: default; }
+.mo__body {
+  flex: 1; min-height: 0; overflow: auto; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.mo__body--doc { display: block; align-items: stretch; background: var(--pane); }
+.mo__body img, .mo__body video {
+  max-width: 100%; max-height: 84vh; min-width: 0; min-height: 0;
+  display: block; object-fit: contain;
+}
+.mo__pre {
+  font: 12px/1.6 var(--mono); white-space: pre; margin: 0; padding: 14px 16px;
+  color: var(--fg);
+}
+.mo__note { padding: 26px 20px; text-align: center; color: var(--fg-2); font-size: 13.5px; max-width: 62ch; }
+.mo__note strong { color: var(--fg); }
+.mo__tbl { width: 100%; border-collapse: collapse; font: 12px/1.5 var(--mono); }
+.mo__tbl th, .mo__tbl td {
+  border-bottom: 1px solid var(--line-2); border-right: 1px solid var(--line-2);
+  padding: 4px 9px; text-align: left; white-space: nowrap;
+  max-width: 320px; overflow: hidden; text-overflow: ellipsis;
+}
+.mo__tbl th { position: sticky; top: 0; background: var(--rail); font-weight: 600; z-index: 1; }
+.mo__tbl td:first-child, .mo__tbl th:first-child { color: var(--fg-3); }
+.mo__cap { flex: none; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--fg-2); display: flex; gap: 10px; align-items: center; }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; height: auto; }
+  .rail { border-right: 0; border-bottom: 1px solid var(--line); max-height: 260px; }
+  .pane { overflow: visible; }
+  .bar__title { display: none; }
+  .pane__in { padding: 16px 14px 60px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media print {
+  .bar, .rail, .mo { display: none !important; }
+  .shell { display: block; height: auto; }
+  .pane { overflow: visible; }
+  .cap { max-height: none; }
+  .fr { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <h1 class="bar__title" id="b-title"></h1>
+  <span class="bar__spacer"></span>
+  <div class="bar__counts" id="b-counts"></div>
+  <button class="bar__btn" id="b-run">Run details</button>
+  <button class="bar__btn" id="b-theme" title="Toggle theme">Theme</button>
+</header>
+
+<div class="run" id="run"><div class="run__in" id="run-in"></div></div>
+
+<div class="shell">
+  <nav class="rail" id="rail" aria-label="Scenarios"></nav>
+  <section class="pane"><div class="pane__in" id="pane"></div></section>
+</div>
+
+<div class="mo" id="mo" role="dialog" aria-modal="true" aria-label="Evidence">
+  <div class="mo__box">
+    <div class="mo__bar">
+      <span class="mo__t" id="mo-t"></span>
+      <span class="mo__meta" id="mo-meta"></span>
+      <span class="mo__sp"></span>
+      <button class="mo__btn" id="mo-prev" title="Previous (←)">‹</button>
+      <button class="mo__btn" id="mo-next" title="Next (→)">›</button>
+      <a class="mo__btn" id="mo-open" target="_blank" rel="noopener">Open</a>
+      <button class="mo__btn" id="mo-x">Close · Esc</button>
+    </div>
+    <div class="mo__body" id="mo-b"></div>
+    <div class="mo__cap" id="mo-cap"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById('report-data').textContent);
+  const S = D.scenarios || [], BUGS = D.bugs || [], GAPS = D.gaps || [];
+
+  const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
+  const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const rich = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  const paras = (h, s) => String(s).split(/\n\n+/).forEach(p => { const n = el('p'); n.innerHTML = rich(p); h.appendChild(n); });
+  const kind = v => {
+    const u = String(v || '').toUpperCase();
+    if (u.startsWith('SUCC') || u === 'PASS') return 'pass';
+    if (u.startsWith('FAIL')) return 'fail';
+    if (u.startsWith('NOT')) return 'hold';
+    return 'skip';
+  };
+  const label = v => {
+    const k = kind(v);
+    return k === 'pass' ? 'Pass' : k === 'fail' ? 'Fail' : k === 'hold' ? 'Not verified' : (v || 'n/a');
+  };
+
+  const L = Object.assign({
+    steps: 'Steps',
+    media: 'Visual proof',
+    frames: 'Screenshots',
+    proofs: 'Extra proofs',
+    files: 'Files',
+    bugs: 'Bugs',
+    gaps: 'What this run did not reach'
+  }, D.labels || {});
+
+  const kinds = S.map(s => kind(s.verdict));
+  const n = { pass: 0, fail: 0, hold: 0, skip: 0 };
+  kinds.forEach(k => n[k]++);
+
+  /* ── bar ── */
+  document.getElementById('b-title').textContent = D.title || 'Proof Report';
+  document.title = 'Proof · ' + (D.title || '');
+
+  let filter = 'all';
+  const counts = document.getElementById('b-counts');
+  const defs = [
+    ['all',  S.length, S.length === 1 ? 'scenario' : 'scenarios', ''],
+    ['pass', n.pass,  'pass', 'pass'],
+    ['fail', n.fail,  'fail', 'fail'],
+    ['hold', n.hold,  'not verified', 'hold'],
+    ['bugs', BUGS.length, BUGS.length === 1 ? 'bug' : 'bugs', BUGS.length ? 'fail' : '']
+  ];
+  const chips = {};
+  defs.forEach(([key, v, txt, tone]) => {
+    if (!v && (key === 'hold' || key === 'fail')) return;
+    const b = el('button', 'count' + (tone ? ' count--' + tone : ''));
+    b.type = 'button';
+    b.appendChild(el('span', 'count__n', String(v)));
+    b.appendChild(el('span', 'count__l', txt));
+    if (key !== 'bugs') {
+      b.addEventListener('click', () => { filter = filter === key ? 'all' : key; paint(); });
+      chips[key] = b;
+    } else {
+      b.addEventListener('click', () => select('bugs'));
+    }
+    counts.appendChild(b);
+  });
+
+  const runBox = document.getElementById('run');
+  document.getElementById('b-run').addEventListener('click', () => runBox.classList.toggle('is-open'));
+  const runIn = document.getElementById('run-in');
+  (D.fields || []).forEach(f => {
+    runIn.appendChild(el('div', 'run__k', f.label));
+    runIn.appendChild(el('div', 'run__v', f.value));
+  });
+  if (D.drivenOn) { const p = el('div', 'run__note'); p.innerHTML = rich(D.drivenOn); runIn.appendChild(p); }
+
+  const root = document.documentElement;
+  document.getElementById('b-theme').addEventListener('click', () => {
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const cur = root.getAttribute('data-theme') || (dark ? 'dark' : 'light');
+    root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  });
+
+  /* ── rail ── */
+  const rail = document.getElementById('rail');
+  let current = S.length ? 0 : 'bugs';
+
+  const hScen = el('div', 'rail__h');
+  hScen.appendChild(document.createTextNode('Scenarios'));
+  hScen.appendChild(el('b', null, String(S.length)));
+  rail.appendChild(hScen);
+  const rows = S.map((s, i) => {
+    const b = el('button', 'item item--' + kinds[i]);
+    b.type = 'button';
+    b.appendChild(el('span', 'item__n', s.n || String(i + 1).padStart(2, '0')));
+    b.appendChild(el('span', 'item__t', s.short || s.title || ''));
+    b.appendChild(el('span', 'item__v v--' + kinds[i], label(s.verdict)));
+    b.addEventListener('click', () => select(i));
+    rail.appendChild(b);
+    return b;
+  });
+  if (!S.length) rail.appendChild(el('div', 'rail__h', 'none'));
+
+  rail.appendChild(el('div', 'rail__sep'));
+  rail.appendChild(el('div', 'rail__h', 'Report'));
+  const aux = [];
+  [['bugs', L.bugs, BUGS.length, BUGS.length > 0], ['gaps', 'Not reached', GAPS.length, false]].forEach(([id, txt, c, hot]) => {
+    if (id === 'gaps' && !GAPS.length) return;
+    const b = el('button', 'item item--aux' + (hot ? ' item--fail' : ''));
+    b.type = 'button';
+    b.appendChild(el('span', 'item__t', txt));
+    b.appendChild(el('span', 'item__c' + (hot ? ' is-hot' : ''), String(c)));
+    b.addEventListener('click', () => select(id));
+    rail.appendChild(b);
+    aux.push([id, b]);
+  });
+
+  /* ── detail ── */
+  const pane = document.getElementById('pane');
+
+  /* A {heading, body, capture} block. Every key optional. `capture` is raw
+     output shown as-is; `body` splits into paragraphs on a blank line. */
+  function block(host, b) {
+    if (b.heading) host.appendChild(el('h3', 'blk__h', b.heading));
+    if (b.body) paras(host, b.body);
+    if (b.capture) host.appendChild(el('pre', 'cap', b.capture));
+  }
+
+  /* One tile in the Visual proof grid — a frame, or the video with its play badge. */
+  function tile({ src, cap, video, n }) {
+    const b = el('button', 'fr' + (video ? ' fr--v' : '')); b.type = 'button';
+    const wrap = el('div', 'fr__wrap');
+    if (src) {
+      const img = el('img'); img.src = src; img.alt = video ? '' : cap; img.loading = 'lazy';
+      img.addEventListener('error', () => {
+        if (video) { img.remove(); wrap.insertBefore(el('div', 'fr__blank'), wrap.firstChild); }
+        else { b.classList.add('is-missing'); b.disabled = true; }
+      });
+      wrap.appendChild(img);
+    } else {
+      wrap.appendChild(el('div', 'fr__blank'));
+    }
+    if (video) {
+      wrap.appendChild(el('span', 'fr__tag', 'Video'));
+      const play = el('div', 'fr__play'); play.appendChild(el('span', null, '▶'));
+      wrap.appendChild(play);
+    }
+    b.appendChild(wrap);
+    const c = el('div', 'fr__c');
+    c.appendChild(el('span', 'fr__n', n));
+    c.appendChild(el('span', 'fr__l', cap));
+    b.appendChild(c);
+    return b;
+  }
+
+  const frameList = s => (s.frames || []).map(f => {
+    const src = typeof f === 'string' ? f : f.src;
+    return {
+      src,
+      cap: (typeof f === 'string' ? '' : f.label) ||
+        src.split('/').pop().replace(/\.\w+$/, '').split('__').pop().replace(/^\d+_/, '').replace(/_/g, ' ')
+    };
+  });
+
+  /* Steps — FIXED FORMAT. s.steps[]: plain sentences, numbered in the order you drove them. */
+  function renderSteps(sec, s) {
+    const ol = el('ol', 'steps');
+    s.steps.forEach((t, j) => {
+      const li = el('li');
+      li.appendChild(el('b', null, String(j + 1).padStart(2, '0')));
+      const sp = el('span'); sp.innerHTML = rich(t); li.appendChild(sp);
+      ol.appendChild(li);
+    });
+    sec.appendChild(ol);
+  }
+
+  /* Visual proof — FIXED FORMAT. s.video leads; s.frames[] fold away behind the
+     Screenshots toggle. s.videoLabel captions the video, s.framesOpen opens the toggle. */
+  function renderVisual(sec, s) {
+    const frames = frameList(s);
+    if (s.video) {
+      const holder = el('div', 'vid');
+      const t = tile({ src: frames[0] && frames[0].src, cap: s.videoLabel || 'Watch the whole run', video: true, n: '▶' });
+      t.addEventListener('click', () => openModal({
+        title: (s.videoLabel || 'The run') + ' · ' + (s.short || s.n), kind: 'video', src: s.video
+      }));
+      holder.appendChild(t);
+      sec.appendChild(holder);
+    }
+    if (!frames.length) return;
+    const strip = el('div', 'strip');
+    frames.forEach((f, j) => {
+      const t = tile({ src: f.src, cap: f.cap, n: String(j + 1).padStart(2, '0') });
+      t.addEventListener('click', () => openModal({ kind: 'image', gallery: frames, index: j }));
+      strip.appendChild(t);
+    });
+    const d = el('details', 'shots');
+    d.open = !!s.framesOpen;
+    const sum = el('summary');
+    sum.appendChild(document.createTextNode(L.frames));
+    sum.appendChild(el('span', 'shots__n', String(frames.length)));
+    d.appendChild(sum);
+    const body = el('div', 'shots__b'); body.appendChild(strip);
+    d.appendChild(body);
+    sec.appendChild(d);
+  }
+
+  /* Extra proofs — s.proofs[]: {tag, heading, body, capture}, collapsed.
+     `tag` is a one-word kind shown as a chip. Prose inside is yours to shape. */
+  function renderProofs(sec, s) {
+    s.proofs.forEach(pr => {
+      const d = el('details', 'proof');
+      const sum = el('summary');
+      const top = el('div', 'proof__top');
+      if (pr.tag) top.appendChild(el('span', 'proof__tag', pr.tag));
+      top.appendChild(el('span', 'proof__h', pr.heading || ''));
+      if (pr.capture) top.appendChild(el('span', 'proof__meta', 'capture'));
+      sum.appendChild(top);
+      if (pr.body) sum.appendChild(el('div', 'proof__peek', String(pr.body).replace(/[`*]/g, '').split(/\n\n/)[0]));
+      d.appendChild(sum);
+      const b = el('div', 'proof__b');
+      block(b, { body: pr.body, capture: pr.capture });
+      d.appendChild(b);
+      sec.appendChild(d);
+    });
+  }
+
+  /* Files — s.artifacts[]: {label, href, note}. href is relative to this file;
+     the modal previews csv, json, text, images and video. */
+  function renderFiles(sec, s) {
+    const f = el('div', 'files');
+    s.artifacts.forEach(x => {
+      const a = el('button', 'file'); a.type = 'button';
+      a.appendChild(document.createTextNode(x.label));
+      if (x.note) a.appendChild(el('span', null, x.note));
+      a.addEventListener('click', () => openFile(x));
+      f.appendChild(a);
+    });
+    sec.appendChild(f);
+  }
+
+  /* Free blocks — s.extra[]: {heading, body, capture}, all optional.
+     No forced shape: put anything here the four sections above do not fit. */
+  function renderExtra(sec, s) {
+    s.extra.forEach(b => {
+      const d = el('div', 'blk');
+      block(d, b);
+      sec.appendChild(d);
+    });
+  }
+
+  /* The sections of a scenario, in render order.
+     [ key, guard, renderer ] — key is also the heading looked up in L.
+     To add your own: write render(sec, s) that appends to sec, add an entry here,
+     and put the field in the JSON. Steps and Visual proof are fixed format on
+     purpose; everything below them is free prose. */
+  const SECTIONS = [
+    ['steps',  s => s.steps && s.steps.length,                    renderSteps],
+    ['media',  s => s.video || (s.frames && s.frames.length),     renderVisual],
+    ['proofs', s => s.proofs && s.proofs.length,                  renderProofs],
+    ['files',  s => s.artifacts && s.artifacts.length,            renderFiles],
+    ['extra',  s => s.extra && s.extra.length,                    renderExtra],
+  ];
+
+  function drawScenario(s, i) {
+    const k = kinds[i];
+    pane.textContent = '';
+
+    const head = el('div', 'head' + (k === 'fail' || k === 'hold' ? ' head--' + k : ''));
+    head.appendChild(el('span', 'head__n', s.n || ''));
+    const h = el('h2', 'head__t'); h.innerHTML = rich(s.title || '');
+    head.appendChild(h);
+    head.appendChild(el('span', 'head__v v--' + k, label(s.verdict)));
+    pane.appendChild(head);
+    if (s.reason) { const d = el('div', 'summary'); paras(d, s.reason); pane.appendChild(d); }
+
+    SECTIONS.forEach(([key, has, render]) => {
+      if (!has(s)) return;
+      const sec = el('div', 'sec');
+      if (L[key]) sec.appendChild(el('p', 'sec__h', L[key]));
+      render(sec, s);
+      pane.appendChild(sec);
+    });
+  }
+
+  function drawBugs() {
+    pane.textContent = '';
+    const head = el('div', 'head');
+    head.appendChild(el('h2', 'head__t', L.bugs));
+    head.appendChild(el('span', 'head__v v--' + (BUGS.length ? 'fail' : 'pass'), BUGS.length ? BUGS.length + ' found' : 'None found'));
+    pane.appendChild(head);
+    const sec = el('div', 'sec');
+    BUGS.forEach(b => {
+      const box = el('div', 'bug' + (/minor/i.test(b.severity || '') ? ' bug--minor' : ''));
+      const h = el('div', 'bug__h');
+      h.appendChild(el('span', 'bug__s', b.severity || 'bug'));
+      h.appendChild(el('h3', 'bug__t', b.title || ''));
+      box.appendChild(h);
+      const p = el('div', 'prose'); if (b.body) paras(p, b.body);
+      box.appendChild(p);
+      sec.appendChild(box);
+    });
+    if (D.bugsNote) {
+      sec.appendChild(el('p', 'sec__h', 'The attack that did not land'));
+      const p = el('div', 'prose'); paras(p, D.bugsNote); sec.appendChild(p);
+    }
+    if (!BUGS.length && !D.bugsNote) sec.appendChild(el('p', 'empty', 'No bugs found.'));
+    pane.appendChild(sec);
+  }
+
+  function drawGaps() {
+    pane.textContent = '';
+    const head = el('div', 'head');
+    head.appendChild(el('h2', 'head__t', L.gaps));
+    head.appendChild(el('span', 'head__v v--hold', GAPS.length + ' item' + (GAPS.length === 1 ? '' : 's')));
+    pane.appendChild(head);
+    const sec = el('div', 'sec');
+    const p = el('div', 'prose');
+    GAPS.forEach(t => paras(p, t));
+    sec.appendChild(p); pane.appendChild(sec);
+  }
+
+  function select(id) {
+    current = id;
+    rows.forEach((b, i) => b.classList.toggle('is-on', i === id));
+    aux.forEach(([k, b]) => b.classList.toggle('is-on', k === id));
+    if (id === 'bugs') drawBugs();
+    else if (id === 'gaps') drawGaps();
+    else drawScenario(S[id], id);
+    document.querySelector('.pane').scrollTop = 0;
+  }
+
+  function paint() {
+    Object.entries(chips).forEach(([k, b]) => b.classList.toggle('count--on', filter === k));
+    let firstVisible = null;
+    rows.forEach((b, i) => {
+      const show = filter === 'all' || kinds[i] === filter;
+      b.classList.toggle('is-hidden', !show);
+      if (show && firstVisible === null) firstVisible = i;
+    });
+    if (typeof current === 'number' && rows[current] && rows[current].classList.contains('is-hidden')) {
+      select(firstVisible === null ? 'bugs' : firstVisible);
+    }
+  }
+
+  /* keyboard: j/k or arrows walk the visible list */
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input, textarea')) return;
+    if (document.getElementById('mo').classList.contains('is-open')) return;
+    const vis = rows.map((b, i) => b.classList.contains('is-hidden') ? -1 : i).filter(i => i >= 0);
+    if (!vis.length) return;
+    const at = vis.indexOf(current);
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); select(vis[Math.min(vis.length - 1, at + 1)] ?? vis[0]); }
+    if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); select(vis[Math.max(0, at - 1)] ?? vis[0]); }
+  });
+
+  /* ── modal ── */
+  const mo = document.getElementById('mo'), moB = document.getElementById('mo-b'),
+        moT = document.getElementById('mo-t'), moMeta = document.getElementById('mo-meta'),
+        moCap = document.getElementById('mo-cap'), moOpen = document.getElementById('mo-open'),
+        moPrev = document.getElementById('mo-prev'), moNext = document.getElementById('mo-next');
+  let back = null, gallery = null, gi = 0;
+  const MAX_ROWS = 400, MAX_CHARS = 300000;
+  const extOf = h => (String(h).split(/[?#]/)[0].split('.').pop() || '').toLowerCase();
+
+  function shell(title, meta, href, docMode) {
+    moT.textContent = title || '';
+    moMeta.textContent = meta || '';
+    moCap.textContent = '';
+    moCap.style.display = 'none';
+    moB.textContent = '';
+    moB.classList.toggle('mo__body--doc', !!docMode);
+    if (href) { moOpen.href = href; moOpen.style.display = ''; } else { moOpen.style.display = 'none'; }
+    moPrev.style.display = moNext.style.display = 'none';
+    if (!mo.classList.contains('is-open')) { back = document.activeElement; mo.classList.add('is-open'); }
+    document.getElementById('mo-x').focus();
+  }
+
+  function showFrame() {
+    const f = gallery[gi];
+    shell(f.cap, (gi + 1) + ' / ' + gallery.length, f.src, false);
+    const img = el('img'); img.src = f.src; img.alt = f.cap;
+    moB.appendChild(img);
+    moPrev.style.display = moNext.style.display = gallery.length > 1 ? '' : 'none';
+    moPrev.disabled = gi === 0; moNext.disabled = gi === gallery.length - 1;
+  }
+  const step = d => { if (!gallery) return; gi = Math.min(gallery.length - 1, Math.max(0, gi + d)); showFrame(); };
+  moPrev.addEventListener('click', () => step(-1));
+  moNext.addEventListener('click', () => step(1));
+
+  function openModal(o) {
+    gallery = null;
+    if (o.kind === 'image' && o.gallery) { gallery = o.gallery; gi = o.index || 0; return showFrame(); }
+    if (o.kind === 'image') { shell(o.title, '', o.src); const i = el('img'); i.src = o.src; i.alt = o.title || ''; moB.appendChild(i); return; }
+    if (o.kind === 'video') {
+      shell(o.title, '', o.src);
+      const v = document.createElement('video');
+      v.src = o.src; v.controls = true; v.autoplay = true; v.playsInline = true;
+      v.addEventListener('error', () => note('This video could not be loaded.', o.src));
+      moB.appendChild(v);
+      return;
+    }
+    shell(o.title, o.meta, o.href, true);
+  }
+
+  function note(msg, href) {
+    moB.classList.add('mo__body--doc');
+    moB.textContent = '';
+    const d = el('div', 'mo__note');
+    d.innerHTML = msg;
+    if (href) {
+      const p = el('p');
+      const a = el('a', null, 'Open ' + href.split('/').pop());
+      a.href = href; a.target = '_blank'; a.rel = 'noopener';
+      p.appendChild(a); d.appendChild(p);
+    }
+    moB.appendChild(d);
+  }
+
+  function parseDelim(text, d) {
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+        else cell += c;
+      } else if (c === '"') q = true;
+      else if (c === d) { row.push(cell); cell = ''; }
+      else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; if (rows.length > MAX_ROWS) return rows; }
+      else if (c !== '\r') cell += c;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+
+  function renderTable(text, d, total) {
+    const rows = parseDelim(text, d);
+    if (!rows.length) return note('This file is empty.');
+    const tbl = el('table', 'mo__tbl');
+    const head = el('tr');
+    head.appendChild(el('th', null, '#'));
+    rows[0].forEach(h => head.appendChild(el('th', null, h)));
+    tbl.appendChild(head);
+    rows.slice(1).forEach((r, i) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', null, String(i + 1)));
+      r.forEach(c => tr.appendChild(el('td', null, c)));
+      tbl.appendChild(tr);
+    });
+    moB.appendChild(tbl);
+    const shown = rows.length - 1;
+    if (total && total > shown) {
+      moCap.style.display = '';
+      moCap.textContent = 'Showing the first ' + shown.toLocaleString() + ' of ' + total.toLocaleString() + ' rows. Open the file for all of them.';
+    }
+  }
+
+  async function openFile(x) {
+    const e = extOf(x.href);
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'].includes(e)) return openModal({ kind: 'image', title: x.label, src: x.href });
+    if (['mp4', 'webm', 'mov', 'm4v'].includes(e)) return openModal({ kind: 'video', title: x.label, src: x.href });
+
+    openModal({ title: x.label, meta: x.note || e, href: x.href });
+    moB.appendChild(el('div', 'mo__note', 'Loading…'));
+    try {
+      const r = await fetch(x.href);
+      if (!r.ok) throw new Error(r.status);
+      let text = await r.text();
+      const truncated = text.length > MAX_CHARS;
+      const totalRows = (text.match(/\n/g) || []).length;
+      if (truncated) text = text.slice(0, MAX_CHARS);
+      moB.textContent = '';
+      if (e === 'csv' || e === 'tsv') return renderTable(text, e === 'tsv' ? '\t' : ',', totalRows);
+      if (e === 'json') { try { text = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {} }
+      moB.appendChild(el('pre', 'mo__pre', text));
+      if (truncated) { moCap.style.display = ''; moCap.textContent = 'Truncated for display. Open the file for the whole thing.'; }
+    } catch (err) {
+      note('<strong>The browser blocked reading this file.</strong> Chrome refuses ' +
+           'file-to-file reads, so previews work when the report is served over http ' +
+           '(or unzipped and opened through a local server).', x.href);
+    }
+  }
+
+  function shut() {
+    mo.classList.remove('is-open');
+    moB.querySelectorAll('video').forEach(v => v.pause());
+    moB.textContent = ''; gallery = null;
+    if (back) back.focus();
+  }
+  document.getElementById('mo-x').addEventListener('click', shut);
+  mo.addEventListener('click', e => { if (e.target === mo) shut(); });
+  document.addEventListener('keydown', e => {
+    if (!mo.classList.contains('is-open')) return;
+    if (e.key === 'Escape') shut();
+    if (gallery && e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+    if (gallery && e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+  });
+
+  /* Proofs and screenshots are collapsed on screen. A closed <details> prints
+     blank whatever the CSS says, so open them for the print and restore after. */
+  let reopened = [];
+  addEventListener('beforeprint', () => {
+    reopened = [...document.querySelectorAll('details:not([open])')];
+    reopened.forEach(d => { d.open = true; });
+  });
+  addEventListener('afterprint', () => {
+    reopened.forEach(d => { d.open = false; });
+    reopened = [];
+  });
+
+  paint();
+  select(S.length ? 0 : 'bugs');
+})();
+</script>
+</body>
+</html>

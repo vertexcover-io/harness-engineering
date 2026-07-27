@@ -6,7 +6,7 @@ description: >
   unit and e2e tests are not verification. Trigger on "tests pass", "implementation done", "ready for
   review", "ready to ship", "ship it", "verify this", "is this working", "can we merge", or any other
   move toward calling a feature finished. The only proof this skill ran is
-  .harness/features/<SPEC_NAME>/verification/proof-report.md — if that file does not exist for the
+  .harness/features/<SPEC_NAME>/verification/proof-report.html — if that file does not exist for the
   current spec, verification did not happen and the feature is not done.
 user-invocable: true
 ---
@@ -18,7 +18,7 @@ user-invocable: true
 You are the gate between "tests are green" and "feature is done". You verify **through the UI**, where the user and
 QA work: a behaviour reachable through a form, page, or click is proven by driving it. Only surfaces a QA could
 never reach — a webhook, a cron job, a DB row — are proven headlessly (Step 3). You produce **one file**,
-`verification/proof-report.md`, and the evidence beside it.
+`verification/proof-report.html`, and the evidence beside it.
 
 - **The report is for a QA reader** — plain English, describing what a behaviour *is* rather than naming it.
 - **One subject, one place** — a scenario, bug, or gap is written once and referenced elsewhere; evidence lives with
@@ -47,7 +47,7 @@ Everything this skill produces lives in the feature's `verification/` folder, fl
 
 ```
 .harness/features/<SPEC_NAME>/verification/
-├── proof-report.md                          the deliverable
+├── proof-report.html                        the deliverable
 ├── NN_<slug>.mp4                            one video per scenario (Step 5)
 ├── NN_<slug>.<ext>                          API captures, webhook bodies, downloaded files
 └── screenshots/
@@ -58,7 +58,7 @@ Everything this skill produces lives in the feature's `verification/` folder, fl
 
 
 **Name every scenario `NN_<slug>` before capturing anything.** `NN` is its stable two-digit number in the order you
-will list them, and the first cell of its report row; the slug is a phrase a QA would recognise
+will list them, and the scenario's `n` in the report; the slug is a phrase a QA would recognise
 (`03_51_paise_gap_stays_partial`). That prefix goes on every artifact the scenario produces, so a reader learns from
 a filename alone what was tested and where it belongs.
 
@@ -109,8 +109,8 @@ passing assert and your own eyes.**
 ## Step 3 — API, DB & Side-Effects: Surfaces a QA Cannot Reach
 
 Only what has no screen to drive lands here. Run curl with `-w '\n%{http_code}'` and capture the exact command,
-status, and body; that is transcribed into the report's Proofs block (shape in `references/writing-the-report.md`),
-so there is no separate receipt file. Record the verdict by exact-matching the expected response the design or plan
+status, and body; that becomes a `proofs[]` entry (shape in `references/writing-the-report.md`), so there is no
+separate receipt file. Record the verdict by exact-matching the expected response the design or plan
 describes. For a db check, query the database (an MCP tool, else the connection string from the stack you started in
 Step 1) and record actual against expected.
 
@@ -121,9 +121,10 @@ delivered file — prove it at its sink (a project fact) with a **hard deadline*
   Its frames carry the scenario's `NN_<slug>` prefix like any other.
 - **A job queue (BullMQ/Bull)** — drive the bull-board and screenshot the queue and the job. Genuinely try to bring
   the board up; it may be a separate service you started in Step 1. If it truly can't come up, capture Redis or the
-  logs instead and say in the row what the board was and what you tried. The technique and its false-negative traps
-  are in `references/queue-dashboard.md`.
-- **Webhooks and delivered files** — keep the artifact as `verification/NN_<slug>.<ext>` tied to the scenario's row.
+  logs instead and say in the scenario what the board was and what you tried. The technique and its false-negative
+  traps are in `references/queue-dashboard.md`.
+- **Webhooks and delivered files** — keep the artifact as `verification/NN_<slug>.<ext>`, listed in the scenario's
+  `artifacts[]`.
 
 When the project says the effect is deliberately neutralized here, prove the enqueue instead and say so. When it
 documents no sink for an effect the feature clearly produces, the scenario is `NOT VERIFIED`.
@@ -155,8 +156,8 @@ Drive probes exactly as in Step 2 — same session, same `NN_<slug>` prefix, sam
 screen follows Step 3. Then route each result by **provenance**:
 
 - It probed a behaviour the docs describe — a boundary on a validation rule, an error path. That is evidence for
-  **that scenario's row**, not a row of its own. **Expect most probes to land here.**
-- It probed something nobody asked about and found a real bug — its own row and a write-up under the table.
+  **that scenario**, not a scenario of its own. **Expect most probes to land here.**
+- It probed something nobody asked about and found a real bug — its own scenario, and an entry in `bugs[]`.
 - It probed something nobody asked about and the feature held — it appears only in the sentence naming your best
   attack.
 
@@ -166,21 +167,20 @@ artifact of the same feature contradicts it.
 
 **Name the attack you most expected to land and say why it didn't.** And **film every bug by re-running its
 repro** — you can't capture a bug prospectively, so once a probe lands, write its steps and drive them again as its
-own scenario, filming the whole thing. **Done when every bug has a row and reproduces from its own steps.**
+own scenario, filming the whole thing. **Done when every bug has an entry and reproduces from its own steps.**
 
 ## Step 5 — Build the Videos
 
 Assemble one video per scenario from the promoted frames in `screenshots/` — the ffmpeg command is in
-`references/writing-the-report.md`. Build them **before** the report so its Evidence cells link videos that already
-exist.
+`references/writing-the-report.md`. Build them **before** the report so the videos it points at already exist.
 
 ## Step 6 — Write the Proof Report, Then Report Back
 
-Write one file, `verification/proof-report.md` — the full format (table, Proofs, Bugs) and completion checklist are
-in `references/writing-the-report.md`. The invariants it enforces: every behaviour you were given is a row with a
-verdict (unverifiable → `NOT VERIFIED`, inapplicable → `INVALID`, neither dropped nor backfilled with an adjacent
-passing check); every verdict cites a live observation from this run; no internal ids appear anywhere; nothing is
-said twice.
+Copy `references/proof-report-template.html` to `verification/proof-report.html` and fill its JSON island — the
+field-by-field contract and completion checklist are in `references/writing-the-report.md`. The invariants it
+enforces: every behaviour you were given is a scenario with a verdict (unverifiable → `NOT VERIFIED`,
+inapplicable → `INVALID`, neither dropped nor backfilled with an adjacent passing check); every verdict cites a
+live observation from this run; no internal ids appear anywhere; nothing is said twice.
 
 Then **report back to whoever dispatched you** — everything the report excludes belongs here: the verdict per
 scenario and whether the feature works; every bug and what needs a decision rather than a fix; the `verification/`

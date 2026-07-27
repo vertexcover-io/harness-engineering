@@ -7,10 +7,12 @@ failed upload → say so in one line and move on. The proof report on disk is th
 
 ## Tracker publish (Asana implementation)
 
-Three deliverables go up, all as **file attachments**: the proof report (the markdown file itself, not
-its text pasted into a comment); a **zip of the whole `verification/` folder** so the report's relative
-links resolve against the bundled videos, CSVs, and screenshots once unzipped; and each **video**
-individually so they play inline on the task.
+Three deliverables go up, all as **file attachments**: the proof report (the HTML file itself, not its
+text pasted into a comment); a **zip of the whole `verification/` folder** so the report's frames,
+videos and files resolve once unzipped; and each **video** individually so they play inline on the task.
+
+The report is a single self-contained HTML file, so it opens from the attachment — but its frames and
+files live beside it, so **the zip is the copy a reviewer should actually open**.
 
 **Which tracker, and how a branch maps to a ticket, are project facts.** They live in the project's own
 skills (often a git-workflow skill) and `CLAUDE.md`: the tracker (`asana`, `linear`, or `none`), how
@@ -41,8 +43,8 @@ GID=$(curl -s "$API/workspaces/$WORKSPACE/tasks/search?text=$BRANCH&opt_fields=g
 
 # 2. Upload the proof report as a FILE (not a comment/story)
 curl -s -X POST "$API/attachments" -H "Authorization: Bearer $ASANA_PAT" \
-  -F "parent=$GID" -F "file=@verification/proof-report.md;type=text/markdown" >/dev/null \
-  && echo "attached proof-report.md to task $GID" || echo "FAILED to attach proof-report.md"
+  -F "parent=$GID" -F "file=@verification/proof-report.html;type=text/html" >/dev/null \
+  && echo "attached proof-report.html to task $GID" || echo "FAILED to attach proof-report.html"
 
 # 3. Zip the whole verification folder to a temp path (outside the repo) and attach it
 ZIP="$(mktemp -d)/verification.zip"
@@ -87,7 +89,7 @@ if command -v claude-sessions >/dev/null 2>&1 && claude-sessions status >/dev/nu
   if [ -n "$SID" ]; then
     # --file/--glob replace auto-derivation, so only the report and the videos go up.
     claude-sessions artifacts "$SID" \
-      --file verification/proof-report.md \
+      --file verification/proof-report.html \
       --glob 'verification/*.mp4' \
       && echo "published proof report + videos to claude-sessions ($SID)" \
       || echo "claude-sessions push failed — skipping (proof report on disk is the source of truth)"
