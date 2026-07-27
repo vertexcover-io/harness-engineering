@@ -16,12 +16,7 @@ import { join, dirname } from "node:path";
 import { repoRoot, gitAvailable, isIgnored, run } from "../../hooks/_lib/git.mjs";
 import { readFrontmatter } from "../../hooks/_lib/frontmatter.mjs";
 
-const ZONES = [
-  ".harness/knowledge/lessons",
-  ".harness/knowledge/context",
-  ".harness/features",
-  ".harness/runtime",
-];
+const ZONES = [".harness/knowledge/lessons", ".harness/knowledge/context"];
 const INDEX = ".harness/knowledge/INDEX.md";
 const README = ".harness/README.md";
 
@@ -30,8 +25,7 @@ const README_BODY = `# .harness/ — harness artifact root
 | Zone | Git | Lifetime | Safe to... |
 |---|---|---|---|
 | \`knowledge/\` | committed | forever — the repo's memory | edit via curator or /learn only |
-| \`features/<spec>/\` | committed | frozen once the PR merges | read to review a PR |
-| \`runtime/<spec>/\` | gitignored | dies with the worktree | delete freely (\`rm -rf .harness/runtime/\`) |
+| \`<spec>/\` | gitignored | dies with the worktree | delete freely — reviewers read artifacts out-of-band |
 
 \`knowledge/INDEX.md\` is DERIVED from lesson/standard frontmatter — never hand-edit or
 hand-merge it. On merge conflict: delete both sides and run
@@ -74,7 +68,7 @@ const cmdVerify = () => {
         ok: false,
         created: [],
         errors: [
-          ".harness/knowledge is gitignored — narrow the .gitignore rule from `.harness/` to `.harness/runtime/`",
+          ".harness/knowledge is gitignored — replace the broad `.harness/` rule with `.harness/*` + `!.harness/knowledge/` + `!.harness/README.md`",
         ],
       },
       2,
@@ -88,17 +82,24 @@ const cmdVerify = () => {
 const MIGRATIONS = [
   { from: "docs/context", to: ".harness/knowledge/context" },
   { from: "docs/solutions", to: ".harness/knowledge/lessons" },
-  { from: "docs/spec", to: ".harness/features" },
-  { from: "docs/specs", to: ".harness/features" },
-  { from: "docs/superpowers/specs", to: ".harness/features" },
+  { from: "docs/spec", to: ".harness" },
+  { from: "docs/specs", to: ".harness" },
+  { from: "docs/superpowers/specs", to: ".harness" },
+  { from: ".harness/features", to: ".harness" },
+  { from: ".harness/runtime", to: ".harness" },
 ];
+
+const IGNORE_RULES = [".harness/*", "!.harness/knowledge/", "!.harness/README.md"];
 
 const narrowGitignore = (dry) => {
   const p = join(root, ".gitignore");
   if (!existsSync(p)) return false;
   const lines = readFileSync(p, "utf8").split("\n");
-  const narrowed = lines.map((l) => (l.trim() === ".harness/" ? ".harness/runtime/" : l));
-  if (narrowed.join("\n") === lines.join("\n")) return false;
+  const stale = (l) => l.trim() === ".harness/" || l.trim() === ".harness/runtime/";
+  if (!lines.some(stale)) return false;
+  const narrowed = lines.flatMap((l, i) =>
+    stale(l) ? (lines.findIndex(stale) === i ? IGNORE_RULES : []) : [l],
+  );
   if (!dry) writeFileSync(p, narrowed.join("\n"));
   return true;
 };
@@ -116,33 +117,36 @@ const removeEmptyDirsUpTo = (dir, stopAt) => {
   }
 };
 
-// git mv keeps tracked history; untracked/ignored content falls back to fs rename.
+// Into knowledge/ (tracked → tracked): git mv keeps history. Everywhere else
+// the dest is gitignored, so fs-rename and drop the source from the index —
+// git mv would stage an addition inside an ignored tree. A dest that already
+// exists (features/<spec> and runtime/<spec> merging into <spec>/) merges
+// children instead.
 const move = (src, dest) => {
-  if (run(["mv", src, dest], root) === null) {
-    renameSync(join(root, src), join(root, dest));
+  if (existsSync(join(root, dest))) {
+    for (const child of readdirSync(join(root, src))) {
+      move(join(src, child), join(dest, child));
+    }
+    try {
+      rmdirSync(join(root, src));
+    } catch {}
+    return;
   }
-};
-
-const ZONE_NAMES = new Set(["knowledge", "features", "runtime", "README.md"]);
-
-const legacySpecDirs = () => {
-  const harnessAbs = join(root, ".harness");
-  if (!existsSync(harnessAbs)) return [];
-  return readdirSync(harnessAbs).filter((e) => !ZONE_NAMES.has(e));
+  if (dest.startsWith(".harness/knowledge")) {
+    if (run(["mv", src, dest], root) === null) {
+      renameSync(join(root, src), join(root, dest));
+    }
+    return;
+  }
+  renameSync(join(root, src), join(root, dest));
+  run(["rm", "-r", "--cached", "-q", "--", src], root);
 };
 
 const cmdMigrate = (dry) => {
   const migrated = [];
   const deferred = [];
   const gitignore_changed = narrowGitignore(dry);
-  // Legacy .harness/<spec>/ pipeline-state dirs move BEFORE bootstrap so zone
-  // creation can't collide with a legacy dir scan.
-  const legacy = legacySpecDirs();
   if (!dry) bootstrap();
-  for (const name of legacy) {
-    if (!dry) move(join(".harness", name), join(".harness/runtime", name));
-    migrated.push({ from: join(".harness", name), to: join(".harness/runtime", name) });
-  }
   for (const { from, to } of MIGRATIONS) {
     const fromAbs = join(root, from);
     if (!existsSync(fromAbs)) continue;
@@ -158,8 +162,8 @@ const cmdMigrate = (dry) => {
     }
     if (!dry) removeEmptyDirsUpTo(fromAbs, root);
   }
-  // Collapse fully-moved MIGRATIONS roots to one entry each; legacy entries
-  // are already root-level. In dry mode "fully moved" = no child deferred.
+  // Collapse fully-moved MIGRATIONS roots to one entry each. In dry mode
+  // "fully moved" = no child deferred.
   const fullRoots = MIGRATIONS.filter(
     (m) =>
       migrated.some((x) => x.from.startsWith(`${m.from}/`)) &&
@@ -168,16 +172,13 @@ const cmdMigrate = (dry) => {
         : !existsSync(join(root, m.from))),
   );
   const report = [
-    ...migrated.filter(
-      (x) =>
-        x.from.startsWith(".harness/") || !fullRoots.some((m) => x.from.startsWith(`${m.from}/`)),
-    ),
+    ...migrated.filter((x) => !fullRoots.some((m) => x.from.startsWith(`${m.from}/`))),
     ...fullRoots.map((m) => ({ from: m.from, to: m.to })),
   ];
   if (!dry && (migrated.length || gitignore_changed)) {
     // Explicit pathspecs only — never sweep unrelated working-tree changes
     // (deferred dirt) into the migration commit.
-    const stage = [".harness/knowledge", ".harness/features", README, ".gitignore"].filter((p) =>
+    const stage = [".harness/knowledge", README, ".gitignore"].filter((p) =>
       existsSync(join(root, p)),
     );
     run(["add", "--", ...stage], root);
@@ -301,7 +302,7 @@ const cmdRoute = (rest) => {
   const lessons = ranked.filter((r) => !r.e.isStandard).slice(0, k);
   const standards = ranked.filter((r) => r.e.isStandard);
 
-  const outDir = join(root, ".harness", "runtime", spec);
+  const outDir = join(root, ".harness", spec);
   mkdirSync(outDir, { recursive: true });
   const outPath = join(outDir, "relevant-lessons.md");
   const matched = lessons.length + standards.length;
@@ -314,7 +315,7 @@ const cmdRoute = (rest) => {
           .map((r) => `\n## Standard: ${r.e.title} (${r.e.rel})\n\n${r.e.body.trim()}\n`)
           .join("")}`;
   writeFileSync(outPath, body);
-  emit({ matched, written: join(".harness", "runtime", spec, "relevant-lessons.md") }, 0);
+  emit({ matched, written: join(".harness", spec, "relevant-lessons.md") }, 0);
 };
 
 const [cmd, ...rest] = process.argv.slice(2);
