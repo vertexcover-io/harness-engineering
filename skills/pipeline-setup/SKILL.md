@@ -106,19 +106,19 @@ the runner and a **single-file** command so each iteration stays scoped.
 3. Derive `lint_file` the same way when the linter supports a path arg (e.g. `eslint {FILE}`,
    `ruff check {FILE}`); else `null`.
 
-### 4. Create Spec + Harness Directories
+### 4. Create the Feature Directory
 
-Artifacts are split across two trees:
-
-- `.harness/features/<SPEC_NAME>/` — committed, reviewer-facing (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/, README.md)
-- `.harness/runtime/<SPEC_NAME>/` — gitignored, pipeline working state (baseline.json, manifest.json, phase-*.md, e2e-report.json, gate-report-*.md, lib-suspect-*.md, review/, probes/)
+One directory holds everything — `.harness/<SPEC_NAME>/` (design.md, plan.md, phases/,
+library-probe.md, baseline.json, manifest.json, e2e-report.json, gate-report-*.md, review/,
+probes/, verification/). The whole `.harness/` tree is gitignored (knowledge/ excepted);
+reviewers read artifacts out-of-band.
 
 Steps:
 
 1. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`)
-2. Create `.harness/features/<SPEC_NAME>/` and `.harness/features/<SPEC_NAME>/verification/{screenshots,traces}/`
-3. Create `.harness/runtime/<SPEC_NAME>/review/` (the DAG dashboard already creates `.harness/runtime/<SPEC_NAME>/reports/`)
-4. Write baseline metrics to `.harness/runtime/<SPEC_NAME>/baseline.json`:
+2. Create `.harness/<SPEC_NAME>/verification/{screenshots,traces}/`
+3. Create `.harness/<SPEC_NAME>/review/` and `.harness/<SPEC_NAME>/phases/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`)
+4. Write baseline metrics to `.harness/<SPEC_NAME>/baseline.json`:
 
 ```json
 {
@@ -155,7 +155,7 @@ keys are unchanged — `commands` is additive.
   `monorepo`/`test_changed` to `null` for single-package repos, where the whole-project commands already
   cover everything.
 
-5. Write manifest skeleton to `.harness/runtime/<SPEC_NAME>/manifest.json`:
+5. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
 
 ```json
 {
@@ -187,7 +187,7 @@ node "<plugin-root>/skills/_shared/knowledge.mjs" route --spec "<SPEC_NAME>" \
   named files/dirs (planning refines them later — routing tolerates imprecision).
 - Store the written path as `ROUTED_LESSONS`.
 
-Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/features/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/runtime/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`, `ROUTED_LESSONS`
+Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`, `ROUTED_LESSONS`
 
 ---
 
@@ -200,8 +200,7 @@ After completion, the following variables are available for downstream stages:
 | `WORKTREE_PATH` | Absolute path to the git worktree |
 | `BRANCH_NAME` | Name of the worktree branch |
 | `SPEC_NAME` | Slugified task name |
-| `SPEC_DIR` | Path to `.harness/features/<SPEC_NAME>/` (committed artifacts) |
-| `HARNESS_SPEC_DIR` | Path to `.harness/runtime/<SPEC_NAME>/` (gitignored working state) |
-| `BASELINE_PATH` | Path to `.harness/runtime/<SPEC_NAME>/baseline.json` |
-| `MANIFEST_PATH` | Path to `.harness/runtime/<SPEC_NAME>/manifest.json` |
-| `ROUTED_LESSONS` | Path to `.harness/runtime/<SPEC_NAME>/relevant-lessons.md` (routed prior lessons; may contain the no-match sentinel) |
+| `SPEC_DIR` | Path to `.harness/<SPEC_NAME>/` (all run artifacts, gitignored) |
+| `BASELINE_PATH` | Path to `.harness/<SPEC_NAME>/baseline.json` |
+| `MANIFEST_PATH` | Path to `.harness/<SPEC_NAME>/manifest.json` |
+| `ROUTED_LESSONS` | Path to `.harness/<SPEC_NAME>/relevant-lessons.md` (routed prior lessons; may contain the no-match sentinel) |

@@ -129,11 +129,11 @@ nomination line per **distinct** fixed comment (format + semantics:
 
 ```bash
 echo '{"signal":"human-comment","summary":"<comment essence, quoted material>","files":["<path>"],"stage":"pr"}' \
-  >> .harness/runtime/<spec>/lesson-candidates.jsonl
+  >> .harness/<spec>/lesson-candidates.jsonl
 ```
 
 - No spec context (standalone CI run): use the PR's head branch slug as `<spec>`;
-  if the repo is not yet migrated (no `.harness/runtime/`), fall back to the legacy
+  if the repo is not yet migrated (no `.harness/`), fall back to the legacy
   pre-migration layout (spec dir directly under the harness root) if present, else skip.
 - Running inside a pipeline → the stage-5 curator consolidates. Standalone → invoke
   the learn skill's consolidate mode over the file after Phase 5.

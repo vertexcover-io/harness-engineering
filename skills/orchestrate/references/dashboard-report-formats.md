@@ -69,7 +69,7 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 
 ## Verdict: <PASSED|FAILED>
 
-Full report + evidence: `.harness/features/<SPEC_NAME>/verification/proof-report.md`
+Full report + evidence: `.harness/<SPEC_NAME>/verification/proof-report.md`
 
 ## Scenarios
 

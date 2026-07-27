@@ -13,7 +13,7 @@ in a shell variable:
 Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' <command> <args>")
 ```
 
-`HARNESS_DIR` is the absolute `<WORKTREE_PATH>/.harness/runtime/<SPEC_NAME>`, printed by `init`.
+`HARNESS_DIR` is the absolute `<WORKTREE_PATH>/.harness/<SPEC_NAME>`, printed by `init`.
 
 ## Stage-transition pattern (used at every stage)
 
@@ -28,7 +28,7 @@ In `--auto` mode, skip ALL `dag-update` calls — no live dashboard in CI.
 
 ## Init block (run once, from inside the worktree)
 
-`init` writes `.harness/runtime/<SPEC_NAME>/` relative to cwd, so it MUST run with the worktree as
+`init` writes `.harness/<SPEC_NAME>/` relative to cwd, so it MUST run with the worktree as
 cwd (otherwise the dashboard lands in the main checkout while claims/phase files land in the
 worktree — split-brain).
 
@@ -40,8 +40,7 @@ Bash("
   node '<DAG_SCRIPT>' add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
   node '<DAG_SCRIPT>' add-node brainstorm 'Brainstorm' --depends-on setup
   node '<DAG_SCRIPT>' add-node library-probe 'Library Probe' --depends-on brainstorm
-  node '<DAG_SCRIPT>' add-node spec-gen 'Spec Generation' --depends-on library-probe
-  node '<DAG_SCRIPT>' add-node planning 'Planning' --depends-on spec-gen
+  node '<DAG_SCRIPT>' add-node planning 'Planning' --depends-on library-probe
   node '<DAG_SCRIPT>' add-node coder 'Coder' --depends-on planning
   node '<DAG_SCRIPT>' add-node code-review 'Code Review' --depends-on coder
   node '<DAG_SCRIPT>' add-node verify-finalize 'Verify & Finalize' --depends-on code-review

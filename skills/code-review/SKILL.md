@@ -56,7 +56,7 @@ hard violation.
 | `plan-path` | No | Path to the plan/design document. If omitted, the spec axis infers intent instead. |
 | `--pr NUMBER` | No | Review a PR diff (uses `gh pr diff NUMBER`). |
 | `--commits RANGE` | No | Review a commit range (e.g. `HEAD~3..HEAD`). |
-| `--output PATH` | No | Where to write the report. Omitted → `.harness/runtime/review.md` and the review also prints inline (see Step 4). |
+| `--output PATH` | No | Where to write the report. Omitted → `.harness/review.md` and the review also prints inline (see Step 4). |
 
 **Scope resolution** (first match wins): `--pr NUMBER` → PR diff · `--commits RANGE` → that
 range, three-dot against its start ref · neither → working tree (`git diff HEAD`, staged +
@@ -131,7 +131,7 @@ selected. If you spawn `security`, name the trust decision that changed.
 
 | Persona | Brief | Also pass |
 |---|---|---|
-| `spec` | `references/persona-spec.md` | The plan/spec contents; with no plan, the commit messages, PR description, and branch name to infer intent from |
+| `spec` | `references/persona-spec.md` | `design.md` + `plan.md` contents; with no plan, the commit messages, PR description, and branch name to infer intent from |
 | `code-quality` | `references/persona-code-quality.md` | The governance sources you found on rungs 1–3 |
 | `testing` | `references/persona-testing.md` | — |
 | `security` | `references/persona-security.md` | — |
@@ -170,10 +170,10 @@ pick a single winner across axes.
 **Where it goes** — always write the file, and let `--output` tell you which caller you have:
 
 - **`--output PATH` given** (the orchestrate pipeline, which passes
-  `.harness/runtime/<SPEC_NAME>/review/pass-N.md`) → write there and report only the verdict,
+  `.harness/<SPEC_NAME>/review/pass-N.md`) → write there and report only the verdict,
   counts, and Critical items. The caller is an agent; it reads the file itself, so don't
   reproduce the review in your reply.
-- **No `--output`** (invoked directly) → write `.harness/runtime/review.md`, falling back to
+- **No `--output`** (invoked directly) → write `.harness/review.md`, falling back to
   `./REVIEW.md` when there's no `.harness/`, **and** print the full review inline. A human
   asked; make them open a file to see the answer and they won't.
 

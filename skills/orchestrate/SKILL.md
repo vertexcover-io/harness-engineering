@@ -4,7 +4,7 @@ description: >
   Multi-agent pipeline orchestrator. Takes a prompt or spec file and runs:
   brainstorm, planner, coder (TDD + stagnation detection), code review (two-pass review+fix),
   verify & finalize (functional verification + quality gate + sync docs + learnings), and commit/PR.
-  Reviewer-facing artifacts stored in .harness/features/<name>/ (committed); pipeline working state in .harness/runtime/<name>/ (gitignored). Use when the user says orchestrate, run the pipeline,
+  All run artifacts live in .harness/<name>/ (gitignored — reviewers read them out-of-band). Use when the user says orchestrate, run the pipeline,
   full workflow, or wants end-to-end development from spec to PR.
   Supports --auto mode for CI/CD pipelines — bypasses interactive approval gates while still producing all artifacts.
 argument-hint: "<prompt or path/to/spec.md> [--auto]"
@@ -53,7 +53,7 @@ DAG commands, the init block, and the transition pattern all live in **`referenc
 
 The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs"`
 
-**Create the worktree FIRST, then start the dashboard from inside it** — `init` writes `.harness/runtime/<SPEC_NAME>/` relative to cwd, so it must run with the worktree as cwd (else the dashboard and the phase/claims files split across two checkouts). The ONLY Skill you may invoke before the dashboard is `using-git-worktrees`.
+**Create the worktree FIRST, then start the dashboard from inside it** — `init` writes `.harness/<SPEC_NAME>/` relative to cwd, so it must run with the worktree as cwd (else the dashboard and the phase/claims files split across two checkouts). The ONLY Skill you may invoke before the dashboard is `using-git-worktrees`.
 
 (In `--auto` mode, skip this whole step — no worktree, no dashboard.)
 
@@ -69,13 +69,12 @@ The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}
 
 | # | Stage | Execution | Output |
 |---|-------|-----------|--------|
-| 0 | Setup | **Main conversation** | Worktree path, baseline metrics, spec directory |
-| 1 | Brainstorm | **Main conversation** | `.harness/features/<name>/design.md` with declared dependency + fallback chain |
-| 1.5 | Library Probe | **Main conversation** | `.harness/features/<name>/library-probe.md` + verified probe scripts (`.harness/runtime/<name>/probes/`) |
-| 1.7 | Spec Generation | **Main conversation** | `.harness/features/<name>/spec.md` (folds VS-0 probe scenarios in) |
-| 2 | Planner | **Main conversation** | `.harness/features/<name>/plan.md` (committed) + `.harness/runtime/<name>/phase-*.md` (gitignored) |
+| 0 | Setup | **Main conversation** | Worktree path, baseline metrics, feature directory |
+| 1 | Brainstorm | **Main conversation** | `.harness/<name>/design.md` with declared dependency + fallback chain |
+| 1.5 | Library Probe | **Main conversation** | `.harness/<name>/library-probe.md` + verified probe scripts (`.harness/<name>/probes/`) |
+| 2 | Planner | **Main conversation** | `.harness/<name>/plan.md` + `.harness/<name>/phases/phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-claims.json` + `e2e-report.json` |
-| 4 | Code Review | Sub-agent (2-pass) | `.harness/runtime/<name>/review/pass-{1,2}.md` verdicts, fixes applied |
+| 4 | Code Review | Sub-agent (2-pass) | `.harness/<name>/review/pass-{1,2}.md` verdicts, fixes applied |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
@@ -83,7 +82,7 @@ The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}
 stage → default-skill table and the resolution order (config override → project skill → global
 default). Resolve it there, then invoke it (Invariant 5).
 
-Stages 0 (Setup), 1 (Brainstorm + Spec), and 2 (Planner) run directly in the main conversation — not as sub-agents — because Stage 0 sets the working directory, Stage 1 needs conversation context and flows into spec generation, and Stage 2 explores the codebase interactively and holds the only approval gate. All other stages (3–5) run as sub-agents via `Agent`.
+Stages 0 (Setup), 1 (Brainstorm), and 2 (Planner) run directly in the main conversation — not as sub-agents — because Stage 0 sets the working directory, Stage 1 needs conversation context, and Stage 2 explores the codebase interactively and holds the only approval gate. All other stages (3–5) run as sub-agents via `Agent`.
 
 ---
 
@@ -102,14 +101,13 @@ For each skippable stage:
 
 | Stage | Skip condition |
 |-------|---------------|
-| 1: Brainstorm + Spec | Explicit skip instruction, OR input has complete context (clear problem, specific scope, acceptance criteria) |
-| 2: Planner | Explicit skip instruction, OR task is straightforward (single-phase, per-file instructions already provided) |
+| 1: Brainstorm | Explicit skip instruction, OR input has complete context (clear problem, specific scope, acceptance criteria) |
 
-**Mandatory (never skip):** 0 Setup, 1.5 Library Probe (trust gate — every external dep verified before code), 3 Coder, 4 Code Review (semantic gate), 5 Verify & Finalize, 6 Commit & PR.
+**Mandatory (never skip):** 0 Setup, 1.5 Library Probe (trust gate — every external dep verified before code), 2 Planner, 3 Coder, 4 Code Review (semantic gate), 5 Verify & Finalize, 6 Commit & PR. Planning owns its own "is a plan warranted?" gate — it fires after recon, inside the skill, and may route genuinely atomic work to `implement`; the orchestrator never pre-empts it. A skipped brainstorm means planning receives the prompt instead of a `design.md` and establishes the requirement ids itself.
 
-**Handling skipped stages:** set the DAG node to `skipped`, log `"Skipping Stage N (<name>) — <reason>"`, proceed. Skipping brainstorm does not skip setup; skipping planning does not skip coder, review, gate, or commit.
+**Handling skipped stages:** set the DAG node to `skipped`, log `"Skipping Stage N (<name>) — <reason>"`, proceed. Skipping brainstorm does not skip setup.
 
-`disabled` in `orchestrate.config.json` (see below) is honored only on the two skippable stages.
+`disabled` in `orchestrate.config.json` (see below) is honored only on the skippable stage (`brainstorm`).
 
 ---
 
@@ -130,11 +128,11 @@ digraph pipeline {
   rankdir=LR
   node [shape=box]
   stage_0 [label="0: Setup"]; stage_1 [label="1: Brainstorm"]
-  stage_15 [label="1.5: Library Probe"]; stage_17 [label="1.7: Spec Generation"]
+  stage_15 [label="1.5: Library Probe"]
   stage_2 [label="2: Planner"]; stage_3 [label="3: Coder"]
   stage_4 [label="4: Code Review"]; stage_5 [label="5: Verify & Finalize"]
   stage_6 [label="6: Commit & PR"]
-  stage_0 -> stage_1 -> stage_15 -> stage_17 -> stage_2 -> stage_3
+  stage_0 -> stage_1 -> stage_15 -> stage_2 -> stage_3
   stage_3 -> stage_4 -> stage_5 -> stage_6
   stage_4 -> stage_4 [label="2-pass review+fix" style=dashed]
   stage_3 -> stage_15 [label="LIB_SUSPECT loopback" style=dashed color=red]
@@ -145,17 +143,15 @@ digraph pipeline {
 
 Parallelism is **graph-driven**, not file-count-driven. Under vertical slicing (see the `planning` skill) each phase is an independent capability, so dispatch comes straight from the phase graph:
 
-**Phase waves:** read the DOT phase graph from plan.md. Compute **ready nodes** = phases with no incomplete predecessors. Dispatch all ready phases in parallel (multiple `Agent` calls in one message). After each wave, recompute → dispatch the next wave.
+**Phase waves:** read the DOT phase graph from plan.md's `## Structure Outline`. Compute **ready nodes** = phases with no incomplete predecessors. Dispatch all ready phases in parallel (multiple `Agent` calls in one message). After each wave, recompute → dispatch the next wave.
 
-**Per phase, choose ONE strategy:**
-- **Has step graph** in `phase-N.md` → dispatch steps in waves (same ready-node logic), skip the phase-level agent.
-- **No step graph** → single agent for the whole phase.
+**One phase = one coder dispatch** — the phase file is the unit: one TDD cycle, one commit. There is no step-level dispatch; a phase too large for one agent is a plan defect (re-slice), not a dispatch strategy.
 
 ---
 
 ## Per-stage Config: `orchestrate.config.json`
 
-Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys each stage ID (or default skill name) to `{ skill?, model?, disabled? }`. `skill` swaps the stage's skill (name only); `model` retargets sub-agent stages (`coder`/`code-review`/`verify-finalize`); `disabled` skips — honored only on the skippable stages (`brainstorm`, `planning`), rejected on mandatory ones. Full resolution rules, the gate-contract table, and an example: **`references/config.md`**. Does NOT apply to `orchestrate` itself.
+Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys each stage ID (or default skill name) to `{ skill?, model?, disabled? }`. `skill` swaps the stage's skill (name only); `model` retargets sub-agent stages (`coder`/`code-review`/`verify-finalize`); `disabled` skips — honored only on the skippable stage (`brainstorm`), rejected on mandatory ones. Full resolution rules, the gate-contract table, and an example: **`references/config.md`**. Does NOT apply to `orchestrate` itself.
 
 ---
 
@@ -166,11 +162,11 @@ Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys 
 Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
 1. `set-status baseline running`.
-2. Create dirs: `.harness/features/<SPEC_NAME>/verification/{screenshots,traces,recording}/` (committed) and `.harness/runtime/<SPEC_NAME>/review/` (gitignored; `reports/` already created by dashboard init).
+2. Create dirs: `.harness/<SPEC_NAME>/verification/{screenshots,traces,recording}/`, `.harness/<SPEC_NAME>/review/`, and `.harness/<SPEC_NAME>/phases/` (`reports/` already created by dashboard init). The whole `.harness/` tree is gitignored — artifacts reach reviewers out-of-band.
 3. Auto-detect tooling: `CLAUDE.md` first, then `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`.
-4. Run baseline metrics (typecheck, lint, test, coverage) → `.harness/runtime/<SPEC_NAME>/baseline.json`.
-5. Write `.harness/runtime/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`.
-6. Store `SPEC_NAME`, `SPEC_DIR` (`.harness/features/<SPEC_NAME>/`), `HARNESS_SPEC_DIR` (`.harness/runtime/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`.
+4. Run baseline metrics (typecheck, lint, test, coverage) → `.harness/<SPEC_NAME>/baseline.json`.
+5. Write `.harness/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`.
+6. Store `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`.
 7. **Load stage config.** If `orchestrate.config.json` exists at the worktree root, `Read` its `stages` map into `STAGE_CONFIG`; else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md`.
 8. `write-report baseline`, `set-status baseline done`, `set-status setup done`.
 
@@ -182,52 +178,48 @@ The brainstorm skill's own `## External Dependency Declaration` section must pro
 
 ### Stage 1.5: Library Probe (Main Conversation)
 
-The trust gate. Runs *before* spec generation so verified probes fold into the spec as VS-0 scenarios.
+The trust gate — every external dependency verified before planning builds on it.
 
 1. `set-status library-probe running`.
 2. Invoke `library-probe` via `Skill`. Pass design-doc path and `SPEC_DIR`; pass `--auto` if `AUTO_MODE`.
-3. Read the verdict marker from `.harness/features/<SPEC_NAME>/library-probe.md`:
+3. Read the verdict marker from `.harness/<SPEC_NAME>/library-probe.md`:
    - `<!-- LP:VERDICT:PASS -->` or `NOT_APPLICABLE` (no external deps) → continue.
    - `<!-- LP:VERDICT:BLOCKED -->` → **stop the pipeline.** Report which library failed and the user's choice (or missing creds in `--auto`).
 4. `write-report library-probe`, `set-status library-probe done`.
 
-### Stage 1.7: Spec Generation (Main Conversation)
-
-`set-status spec-gen running` → invoke `spec-generation` (it reads `design.md` + `library-probe.md` + the probe stubs at `verification/verification-stubs.md` and folds them into the spec's `## Verification Scenarios`) → save to `.harness/features/<SPEC_NAME>/spec.md`, store `SPEC_PATH` → `set-status spec-gen done`.
-
 ### Stage 2: Planner (Main Conversation)
 
 1. `set-status planning running`.
-2. Invoke `planning` via `Skill` — it reads design doc + spec internally before exploring code. Include `Lessons: <ROUTED_LESSONS>` — known pitfalls matching this spec become plan steps.
-3. Planner explores the codebase, asks interactive questions, designs **vertical-slice** phases.
+2. Invoke `planning` via `Skill` — it reads `design.md` + `dossier.md` (or the prompt, when brainstorm was skipped) internally before exploring code. Include `Lessons: <ROUTED_LESSONS>` — known pitfalls matching this spec become plan steps.
+3. Planner runs recon, asks interactive questions, designs **vertical-slice** phases.
 4. **APPROVAL GATE:** use `AskUserQuestion` (hook auto-handles waiting status).
-5. Output: `.harness/features/<SPEC_NAME>/plan.md` (committed) + `.harness/runtime/<SPEC_NAME>/phase-*.md` (gitignored). Store `PLAN_PATH`, `PHASE_DIR`.
+5. Output: `.harness/<SPEC_NAME>/plan.md` + `.harness/<SPEC_NAME>/phases/phase-*.md`. Store `PLAN_PATH`, `PHASE_DIR`.
 6. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `set-status planning done`.
 
 **Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count.
 
 ### Stage 3: Coder
 
-Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 block in `references/stage-prompts.md` — one agent per phase, or per step in waves where the phase file has a Steps section. Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook + functional-verify read this) **and** `e2e-report.json` (raw run summary — quality-gate reads this).
+Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 block in `references/stage-prompts.md` — one agent per phase file. Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook + functional-verify read this) **and** `e2e-report.json` (raw run summary — quality-gate reads this).
 
 DAG: `set-status coder running` before dispatch; per phase `set-status <phase-node> running`/`done`; after all phases `set-status coder done`.
 
-**Coder-e2e-gate breadcrumb (mandatory before EVERY coder dispatch):** before dispatching any coder sub-agent (phase- or step-level), write the active-phase breadcrumb so the `coder-e2e-gate` SubagentStop hook can verify the phase report after the agent returns. Without this file the hook no-ops and the phase is unprotected:
+**Coder-e2e-gate breadcrumb (mandatory before EVERY coder dispatch):** before dispatching any coder sub-agent, write the active-phase breadcrumb so the `coder-e2e-gate` SubagentStop hook can verify the phase report after the agent returns. Without this file the hook no-ops and the phase is unprotected:
 
 ```bash
 START_SHA="$(git rev-parse HEAD)"
-cat > .harness/runtime/current-phase <<EOF
+cat > .harness/current-phase <<EOF
 SPEC_NAME=<SPEC_NAME>
 PHASE_N=<PHASE_N>
 START_SHA=$START_SHA
 EOF
 ```
 
-After each phase completes, delete the breadcrumb (`rm -f .harness/runtime/current-phase`) so later-stage subagents don't trigger the gate.
+After each phase completes, delete the breadcrumb (`rm -f .harness/current-phase`) so later-stage subagents don't trigger the gate.
 
-**Nomination signals (learning loop, all of stages 3–5):** stages nominate lesson candidates to `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`; the stage-5 curator judges them. Format, taxonomy and rules: the `learn` skill's **Nominate mode** — pass every stage sub-agent that path, not a copy of the format.
+**Nomination signals (learning loop, all of stages 3–5):** stages nominate lesson candidates to `.harness/<SPEC_NAME>/lesson-candidates.jsonl`; the stage-5 curator judges them. Format, taxonomy and rules: the `learn` skill's **Nominate mode** — pass every stage sub-agent that path, not a copy of the format.
 
-**Claims aggregation (mandatory, after the last phase completes):** aggregate every `phase-*-claims.json` into a single `.harness/runtime/<SPEC_NAME>/claims.json`. Schema + exact `jq` command: `references/claims-aggregation-format.md` — invoke verbatim. If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated `claims.json` is what verify reads; phase files are kept for audit.
+**Claims aggregation (mandatory, after the last phase completes):** aggregate every `phase-*-claims.json` into a single `.harness/<SPEC_NAME>/claims.json`. Schema + exact `jq` command: `references/claims-aggregation-format.md` — invoke verbatim. If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated `claims.json` is what verify reads; phase files are kept for audit.
 
 ### LIB_SUSPECT Loopback (Stage 3 → 1.5)
 
@@ -257,7 +249,7 @@ Single consolidated sub-agent: functional verification → quality gate → sync
 
 ```
 Bash("
-  test -f .harness/features/<SPEC_NAME>/verification/proof-report.md ||
+  test -f .harness/<SPEC_NAME>/verification/proof-report.md ||
   { echo 'MISSING_VERIFICATION_ARTIFACTS'; exit 1; }
 ")
 ```
@@ -278,11 +270,11 @@ Failure modes (stop the pipeline):
 
 `set-status commit-pr running`. Do these directly (no sub-agent):
 
-1. **Generate `.harness/features/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict **stated inline** (`verification/` is never committed, so a link to it would be dead for everyone but you); one-paragraph summary; TOC linking each committed artifact (`design.md`, `spec.md`, `plan.md`, `library-probe.md`, `learnings.md` if present); library-probe verdict line (selected lib + alternatives); PR link placeholder.
-2. Invoke `git-commit` via `Skill`. Create a final, separate commit for the artifact tree: `docs(spec): add artifacts for <SPEC_NAME>` containing only `.harness/features/<SPEC_NAME>/` files. **Never commit `verification/`** — the report, frames and videos stay on disk for a human and out of git forever. Confirm `.harness/features/*/verification/` is in `.gitignore` before staging; add it if it is missing.
+1. **Generate `.harness/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict stated inline; one-paragraph summary; TOC naming each artifact (`design.md`, `plan.md`, `phases/`, `library-probe.md`, `learnings.md` if present); library-probe verdict line (selected lib + alternatives); PR link placeholder. Nothing under `.harness/` is committed — reviewers read this index and its artifacts out-of-band (directly, or uploaded to the tracker).
+2. Invoke `git-commit` via `Skill` for the feature changes. `.harness/` paths are gitignored and never staged — if `git status` shows them, fix `.gitignore` instead of committing.
 3. `git push -u origin <BRANCH_NAME>`.
-4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body 'Closes: see .harness/features/<SPEC_NAME>/README.md for design, spec, plan, and verification proof.' --base main --head <BRANCH_NAME>`.
-5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md and amend the artifact commit (or follow up with a new commit if amend is forbidden by policy).
+4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`.
+5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md.
 6. `write-report commit-pr`, `set-status commit-pr done`.
 
 **Extract:** commits, `PR_URL`.
@@ -320,7 +312,7 @@ Present ONLY after Stage 6 completes, or after a genuine BLOCK/FAIL halt — nev
 | Stage | Result |
 |-------|--------|
 | 0. Setup | Worktree at <path>, baseline captured |
-| 1. Brainstorm | Spec: .harness/features/<name>/spec.md |
+| 1. Brainstorm | Design: .harness/<name>/design.md |
 | 2. Plan | <phase_count> phases |
 | 3. Coder | <files> files, <tests> tests |
 | 4. Review | <verdict> (2-pass) |
@@ -340,6 +332,6 @@ Finalize: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' final
 - **Each stage is isolated** — sub-agents don't share context; pass all necessary info in the prompt, and extract file paths + key info from each return to pass forward.
 - **Verify before gate** — functional verification runs the app and tests features live BEFORE the quality gate runs metrics. A broken feature is caught early, with evidence.
 - **Gate is a hard stop** — a BLOCKED verdict stops the pipeline, no workarounds.
-- **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) at both phase and step level; vertical slices are independent by construction.
+- **Parallelize from the graph** — dispatch ready nodes (no incomplete predecessors) at the phase level; vertical slices are independent by construction.
 - **Stagnation stops early** — the coder detects repeated failures and stops itself; don't loop endlessly.
-- **Spec folder structure** — committed reviewer-facing artifacts in `.harness/features/<name>/` (design, spec, plan, library-probe, learnings, verification/); pipeline working state in `.harness/runtime/<name>/` (baseline, phase-*, phase-*-claims.json, claims.json, e2e-report.json, gate-reports, review/, probes/, manifest), gitignored.
+- **One feature directory** — everything for a run lives in `.harness/<name>/` (design, dossier, plan, phases/, library-probe, baseline, claims, e2e-report, gate-reports, review/, probes/, verification/, manifest), all gitignored; reviewers read artifacts out-of-band.

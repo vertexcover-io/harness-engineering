@@ -9,9 +9,8 @@ only the wire protocol around it.
 
 ## Input: the phase file
 
-**Primary input is a `phase-N.md`** (from the planning skill, at
-`.harness/runtime/<SPEC_NAME>/`; its committed overview is `plan.md` under
-`.harness/features/<SPEC_NAME>/`). Map its sections:
+**Primary input is a `phases/phase-N.md`** (from the planning skill, at
+`.harness/<SPEC_NAME>/phases/`; its overview is `plan.md` one level up). Map its sections:
 
 - `## Implementation` — the build steps to execute
 - `## Test Scenarios` (`### Unit` / `### API` / `### E2E`, each `S<n>`) — the RED specs, one
@@ -22,8 +21,6 @@ only the wire protocol around it.
 **Carry the scenario's id in each test title** (`S12: …`) so a reviewer can trace it. The id
 is for tracing — the rest of the title still states the claim, per the `tdd` skill.
 
-**Step-scoped dispatch:** when invoked on a step (a subset of a phase), touch only that step's
-files and scenarios; the cycle is unchanged, just narrower.
 
 ## Tooling commands
 
@@ -52,10 +49,11 @@ is BLOCKED until the E2E test passes and the report artifacts are written.
   flag or feature gate, the harness must turn it on, or the test goes green because the code
   never ran — a false pass, not a done scenario.
 - **The E2E flow is given, not chosen.** The phase's `### E2E` block is the finish-line spec —
-  use it verbatim. Do NOT author E2E for flows in plan.md's `## System E2E Tests` (those are
-  cross-slice, run after assembly). Before creating a new spec file, grep the e2e directory for
-  the surface (route, command, topic, selector); if one covers it, **extend it** — a parallel
-  spec for the same flow is a BLOCKED condition.
+  use it verbatim. Flows in plan.md's `## System Verification` are cross-slice: author one
+  only when your phase file names it as yours to run (the slice completing the journey), and
+  take its steps from the plan verbatim. Before creating a new spec file, grep the e2e
+  directory for the surface (route, command, topic, selector); if one covers it, **extend
+  it** — a parallel spec for the same flow is a BLOCKED condition.
 - **Published library component?** Its E2E leg runs in the **consumer** repo that mounts it,
   and the consumer's installed copy must be rebuilt/synced from the worktree first — see
   `consumer-repo-e2e.md`.
@@ -64,7 +62,7 @@ is BLOCKED until the E2E test passes and the report artifacts are written.
 
 1. **`phase-<N>-claims.json`** — see `phase-claims-format.md` for the schema and gate rules
    (`executed > 0`, `failed = 0`, per-file `proven_by` coverage, UI claims).
-2. **`e2e-report.json`** at `.harness/runtime/<SPEC_NAME>/` (gitignored; consumed by
+2. **`e2e-report.json`** at `.harness/<SPEC_NAME>/` (gitignored; consumed by
    functional-verify and quality-gate), derived from the runner's machine output:
 
 ```json

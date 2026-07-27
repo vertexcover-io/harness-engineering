@@ -151,7 +151,7 @@ Setup → Brainstorm → Planner → Coder → Quality Gate → Sync Docs → Le
 
 Stages 0–2 (Setup, Brainstorm, Planner) run interactively so you stay in control of design decisions. Stages 3–7 run as autonomous sub-agents.
 
-All artifacts land in `.harness/features/<name>/` — spec, plan, phase files, and quality reports.
+All artifacts land in `.harness/<name>/` — design, plan, phase files, and quality reports (gitignored; reviewers read them out-of-band).
 
 **Live DAG Dashboard**
 
@@ -187,7 +187,7 @@ Run `/orchestrate` with a prompt or spec file. It runs the full pipeline:
 6. **Captures learnings** from the run
 7. **Commits and creates a PR**
 
-All artifacts are saved to `.harness/features/<name>/` for traceability.
+All artifacts are saved to `.harness/<name>/` for traceability.
 
 ---
 
@@ -345,7 +345,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/skill-eval-generator` | Generates eval test suites for skills (pairs with `skill-creator eval`) |
 
 **Run automatically (no command needed):**
-`code-quality` · `refactor` · `quality-gate` · `pipeline-setup` · `spec-generation` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
+`code-quality` · `refactor` · `quality-gate` · `pipeline-setup` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
 
 ## Structure
 
@@ -378,7 +378,6 @@ harness/
     ├── refactor/
     ├── review-fixer/
     ├── skill-eval-generator/
-    ├── spec-generation/
     ├── sync-docs/
     ├── tdd/
     ├── tech-debt-finder/

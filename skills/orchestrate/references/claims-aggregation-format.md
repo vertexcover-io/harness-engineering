@@ -1,6 +1,6 @@
 # Claims Aggregation Format & UI-Proof Gate
 
-After every coder phase has produced `.harness/runtime/<SPEC_NAME>/phase-<N>-claims.json` (see `skills/orchestrate/references/phase-claims-format.md` for the per-phase shape), orchestrate aggregates them into a single `.harness/runtime/<SPEC_NAME>/claims.json` that functional-verify consumes.
+After every coder phase has produced `.harness/<SPEC_NAME>/phase-<N>-claims.json` (see `skills/orchestrate/references/phase-claims-format.md` for the per-phase shape), orchestrate aggregates them into a single `.harness/<SPEC_NAME>/claims.json` that functional-verify consumes.
 
 ## Aggregated `claims.json` schema
 
@@ -16,7 +16,7 @@ After every coder phase has produced `.harness/runtime/<SPEC_NAME>/phase-<N>-cla
     {
       "phase": 7,
       "runner": "playwright",
-      "report_path": ".harness/runtime/web-search-settings/phase-7-playwright.json",
+      "report_path": ".harness/web-search-settings/phase-7-playwright.json",
       "command": "pnpm test:e2e --reporter=json",
       "executed": 12,
       "passed":   12,
@@ -41,7 +41,7 @@ After every coder phase has produced `.harness/runtime/<SPEC_NAME>/phase-<N>-cla
 
 ```bash
 cd '<WORKTREE_PATH>' || exit 1
-HARNESS_SPEC_DIR='.harness/runtime/<SPEC_NAME>'
+HARNESS_SPEC_DIR='.harness/<SPEC_NAME>'
 shopt -s nullglob
 PHASE_FILES=( "$HARNESS_SPEC_DIR"/phase-*-claims.json )
 if [ ${#PHASE_FILES[@]} -eq 0 ]; then
@@ -73,7 +73,7 @@ If aggregation fails → stop the pipeline with `MISSING_PHASE_CLAIMS`.
 
 ## Verification proof (runs AFTER functional-verify returns)
 
-functional-verify drives the browser and writes `.harness/features/<SPEC_NAME>/verification/` —
+functional-verify drives the browser and writes `.harness/<SPEC_NAME>/verification/` —
 `proof-report.md` plus a folder of frames and a `proof.mp4` per scenario. **None of it is gated,
 parsed, or committed.** The report is written for a human in plain English and deliberately carries
 no claim ids, so there is nothing here to grep; the verifier reports its verdict and its bugs back
@@ -83,7 +83,7 @@ Check only that the run happened:
 
 ```bash
 cd '<WORKTREE_PATH>' || exit 1
-test -f '.harness/features/<SPEC_NAME>/verification/proof-report.md' \
+test -f '.harness/<SPEC_NAME>/verification/proof-report.md' \
   || { echo 'MISSING_PROOF_REPORT'; exit 1; }
 ```
 

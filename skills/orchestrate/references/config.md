@@ -12,7 +12,7 @@ stage's default skill name (`tdd`) — both resolve the same stage. A worked exa
     "coder":           { "skill": "my-tdd", "model": "opus" },
     "code-review":     { "model": "opus" },
     "quality-gate":    { "skill": "my-quality-gate" },
-    "planning":        { "disabled": true },
+    "planning":        { "skill": "my-planning" },
     "verify-finalize": { "model": "haiku" }
   }
 }
@@ -28,9 +28,10 @@ Look the entry up by stage ID, then by default skill name; call the match `CFG`.
   dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model` on a
   main-conversation stage has no Agent to retarget — ignore it (log).
 - **disabled** = `CFG.disabled === true` skips the stage, exactly like a caller "skip <stage>" (DAG
-  node → `skipped`, "Handling Skipped Stages" applies). Honored ONLY for the **Skippable Stages**
-  (`brainstorm`, `planning`); on any **Mandatory** stage it is rejected
-  (`"Cannot disable mandatory stage <id> — ignoring"`).
+  node → `skipped`, "Handling Skipped Stages" applies). Honored ONLY for the **Skippable Stage**
+  (`brainstorm`); on any **Mandatory** stage it is rejected
+  (`"Cannot disable mandatory stage <id> — ignoring"`). Planning is mandatory — its own
+  "is a plan warranted?" gate (inside the skill, after recon) is the only route to `implement`.
 
 Does NOT apply to `orchestrate` itself (no recursive override).
 
@@ -45,12 +46,11 @@ FAILURE/BLOCKED.
 |----------|---------------|------------------------------------|
 | `brainstorm` | `brainstorm` | — |
 | `library-probe` | `library-probe` | `<!-- LP:VERDICT:PASS -->` / `BLOCKED` |
-| `spec-gen` | `spec-generation` | — |
 | `planning` | `planning` | — |
 | `coder` | `tdd` + `code-quality` | phase `…-claims.json` (`executed>0`, `failed=0`) |
 | `code-review` | `code-review` | `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
 | `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.md`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 
-Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N = 1–10).
+Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,6,7,9,10}).
 `verify-finalize` is a bundle — overriding its `skill` replaces all four sub-skills and their
 contracts; override `quality-gate` (etc.) to swap just one.

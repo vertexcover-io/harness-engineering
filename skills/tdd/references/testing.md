@@ -102,7 +102,7 @@ behave the same) plus boundary values (the edges where classes meet — that's w
     (10_000, None),               # largest valid
     (10_001, "exceeds limit"),    # above boundary
 ])
-def test_REQ_004_validates_payment_amount(amount, expected_error):
+def test_S4_validates_payment_amount(amount, expected_error):
     result = validate_payment(make_payment(amount=amount))
     assert result.error == expected_error
 ```

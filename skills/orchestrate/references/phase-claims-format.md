@@ -3,7 +3,7 @@
 Every coder phase that runs an e2e or integration suite MUST emit a phase-claims report at:
 
 ```
-.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>-claims.json
+.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json
 ```
 
 This file is the only artifact the orchestrator trusts to decide whether the phase is done. It serves two consumers:
@@ -28,7 +28,7 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
   ],
   "e2e_run": {                         // REQUIRED. Re-verified by coder-e2e-gate hook.
     "runner": "playwright",            // "playwright" | "vitest" | "jest" | "generic"
-    "report_path": ".harness/runtime/<SPEC_NAME>/phase-7-playwright.json",
+    "report_path": ".harness/<SPEC_NAME>/phase-7-playwright.json",
     "command": "pnpm test:e2e --reporter=json",
     "started_at": "2026-05-20T18:11:02Z",
     "finished_at": "2026-05-20T18:12:43Z"
@@ -67,4 +67,4 @@ This file is the only artifact the orchestrator trusts to decide whether the pha
 
 ## How orchestrate consumes this
 
-After all phases complete, orchestrate aggregates every `phase-*-claims.json` into a single `.harness/runtime/<SPEC_NAME>/claims.json`. See `skills/orchestrate/references/claims-aggregation-format.md` for the aggregated shape, the `executed > 0` / `failed = 0` check it enforces, and why verification itself is judged by a human rather than gated.
+After all phases complete, orchestrate aggregates every `phase-*-claims.json` into a single `.harness/<SPEC_NAME>/claims.json`. See `skills/orchestrate/references/claims-aggregation-format.md` for the aggregated shape, the `executed > 0` / `failed = 0` check it enforces, and why verification itself is judged by a human rather than gated.

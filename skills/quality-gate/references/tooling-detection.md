@@ -6,7 +6,7 @@ How the gate detects a project's toolchain and records the starting metrics.
 
 Run at pipeline start, immediately after worktree setup, so gates can detect regressions against a
 known-good starting point. Capture these metrics and write them to
-`.harness/runtime/<SPEC_NAME>/baseline.json`:
+`.harness/<SPEC_NAME>/baseline.json`:
 
 ```json
 {
