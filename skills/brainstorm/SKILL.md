@@ -108,7 +108,7 @@ silently forgotten.
 
 ### Question sources
 
-Walk the lens catalog — **read `references/lenses.md` before the first lens pass**; without it,
+Walk the lens catalog — **read `../_shared/lenses.md` before the first lens pass**; without it,
 completeness is recalled instead of derived, and the gap the user didn't mention stays
 unfound. Each lens states when it fires and what to ask.
 
@@ -161,7 +161,7 @@ not X, Y" and move on.
 Frame each approach as **reuse / extend / build new**. Optionally add one deliberately
 higher-upside **challenger** alongside the baseline.
 
-**Stress pass** on the chosen approach: walk `references/lenses.md` again as *review* rather
+**Stress pass** on the chosen approach: walk `../_shared/lenses.md` again as *review* rather
 than generation — the catalog states where findings land.
 
 **YAGNI, last.** Every knob, flag, and option answers: needed now, or hardcode and add when
@@ -171,12 +171,13 @@ empirical — then defer the value, not the knob.
 ## Write design.md
 
 **Read `references/design-sections.md` before writing the doc.** Without the section contract
-loaded, the design drifts into restating its PRD and burying decisions in prose — the two
-failures the contract exists to prevent.
+loaded, the design drifts into restating its PRD, burying decisions in prose, and writing one
+fact into four sections — the failures the contract exists to prevent.
 
-One rule worth carrying here because it is the easiest to skip: forks you closed on the
-user's behalf are written into `## Decisions` marked `— inferred` — they are bets, and the
-highest-value thing a reviewer can correct.
+Two rules worth carrying here because they are the easiest to skip. Forks you closed on the
+user's behalf are marked `— inferred` — they are bets, and the highest-value thing a reviewer can
+correct. And the design **cites the PRD rather than restating it**: decisions name the story ids
+they drive, and a fact stated once is referenced by id everywhere else.
 
 ## Self-review — two passes, different in kind
 
@@ -190,12 +191,12 @@ the user's think-time) and **fold the verdict in before hand-off** — a refutat
 after approval re-opens the gate with the correction. In `--auto`, run it to completion and
 correct refuted claims before proceeding to planning.
 
-**Pass 2 — re-read as the reader.** One inline act: coverage (every requirement traceable to a
-decision) · placeholders · contradiction-in-one-pass · ambiguity ("could any requirement be
-read two ways? pick one and make it explicit"). Fix inline; no re-review loop.
+**Pass 2 — re-read as the reader.** One inline act: coverage (every PRD story either driving a
+decision or named as unaddressed) · placeholders · contradiction-in-one-pass · ambiguity ("could
+any decision be read two ways? pick one and make it explicit"). Fix inline; no re-review loop.
 
 **Calibration for both:** flag only what would cause a real problem downstream — a missing
-section, a contradiction, a requirement someone could build wrong. Wording preferences are not
+section, a contradiction, a decision someone could build wrong. Wording preferences are not
 findings.
 
 ## Approval gate

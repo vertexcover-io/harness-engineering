@@ -7,7 +7,7 @@ description: >
   the way the user and QA do, and try to break it. Trigger on "tests pass", "implementation done",
   "ready for review", "ready to ship", "ship it", "verify this", "is this working", "can we merge",
   or any other move toward calling a feature finished. The only proof this skill ran is
-  .harness/features/<SPEC_NAME>/verification/proof-report.md — if that file does not exist for the
+  .harness/<SPEC_NAME>/verification/proof-report.md — if that file does not exist for the
   current spec, verification did not happen and the feature is not done.
 user-invocable: true
 ---
@@ -27,7 +27,7 @@ form, page, or click. The API section exists for the surfaces a QA could never r
 endpoint, a webhook, a cron job — and for nothing else. A claim tagged `type: "api"` that a user
 reaches through a screen is a UI scenario; the tag describes how it was built, not how it is proven.
 
-You produce **one file**: `.harness/features/<SPEC_NAME>/verification/proof-report.md`, and the
+You produce **one file**: `.harness/<SPEC_NAME>/verification/proof-report.md`, and the
 evidence beside it. No proof report means no verification, which means not done.
 
 **The report is written for a QA reader, not for a machine.** They know the product; they have never
@@ -37,7 +37,7 @@ comes from a spec requirement, say what the requirement *is* rather than naming 
 
 **Verification artifacts are never committed.** The report, the frames, and the videos live on disk
 for a human to review and go no further. Before you write anything, make sure the project ignores
-them — `.harness/features/*/verification/` in the repo's `.gitignore`, added if it is missing. A
+them — `.harness/*/verification/` in the repo's `.gitignore`, added if it is missing. A
 screenshot in git is a mistake that outlives the branch.
 
 **One subject, one place.** A scenario, a bug, a gap — each is written once and referenced from
@@ -57,10 +57,10 @@ Three things are non-negotiable, and each is a verification failure if you skip 
 
 ## Inputs
 
-- **Spec** — `.harness/features/<SPEC_NAME>/spec.md`
-- **Plan** — `.harness/features/<SPEC_NAME>/plan.md` (per-phase breakdowns in `.harness/runtime/<SPEC_NAME>/phase-*.md`)
-- **Claims** — `.harness/runtime/<SPEC_NAME>/claims.json` when orchestrate aggregated them, otherwise the per-phase `phase-*-claims.json`. Schemas: `skills/orchestrate/references/phase-claims-format.md` and `skills/orchestrate/references/claims-aggregation-format.md`. Required to read when present.
-- **E2E report** — `.harness/runtime/<SPEC_NAME>/e2e-report.json`, the coder's raw e2e run summary. Its `gaps` array names the blind spots the coder already knows about — you seed the adversarial pass (Step 5) from it.
+- **Design** — `.harness/<SPEC_NAME>/design.md` (its `## Personas & Flows` and `## Verification Intent` are your scenario sources; absent when brainstorm was skipped)
+- **Plan** — `.harness/<SPEC_NAME>/plan.md` (its Test Matrix's `functional-verify` rows name the human-observable properties; per-phase breakdowns in `.harness/<SPEC_NAME>/phases/phase-*.md`)
+- **Claims** — `.harness/<SPEC_NAME>/claims.json` when orchestrate aggregated them, otherwise the per-phase `phase-*-claims.json`. Schemas: `skills/orchestrate/references/phase-claims-format.md` and `skills/orchestrate/references/claims-aggregation-format.md`. Required to read when present.
+- **E2E report** — `.harness/<SPEC_NAME>/e2e-report.json`, the coder's raw e2e run summary. Its `gaps` array names the blind spots the coder already knows about — you seed the adversarial pass (Step 5) from it.
 
 Claim ids are how you keep track of what you have covered. They are working notes: none of them
 reach the report.
@@ -88,18 +88,19 @@ matching spec requirement is still in scope: verify it anyway.
 
 Claims arrive in either of two shapes and both are normal: orchestrate writes an aggregated
 `claims.json` after the last coder phase, while a standalone run sees only `phase-*-claims.json`.
-Read whichever exists. If neither does, say so and derive scenarios from the spec instead.
+Read whichever exists. If neither does, say so and derive scenarios from the design and plan instead.
 
 ## Step 1 — Verification Scenarios
 
-Read the spec's `## Verification Scenarios` section and take a scenario from each thing it asks you
-to prove. The shape varies: often `### VS-N` with numbered, tester-walkable steps, sometimes a table
-of one-line expectations with no steps at all. Both are normal — when the spec gives you an outcome
-without a walk, work out the walk yourself.
+Take a scenario from each thing the artifacts ask you to prove: the design's `## Personas & Flows`
+(numbered, tester-walkable steps — walk them as written), its `## Verification Intent` (properties
+needing human judgement, stated by no requirement — work out the walk yourself), its
+`## Requirements & Decisions` (the `R#`/`EC#` an actor can observe), and the plan's Test Matrix
+rows at the `functional-verify` level.
 
-If that section is absent, derive one scenario per acceptance criterion, routing each by the same
+With no design.md, derive one scenario per requirement in plan.md, routing each by the same
 surface test as Step 0. If nothing can be derived, report "No functional verification scenarios —
-skipping" and stop. Every scenario traces to something the spec or the claims actually say.
+skipping" and stop. Every scenario traces to something the artifacts or the claims actually say.
 
 **Name each scenario for what it proves**, in kebab-case, as a phrase a QA would recognise:
 
@@ -123,7 +124,7 @@ boot in, and which ports they take. Follow it. Only when nothing documents a pro
 one yourself, and `references/infra-startup.md` carries that fallback: probe before assuming,
 allocate a free port rather than fighting for a default, health-poll with a hard deadline.
 
-However the stack came up, it reports back the same way — `.harness/runtime/<SPEC_NAME>/infra.json`,
+However the stack came up, it reports back the same way — `.harness/<SPEC_NAME>/infra.json`,
 holding `worktree`, `services`, and `datastores`. Steps 3, 4, and 8 all read from it, and the shape
 is documented in `references/infra-startup.md`. Take every URL from that file rather than from
 memory: ports are commonly allocated per worktree, so a port you remember is a port that now belongs
@@ -140,9 +141,9 @@ listening, nothing more — a dev server whose file watcher died can report heal
 returns 404 inside a rendered app shell. Before you trust the stack, fetch the actual route you came
 to drive and confirm it returns the page you expect.
 
-**Write your artifacts beside the spec.** `verification/` goes in the same
-`.harness/features/<SPEC_NAME>/` directory you read `spec.md` from — which is inside the worktree when
-the spec lives there, and in the main checkout when it doesn't. A report that lands somewhere other
+**Write your artifacts beside the plan.** `verification/` goes in the same
+`.harness/<SPEC_NAME>/` directory you read `plan.md` from — which is inside the worktree when
+the plan lives there, and in the main checkout when it doesn't. A report that lands somewhere other
 than next to the thing it verifies is a report the next reader won't find.
 
 What you must not do is create a directory a launcher could mistake for a service. Launchers commonly
@@ -323,7 +324,7 @@ not evidence.
 
 This pass runs in the same context — subagents can't spawn subagents — so its isolation comes from
 discipline. Three mitigations are mandatory. **Force a context break**: before generating scenarios,
-re-read only `spec.md`, the claims, and `e2e-report.json` (whichever are present), and leave any
+re-read only `design.md`, the claims, and `e2e-report.json` (whichever are present), and leave any
 draft of the proof report closed — it biases you toward agreeing with what you already wrote.
 **Target the gaps**: start from the `gaps` array in `e2e-report.json` — those are the coder's own
 declared blind spots — then extend by diffing spec ACs against the claims to find requirements no

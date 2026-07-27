@@ -8,7 +8,7 @@ The commands below are **illustrative (one common stack)** — derive the real o
 
 ## 0. The handoff — `infra.json`
 
-However the stack came up, it reports back the same way: a file at `.harness/runtime/<SPEC_NAME>/infra.json` naming what is running and where.
+However the stack came up, it reports back the same way: a file at `.harness/<SPEC_NAME>/infra.json` naming what is running and where.
 
 ```json
 {

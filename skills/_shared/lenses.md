@@ -1,8 +1,10 @@
 # Lens Catalog
 
 One catalog, two modes. **Generation** (the grill): walk every lens; where it fires, ask the
-question it states. **Review** (the stress pass on a chosen approach): walk it again against
-the decided shape; every finding lands in Requirements, Edge Cases, Risks, or a Decision —
+question it states. **Review** (the stress pass on a chosen approach, and planning's recon):
+walk it again against the decided shape; every finding lands in the consuming doc's own
+sections — for a design: Requirements, Edge Cases, Risks, or a Decision; for a plan: a
+Codebase Context entry, a Tech Debt disposition, a matrix row, or a question to the user —
 nowhere else.
 
 | Lens | Fires when | Then ask |

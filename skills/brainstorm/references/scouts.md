@@ -46,7 +46,7 @@ is not. Vendor pages overstate and postmortems understate — read them against 
 Recency matters for pricing and capability claims, less for systems reasoning.
 
 **Returns findings inline as quotes with source URLs — no file.** Every finding either shapes
-an approach, a requirement, a risk, or a `## Decisions` entry — citing its URL in the section
+an approach, a requirement, a risk, or a decision — citing its URL in the section
 it shapes — or it is dropped. If research was warranted but could not
 run (no network, no tool), record that as an assumption rather than presenting the design as
 externally grounded.
