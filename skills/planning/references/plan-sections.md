@@ -1,95 +1,121 @@
-# plan.md and phases/phase-N.md — Section Contract
+# plan.md and phases/phase-N.md — the writing contract
 
-Paths: `.harness/<name>/plan.md` · `.harness/<name>/phases/phase-N.md`. Examples use a
-neutral domain (user auth) unrelated to the feature being planned; the plan's own artifacts
-use the target feature's real vocabulary.
+Paths: `.harness/<name>/plan.md` · `.harness/<name>/phases/phase-N.md`. Examples use a neutral
+domain (user auth) unrelated to the feature being planned.
 
-**File references, everywhere in both documents:** `src/services/user.ts:34 — createUser,
-the insert path`. The path leads so click-detection resolves it; the clause names what's
-there so the reader doesn't open the file to find out. Repo-relative always.
+**File references, everywhere in both documents:** `src/services/user.ts:34 — createUser, the
+insert path`. The path leads so click-detection resolves it; the clause names what's there so
+the reader doesn't open the file to find out. Repo-relative always.
 
-## plan.md — sections
+## Sections are available, not required
 
-| Section | Holds |
+Include a section when it has content meeting its trigger; omit it otherwise. An absent section
+reads as "nothing to say here", which is accurate and costs nothing. A present-but-thin one
+reads as a filled template and teaches the reader to skim.
+
+The floor is real: a small change can be phases and their scenarios, and nothing else. That is
+a complete plan.
+
+| plan.md section | Include when |
 |---|---|
-| `## Goal` | one sentence |
-| `## Requirements` | the `R#`/`NF#`/`EC#` list planning established from the PRD, in the EARS shapes given in `SKILL.md`. Cites the PRD story id each was drawn from. |
-| `## Global Constraints` | project-wide requirements binding **every** slice — version floors, naming rules, platform limits — exact values verbatim. Slices are dispatched in isolation; anything project-wide is invisible unless broadcast here. |
-| `## Codebase Context` | patterns to follow · reuse verdicts · verified preconditions · the create/modify file table |
-| `## Tech Debt` | the disposition table: file · issue (severity/category) · disposition · reason |
-| `## Structure Outline` | the C-header view — see below |
-| `## Test Matrix` | one row per requirement: Requirement · Level · Where it's proven · Slice |
-| `## System Verification` | cross-slice E2E flows written out in full, each owned by the slice completing its journey (that phase file notes it in one line) · the full-suite run after all slices land |
-| `## Deferred` | follow-up work deliberately not in this plan (including every "fix after" debt disposition) |
+| `## Inputs` | upstream documents exist — name them, plus one line on what this plan adds |
+| `## Requirements` | there is no requirements document, so planning established the ids itself |
+| `## Design corrections` | recon contradicted an input: what was assumed, what the code shows, what changes |
+| `## Phases` | always — capability title, repos touched, builds/needs, *why the cut is there*, and the DOT digraph |
+| `## Global constraints` | something binds every phase and is invisible to one built in isolation — fixed values, verbatim copy, platform limits. A value used in one phase belongs in that step. |
+| `## Signature index` | a name is defined in one phase and used in another |
+| `## Blockers in existing code` | existing code must be repaired or worked around to build this |
+| `## Test matrix` | there is more than one behavior to place |
+| `## Acceptance` | something is provable only after every phase lands |
+| `## Deferred` | work was deliberately excluded, or the user chose to defer an open question |
 
-No `## Acceptance Criteria` (the requirements — the design's or `## Requirements` — carry
-them), no status fields (progress derives from git and the DAG), no Unit/API scenarios
-(those live in phase files).
+No status fields — progress derives from git and the DAG. No file inventory, no patterns table,
+no reuse-verdict table: those belong in the steps they govern.
 
-## The Structure Outline
+### The signature index
 
-Types, then signatures, then phases — one section read as a unit: what do I build, in what
-order, and what works after each step.
+Flat, one line per new or changed signature, grouped by phase. It exists for one reader — a
+coder building a later phase who cannot see the earlier phase's file and needs to check whether
+the function is `resolveColumns` or `getColumns`. Duplication is the point of an index.
 
-```markdown
-## Structure Outline
-
-**New types**
-
-    type Session = { token: string, expiresAt: Date }
-
-**Signatures**
-
+    // phase 1
     register(email, password) → User | DuplicateError
-    issueToken(user)          → Session
     POST /register → 201 | 409 | 422
 
-**Phases**
+    // phase 2
+    issueToken(user) → Session
+    Session = { token: string, expiresAt: Date }
 
-  1 · register — an account can be created and read back with no password exposed
-      builds: register(), POST /register, users table
-  2 · login — a registered account obtains a session that expires
-      builds: issueToken(), POST /login
-      needs: register() from 1
+It introduces nothing: every entry is defined by a step. A name here that no step builds is a
+finding.
 
-```dot
-digraph { "1 register" -> "2 login" }
-```
-```
+### Blockers
 
-- The signatures block is the **source of truth** for every new or changed signature and
-  type, whole-feature, decided before any slice is written — the cross-slice naming
-  collision (slice 2 invents `getUser`, slice 4 invents `fetchUserByEmail`) is uncatchable
-  from inside any single slice. Contracts only: no bodies, no per-slice detail.
-- A phase line is `N · tag — <demonstrable capability>` plus `builds:` and (when it consumes
-  an earlier slice) `needs:`. The title *is* the anti-horizontal test: a title that names
-  only a layer names no capability.
-- The DOT digraph closes the section — orchestrate computes dispatch waves from it; `needs:`
-  carries the same order for the reader.
+Only what must be repaired or worked around to build this — problems that block the work, or
+make the new code hard to write, test, or understand. Each gets a phase.
 
-## phase-N.md — header plus five sections
+Pre-existing problems in a file you happen to be touching are out of scope; they are
+`tech-debt-finder`'s job, and listing them trains the reader to skim the ones that matter. A
+row whose disposition is "leave" has already answered its own question.
 
-Header: `# Phase N (<tag>): <the capability title from the outline>` + a `Depends on:` line.
+Quote the code. A blocker described in prose is a claim the reader has to verify; the four
+lines that show it are the argument.
+
+## phase-N.md
+
+Header: `# Phase N (<tag>): <the capability title>` + a `Depends on:` line.
 
 | Section | Answers only | Must not contain |
 |---|---|---|
-| `## Goal` | why this slice exists, what it unlocks | file lists, steps |
-| `## Interfaces` | what this slice consumes from earlier slices and produces for later ones — **names from the outline's signatures, never re-typed** | rationale, steps |
+| `## Goal` | why this phase exists, what it unlocks — folds into the header when the title already says it | file lists, steps |
+| `## Interfaces` | what this phase consumes from earlier phases and produces for later ones — **names from the signature index, never re-typed** | rationale, steps |
 | `## Implementation` | how, as ordered steps | scenario prose, done-criteria |
-| `## Test Scenarios` | the behavior that proves it — `### Unit` / `### API` / `### E2E`, only the subsections this slice has | implementation detail, cross-slice flows |
+| `## Test Scenarios` | the behavior that proves it — only the subsections this phase has | implementation detail, cross-phase flows |
 | `## Commit` | the message | — |
 
-Omit `## Interfaces` for a slice with no seam (typically slice 1). No Done-When section —
-the scenarios are the definition of done. Content restating another section is cut.
+`## Interfaces` appears only where a seam exists. No Done-When section — the scenarios are the
+definition of done. Content restating another section is cut.
 
-## Implementation steps — the shape
+## Implementation steps
 
-Each step opens with a bold action title naming its file(s), then:
+A step opens with a bold action title naming its file(s). What follows depends on what the step
+is; the shape serves the content rather than a template.
 
-**Changing existing code — quote, then describe.** Quote the minimum region that orients (the
-signature and the lines the change lands in, not the whole function), then state the change
-in prose. The quote is context; the prose is the instruction; the file stays the source of
-truth.
+### What earns a step
+
+A step carries a new function's design, a new file's location, a change to an existing type or
+signature, or an algorithm whose correctness isn't obvious. It states where the code goes, what
+its contract is, and — where the location or shape had a plausible alternative — what that was
+and why not.
+
+The alternative clause is one sentence when there is one and absent when there isn't. Naming it
+is how "wrong abstraction" becomes reviewable: a reader can only push back on a choice they can
+see was a choice.
+
+A step that is only "modify X to do Y" is mechanical — the coder will see it on opening the
+file. Reduce it to a one-line note, or cut it. Steps are not a change list.
+
+### Creating a new file — contract, then logic
+
+- **Contract** — the signature or data shape it introduces, one line, mirrored in the index.
+- **Logic** — the ordered operations *including the branch and error path*: normalize → look up
+  → reject duplicate → hash → persist → return without the secret field.
+- **Placement** — the directory and why there rather than the obvious alternative, when there
+  was one.
+
+### Changing existing code — quote, then show
+
+Quote when the reader would otherwise mis-picture the current state: a modification rather than
+an addition, a defect that lives in the code, something non-obvious that must be preserved, or
+a surrounding shape the new code has to match.
+
+Don't quote a pattern being imitated rather than edited — name it (`bull-queue.ts:1678 —
+createFlow, the parent-plus-children builder`) and let the coder read it whole. Don't quote when
+the prose already determines the change, or when orienting would take forty lines: a quote that
+long is a lie about how self-contained the change is.
+
+Elide to the lines that matter, and show only the changed lines in the after — an after-block as
+long as the before-block is a diff pretending to be an explanation.
 
 ```markdown
 1. **Modify `src/services/user.ts:31 — createUser, the insert path`** — reject duplicates
@@ -101,22 +127,25 @@ truth.
      return db.users.insert({ email, hash })
    }
    ```
-   Add a `findByEmail` lookup before hashing; when it returns a row, throw
-   `DuplicateError(email)` instead of inserting. The happy path is unchanged.
+   Add a `findByEmail` lookup before hashing; when it returns a row, throw `DuplicateError(email)`
+   instead of inserting:
+   ```ts
+     if (await findByEmail(email)) throw new DuplicateError(email)
+   ```
+   The happy path is unchanged. `findByEmail` rather than a unique-index catch: the constraint
+   error can't distinguish which column collided.
 ```
 
-**Creating a new file — Contract + Logic, no quote.**
+**Never describe a call site in prose where the code would fit.** "Follows the pattern at
+`:1618`" is a claim the reader has to go verify; the four lines are the proof, and they show the
+size of the change at the same time.
 
-- **Contract** — the signature or data shape it introduces, one line, named in the outline.
-- **Logic** — the ordered operations *including the branch and error path*: normalize →
-  look up → reject duplicate → hash → persist → return without the secret field.
-- **Integrates** *(optional)* — the existing function it calls or convention it follows.
+### Traps
 
-A pure wiring step (register a route, add an export) stays a one-liner. A test-file step
-states what it sets up, what it asserts, and what that proves.
+Something the coder would plausibly undo without knowing why — a guard that looks redundant, a
+flag that looks vestigial — gets one line naming what breaks. It isn't a step; it's a fence.
 
-## Test Scenarios in the phase file
+### Test-file steps
 
-Steps/Expected shape, ids, and trace tags per `scenarios.md` — the format lives there, once.
-A vertical slice almost always owns a `### E2E`: its point is a runnable end-to-end
-capability, and a slice with none is a signal it was cut horizontally.
+Not a step. The scenarios define what the tests assert. Where the *strategy* is a real
+decision — what's faked, what's driven by data — it belongs in the matrix's strategy column.

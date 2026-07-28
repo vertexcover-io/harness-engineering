@@ -1,196 +1,188 @@
 ---
 name: planning
 description: >
-  Implementation planning for features, design documents, and multi-step tasks. Use whenever
-  code work needs a plan before writing code — from a design document, a feature request, a
-  bug fix, or any non-trivial task. Trigger on "plan", "create a plan", "implementation plan",
-  "break this down", "how should we implement", or when moving from an approved design to
-  execution. Runs on every change brainstorm's triage routes here; only planning's own gate
-  (after recon) may route atomic work to `implement`.
+  Turns a design, PRD, or feature request into an implementation plan — phases, contracts, and
+  the test join, grounded in the actual code. Use whenever code work needs a plan before writing
+  code. Trigger on "plan this", "break this down", "how should we implement", or when moving
+  from a design to execution. Runs on every change brainstorm's triage routes here; only
+  planning's own gate (after recon) may route atomic work to `implement`.
 ---
 
-# Planning — slice the design into buildable phases
+# Planning — ground the design in code, then divide it into phases
 
-Produces `.harness/<name>/plan.md` plus one `phases/phase-N.md` per slice. A **slice** is a
+Produces `.harness/<name>/plan.md` plus one `phases/phase-N.md` per phase. A **phase** is a
 vertical capability cut through every layer it touches — independently buildable, demoable,
 and provable end to end. Never a layer, never a repo.
 
-**The plan is a document a person reads, not only an agent's checklist.** Write for a
-competent reader who has not seen this code: neither note-form density nor padded
-restatement. Every implementation step must be understandable without opening the codebase.
+**The plan is a pre-code review surface.** Its job is to state the names, signatures, file
+locations, and algorithms the change will use, so a reader can correct a wrong abstraction, a
+missed piece of existing code, or a bad type while correcting is still cheap. A reader who has
+seen the inputs but not the codebase should be able to follow every step without opening a file.
 
 Input is `design.md` + `dossier.md` when brainstorm ran, otherwise the prompt or PRD. `<name>`
 comes from the pipeline (`SPEC_NAME`) when orchestrate invokes; standalone, derive a short
 kebab-case name from the topic.
 
-**Establish the requirement namespace before anything else.** The design carries decisions, not
-requirements — extract `R#` functional, `NF#` non-functional, `EC#` edge cases from the PRD (or
-the prompt, when there is no PRD) into plan.md's `## Requirements`. Without ids the Test Matrix
-has nothing to join against.
+**Cite the inputs; do not restate them.** When a PRD or design exists, it owns the problem,
+the requirements, and the approach — and it owns their ids. Adopt those ids unchanged; a second
+namespace means two documents drifting apart, and a plan that invents ids while claiming to
+transcribe them is worse than one with none. Only when there is no requirements document does
+planning establish `R#`/`NF#`/`EC#` itself (EARS shapes are a reasonable default), and then it
+records them in `## Requirements` because the Test Matrix has nothing to join against otherwise.
 
-Each `R#` takes one of five EARS shapes:
+## Recon — before any phase exists
 
-- **Ubiquitous:** The system SHALL `<response>`.
-- **Event-driven:** WHEN `<trigger>`, the system SHALL `<response>`.
-- **State-driven:** WHILE `<state>`, the system SHALL `<response>`.
-- **Unwanted behaviour:** IF `<condition>`, THEN the system SHALL `<response>`.
-- **Optional feature:** WHERE `<feature is present>`, the system SHALL `<response>`.
+Read the dossier first (its quotes are already verified), then explore **only** what the chosen
+approach touches. Depth scales: minor → 2-3 files, no sub-agents; major → at most 2 `Explore`
+agents plus direct `Glob`/`Grep`. Walk `../_shared/lenses.md` in review mode over the decided
+shape — findings land in the plan, or as questions, nowhere else.
 
-One sentence of intent plus at most one qualifier. A requirement specifying two outcomes states
-the intent and records the fork as a question. **Banned inside a requirement** — each hides an
-unmade decision: *fast, quickly, easy, simple, robust, appropriate, reasonable, efficient,
-user-friendly, seamless, flexible, scalable, as needed, etc., and/or*. Replace with a number, a
-named actor, or a fork.
+Recon's output is not a section. It is the raw material for the steps: which file each change
+goes in, which existing thing it extends or replaces, what shape the new code takes, and what
+in the existing code has to be repaired first. It lands where it is used.
 
-A PRD whose acceptance criteria are already testable needs transcribing, not rewriting — carry the
-criterion's wording and cite its story id, so nothing drifts between the two documents.
+Four disciplines, because each failure here is expensive downstream:
 
-## Recon — before any slice exists
-
-Read the dossier first (its quotes are already verified), then explore **only** what the
-chosen approach touches. Depth scales: minor → 2-3 files, no sub-agents; major → at most 2
-`Explore` agents plus direct `Glob`/`Grep`. Walk `../_shared/lenses.md` in review mode over
-the decided shape — findings land in the plan, or as questions, nowhere else.
-
-Four required outputs, each landing in a named plan section:
-
-1. **Patterns to follow** — the files whose shape new code should match.
-2. **Reuse verdicts** — for each thing the design says to build: does something already do
-   this? Extend, wrap, or build new, with the reason. The abstraction call is decided against
-   `code-quality`'s extraction gate — cite it, don't restate it.
-3. **Debt in touched files** — pre-existing problems in code this plan will modify, using
-   `tech-debt-finder`'s severity and category vocabulary. Each gets one disposition:
-   **fix in slice N** (blocks the work) · **fix after** (real but separable) · **leave**
-   (the default, with a reason). Nothing is silently inherited. Only files this plan
-   modifies — anything wider is `tech-debt-finder`'s job.
-4. **Verified execution preconditions** — how this actually runs: the dev/test command,
-   whether the worktree's dependency layout works with it, which env file loads, which
-   services must be up. Checked in the environment or explicitly marked unverified — an
-   asserted-but-unchecked "the server starts with X" is a landmine a coder builds on.
-
-**Verify before claiming absence:** any claim that something is absent — no such helper, no
-such config — is checked against the code or labeled an unverified assumption.
+- **Reference nothing you did not open.** An inferred caller or an assumed helper sends the
+  coder to edit code that does not need it, and poisons trust in every other reference.
+- **Search the whole workspace before concluding something is absent.** Sibling repos,
+  published packages, schema and config repos. "No such helper exists" is a claim, and a wrong
+  one produces a duplicate of something that was already there.
+- **Finish the recon rather than delegating it.** A step saying *find the callers*, *check
+  whether*, *verify that*, or *grep for* is unfinished work handed to someone with less
+  context. Resolve it, or name it as an open question.
+- **Answer what the design deferred to planning.** A design that says "deferred to planning"
+  has handed over an inbox. Leaving it unanswered loses it entirely.
 
 ## Is a plan warranted? — fires after recon, never before
 
-You cannot know a change is atomic until you have looked at the code it touches. Hand
-straight to `implement`, with no plan doc, when **all** hold: one file · one obvious edit ·
-nothing to sequence · no test-level judgment to make. *"Fix the typo in README line 47."*
+You cannot know a change is atomic until you have looked at the code it touches. Hand straight
+to `implement`, with no plan doc, when **all** hold: one file · one obvious edit · nothing to
+sequence · no test-level judgment to make. *"Fix the typo in README line 47."*
 
-Everything else gets a plan, and **the bias is toward writing one** — a thin plan on small
-work is mild ceremony; skipping one that was warranted hands the coder a change with no slice
-boundary, no test matrix, no debt disposition. A plan for a two-slice change is half a page.
+Everything else gets a plan, and **the bias is toward writing one** — a thin plan on small work
+is mild ceremony; skipping one that was warranted hands the coder a change with no phase
+boundary, no test matrix, no debt disposition. A plan for a two-phase change is half a page.
 
 When this gate routes to `implement`, the recon findings go into the hand-off prompt — they
 were the expensive part and they don't stop being true because no file was written.
 
-## Questions — when recon surfaces what the design didn't settle
+## Questions — asking is the default, deferring is the user's call
 
-Ask when recon finds a new fork or contradicts a design assumption — never to re-litigate a
-decision the design already closed. Always `AskUserQuestion`, with a recommendation and its
-one-clause why, recommended option first, labeled `(Recommended)`. Resolve all questions
-before slicing. In `--auto`, ask nothing: findings land in the plan and surface at the report.
+Ask when recon finds a fork the inputs didn't settle, contradicts a design assumption, or hits
+something it could not resolve. Always `AskUserQuestion`, with a recommendation and its
+one-clause why, recommended option first, labeled `(Recommended)`.
 
-## File decomposition — before slicing
+**Deferring is a decision the user makes, not one planning makes for them.** Writing an
+unresolved fork into `## Deferred` unilaterally decides that it does not matter — and quietly
+removes their chance to say it blocks the work. Resolve what you can, then put the remainder to
+them. In `--auto`, ask nothing: findings land in the plan and surface at the report.
 
-Map which files will be created or modified and what each is responsible for. Files that
-change together live together; split by responsibility, never by technical layer. This lands
-in `## Codebase Context` as a create/modify table — drawn **before** the slices, because
-slices drawn from a feature list with files assigned afterwards reliably produce two slices
-editing the same file for different reasons, and a collision the graph said was parallel-safe.
+## Phasing
 
-## Slicing
+Each phase is one coder dispatch, one TDD cycle (RED-GREEN-REFACTOR), one commit.
 
-Each phase is one slice: one coder dispatch, one TDD cycle (RED-GREEN-REFACTOR), one commit.
-A slice needing many cycles is two capabilities — split it.
+- **The anti-horizontal test: can you write the title?** Every phase title states a demonstrable
+  capability — *"an account can be created and read back with no password exposed"*. A title
+  naming only a layer or repo ("db: schema", "api: endpoints") names no capability and fails.
+- **Prefer fewer phases.** Two phases modifying the same file are not independent whatever the
+  capability graph says — order them, and if neither is more than one sitting's review on its
+  own, merge them. Also merge when a phase cannot be demonstrated without a later one, or when
+  its only consumer is the next phase: both mean it was cut horizontally and dressed as vertical.
+- **Walking skeleton first.** Phase 1 is the thinnest path touching every layer once with a
+  visible result. Shared plumbing rides inside the first phase that needs it.
+- **One mechanism, one phase.** A generic mechanism handles every data case at once — the
+  second locale or third record type is the same capability with different data. Split only
+  when a case needs genuinely new production code.
+- **Explain a boundary the titles don't.** When the capability titles and the graph already show
+  why a cut is where it is, saying so again is padding. When the reason is invisible — a shared
+  file forcing an order, a merge that could have gone the other way, a split deliberately not
+  made — one clause, because that is the decision a reviewer would otherwise have to guess at.
 
-- **The anti-horizontal test: can you write the title?** Every phase title states a
-  demonstrable capability — *"an account can be created and read back with no password
-  exposed"*. A title that only names a layer or repo ("db: schema", "api: endpoints") names
-  no capability and fails — re-slice around the capability it serves.
-- **Walking skeleton first.** Slice 1 is the thinnest path touching every layer once with a
-  visible result. Shared plumbing rides inside the first slice that needs it. A separate
-  foundation slice is justified only when 2+ later slices provably depend on it *and* folding
-  it into slice 1 would couple slice 1 to slice 2's needs.
-- **Reachable — no orphaned code.** Every slice, when it lands, is reachable from a real
-  entry point and provable end to end. A module nobody calls until slice 6 is not a slice —
-  fold it into its first consumer.
-- **One mechanism, one slice.** A generic mechanism (config-driven builder, per-case-free
-  renderer) handles every data case at once — the second locale or third record type is the
-  same capability with different data. Keep the cases in the slice that builds the mechanism;
-  prove each with its own scenario. Split only when a case needs genuinely new production code.
-- **Sizing by reviewability:** a slice is the smallest unit that carries its own test cycle
-  and is worth a fresh reviewer's gate. Fold setup, config, and doc steps into the slice whose
-  deliverable needs them. Typical: 2-4 slices small, 4-8 large; more than ~8 means the feature
-  should have been decomposed at brainstorm.
-- **Phase-ID stability.** Once assigned, never renumbered. Splitting keeps the original id on
-  the original concept; deletion leaves a gap. Gaps are fine — renumbering silently invalidates
-  every claims file, DAG node, and review reference pointing at the old number.
+Typical: 2-4 phases small, 4-6 large. More than that usually means the feature should have been
+decomposed at brainstorm, or that phases were split along layers.
 
-Two slices that modify the same file are not independent, whatever the capability graph says —
-order them or merge them.
+Renumber freely while planning — merging and splitting are the point of this stage. After
+approval the numbers are referenced by commits and review artifacts, so from then on a split
+keeps the original id on the original concept and a deletion leaves a gap.
 
 ## Scenarios and the Test Matrix
 
 Derive scenarios for the whole feature first, then place each — **read
-`references/scenarios.md` before deriving**; without the behavioral contract loaded,
-scenarios assert private helpers and call order, and break on the first refactor while the
-feature still works.
+`references/scenarios.md` before deriving**; without the behavioral contract loaded, scenarios
+assert private helpers and call order, and break on the first refactor while the feature still
+works.
 
-Record the join in plan.md's `## Test Matrix`, one row per requirement:
+Record the join in plan.md's `## Test Matrix`, one row per requirement: **requirement · level ·
+strategy · phase**. Five levels: `unit` · `api` · `e2e (phase)` · `e2e (system)` ·
+`functional-verify` (a human-observable property no automated test can assert). Choose by
+`tdd/references/integration-e2e.md`'s heuristic — the lowest level giving the confidence needed.
 
-| Requirement | Level | Where it's proven | Slice |
-|---|---|---|---|
-| `R1` | unit | `S1` | 1 |
-| `R5` | e2e (phase) | `S9` | 2 |
-| `NF2` | functional-verify | flow: *"a user reconciles a half-rupee gap"* | — |
+The strategy column is what makes the matrix worth reading: what is faked, what is diffed, what
+is driven by data rather than asserted against a constant. That is where a wrong test comes
+from, and it is reviewable before any test is written.
 
-Five levels: `unit` · `api` · `e2e (phase)` · `e2e (system)` · `functional-verify` (a
-human-observable property no automated test can assert). Choose the level by
-`tdd/references/integration-e2e.md`'s heuristic — the lowest level that gives the confidence
-needed. Scenario ids `S<n>` are globally unique across the plan; each is written out once in
-its home file — its phase file, or plan.md's `## System Verification` for a cross-slice flow —
-with its `(traces to …)` tag. An `e2e (system)` row's Slice column names the slice completing
-the journey: that slice's coder authors and runs the flow, and its phase file says so in one
-line. **A requirement with no row means the plan is incomplete or the requirement isn't real —
-both are findings.**
+**Each scenario is written out exactly once.** Per-phase scenarios live in their phase file;
+flows provable only after every phase lands live in plan.md's `## Acceptance`, and the phase
+completing the journey notes in one line that it owns them. The matrix points at scenarios and
+never restates them — a row summarising a scenario body is duplication that will drift.
 
-## Write the documents
+A requirement with no row means the plan is incomplete or the requirement isn't real — both are
+findings.
 
-**Read `references/plan-sections.md` before writing.** Without the section contract and step
-shape loaded, steps collapse back into "modify X to do Y" prose and file references back into
-bare paths — the two failures that make a plan unreadable without the codebase open.
+## Writing the documents
 
-The two rules worth carrying here because every step hits them:
+**Read `references/plan-sections.md` before writing.** It carries the section triggers, the
+step shape, and the quoting rules.
 
-- **A step changing existing code quotes the current code, then describes the change.** The
-  quote orients; the prose states the change. A new file gets Contract + Logic, no quote —
-  there is no "before" to show.
-- **Every file reference names what's there:** `src/services/user.ts:34 — createUser, the
-  insert path`. Path leads (click-detection needs it), the naming clause follows.
+Two habits decide whether the result is readable, and both run against instinct:
 
-## Self-review — four checks, inline
+- **Describe each thing where it is implemented.** A reuse verdict, a pattern being followed, an
+  alternative rejected — each belongs in the step it governs, as a clause. Collected into a
+  standalone section they detach from the work and duplicate into the phase files. The one
+  exception is anything crossing phase boundaries: phases are built in isolation, so a name used
+  in one and defined in another needs a flat index.
+- **State the problem before the decision.** A decision written as a conclusion reads as
+  authoritative and transmits nothing. Introduce each domain noun in plain words before using it
+  as a term, and name concrete values when describing a failure mode. A three-line entry on a
+  subtle decision is a warning sign, not brevity.
 
-1. **Matrix coverage** — every `R#`/`NF#`/`EC#` has a row; every row names a slice or a
-   system test. Fill or flag gaps.
-2. **Reachability** — walk the phases in order: at the end of each, is its deliverable
-   reachable from a real entry point and provable? A failing slice is folded or re-sliced.
-3. **Consistency** — the same name means the same thing in every file: no placeholders
-   (`TBD`, "handle edge cases"), no reference to a type or function no slice builds, every
-   `builds:`/`needs:` entry resolving to the outline's signatures.
-4. **Clarity** — re-read as a reader who has not seen this code: every requirement
-   represented, every slice followable without opening the codebase, every quoted region
-   sufficient to picture its change. This is the check the other three can't substitute for —
-   they prove the plan is right; this proves it is readable.
+Omit any section with nothing to say — the reference carries the trigger for each. A reader who
+finds two sections of filler stops trusting the third.
 
-Findings are `[slice N, step M]: <issue> — <why it matters>`; blocking issues hold the gate,
-recommendations never do.
+## Self-review — five groups, inline
+
+Each check is a lookup rather than a judgment, because the judgment version ("is this
+contestable enough to mention?") is exactly what a model gets wrong. Findings are
+`[phase N, step M]: <issue> — <why it matters>`; blocking issues hold the gate, recommendations
+never do.
+
+**Against the inputs.** Every cited id resolves in the document named · every design decision
+appears in a step, in `## Design corrections`, or in `## Deferred` · no decision is reversed
+without saying so · every repo and dependency the inputs name is touched by a phase or
+accounted for · every question the design deferred to planning is answered or put to the user.
+
+**Phasing.** No two phases modify the same file unless ordered · every phase is provable by its
+own scenarios at the moment it lands · a phase consuming what a "parallel" phase builds is not
+parallel.
+
+**Step content.** Every step states a location, a contract, or an algorithm · no step instructs
+the coder to discover something · no call site is described in prose where the changed lines
+would fit.
+
+**Coverage.** Every requirement has a matrix row · every row names a phase or an acceptance
+flow · every scenario appears exactly once across all documents.
+
+**Readability.** Re-read the densest step cold: can a reader who has seen the inputs but not the
+code restate what it does and why? Then walk the sections — does each hold content meeting its
+trigger, or is it present because a template listed it? This is the group the other four cannot
+substitute for: they prove the plan is right, this proves it is usable.
 
 ## Approval gate
 
-Present the structure outline, the matrix, and the debt dispositions. One `AskUserQuestion`.
-In `--auto`, auto-approve. After any revision the user asks for, integrate it, re-present
-what changed, and wait for explicit approval — a revision is not a confirmation.
+Present the phase list with its reasoning, the matrix, and anything recon overturned. One
+`AskUserQuestion`. In `--auto`, auto-approve. After any revision the user asks for, integrate
+it, re-present what changed, and wait for explicit approval — a revision is not a confirmation.
 
 ## Hand-off
 
@@ -198,10 +190,10 @@ On approval, phases execute in dependency order — orchestrate dispatches one c
 file (the `tdd` skill owns the cycle), or the user works through them directly. Parallel
 sessions may refine later phase files while early ones are built.
 
+Three rationalisations end plans early. They feel like judgment and are not:
+
 | Excuse | Reality |
 |---|---|
-| "The design already says this" | Then cite it — `design.md#section`. The plan holds what planning added: slices, matrix, dispositions. |
-| "This slice is obvious, skip the scenarios" | The scenarios are the definition of done. A slice without them cannot prove itself. |
-| "I'll note the file's debt but not decide" | Every debt item gets a disposition. Undecided is silently inherited. |
-| "The reader can open the file" | The reader is reviewing, not spelunking. Quote the region; name what's at the path. |
-| "One more section would make it complete" | The section list is closed. New content goes in an existing section or it doesn't go. |
+| "I'll flag it for the coder to check" | The coder has less context than you do — that is why the plan exists. Finish the recon or ask the user. |
+| "This is minor, I'll just defer it" | Minor to whom? Deferring spends someone else's risk budget. |
+| "One more section would make it complete" | Completeness is every requirement placed and every decision grounded, not every heading present. |
