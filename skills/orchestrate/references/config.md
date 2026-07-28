@@ -55,3 +55,6 @@ FAILURE/BLOCKED.
 Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,6,7,9,10}).
 `verify-finalize` is a bundle — overriding its `skill` replaces all four sub-skills and their
 contracts; override `quality-gate` (etc.) to swap just one.
+
+Worktree creation is not in this table: it runs during Initialization, before this file is read. It
+takes the project's own worktree skill when there is one, and `using-git-worktrees` otherwise.

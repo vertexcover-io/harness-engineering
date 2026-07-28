@@ -33,8 +33,9 @@ The argument is `TASK_CONTEXT` — the resolved task prompt or spec content that
 skill runs, because its dashboard must be initialised from inside it; creating a second one there
 would split the run's artifacts across two checkouts.
 
-Otherwise, invoke the `using-git-worktrees` skill using the `Skill` tool, then `cd` into the
-worktree.
+Otherwise create one: use the project's own worktree skill when it has one — check `CLAUDE.md` and
+the available skills for one that sets up a worktree — otherwise invoke `using-git-worktrees`. Then
+`cd` into the worktree.
 
 Store: `WORKTREE_PATH`, `BRANCH_NAME`
 
