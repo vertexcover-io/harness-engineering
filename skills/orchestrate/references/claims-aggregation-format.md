@@ -74,7 +74,7 @@ If aggregation fails → stop the pipeline with `MISSING_PHASE_CLAIMS`.
 ## Verification proof (runs AFTER functional-verify returns)
 
 functional-verify drives the browser and writes `.harness/<SPEC_NAME>/verification/` —
-`proof-report.md` alongside one `NN_<slug>.mp4` per scenario (plus any downloaded CSVs and API
+`proof-report.html` alongside one `NN_<slug>.mp4` per scenario (plus any downloaded CSVs and API
 captures), with all the frames in a single `screenshots/` folder. **None of it is gated,
 parsed, or committed.** The report is written for a human in plain English and deliberately carries
 no claim ids, so there is nothing here to grep; the verifier reports its verdict and its bugs back
@@ -84,7 +84,7 @@ Check only that the run happened:
 
 ```bash
 cd '<WORKTREE_PATH>' || exit 1
-test -f '.harness/<SPEC_NAME>/verification/proof-report.md' \
+test -f '.harness/<SPEC_NAME>/verification/proof-report.html' \
   || { echo 'MISSING_PROOF_REPORT'; exit 1; }
 ```
 

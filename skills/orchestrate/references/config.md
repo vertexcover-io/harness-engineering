@@ -2,14 +2,14 @@
 
 Optional file at the **repo root**, read once during Stage 0. Its `stages` map keys each stage to
 `{ skill?, model?, disabled? }` — every field independent. Keys are stage IDs (`coder`) or the
-stage's default skill name (`tdd`) — both resolve the same stage. A worked example lives in
+stage's default skill name (`implement`) — both resolve the same stage. A worked example lives in
 `references/orchestrate.config.example.json`.
 
 ```json
 {
   "stages": {
     "brainstorm":      { "skill": "my-brainstorm" },
-    "coder":           { "skill": "my-tdd", "model": "opus" },
+    "coder":           { "skill": "my-implement", "model": "opus" },
     "code-review":     { "model": "opus" },
     "quality-gate":    { "skill": "my-quality-gate" },
     "planning":        { "skill": "my-planning" },
@@ -44,12 +44,13 @@ FAILURE/BLOCKED.
 
 | Stage ID | Default skill | Gate contract (gated stages only) |
 |----------|---------------|------------------------------------|
+| `setup` | `pipeline-setup` | `baseline.json`, `relevant-lessons.md` (`ROUTED_LESSONS`) |
 | `brainstorm` | `brainstorm` | — |
 | `library-probe` | `library-probe` | `<!-- LP:VERDICT:PASS -->` / `BLOCKED` |
 | `planning` | `planning` | — |
-| `coder` | `tdd` + `code-quality` | phase `…-claims.json` (`executed>0`, `failed=0`) |
+| `coder` | `implement` | phase `…-claims.json` (`executed>0`, `failed=0`) |
 | `code-review` | `code-review` | `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
-| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.md`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
+| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 
 Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,6,7,9,10}).
 `verify-finalize` is a bundle — overriding its `skill` replaces all four sub-skills and their

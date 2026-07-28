@@ -1,13 +1,13 @@
 ---
 name: orchestrate
 description: >
-  Multi-agent pipeline orchestrator. Takes a prompt or spec file and runs:
-  brainstorm, planner, coder (TDD + stagnation detection), code review (two-pass review+fix),
+  Multi-agent pipeline orchestrator. Takes a prompt or a document describing the work and runs:
+  brainstorm, planner, coder (the implement skill — TDD + stagnation detection), code review (two-pass review+fix),
   verify & finalize (functional verification + quality gate + sync docs + learnings), and commit/PR.
   All run artifacts live in .harness/<name>/ (gitignored — reviewers read them out-of-band). Use when the user says orchestrate, run the pipeline,
   full workflow, or wants end-to-end development from spec to PR.
   Supports --auto mode for CI/CD pipelines — bypasses interactive approval gates while still producing all artifacts.
-argument-hint: "<prompt or path/to/spec.md> [--auto]"
+argument-hint: "<prompt or path/to/prd-or-design.md> [--auto]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
 ---
 
@@ -20,7 +20,7 @@ Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & 
 ## Invariants
 
 1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, create the worktree, start the dashboard inside it.
-2. **Exactly ONE pause — the plan-approval gate after Stage 2.** After the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back with NO stopping, pausing, questions, or interim summaries. Internal corrective re-dispatches (e.g. LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going.
+2. **No pause after Stage 2.** Two skills own approval gates of their own — `brainstorm` (its design gate, Stage 1) and `planning` (its plan gate, Stage 2). Those are the only pauses, they belong to the skills, and both self-bypass in `--auto`. Once the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back with NO stopping, pausing, questions, or interim summaries. The orchestrator adds no gate of its own. Internal corrective re-dispatches (e.g. LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going.
 3. **Halt only on a genuine BLOCK/FAIL** (functional verification FAILED, quality gate BLOCKED/STAGNATION, review hard-standards failure, library-probe BLOCKED, or a sub-agent error). On halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.
 4. **Every question uses `AskUserQuestion`** — never plain text. In `--auto` mode, skip all `AskUserQuestion` calls.
 5. **Invoke the stage's resolved skill. Never hand-roll its output.** Every stage runs a skill — resolve *which* per `references/config.md` (config override → project skill → global default), then invoke it via the `Skill` tool. Do this even when you believe you already know what it would say: your recollection is not the contract, and a project may have swapped the skill out from under you. This binds main-conversation stages exactly as it binds sub-agents — writing `plan.md` yourself instead of invoking the planning stage's skill, or a design instead of the brainstorm stage's, is a pipeline violation, not a shortcut. **Before leaving a stage, confirm you invoked its skill.** If you didn't, the stage did not run.
@@ -32,11 +32,11 @@ Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & 
 
 ### Step 1: Input Detection
 
-The argument is either an **inline prompt** or a **spec file path**.
+The argument is either an **inline prompt** or a **path to a document describing the work** — a PRD, an issue export, a brief, or an existing design doc. (There is no `spec.md` stage in this pipeline; the requirement namespace belongs to the PRD and to `plan.md`.)
 
 1. If the argument contains `--auto`, set `AUTO_MODE=true` and strip `--auto`.
 2. Test whether the remaining argument is an existing file (`[ -f "<arg>" ]`).
-3. If file → read its contents as the task spec. If not → treat it as an inline task prompt.
+3. If file → read its contents as the task description. If not → treat it as an inline task prompt.
 4. Store the resolved input as `TASK_CONTEXT` — passed to every stage.
 5. **Tech-debt manifest mode.** If the input is (or points to) a `findings.json` from `tech-debt-finder`, do NOT re-summarize it into prose. Read the manifest directly and follow `tech-debt-finder/references/auto-fix-handoff.md`: fix only `auto_fixable: true` findings, and before Stage 6 write `fix-manifest.json` giving every finding a terminal disposition (`fixed`/`issue`/`suppressed`/`dropped`, reason required for `dropped`). BLOCK the commit if any `auto_fixable` finding was dropped without a reason. Include the disposition table in the commit/PR body.
 
@@ -162,19 +162,19 @@ Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys 
 Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
 1. `set-status baseline running`.
-2. Create dirs: `.harness/<SPEC_NAME>/verification/{screenshots,traces,recording}/`, `.harness/<SPEC_NAME>/review/`, and `.harness/<SPEC_NAME>/phases/` (`reports/` already created by dashboard init). The whole `.harness/` tree is gitignored — artifacts reach reviewers out-of-band.
-3. Auto-detect tooling: `CLAUDE.md` first, then `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`.
-4. Run baseline metrics (typecheck, lint, test, coverage) → `.harness/<SPEC_NAME>/baseline.json`.
-5. Write `.harness/<SPEC_NAME>/manifest.json` skeleton `{spec_name, branch, worktree, started_at, pr_number: null, stages: {}}`.
-6. Store `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`.
-7. **Load stage config.** If `orchestrate.config.json` exists at the worktree root, `Read` its `stages` map into `STAGE_CONFIG`; else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md`.
-8. `write-report baseline`, `set-status baseline done`, `set-status setup done`.
+2. **Invoke `pipeline-setup` via `Skill`** — it owns tooling detection, baseline metrics, the artifact directory, and lesson routing. Do not hand-roll any of it (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
+3. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`, and **`ROUTED_LESSONS`** (`.harness/<SPEC_NAME>/relevant-lessons.md` — may hold the no-match sentinel, which is still a valid path to pass on). Every later stage that takes a `Lessons:` path takes this one; there is no other producer of it.
+4. Create the directories `pipeline-setup` does not: `.harness/<SPEC_NAME>/verification/screenshots/`, `.harness/<SPEC_NAME>/verify-staging/`, `.harness/<SPEC_NAME>/review/`, and `.harness/<SPEC_NAME>/phases/` (`reports/` already created by dashboard init). The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored — artifacts reach reviewers out-of-band.
+5. **Load stage config.** If `orchestrate.config.json` exists at the worktree root, `Read` its `stages` map into `STAGE_CONFIG`; else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md`.
+6. `write-report baseline`, `set-status baseline done`, `set-status setup done`.
 
 ### Stage 1: Brainstorm (Main Conversation)
 
-`set-status brainstorm running` → invoke `brainstorm` via `Skill` (no approval gate, design flows straight through) → `write-report brainstorm`, `set-status brainstorm done`.
+`set-status brainstorm running` → invoke `brainstorm` via `Skill` → `write-report brainstorm`, `set-status brainstorm done`.
 
-The brainstorm skill's own `## External Dependency Declaration` section must produce an `## External Dependencies & Fallback Chain` section in the design doc — that design-doc section is library-probe's input contract; without it, library-probe blocks.
+**Brainstorm owns its own approval gate** (its `## Approval gate` — one pause, presenting the design for approval). That gate is the pipeline's *design* gate and it is real: outside `--auto`, expect the run to pause here as well as at Stage 2. Do not try to suppress it, and do not treat the pause as a stage failure. In `--auto` the skill bypasses it itself; pass no extra instruction.
+
+If the design names any external library, API, or service, it must carry an `## External Dependencies & Fallback Chain` section (shape: the brainstorm skill's `references/design-sections.md`). That section is library-probe's input contract — without it Stage 1.5 blocks. If brainstorm returns a design that names a dependency and omits the section, send it back before advancing rather than walking into the block.
 
 ### Stage 1.5: Library Probe (Main Conversation)
 
@@ -191,16 +191,26 @@ The trust gate — every external dependency verified before planning builds on 
 
 1. `set-status planning running`.
 2. Invoke `planning` via `Skill` — it reads `design.md` + `dossier.md` (or the prompt, when brainstorm was skipped) internally before exploring code. Include `Lessons: <ROUTED_LESSONS>` — known pitfalls matching this spec become plan steps.
-3. Planner runs recon, asks interactive questions, designs **vertical-slice** phases.
-4. **APPROVAL GATE:** use `AskUserQuestion` (hook auto-handles waiting status).
-5. Output: `.harness/<SPEC_NAME>/plan.md` + `.harness/<SPEC_NAME>/phases/phase-*.md`. Store `PLAN_PATH`, `PHASE_DIR`.
-6. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `set-status planning done`.
+3. Planner runs recon, asks interactive questions, designs **vertical-slice** phases, and holds **its own approval gate** (the skill's `## Approval gate`). The orchestrator does not add a second `AskUserQuestion` here — the skill owns the pause, and the PreToolUse hook handles the `waiting` status.
+4. Output: `.harness/<SPEC_NAME>/plan.md` + `.harness/<SPEC_NAME>/phases/phase-*.md`. Store `PLAN_PATH`, `PHASE_DIR`.
+5. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `set-status planning done`.
 
-**Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count.
+**If planning routed to `implement` instead of writing a plan.** Its "is a plan warranted?" gate may hand genuinely atomic work straight to the `implement` skill, producing **no `plan.md` and no phase files**. That is a valid outcome, not a stage failure. When it happens:
+
+- Mark the `planning` node `done` and record the route in its report.
+- **Skip Stages 3 and 4 entirely** — there is no phase graph to dispatch from and no slice to review at. Set both DAG nodes to `skipped`.
+- Invoke `implement` via `Skill` with the recon findings planning handed back, then go to **Stage 5**. Stage 5's claims checks (`MISSING_CLAIMS_FILE`, `E2E_NOT_EXECUTED`) do not apply — there are no phase claims — so run functional-verify, quality-gate, sync-docs, and learn, and enforce only the `proof-report.html` artifact contract.
+- Stage 6 runs unchanged.
+
+**Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count — or the `implement` route.
 
 ### Stage 3: Coder
 
-Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 block in `references/stage-prompts.md` — one agent per phase file. Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook + functional-verify read this) **and** `e2e-report.json` (raw run summary — quality-gate reads this).
+Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 block in `references/stage-prompts.md` — one agent per phase file.
+
+**The coder agent invokes exactly one skill: `<SKILL:coder>`, defaulting to `implement`.** It is the single coding entry point, and it reaches `tdd`, `code-quality`, and `references/coder-contracts.md` on its own. Do not name those in the dispatch and do not invoke them alongside it — per Invariant 6, a second copy of what the skill already says is a second source of truth. Handing it the phase file is what puts it in pipeline mode, where the claims artifacts become mandatory and it neither reviews nor pauses to ask before committing.
+
+Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook reads it per phase, quality-gate's Check 9 reads the aggregate) **and** `e2e-report.json` (raw run summary — quality-gate reads this). Neither is an input to functional-verify: that skill derives its scenarios from the feature's docs, not from claims.
 
 DAG: `set-status coder running` before dispatch; per phase `set-status <phase-node> running`/`done`; after all phases `set-status coder done`.
 
@@ -249,7 +259,7 @@ Single consolidated sub-agent: functional verification → quality gate → sync
 
 ```
 Bash("
-  test -f .harness/<SPEC_NAME>/verification/proof-report.md ||
+  test -f .harness/<SPEC_NAME>/verification/proof-report.html ||
   { echo 'MISSING_VERIFICATION_ARTIFACTS'; exit 1; }
 ")
 ```
@@ -262,7 +272,7 @@ Failure modes (stop the pipeline):
 - `MISSING_PHASE_CLAIMS` / `MISSING_CLAIMS_FILE` — coder or aggregation skipped.
 - `E2E_NOT_EXECUTED` / `E2E_FAILED` — phase suites did not run or had failures.
 
-**Verification itself is not gated.** functional-verify writes a plain-English `proof-report.md` for a human, carrying no claim ids and nothing to grep — see *Why verification is not gated* in `references/claims-aggregation-format.md`. Read the verdict and the bugs it reports back, and judge them. A passing phase `.spec.ts` is NOT sufficient evidence a feature works: the verifier must have driven a real browser via the `agent-browser` CLI and filmed each scenario.
+**Verification itself is not gated.** functional-verify writes `proof-report.html` — an HTML workbench whose prose is written for a human and carries no claim ids, so there is no verdict here to grep for; see *Why verification is not gated* in `references/claims-aggregation-format.md`. Read the verdict and the bugs it reports back, and judge them. A passing phase `.spec.ts` is NOT sufficient evidence a feature works: the verifier must have driven a real browser via the `agent-browser` CLI and filmed each scenario.
 
 `set-status verify-finalize done`.
 
@@ -289,7 +299,7 @@ Stop the pipeline and report which stage failed and why on any of:
 |-----------|--------|
 | Sub-agent error | Any sub-agent fails or returns an error |
 | Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
-| Missing verification artifacts | `proof-report.md` absent → `MISSING_VERIFICATION_ARTIFACTS` |
+| Missing verification artifacts | `proof-report.html` absent → `MISSING_VERIFICATION_ARTIFACTS` |
 | Quality gate BLOCKED | Report what failed |
 | Quality gate STAGNATION | Do NOT retry — report the stagnated check, repeated error signature, need for manual intervention |
 | Library-probe BLOCKED | No viable alternative; or `BLOCKED:repeated-lib-failure` after 2 loopbacks |

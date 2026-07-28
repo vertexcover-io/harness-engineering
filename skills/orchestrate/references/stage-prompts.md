@@ -37,12 +37,12 @@ Nothing else is universal. Resist adding to this block.
 
 **Skill:** `<SKILL:coder>` · **Model:** `CFG.model` → `sonnet`
 
-Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one commit). Every
-coder agent reads `references/coder-contracts.md` — the phase-input mapping, E2E gates, report
-artifacts, and `LIB_SUSPECT` signal it must honor.
+Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one commit).
 
-Every coder agent also invokes the `code-quality` skill before writing production code — it governs
-how the implementation is written, not whether it is tested.
+**The coder agent invokes `<SKILL:coder>` and nothing else.** That skill reaches `tdd`,
+`code-quality`, and `references/coder-contracts.md` itself; naming them in the dispatch would be a
+second source of truth for what the skill already owns (Invariant 6). Pass the phase file — that is
+what puts the skill in pipeline mode and makes the claims artifacts mandatory.
 
 **Pass:**
 - Design `.harness/<SPEC_NAME>/design.md` (when brainstorm ran), plan

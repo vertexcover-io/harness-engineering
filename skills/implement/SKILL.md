@@ -1,10 +1,9 @@
 ---
 name: implement
-description: Implement a plan or a described change by coding test-first. The manual coding entry point.
-disable-model-invocation: true
+description: Implement a plan, a phase file, or a described change by coding test-first. The single coding entry point — used manually, and dispatched as the orchestrate pipeline's coder stage.
 ---
 
-Implement the work described in the plan or the user's request.
+Implement the work described in the phase file, the plan, or the user's request.
 
 Use the `tdd` skill for every change — one behavior at a time, test first, at agreed seams.
 Load `code-quality` before writing anything: it governs how the code reads.
@@ -14,5 +13,26 @@ the end.
 
 Blocked — unclear instruction, missing dependency, a failing verification you can't explain?
 Stop and ask rather than guess.
+
+## Pipeline mode — when orchestrate dispatched you
+
+You are in pipeline mode when the invocation hands you a `phases/phase-N.md`, or when it names a
+worktree and a `.harness/<SPEC_NAME>/` to write artifacts into — the coder stage in the first case,
+a review-fix agent in the second.
+
+Two rules from the manual flow are **suspended**, in both cases:
+
+- **Do not invoke `code-review`.** Stage 4 owns review, across the whole change rather than one
+  phase — and a review agent that called it would be reviewing its own fixes.
+- **Do not ask before committing, and do not stop to summarise.** The pipeline runs to completion
+  without pausing; a phase's `## Commit` section is its message.
+
+**With a phase file, also read `skills/orchestrate/references/coder-contracts.md` before writing
+code.** It carries the phase-input mapping, the mandatory E2E leg and its gate, the report
+artifacts (`phase-<N>-claims.json` and `e2e-report.json`), and the `LIB_SUSPECT` signal. A phase
+that ends without those artifacts is blocked by the `coder-e2e-gate` hook, however green its tests
+are. A review-fix agent owes none of them — it is fixing inside phases that already reported.
+
+## Manual mode — everything else
 
 When green, use `code-review` to review the work. Ask before committing.

@@ -57,7 +57,7 @@
         "Dispatches ready phases (no incomplete predecessors) in parallel by sending multiple Agent tool calls in a single message",
         "Phase nodes are added as children of the coder node in the DAG dashboard after planning completes",
         "Each phase sub-agent prompt includes the spec path, plan path, and phase-specific instructions",
-        "Each coder sub-agent is instructed to invoke the tdd skill",
+        "Each coder sub-agent is instructed to invoke the implement skill and no other skill",
         "After all phases complete, dag-update set-status coder is set to done",
         "Pipeline summary includes phase count, parallel count, files changed, tests passing, and PR URL",
         "Dashboard is finalized with dag-update finalize done after the summary"

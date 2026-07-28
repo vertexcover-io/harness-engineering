@@ -1,9 +1,10 @@
 # Coder Stage Contracts
 
-**Read this when** executing a coder phase inside the orchestrate pipeline. It carries every
-pipeline-specific input, output, and signal the coder stage owes the orchestrator. The craft —
-the RED-GREEN-REFACTOR loop and the testing standard — lives in the `tdd` skill; this file is
-only the wire protocol around it.
+**Read this when** executing a coder phase inside the orchestrate pipeline — the `implement` skill
+sends you here the moment it is handed a phase file. It carries every pipeline-specific input,
+output, and signal the coder stage owes the orchestrator. The craft — the RED-GREEN-REFACTOR loop
+and the testing standard — lives in the `tdd` skill, which `implement` loads; this file is only the
+wire protocol around it.
 
 ---
 

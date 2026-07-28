@@ -69,7 +69,7 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 
 ## Verdict: <PASSED|FAILED>
 
-Full report + evidence: `.harness/<SPEC_NAME>/verification/proof-report.md`
+Full report + evidence: `.harness/<SPEC_NAME>/verification/proof-report.html`
 
 ## Scenarios
 
@@ -84,7 +84,7 @@ Full report + evidence: `.harness/<SPEC_NAME>/verification/proof-report.md`
 - **Cleaned up:** yes
 ```
 
-This is the dashboard summary, not a second report: the scenario rows mirror `proof-report.md` so a
+This is the dashboard summary, not a second report: the scenario rows mirror `proof-report.html` so a
 reader sees the verdict at a glance, and every piece of evidence stays in the report itself.
 
 ## Quality Gate Report

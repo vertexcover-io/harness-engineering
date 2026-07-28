@@ -18,8 +18,33 @@ documents, so nothing downstream is starved by the design's silence.
 | `## Risks & Assumptions` | what could go wrong; what we are betting on | anything a decision already states |
 | `## Open Questions` | unresolved forks, each **blocking** or **deferred** | forks you could resolve now |
 
-Six sections, all of them earned. A section with nothing to say is omitted rather than padded —
+Six core sections, all of them earned. A section with nothing to say is omitted rather than padded —
 `## Open Questions` disappears when every fork is closed rather than saying "none".
+
+### Conditional sections — present only when the material exists
+
+| Section | Appears when | Holds |
+|---|---|---|
+| `## External Dependencies & Fallback Chain` | the design names any external library, API, or service | each dependency, what it is used for, the keys its probe needs, and the ordered fallback if it fails |
+| `## Personas & Flows` | the change has a user-facing surface | who acts, and the numbered steps they walk |
+
+These follow the same rule as the core six: omitted when empty, never padded with "None" or "N/A".
+
+`## External Dependencies & Fallback Chain` is **library-probe's input contract** — it is the one
+section another skill hard-blocks on. Name a library anywhere in the design and this section is
+mandatory, because library-probe stops the pipeline without it. The fallback chain is ordered:
+library-probe walks it top-down when the first choice fails its live probe.
+
+```markdown
+## External Dependencies & Fallback Chain
+
+| Dependency | Used for | Env keys | Fallback, in order |
+|---|---|---|---|
+| Stripe (webhooks) | payment settlement events | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | 1. Stripe polling API  2. build custom reconciliation against the ledger |
+```
+
+A dependency is external if it is not in this repo: a package, a hosted API, a managed service.
+The standard library and existing first-party packages are not.
 
 ## `## Decisions` — the core
 

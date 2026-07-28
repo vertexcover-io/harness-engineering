@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Stop / SubagentStop hook: block if an active spec under docs/spec/ has no
-// verification/proof-report.md. Port of check-proof-report.sh.
+// Stop / SubagentStop hook: block if an active feature under .harness/ has no
+// verification/proof-report.html.
 // Bypass: HARNESS_SKIP_VERIFY_GATE=1.
 
 import { readdirSync, statSync, existsSync } from "node:fs";
@@ -11,10 +11,12 @@ if (process.env.HARNESS_SKIP_VERIFY_GATE === "1") process.exit(0);
 
 const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const root = (gitAvailable() && repoRoot(cwd)) || cwd;
-// Unified layout, with the pre-migration root as fallback.
-const specRoots = [join(root, ".harness", "features"), join(root, "docs", "spec")].filter(
-  existsSync,
-);
+// Flat layout, with the pre-migration roots as fallbacks.
+const specRoots = [
+  join(root, ".harness"),
+  join(root, ".harness", "features"),
+  join(root, "docs", "spec"),
+].filter(existsSync);
 
 if (specRoots.length === 0) process.exit(0);
 
@@ -22,10 +24,14 @@ const ACTIVE_MS = 24 * 60 * 60 * 1000;
 const now = Date.now();
 const missing = [];
 
+// Not feature directories: the shared lesson store, pipeline scratch, and the
+// pre-migration root now enumerated as a sibling.
+const RESERVED = new Set(["knowledge", "runtime", "features"]);
+
 const specDirs = specRoots.flatMap((specRoot) => {
   try {
     return readdirSync(specRoot, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
+      .filter((d) => d.isDirectory() && !RESERVED.has(d.name))
       .map((d) => ({ name: d.name, dir: join(specRoot, d.name) }));
   } catch {
     return [];
@@ -63,12 +69,16 @@ const hasImplementationEvidence = (name) => {
   return false;
 };
 
+// A feature directory is one planning or brainstorm actually wrote into. There is
+// no spec.md stage any more — plan.md is the artifact every run produces.
+const isFeatureDir = (dir) =>
+  existsSync(join(dir, "plan.md")) || existsSync(join(dir, "design.md"));
+
 for (const { name, dir } of specDirs) {
-  const specMd = join(dir, "spec.md");
-  if (!existsSync(specMd)) continue;
+  if (!isFeatureDir(dir)) continue;
   if (!isRecent(dir)) continue;
   if (!hasImplementationEvidence(name)) continue;
-  if (!existsSync(join(dir, "verification", "proof-report.md"))) {
+  if (!existsSync(join(dir, "verification", "proof-report.html"))) {
     missing.push(name);
   }
 }
@@ -77,10 +87,10 @@ if (missing.length === 0) process.exit(0);
 
 const list = missing.map((n) => `  - ${n}`).join("\n");
 process.stderr.write(
-  `Verification gate: the following active spec(s) have no proof-report.md:\n\n${list}\n\n` +
+  `Verification gate: the following active feature(s) have no proof-report.html:\n\n${list}\n\n` +
     `Passing unit/e2e tests are NOT verification. Invoke the functional-verify skill\n` +
-    `before ending this session — it must produce docs/spec/<name>/verification/proof-report.md\n` +
-    `for each active spec. If verification genuinely does not apply to this session,\n` +
+    `before ending this session — it must produce .harness/<name>/verification/proof-report.html\n` +
+    `for each active feature. If verification genuinely does not apply to this session,\n` +
     `re-run with HARNESS_SKIP_VERIFY_GATE=1 in env (and say so in the PR).\n`,
 );
 process.exit(2);

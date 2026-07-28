@@ -26,9 +26,15 @@ The argument is `TASK_CONTEXT` — the resolved task prompt or spec content that
 
 ## Steps
 
-### 1. Create Worktree
+### 1. Create Worktree — unless the caller already made one
 
-Invoke the `using-git-worktrees` skill using the `Skill` tool. Then `cd` into the worktree.
+**If the invocation passes a `WORKTREE_PATH`, adopt it**: `cd` into it, read `BRANCH_NAME` from
+`git branch --show-current`, and skip to Step 2. Orchestrate creates the worktree before this
+skill runs, because its dashboard must be initialised from inside it; creating a second one there
+would split the run's artifacts across two checkouts.
+
+Otherwise, invoke the `using-git-worktrees` skill using the `Skill` tool, then `cd` into the
+worktree.
 
 Store: `WORKTREE_PATH`, `BRANCH_NAME`
 

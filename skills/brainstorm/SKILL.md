@@ -179,6 +179,11 @@ user's behalf are marked `— inferred` — they are bets, and the highest-value
 correct. And the design **cites the PRD rather than restating it**: decisions name the story ids
 they drive, and a fact stated once is referenced by id everywhere else.
 
+**If the design names any external library, API, or service, it gets an
+`## External Dependencies & Fallback Chain` section** — the shape is in `design-sections.md`. This
+is the only section a downstream skill hard-blocks on: library-probe refuses to run without it,
+which stops the pipeline before any code is written.
+
 ## Self-review — two passes, different in kind
 
 **Pass 1 — fresh-context claim verifier. Always runs — `--auto` included.** It receives the
