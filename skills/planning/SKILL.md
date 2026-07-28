@@ -1,337 +1,207 @@
 ---
 name: planning
 description: >
-  Implementation planning for features, design documents, and multi-step tasks. Use this skill
-  whenever you need to create an implementation plan before writing code — whether from a design
-  document, a feature request, a bug fix, or any non-trivial task. Trigger when the user says
-  "plan", "create a plan", "implementation plan", "break this down", "how should we implement",
-  or when transitioning from brainstorming/design to implementation. Also trigger when the user
-  provides a design document and wants to move to execution, or when a task clearly needs
-  decomposition before coding begins. This skill bridges the gap between understanding a problem
-  (brainstorm skill) and executing it (tdd skill). If no brainstorm/design doc exists and the
-  feature is non-trivial, suggest brainstorming first — but don't block on it for smaller features.
-  Also trigger when the user wants to update an existing plan using @fix tags.
+  Implementation planning for features, design documents, and multi-step tasks. Use whenever
+  code work needs a plan before writing code — from a design document, a feature request, a
+  bug fix, or any non-trivial task. Trigger on "plan", "create a plan", "implementation plan",
+  "break this down", "how should we implement", or when moving from an approved design to
+  execution. Runs on every change brainstorm's triage routes here; only planning's own gate
+  (after recon) may route atomic work to `implement`.
 ---
 
-# Implementation Planning
+# Planning — slice the design into buildable phases
 
-Produces actionable implementation plans as a folder of documents — one overview and
-one file per phase. Each phase is a **vertical slice** — one thin capability cut through every
-layer it touches (config → form → validation → persistence → render), independently buildable and
-demoable — not a horizontal layer (all the config, then all the API, then all the UI). The folder
-structure lets you work on early phases while refining later ones in parallel sessions.
+Produces `.harness/<name>/plan.md` plus one `phases/phase-N.md` per slice. A **slice** is a
+vertical capability cut through every layer it touches — independently buildable, demoable,
+and provable end to end. Never a layer, never a repo.
 
-**Vertical, not horizontal.** A horizontal slice is a *component* ("the data model", "the UI
-layer"); nothing is usable until the last layer lands, and the only real end-to-end test has to be
-deferred to plan.md because no single phase can run it. A vertical slice is a *capability* ("a user
-registers and the account exists — validated, persisted, confirmable"); it works on its own, a user
-can exercise it, and it carries its own end-to-end test. Slice by capability, then order the slices;
-never slice by repo or layer. The **anti-horizontal test**: if a phase's title names only a
-repo/layer with no user-visible outcome ("db: schema", "api: endpoints", "ui: forms"), it is
-horizontal — re-slice it around the capability it serves.
+**The plan is a document a person reads, not only an agent's checklist.** Write for a
+competent reader who has not seen this code: neither note-form density nor padded
+restatement. Every implementation step must be understandable without opening the codebase.
 
-> **Examples in this skill use a neutral illustrative domain (a user-auth feature: register, log in,
-> token refresh, protected routes) that is deliberately unrelated to whatever feature you are
-> planning.** State every rule feature-independently and, when you need a concrete illustration, draw
-> it from a domain *distinct from the target feature* — never from the feature at hand. This keeps the
-> skill general: examples anchored to one real feature silently narrow the rules to that feature's
-> shape. Your plan's artifacts, of course, use the target feature's real vocabulary; only the skill's
-> teaching examples stay neutral.
+Input is `design.md` + `dossier.md` when brainstorm ran, otherwise the prompt or PRD. `<name>`
+comes from the pipeline (`SPEC_NAME`) when orchestrate invokes; standalone, derive a short
+kebab-case name from the topic.
 
-**Walking skeleton first.** The first slice is the thinnest path that touches every layer once and
-produces a visible result — the *walking skeleton*. It establishes the shared plumbing; later slices
-thicken it and mostly parallelize. Do **not** front-load a "build all the shared foundation" phase by
-default: shared plumbing rides inside the first slice that needs it. **Exception:** a thin
-foundation phase (a shared config schema, a shared helper) is justified *only when two or more later
-slices provably depend on it* and folding it into slice 1 would couple slice 1 to slice 2's needs —
-then it may be its own small phase 0. Absent that proven multi-consumer need, keep it inside the
-walking skeleton. Do not swing from all-horizontal to a dogmatic all-vertical that recreates coupling.
+**Establish the requirement namespace before anything else.** The design carries decisions, not
+requirements — extract `R#` functional, `NF#` non-functional, `EC#` edge cases from the PRD (or
+the prompt, when there is no PRD) into plan.md's `## Requirements`. Without ids the Test Matrix
+has nothing to join against.
 
-**Announce at start:** "Using the planning skill to create an implementation plan."
+Each `R#` takes one of five EARS shapes:
 
-**Plan output:**
+- **Ubiquitous:** The system SHALL `<response>`.
+- **Event-driven:** WHEN `<trigger>`, the system SHALL `<response>`.
+- **State-driven:** WHILE `<state>`, the system SHALL `<response>`.
+- **Unwanted behaviour:** IF `<condition>`, THEN the system SHALL `<response>`.
+- **Optional feature:** WHERE `<feature is present>`, the system SHALL `<response>`.
 
-`plan.md` (the overview + DOT phase graph) is committed; per-phase breakdowns are pipeline working state and stay gitignored.
+One sentence of intent plus at most one qualifier. A requirement specifying two outcomes states
+the intent and records the fork as a question. **Banned inside a requirement** — each hides an
+unmade decision: *fast, quickly, easy, simple, robust, appropriate, reasonable, efficient,
+user-friendly, seamless, flexible, scalable, as needed, etc., and/or*. Replace with a number, a
+named actor, or a fork.
 
-```
-.harness/features/<SPEC_NAME>/
-└── plan.md          # Committed — overview, DOT phase graph, codebase context
+A PRD whose acceptance criteria are already testable needs transcribing, not rewriting — carry the
+criterion's wording and cite its story id, so nothing drifts between the two documents.
 
-.harness/runtime/<SPEC_NAME>/
-├── phase-1.md       # Gitignored — detailed steps for phase 1
-├── phase-2.md       # Gitignored — detailed steps for phase 2
-└── ...
-```
+## Recon — before any slice exists
 
-**For small, obvious changes** (single file, clear fix): skip planning, go straight to TDD.
+Read the dossier first (its quotes are already verified), then explore **only** what the
+chosen approach touches. Depth scales: minor → 2-3 files, no sub-agents; major → at most 2
+`Explore` agents plus direct `Glob`/`Grep`. Walk `../_shared/lenses.md` in review mode over
+the decided shape — findings land in the plan, or as questions, nowhere else.
 
----
+Four required outputs, each landing in a named plan section:
 
-## The Planning Process
+1. **Patterns to follow** — the files whose shape new code should match.
+2. **Reuse verdicts** — for each thing the design says to build: does something already do
+   this? Extend, wrap, or build new, with the reason. The abstraction call is decided against
+   `code-quality`'s extraction gate — cite it, don't restate it.
+3. **Debt in touched files** — pre-existing problems in code this plan will modify, using
+   `tech-debt-finder`'s severity and category vocabulary. Each gets one disposition:
+   **fix in slice N** (blocks the work) · **fix after** (real but separable) · **leave**
+   (the default, with a reason). Nothing is silently inherited. Only files this plan
+   modifies — anything wider is `tech-debt-finder`'s job.
+4. **Verified execution preconditions** — how this actually runs: the dev/test command,
+   whether the worktree's dependency layout works with it, which env file loads, which
+   services must be up. Checked in the environment or explicitly marked unverified — an
+   asserted-but-unchecked "the server starts with X" is a landmine a coder builds on.
 
-### Step 1: Understand the Input
+**Verify before claiming absence:** any claim that something is absent — no such helper, no
+such config — is checked against the code or labeled an unverified assumption.
 
-The input is either a **design document**, a **spec**, or a **feature description**.
+## Is a plan warranted? — fires after recon, never before
 
-- Read it thoroughly — requirements, chosen approach, decisions, edge cases
-- Note open questions or assumptions that affect implementation
+You cannot know a change is atomic until you have looked at the code it touches. Hand
+straight to `implement`, with no plan doc, when **all** hold: one file · one obvious edit ·
+nothing to sequence · no test-level judgment to make. *"Fix the typo in README line 47."*
 
-**Goal:** What are we building, what are the acceptance criteria, what's already decided?
+Everything else gets a plan, and **the bias is toward writing one** — a thin plan on small
+work is mild ceremony; skipping one that was warranted hands the coder a change with no slice
+boundary, no test matrix, no debt disposition. A plan for a two-slice change is half a page.
 
-### Step 2: Explore the Codebase
+When this gate routes to `implement`, the recon findings go into the hand-off prompt — they
+were the expensive part and they don't stop being true because no file was written.
 
-Build understanding of existing code before planning changes. Dispatch sub-agents in parallel to investigate — Claude Code: `Agent` tool with `subagent_type=Explore`; Codex: invoke the `explore` agent defined at `.codex/agents/explore.toml` (see `references/codex-tools.md`). Also use `Glob`/`Grep`/`Read` directly for targeted lookups.
+## Questions — when recon surfaces what the design didn't settle
 
-**What to explore:** the files this feature will touch (structure); the data flow through them;
-existing patterns/utilities/conventions to follow; conflict risks (shared state, coupling,
-migration); test infrastructure (fixtures, helpers) and E2E infrastructure (frameworks, how backing
-services and the dev server start); dependencies (what can run in parallel); and, for external
-libraries, current API signatures via context7 or web search.
+Ask when recon finds a new fork or contradicts a design assumption — never to re-litigate a
+decision the design already closed. Always `AskUserQuestion`, with a recommendation and its
+one-clause why, recommended option first, labeled `(Recommended)`. Resolve all questions
+before slicing. In `--auto`, ask nothing: findings land in the plan and surface at the report.
 
-**Verify execution preconditions, don't assume them.** How the code *runs* is as load-bearing as how
-it's written: the dev/test command, the bundler, whether a worktree's dependency layout actually works
-with that command, which env file loads, and which services must be up. Check these in the actual
-environment (or mark them explicitly unverified) exactly as you'd verify a code assumption — an
-asserted-but-unchecked "the server starts with X" is a landmine a coder builds on before discovering
-it's false. Record them as **verified preconditions in plan.md's Codebase Context**, next to the code
-preconditions.
+## File decomposition — before slicing
 
-**Depth scaling** (match effort to change size): minor → quick scan of 2-3 files, no parallel agents;
-medium → thorough scan, 1-2 explore agents; major → deep exploration, at most 2 explore agents plus
-main-thread Glob/Grep.
+Map which files will be created or modified and what each is responsible for. Files that
+change together live together; split by responsibility, never by technical layer. This lands
+in `## Codebase Context` as a create/modify table — drawn **before** the slices, because
+slices drawn from a feature list with files assigned afterwards reliably produce two slices
+editing the same file for different reasons, and a collision the graph said was parallel-safe.
 
-Record findings — they go into plan.md's Codebase Context section.
+## Slicing
 
-### Step 3: Interactive Q&A
+Each phase is one slice: one coder dispatch, one TDD cycle (RED-GREEN-REFACTOR), one commit.
+A slice needing many cycles is two capabilities — split it.
 
-From the codebase exploration, identify implementation questions and resolve them with the user
-before designing phases, so the planner starts with zero ambiguity. Ask about: **implementation
-approach** (spec says X but code does Y; two ways to extend), **integration points** (reuse vs. new;
-shared-module impact), **edge cases** (unspecified failure handling), **scope boundaries** (does
-REQ-N require changing a shared interface), and **technical decisions** (state management, real DB
-vs. mocks).
+- **The anti-horizontal test: can you write the title?** Every phase title states a
+  demonstrable capability — *"an account can be created and read back with no password
+  exposed"*. A title that only names a layer or repo ("db: schema", "api: endpoints") names
+  no capability and fails — re-slice around the capability it serves.
+- **Walking skeleton first.** Slice 1 is the thinnest path touching every layer once with a
+  visible result. Shared plumbing rides inside the first slice that needs it. A separate
+  foundation slice is justified only when 2+ later slices provably depend on it *and* folding
+  it into slice 1 would couple slice 1 to slice 2's needs.
+- **Reachable — no orphaned code.** Every slice, when it lands, is reachable from a real
+  entry point and provable end to end. A module nobody calls until slice 6 is not a slice —
+  fold it into its first consumer.
+- **One mechanism, one slice.** A generic mechanism (config-driven builder, per-case-free
+  renderer) handles every data case at once — the second locale or third record type is the
+  same capability with different data. Keep the cases in the slice that builds the mechanism;
+  prove each with its own scenario. Split only when a case needs genuinely new production code.
+- **Sizing by reviewability:** a slice is the smallest unit that carries its own test cycle
+  and is worth a fresh reviewer's gate. Fold setup, config, and doc steps into the slice whose
+  deliverable needs them. Typical: 2-4 slices small, 4-8 large; more than ~8 means the feature
+  should have been decomposed at brainstorm.
+- **Phase-ID stability.** Once assigned, never renumbered. Splitting keeps the original id on
+  the original concept; deletion leaves a gap. Gaps are fine — renumbering silently invalidates
+  every claims file, DAG node, and review reference pointing at the old number.
 
-**Rules:**
-- **Always use the `AskUserQuestion` tool** to ask questions — never embed questions in plain text output
-- Ask questions **one at a time** (or small batches of 2-3 closely related ones)
-- Use **multiple-choice** when possible to reduce cognitive load
-- After each answer, check if it raises follow-up questions
-- If the user says "you decide" or "your call," make the decision, state it clearly, and record the rationale
-- If the codebase exploration reveals no questions (rare — typically only for trivial changes), skip this step
+Two slices that modify the same file are not independent, whatever the capability graph says —
+order them or merge them.
 
-**Hard gate:** All questions must be resolved before proceeding to phase design.
+## Scenarios and the Test Matrix
 
-### Step 4: Derive Test Scenarios
+Derive scenarios for the whole feature first, then place each — **read
+`references/scenarios.md` before deriving**; without the behavioral contract loaded,
+scenarios assert private helpers and call order, and break on the first refactor while the
+feature still works.
 
-Before designing phases, derive the **behavioral, scenario-based tests** that will prove the
-feature works and that nothing regressed. This step drives phase design — scenarios come first so
-each phase is built to satisfy specific, observable behaviors.
+Record the join in plan.md's `## Test Matrix`, one row per requirement:
 
-**Read `references/test-scenarios.md` and follow it — it is the authority on this step** (scenario
-format, systematic derivation, two altitudes, the placement/containment test, regression rules, the
-coverage checklist). Do not restate its content here or in your reasoning; apply it. This step must
-not be skipped or done shallowly — the process-level obligations it feeds are:
+| Requirement | Level | Where it's proven | Slice |
+|---|---|---|---|
+| `R1` | unit | `S1` | 1 |
+| `R5` | e2e (phase) | `S9` | 2 |
+| `NF2` | functional-verify | flow: *"a user reconciles a half-rupee gap"* | — |
 
-- **Derive the whole set first, then distribute.** List every scenario across the feature to confirm
-  coverage, then place each: Unit/API in the phase that delivers it; each E2E flow by the containment
-  test (phase-level to its phase — the common case; cross-slice to plan.md's System E2E). Number
-  globally (S1, S2, …) so trace ids stay unique across files.
-- **Regression scenarios are mandatory when the plan touches shared code**, even if the source names
-  no such requirement — add them and note the gap.
-- **Do a written coverage-map pass** before writing phase files: pair every source item (each
-  requirement, edge case, risk, "shall not change" clause, and each named variant of a capability)
-  with the scenario id(s) covering it. A written pass catches what a linear read misses (the 2nd/3rd
-  variant, the enforcement negative, the plain create-then-view). Fill or flag any gap. This map is a
-  **working artifact only — never a section in any output file** (no audit / coverage-map /
-  traceability-matrix section); coverage lives in the per-scenario trace tags.
+Five levels: `unit` · `api` · `e2e (phase)` · `e2e (system)` · `functional-verify` (a
+human-observable property no automated test can assert). Choose the level by
+`tdd/references/integration-e2e.md`'s heuristic — the lowest level that gives the confidence
+needed. Scenario ids `S<n>` are globally unique across the plan; each is written out once in
+its home file — its phase file, or plan.md's `## System Verification` for a cross-slice flow —
+with its `(traces to …)` tag. An `e2e (system)` row's Slice column names the slice completing
+the journey: that slice's coder authors and runs the flow, and its phase file says so in one
+line. **A requirement with no row means the plan is incomplete or the requirement isn't real —
+both are findings.**
 
-### Step 5: Design the Phases
+## Write the documents
 
-Each phase is a **vertical slice** — one thin capability cut through every layer it touches, from
-the user's entry point to a user-visible outcome. It makes sense on its own, a user can exercise it,
-and it can prove itself end to end. A phase typically follows one TDD cycle (RED-GREEN-REFACTOR)
-resulting in one commit. Occasionally a complex slice may need multiple TDD cycles, each with its
-own commit — but this should be rare. If a phase needs many cycles, it's probably two capabilities
-and should be split.
+**Read `references/plan-sections.md` before writing.** Without the section contract and step
+shape loaded, steps collapse back into "modify X to do Y" prose and file references back into
+bare paths — the two failures that make a plan unreadable without the codebase open.
 
-**Slice vertically, never horizontally:**
-- A phase delivers a **thin end-to-end capability a user can exercise** — e.g. "a user registers and
-  the account exists: validated → persisted → confirmable on read" — cutting through every layer it
-  needs (data, service, form, validation, render), not one layer across all capabilities. A phase
-  spanning several repos to deliver one working capability is correct; several phases each confined to
-  one repo/layer ("db: schema", "ui: render") is the horizontal anti-pattern — re-slice it.
-- **The first slice is the walking skeleton** — the narrowest capability touching every layer once
-  with a visible result. Later slices thicken it and, being independent, mostly parallelize (see the
-  foundation-phase exception in the intro before pulling shared plumbing into its own phase).
-- **Don't split one mechanism across phases by data case.** A *generic* mechanism (a config-driven
-  builder/validator, a per-case-free renderer) handles every data case it covers at once — the second
-  locale, another role, the third record type are the **same capability with different data**.
-  Splitting them leaves the second phase nothing to build but confirming the first. Keep all the data
-  cases in the one slice that builds the mechanism; prove each with its own scenario. Split only when
-  a case needs genuinely new production code (a different component, a new enforcement path) — the
-  split is justified by *that code*, not the data.
-- Leaves the codebase working with all tests passing. Express dependencies as a DOT digraph in
-  plan.md — expect a walking-skeleton node with a wide fan-out, not a strict layer chain.
-- **Carries its own phase-scoped test scenarios** (Step 4): each Unit/API scenario, plus a
-  phase-level `### E2E` — which a vertical slice almost always owns, since its point is a runnable
-  end-to-end capability. Only a genuinely cross-slice E2E goes to plan.md's System E2E. The scenarios
-  a phase carries *are* its definition of done — no separate Done-When section.
+The two rules worth carrying here because every step hits them:
 
-**Every phase must build load-bearing work; a test obligation is not a phase.** Before keeping a
-phase, read its `## Implementation`: *does it add new production code whose absence would break the
-feature?* If its steps are mostly "confirm X" / "verify the prior builder handles Y" / "no change
-needed" with one stray edit, it is not a slice — it is another slice's test obligation. Fold such
-work into the slice that **touches (modifies) or exercises (runs end-to-end) the code it concerns**:
-- **Regression / "unchanged" / "still generic" guards** belong in the slice that changes the shared
-  code — that slice asserts the pre-existing callers still work. No phase exists solely to hold guard
-  tests.
-- **"Touched" is not the only trigger — "exercised" counts too.** A generic downstream artifact (a
-  renderer, serializer, formatter) a slice does not *edit* but whose output *is the observable outcome
-  of that slice's own end-to-end flow* is exercised by it: its coverage is that slice's `### E2E`
-  render/output leg, not a separate phase. Do not read "the slice doesn't modify the renderer" as "no
-  slice touches it" — that pulls render back into a standalone layer-phase (horizontal slicing).
-- **New-but-not-independently-valuable behavior** (e.g. a cross-row de-dup rule, meaningless until a
-  record holds multiple rows) folds into the slice where it first becomes meaningful. Split it out
-  only when it builds new production code in a file no other slice touches.
+- **A step changing existing code quotes the current code, then describes the change.** The
+  quote orients; the prose states the change. A new file gets Contract + Logic, no quote —
+  there is no "before" to show.
+- **Every file reference names what's there:** `src/services/user.ts:34 — createUser, the
+  insert path`. Path leads (click-detection needs it), the naming clause follows.
 
-**Two things are genuinely *not* phases:**
-- **An unchanged artifact with no in-scope way to prove it** (a schema already generic whose only
-  consumer is out of scope). Record it as a **verified precondition in plan.md's Codebase Context**,
-  not a phase.
-- **A standalone confirm-and-guard phase** survives *only* when generic code is **neither modified nor
-  exercised end-to-end by any slice**, yet the feature relies on its genericness and it has no
-  coverage — a rare case with no slice to fold into. When one does survive: its `## Overview` states
-  the guard's purpose; its `## Implementation` first step notes no production change and the rest
-  describe the test file(s); if a test surfaces a real gap, fixing it to stay generic is in scope.
+## Self-review — four checks, inline
 
-**Runner-less producer repos** (a raw JSON/config or types-only package — `test` is `echo no-test`):
-never invent a runner. The proving scenario lives in the **consumer** phase that imports the artifact
-and has a runner, written there once. If producer and consumer are separate phases, the producer's
-`## Implementation` names in prose where the behavior is proven (a locator, not a scenario copy). If
-the producer is folded into its consumer slice (common — a shared config created inside the
-walking-skeleton slice that reads it), they are the same phase: create the artifact and prove it
-there, no locator needed.
+1. **Matrix coverage** — every `R#`/`NF#`/`EC#` has a row; every row names a slice or a
+   system test. Fill or flag gaps.
+2. **Reachability** — walk the phases in order: at the end of each, is its deliverable
+   reachable from a real entry point and provable? A failing slice is folded or re-sliced.
+3. **Consistency** — the same name means the same thing in every file: no placeholders
+   (`TBD`, "handle edge cases"), no reference to a type or function no slice builds, every
+   `builds:`/`needs:` entry resolving to the outline's signatures.
+4. **Clarity** — re-read as a reader who has not seen this code: every requirement
+   represented, every slice followable without opening the codebase, every quoted region
+   sufficient to picture its change. This is the check the other three can't substitute for —
+   they prove the plan is right; this proves it is readable.
 
-**Steps within a phase:** decompose by the `## Implementation` work, not a separate Step Graph or
-per-step Files/Tests/Done blocks (those duplicate Implementation and Test Scenarios). Note any
-parallelizable sub-work in one line of prose; real parallelism lives in the phase graph.
+Findings are `[slice N, step M]: <issue> — <why it matters>`; blocking issues hold the gate,
+recommendations never do.
 
-### Step 6: Write the Plan Documents
+## Approval gate
 
-Create the folder and write all documents. Use the `AskUserQuestion` tool to present
-the plan summary and ask for approval — never embed approval questions in plain text output.
+Present the structure outline, the matrix, and the debt dispositions. One `AskUserQuestion`.
+In `--auto`, auto-approve. After any revision the user asks for, integrate it, re-present
+what changed, and wait for explicit approval — a revision is not a confirmation.
 
----
+## Hand-off
 
-## Output Format
+On approval, phases execute in dependency order — orchestrate dispatches one coder per phase
+file (the `tdd` skill owns the cycle), or the user works through them directly. Parallel
+sessions may refine later phase files while early ones are built.
 
-**The annotated skeletons for `plan.md` and `phase-N.md` live in `references/plan-template.md` —
-that file is the single source of truth for the shape. Read it and follow it; do not reproduce the
-skeleton here.** This section states only the *rules* that govern the format — the reasoning a
-skeleton alone can't convey. (Scenario format — Steps/Expected, altitude, where each scenario lives
-— is owned by `references/test-scenarios.md`; not restated here.)
-
-### plan.md rules
-
-- **Acceptance Criteria** are system-level, whole-feature outcomes only — never a per-phase task.
-- **`## System E2E Tests`** is the home only for **cross-slice** end-to-end flows: journeys that
-  only exist once several slices are assembled, so no single phase can run them (see the containment
-  test in Step 4). Under vertical slicing each phase is itself an end-to-end capability, so most E2E
-  flows are *phase-level* and live in that phase's `### E2E`; this section holds only the genuinely
-  cross-slice journeys (e.g. register **then** log in **then** reach a protected page — chaining
-  three independently-built slices). If this section swells with flows each fully runnable inside one
-  phase, the phases
-  were sliced horizontally — re-slice. Do **not** put E2E environment/harness setup here
-  (docker-compose, the build-and-run command, the browser-driver command) — that belongs in the
-  project's CLAUDE.md, not the plan.
-- plan.md carries **no** Unit/API scenarios — those live in the phase files.
-
-### phase-N.md rules
-
-The phase header is `# Phase N (<tag>): <title>`, where `<tag>` names the **capability/slice** the
-phase delivers (`register`, `login`, `token-refresh`), **not** the repo or layer — a vertical slice
-spans layers, so a repo/layer tag would misdescribe it and re-encode horizontal slicing. Name the
-repos a slice touches *inside* `## Implementation` (each step names its files), not in the header.
-The `<title>` states the user-visible capability ("a user registers and the account exists"), not
-a layer. (Only for a genuinely single-layer plan — every phase lands in one repo — may `<tag>` be
-the layer `api`/`ui`; pick one convention per plan and use it consistently.)
-
-A phase file has exactly **four body sections** — `## Overview`, `## Implementation`,
-`## Test Scenarios`, `## Commit` — plus the header. Each answers **one question and only that
-question**; this disjointness is what keeps the file free of the restatement a "fill every box"
-template forces. Do **not** add a Step Graph, a "What to build", a "Done When", or an
-"E2E Verification" section — each paraphrases another section or forces a hollow end-to-end claim
-onto a phase that owns none. The `tdd` skill handles RED-GREEN-REFACTOR during execution.
-
-**Section responsibilities (do not let one bleed into another):**
-
-| Section | Answers only | Must NOT contain |
-|---|---|---|
-| header | what phase this is, what it depends on | behavior, files, a prose summary |
-| `## Overview` | *why* this phase exists — its purpose and what it enables | file lists, step-by-step how, scenario prose, a restated phase-graph label |
-| `## Implementation` | *how* the change is made, as ordered steps naming the files each touches, each production step stating its Contract and Logic | scenario prose, done-criteria, purpose/why |
-| `## Test Scenarios` | *what behavior* proves it works — Unit/API, plus the phase-level `### E2E` the slice runs on its own code (a vertical slice almost always owns one) | file lists, implementation how, cross-slice E2E flows (those go in plan.md) |
-| `## Commit` | the commit message | — |
-
-- **Overview is purpose, not a build summary.** One or two sentences: what the phase is *for*, why
-  it is its own phase, what it unlocks. It must add context no other section holds — not a reworded
-  phase-graph label, not a narration of the steps. If it starts naming files or listing behaviors,
-  cut it back to the "why."
-- **Implementation is ordered steps with a per-step shape, not prose.** Each step opens with a short
-  bold action title naming the file(s) it creates/modifies, then states the construction — not a
-  sentence *narrating* the outcome, but the shape a coder cannot re-derive:
-  - **Contract** — the signature / data shape it introduces (`register(email, password) → User |
-    DuplicateError`), or the endpoint's request → response + error codes, or the schema entry point
-    and what it accepts/rejects. One line; this is the thing the coder must not guess.
-  - **Logic** — the ordered operations *including the branch and edge/error path*: e.g. normalize →
-    look up existing → reject duplicate → hash → persist → return without the secret field. A few
-    bullets, not a run-on sentence.
-  - **Integrates** *(optional)* — the specific existing function it calls or the pattern/convention
-    it follows or diverges from, with the reason.
-
-  **Mandatory for any step that creates or changes a callable function, a schema/validator, an
-  endpoint, or a component.** A pure wiring/registration step (register a route on the router, add
-  an export) may stay a one-liner — no Contract/Logic. A **test-file** step keeps its own shape:
-  what it sets up, what it asserts, and what that proves (a bare "Create: foo.test.ts (Vitest)" is
-  not acceptable). Order steps the way the work unfolds. The shape *replaces* run-on prose — Contract
-  + a few Logic bullets is usually shorter and more actionable. Include a code block under a step
-  only for genuinely non-obvious logic (a tricky algorithm, an easily mis-implemented rule); routine
-  code the Contract + Logic already pin down is left to the TDD cycle.
-- **Test Scenarios** carries `### Unit` / `### API`, and a `### E2E` for the flow this phase can run
-  entirely on its own code — which a vertical slice almost always has, since the slice *is* an
-  end-to-end capability; a slice with no phase-level E2E is a signal it may have been sliced
-  horizontally. Only a genuinely cross-slice flow goes to plan.md's System E2E Tests (see the
-  containment test in Step 4). Show only the subsections the phase has. A non-scenario gate (e.g.
-  "no hardcoded regex") folds into a scenario's Expected, not a separate checklist.
-
----
-
-## @fix Tags
-
-Annotate phase files with `@fix` tags to mark what needs changing. The agent reads
-the tags, applies changes, and removes them.
-
-**Format:** `<!-- @fix: description of what needs to change -->` — placed directly above the
-content that needs updating. See `references/plan-template.md` ("@fix Tag Examples") for worked
-examples.
-
-When processing: collect all `@fix` tags, summarize changes to user, apply them,
-remove tags. If fixes change phase structure, update plan.md too.
-
----
-
-## Integration with Other Skills
-
-**From brainstorm:** Read the design doc/spec, focus on codebase exploration,
-interactive Q&A, and phase design.
-
-**To execution:** After plan approval, work through phases in dependency order.
-Load each phase-N.md, use the `tdd` skill for RED-GREEN-REFACTOR, commit after
-each cycle. Update phase status as they complete. User can say "implement through
-phase 3" to set a stopping point.
-
-**Parallel sessions:** Session A implements phases 1-2 while Session B refines
-phase-3.md and phase-4.md with `@fix` tags or direct edits.
-
-**Tasks:** Create one task per phase with dependency relationships matching plan.md.
-Update status as phases complete.
+| Excuse | Reality |
+|---|---|
+| "The design already says this" | Then cite it — `design.md#section`. The plan holds what planning added: slices, matrix, dispositions. |
+| "This slice is obvious, skip the scenarios" | The scenarios are the definition of done. A slice without them cannot prove itself. |
+| "I'll note the file's debt but not decide" | Every debt item gets a disposition. Undecided is silently inherited. |
+| "The reader can open the file" | The reader is reviewing, not spelunking. Quote the region; name what's at the path. |
+| "One more section would make it complete" | The section list is closed. New content goes in an existing section or it doesn't go. |

@@ -137,7 +137,7 @@ Did behavior change?
 - **Large changesets (50+ files)**: batch by directory/module, propose high-level grouping first, suggest multiple PRs.
 - **Already-staged changes**: ask whether to incorporate or leave as-is.
 - **Monorepo**: use package name as scope (`feat(api): ...`, `fix(web): ...`).
-- **Pipeline artifacts under `.harness/features/<SPEC_NAME>/`** (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/): always isolate these into a **separate, final commit** — `docs(spec): add artifacts for <SPEC_NAME>` — never bundled with feature/fix commits. Rationale: reviewers should be able to read feature diffs without artifact noise, and read the artifact tree as one coherent unit.
+- **Pipeline artifacts under `.harness/`** are gitignored — the whole tree, knowledge/ excepted. Never stage or commit them; reviewers read artifacts out-of-band. If `git status` shows `.harness/` paths as trackable, the `.gitignore` rule is broken — fix that instead of committing.
 
 ## Scope Boundaries
 

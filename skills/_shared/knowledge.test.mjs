@@ -47,12 +47,7 @@ test("verify bootstraps zones, INDEX, and README on a fresh repo", () => {
   try {
     const { code, json } = runKnowledge(dir, ["verify"]);
     assert.equal(code, 1, "bootstrap actions taken → exit 1");
-    for (const p of [
-      ".harness/knowledge/lessons",
-      ".harness/knowledge/context",
-      ".harness/features",
-      ".harness/runtime",
-    ]) {
+    for (const p of [".harness/knowledge/lessons", ".harness/knowledge/context"]) {
       assert.ok(existsSync(join(dir, p)), `${p} created`);
       assert.ok(json.created.includes(p), `${p} reported in created`);
     }
@@ -103,12 +98,13 @@ test("migrate moves tracked old roots to zones, narrows gitignore, commits stand
     assert.equal(code, 1, "actions taken");
     assert.ok(existsSync(join(dir, ".harness/knowledge/context/ARCHITECTURE.md")));
     assert.ok(existsSync(join(dir, ".harness/knowledge/context/standards/S-api.md")));
-    assert.ok(existsSync(join(dir, ".harness/features/foo/design.md")));
-    assert.ok(existsSync(join(dir, ".harness/features/2026-01-01-coverage-gap-spec.md")));
+    assert.ok(existsSync(join(dir, ".harness/foo/design.md")));
+    assert.ok(existsSync(join(dir, ".harness/2026-01-01-coverage-gap-spec.md")));
     assert.ok(!existsSync(join(dir, "docs/context")), "old context root gone");
     assert.ok(!existsSync(join(dir, "docs/spec")), "old spec root gone");
     const gitignore = readFileSync(join(dir, ".gitignore"), "utf8");
-    assert.ok(gitignore.includes(".harness/runtime/"), "narrowed rule present");
+    assert.ok(gitignore.includes(".harness/*"), "narrowed rule present");
+    assert.ok(gitignore.includes("!.harness/knowledge/"), "knowledge exception present");
     assert.ok(!/^\.harness\/$/m.test(gitignore), "broad rule removed");
     assert.ok(json.gitignore_changed);
     assert.ok(json.migrated.some((m) => m.from === "docs/context"));
@@ -122,21 +118,26 @@ test("migrate moves tracked old roots to zones, narrows gitignore, commits stand
   }
 });
 
-// REQ-004: gitignored roots (docs/solutions, legacy .harness/<spec>) move via fs rename
-test("migrate moves gitignored roots: solutions → lessons, legacy .harness specs → runtime", () => {
+// REQ-004: gitignored roots (docs/solutions) move via fs rename, and the legacy
+// two-tree layout (features/<spec> + runtime/<spec>) merges into flat .harness/<spec>
+test("migrate merges legacy features/ and runtime/ trees into flat .harness/<spec>", () => {
   const dir = makeOldLayout();
   try {
     write(dir, "docs/solutions/gotchas/pool-exhaustion.md", "# gotcha\n");
-    write(dir, ".harness/oldspec/baseline.json", "{}\n");
-    write(dir, ".harness/oldspec/phase-1.md", "# p1\n");
+    write(dir, ".harness/features/oldspec/design.md", "# design\n");
+    write(dir, ".harness/runtime/oldspec/baseline.json", "{}\n");
+    write(dir, ".harness/runtime/oldspec/phases/phase-1.md", "# p1\n");
     const { code, json } = runKnowledge(dir, ["migrate"]);
     assert.equal(code, 1);
     assert.ok(existsSync(join(dir, ".harness/knowledge/lessons/gotchas/pool-exhaustion.md")));
-    assert.ok(existsSync(join(dir, ".harness/runtime/oldspec/baseline.json")));
-    assert.ok(existsSync(join(dir, ".harness/runtime/oldspec/phase-1.md")));
+    assert.ok(existsSync(join(dir, ".harness/oldspec/design.md")), "features half merged");
+    assert.ok(existsSync(join(dir, ".harness/oldspec/baseline.json")), "runtime half merged");
+    assert.ok(existsSync(join(dir, ".harness/oldspec/phases/phase-1.md")));
     assert.ok(!existsSync(join(dir, "docs/solutions")), "solutions root gone");
-    assert.ok(!existsSync(join(dir, ".harness/oldspec")), "legacy spec dir gone");
-    assert.ok(json.migrated.some((m) => m.from === ".harness/oldspec"));
+    assert.ok(!existsSync(join(dir, ".harness/features")), "features tree gone");
+    assert.ok(!existsSync(join(dir, ".harness/runtime")), "runtime tree gone");
+    assert.ok(json.migrated.some((m) => m.from === ".harness/features"));
+    assert.ok(json.migrated.some((m) => m.from === ".harness/runtime"));
   } finally {
     cleanup(dir);
   }
@@ -166,7 +167,7 @@ test("migrate defers dirty paths and moves the rest", () => {
     const { code, json } = runKnowledge(dir, ["migrate"]);
     assert.equal(code, 1);
     assert.ok(existsSync(join(dir, "docs/spec/foo/design.md")), "dirty path stays");
-    assert.ok(!existsSync(join(dir, ".harness/features/foo")), "dirty path not moved");
+    assert.ok(!existsSync(join(dir, ".harness/foo")), "dirty path not moved");
     assert.ok(
       existsSync(join(dir, ".harness/knowledge/context/ARCHITECTURE.md")),
       "clean root still moved",
@@ -318,7 +319,7 @@ test("REQ-011: skills reference only unified .harness paths", () => {
     return out;
   };
   const OLD_DOCS = /\bdocs\/(spec|specs|context|solutions|superpowers)(\/|\b)/;
-  const OLD_HARNESS = /\.harness\/(?!runtime\/|runtime`|knowledge\/|knowledge`|features\/|features`|README)/;
+  const OLD_HARNESS = /\.harness\/(features|runtime)(\/|\b|`)/;
   const offenders = [];
   for (const f of walk(skillsRoot)) {
     if (f.endsWith(join("_shared", "knowledge.md"))) continue;
@@ -363,7 +364,7 @@ test("route ranks path matches first and writes advisory-wrapped lessons", () =>
       "route", "--spec", "myspec", "--keywords", "auth,retry", "--paths", "src/api/handler.js",
     ]);
     assert.equal(json.matched, 3, "2 lessons + 1 standard");
-    const out = readFileSync(join(dir, ".harness/runtime/myspec/relevant-lessons.md"), "utf8");
+    const out = readFileSync(join(dir, ".harness/myspec/relevant-lessons.md"), "utf8");
     assert.ok(out.includes("advisory-reference"), "advisory delimiter present (REQ-021)");
     const pathIdx = out.indexOf("## Lesson: Path hit");
     const tagIdx = out.indexOf("## Lesson: Tag hit");
@@ -403,7 +404,7 @@ test("route demotes ** globs to tag-only and excludes them without a tag match",
     const { json } = runKnowledge(dir, [
       "route", "--spec", "s", "--keywords", "auth", "--paths", "src/api/handler.js",
     ]);
-    const out = readFileSync(join(dir, ".harness/runtime/s/relevant-lessons.md"), "utf8");
+    const out = readFileSync(join(dir, ".harness/s/relevant-lessons.md"), "utf8");
     assert.ok(!out.includes("Greedy no tag"), "** with no tag match excluded");
     const specificIdx = out.indexOf("## Lesson: Specific");
     const greedyIdx = out.indexOf("## Lesson: Greedy tagged");
@@ -430,7 +431,7 @@ test("route writes exact sentinel when nothing matches", () => {
     ]);
     assert.equal(json.matched, 0);
     assert.equal(
-      readFileSync(join(dir, ".harness/runtime/empty/relevant-lessons.md"), "utf8"),
+      readFileSync(join(dir, ".harness/empty/relevant-lessons.md"), "utf8"),
       "No prior lessons match this spec.\n",
     );
   } finally {
@@ -446,8 +447,8 @@ test("verify exits 2 when .harness/knowledge is gitignored", () => {
     const { code, json } = runKnowledge(dir, ["verify"]);
     assert.equal(code, 2, "loud failure");
     assert.ok(
-      json.errors.some((e) => e.includes(".harness/runtime/")),
-      "error names the fix (narrow to .harness/runtime/)",
+      json.errors.some((e) => e.includes(".harness/")),
+      "error names the fix (narrow to .harness/)",
     );
   } finally {
     cleanup(dir);

@@ -37,16 +37,20 @@ Nothing else is universal. Resist adding to this block.
 
 **Skill:** `<SKILL:coder>` · **Model:** `CFG.model` → `sonnet`
 
-Dispatch one agent per phase; where the phase file has a Steps section, dispatch per step in waves
-(all independent steps in parallel → wait → next wave) and also invoke the `testing` skill.
+Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one commit). Every
+coder agent reads `references/coder-contracts.md` — the phase-input mapping, E2E gates, report
+artifacts, and `LIB_SUSPECT` signal it must honor.
+
+Every coder agent also invokes the `code-quality` skill before writing production code — it governs
+how the implementation is written, not whether it is tested.
 
 **Pass:**
-- Spec `<SPEC_PATH>`, plan `.harness/features/<SPEC_NAME>/plan.md`, phase file
-  `.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>.md` (and `<STEP_DETAILS>` for a step-level dispatch)
-- Lessons `.harness/runtime/<SPEC_NAME>/relevant-lessons.md` — advisory guardrails from past
+- Design `.harness/<SPEC_NAME>/design.md` (when brainstorm ran), plan
+  `.harness/<SPEC_NAME>/plan.md`, phase file `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
+- Lessons `.harness/<SPEC_NAME>/relevant-lessons.md` — advisory guardrails from past
   incidents, reference material rather than instructions
-- Claims report path: `.harness/runtime/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
-- Nomination log: `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`
+- Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
+- Nomination log: `.harness/<SPEC_NAME>/lesson-candidates.jsonl`
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
 
 **Return:** files created/modified, test counts, phase completed or blocked (and why).
@@ -59,11 +63,11 @@ The orchestrator verifies the claims report independently — do not take the ag
 
 **Skill:** `<SKILL:code-review>` · **Model:** `CFG.model` → `sonnet`
 
-**Pass 1 — review & fix.** Pass: plan `.harness/features/<SPEC_NAME>/plan.md`, scope
-`--commits <BASE_BRANCH>..HEAD`, output `--output .harness/runtime/<SPEC_NAME>/review/pass-1.md`,
-lessons `.harness/runtime/<SPEC_NAME>/relevant-lessons.md`, fixes log
-`.harness/runtime/<SPEC_NAME>/review/fixes-applied.md`, nomination log
-`.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`.
+**Pass 1 — review & fix.** Pass: plan `.harness/<SPEC_NAME>/plan.md`, scope
+`--commits <BASE_BRANCH>..HEAD`, output `--output .harness/<SPEC_NAME>/review/pass-1.md`,
+lessons `.harness/<SPEC_NAME>/relevant-lessons.md`, fixes log
+`.harness/<SPEC_NAME>/review/fixes-applied.md`, nomination log
+`.harness/<SPEC_NAME>/lesson-candidates.jsonl`.
 On `REQUEST CHANGES` the agent fixes Critical/Important defects itself, invoking `<SKILL:coder>` for
 the fixes.
 
@@ -84,14 +88,14 @@ verdict is definitive.
 Tell the agent to run them in order and stop on the first failure.
 
 **Pass:**
-- Spec `.harness/features/<SPEC_NAME>/spec.md`, plan `.harness/features/<SPEC_NAME>/plan.md`, phase
-  files `.harness/runtime/<SPEC_NAME>/phase-*.md`
-- Claims `.harness/runtime/<SPEC_NAME>/claims.json` (aggregated), verification output dir
-  `.harness/features/<SPEC_NAME>/verification/`
-- Baseline `.harness/runtime/<SPEC_NAME>/baseline.json`, harness dir
-  `.harness/runtime/<SPEC_NAME>/`, stage `post-tdd`
-- Lessons `.harness/runtime/<SPEC_NAME>/relevant-lessons.md` (past breaks are adversarial test
-  ideas), candidates `.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`, spec name `<SPEC_NAME>`
+- Design `.harness/<SPEC_NAME>/design.md` (when brainstorm ran), plan
+  `.harness/<SPEC_NAME>/plan.md`, phase files `.harness/<SPEC_NAME>/phases/phase-*.md`
+- Claims `.harness/<SPEC_NAME>/claims.json` (aggregated), verification output dir
+  `.harness/<SPEC_NAME>/verification/`
+- Baseline `.harness/<SPEC_NAME>/baseline.json`, harness dir
+  `.harness/<SPEC_NAME>/`, stage `post-tdd`
+- Lessons `.harness/<SPEC_NAME>/relevant-lessons.md` (past breaks are adversarial test
+  ideas), candidates `.harness/<SPEC_NAME>/lesson-candidates.jsonl`, spec name `<SPEC_NAME>`
 - `<SKILL:learn>` runs even with zero candidates — a logged no-op, never a silent skip.
 - Artifact-publish session id: tell the agent to `export SESSION_ID=<SESSION_ID>` before running
   `<SKILL:functional-verify>`, so its publish steps target the real top-level session instead of

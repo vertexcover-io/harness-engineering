@@ -81,18 +81,18 @@ Examples:
 
 Two destinations. Most learnings go to *one* of them; rarely both.
 
-- **Task-specific** — gotchas, decisions, or context that only matter for understanding *this* PR. Write to `.harness/features/<SPEC_NAME>/learnings.md` (committed, lives next to the spec it pertains to). If invoked outside the orchestrate pipeline (no `SPEC_NAME` available), skip this destination.
+- **Task-specific** — gotchas, decisions, or context that only matter for understanding *this* PR. Write to `.harness/<SPEC_NAME>/learnings.md` (committed, lives next to the spec it pertains to). If invoked outside the orchestrate pipeline (no `SPEC_NAME` available), skip this destination.
 - **Globally reusable** — patterns, gotchas, or architectural insights that future work on *any* feature should benefit from. Write to `.harness/knowledge/lessons/<category>/<filename>.md` (committed — lessons travel with the PR and compound across the team; see `../_shared/knowledge.md`).
 
 Ask: "Would a developer working on an unrelated feature 6 months from now benefit from this?" → if yes, global. If it only makes sense in the context of this spec → task-specific.
 
-If both apply, write the global doc and add a short pointer from `.harness/features/<SPEC_NAME>/learnings.md` referencing it.
+If both apply, write the global doc and add a short pointer from `.harness/<SPEC_NAME>/learnings.md` referencing it.
 
 ### Step 5: Write the doc
 
 Create a single markdown file using the template below. Populate it from the subagent's extracted material. The main conversation writes the file — no subagent writes files.
 
-For **task-specific**: append to `.harness/features/<SPEC_NAME>/learnings.md` (create on first learning; subsequent learnings append as new sections).
+For **task-specific**: append to `.harness/<SPEC_NAME>/learnings.md` (create on first learning; subsequent learnings append as new sections).
 
 For **globally reusable**:
 
@@ -200,7 +200,7 @@ INDEX every session, and CLAUDE.md carries exactly one learning-loop pointer lin
 After writing the file, show the user:
 
 ```
-Done — <path-written>  (e.g. .harness/features/<SPEC_NAME>/learnings.md, or .harness/knowledge/lessons/<category>/<filename>.md)
+Done — <path-written>  (e.g. .harness/<SPEC_NAME>/learnings.md, or .harness/knowledge/lessons/<category>/<filename>.md)
 
 <2-sentence summary of what was captured>
 
@@ -214,7 +214,7 @@ Next:
 
 The producer half of the loop the curator below consumes. A stage that hits one of the signals
 appends ONE JSON line per fired signal to the candidates log it was given
-(`.harness/runtime/<SPEC_NAME>/lesson-candidates.jsonl`):
+(`.harness/<SPEC_NAME>/lesson-candidates.jsonl`):
 
 ```bash
 echo '{"signal":"<type>","summary":"<one sentence, ≤200 chars>","files":["<path>"],"stage":"<plan|code|review|verify>"}' \
@@ -261,7 +261,7 @@ which pipeline signals become lessons — stages nominate (above), the curator j
    - **SCOPE** — Useful to someone on an unrelated feature 6 months from now? Yes →
      new doc in `.harness/knowledge/lessons/<category>/` (use the document template +
      routing fields above, `source: <signal>@<spec>`). No → append to
-     `.harness/features/<spec>/learnings.md`. Disposition: `created <path>`.
+     `.harness/<spec>/learnings.md`. Disposition: `created <path>`.
    - **ACTIONABILITY** — The lesson must state a concrete check or rule. "Be careful
      with X" → discard. Disposition: `discarded actionability`.
 4. **Evidence promotion** — for each review finding tagged `matched_lesson: <path>`,

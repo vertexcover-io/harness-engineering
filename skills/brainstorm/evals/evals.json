@@ -3,194 +3,250 @@
   "evals": [
     {
       "id": 1,
-      "name": "new-feature-end-to-end",
-      "prompt": "Brainstorm adding real-time collaboration to our document editor. Multiple users should be able to edit the same document simultaneously, like Google Docs.",
-      "expected_output": "A full brainstorm covering questioning, non-functional requirements, edge cases, dependency surfacing, YAGNI, self-review, and a tight design document",
-      "files": [],
+      "name": "triage-clean-skip-routes-to-planning",
+      "prompt": "Rename getAccountInfo to fetchAccount across the repo. The code is in skills/brainstorm/evals/files/eval1_api.py, eval1_service.py, and eval1_cli.py.",
+      "expected_output": "Triage evaluated and the skip fires: no fork, no new boundary, criterion obvious. Routes to the planning skill without grilling. No design.md produced.",
+      "files": [
+        "skills/brainstorm/evals/files/eval1_api.py",
+        "skills/brainstorm/evals/files/eval1_service.py",
+        "skills/brainstorm/evals/files/eval1_cli.py"
+      ],
       "expectations": [
-        "Asks the right questions: clarifies purpose, scope, success criteria, and user/system constraints before proposing solutions",
-        "Does not miss important questions: covers concurrency model (CRDT vs OT), presence/cursor behavior, offline editing, conflict resolution policy, and persistence boundary",
-        "Uses the AskUserQuestion tool for every question instead of embedding questions in plain text",
-        "Identifies non-functional requirements explicitly: performance/latency target, scalability bound, reliability, security/auth, observability",
-        "Hunts for edge cases: concurrent edits on the same range, network partition, stale clients, document deleted mid-edit, abusive payload sizes",
-        "Surfaces external dependencies (CRDT lib, WebSocket service) with maturity signals, auth surface, env var names, and an ordered fallback chain ending in a paid API or build-our-own option",
-        "Stress-tests the chosen approach against multiple lenses (end user, maintainer, scale, adjacent systems, security, failure modes)",
-        "Applies YAGNI: every knob, flag, and optional feature is challenged; defaults to hardcoding unless the value is genuinely empirical",
-        "Runs a self-review / spec-reviewer pass on the written design before handoff",
-        "Pauses for user approval on the written design before flowing to the next stage",
-        "Produces a design document at docs/spec/<SPEC_NAME>/design.md with EARS-style requirement IDs (F1, NF1, etc.)"
+        "Evaluates triage before asking any clarifying question",
+        "States that the skip test passes: change confined to existing code paths, one obvious way, acceptance criterion obvious, no new interface",
+        "Routes to the planning skill, naming planning explicitly as the next step",
+        "Explains the routing in terms of 'nothing to decide' rather than 'too small to plan'"
       ],
       "anti_expectations": [
-        "Does not write any code, scaffolding, or pseudocode during the brainstorm",
-        "Does not embed function bodies or implementation code blocks in the design document — only interfaces, signatures, and data shapes",
-        "Does not repeat the same conclusion across Key Insights, Architectural Decisions, and Risks sections",
-        "Does not pile multiple paragraphs of justification on already-settled decisions",
-        "Does not include tautological assumptions ('UUIDs are unique') or 'we'll see how it goes' placeholders",
-        "Does not include straw-man alternative approaches with full Pros/Cons when only one approach is real",
-        "Does not skip to a solution before exploring the problem space",
-        "Does not proceed to implementation before explicit user approval"
+        "Does not route directly to implement or start renaming code itself",
+        "Does not produce a design.md for a mechanical rename",
+        "Does not begin a grilling round of AskUserQuestion calls",
+        "Does not dispatch scouts for a change triage already skipped"
       ]
     },
     {
       "id": 2,
-      "name": "minor-change-stays-proportionate",
-      "prompt": "Think through adding a dark mode toggle to our settings page. We already have a theme context provider, just need the UI toggle and to persist the preference.",
-      "expected_output": "A brainstorm scaled to a minor change: short questioning, focused exploration, brief design document, sections omitted when empty",
-      "files": [],
+      "name": "triage-deceptive-mechanical-gets-grilled",
+      "prompt": "Add caching to the products endpoint, it's slow. The endpoint is in skills/brainstorm/evals/files/eval2_products.py.",
+      "expected_output": "Triage refuses the mechanical framing: caching carries live forks (TTL, invalidation, key shape, backing store). Runs the grill with a written decision tree and scout dispatch.",
+      "files": [
+        "skills/brainstorm/evals/files/eval2_products.py"
+      ],
       "expectations": [
-        "Scales depth to the problem: short questioning round, brief exploration, concise design",
-        "Asks the right questions even on a small change: persistence target (localStorage vs server), SSR/flash-of-wrong-theme behavior, system-preference detection, accessibility (prefers-reduced-motion contrast)",
-        "Identifies at least one non-functional concern (SSR compatibility, accessibility, persistence semantics)",
-        "Identifies edge cases proportionate to scope (system preference change while app is open, stored preference for a no-longer-supported theme, flash on initial load)",
-        "Uses the AskUserQuestion tool for questions",
-        "Applies YAGNI: rejects unnecessary knobs (custom theme builder, per-page overrides, animation timing config) for a binary toggle",
-        "Omits sections that have no genuine content (no Assumptions section if nothing is assumed; no Open Questions section if none block planning)",
-        "Produces a brief design document at docs/spec/<SPEC_NAME>/design.md"
+        "Runs brainstorm rather than skipping, despite the mechanical-sounding request",
+        "Surfaces at least three of the caching forks as decisions or questions: TTL/expiry, invalidation on write, cache key shape (category filter), backing store choice",
+        "Dispatches the codebase scout before the first clarifying question",
+        "Maintains a written decision tree with D<n> entries and open/resolved/parked status",
+        "Every menu question presents a recommended option first labeled (Recommended)",
+        "Notices the write path (create_product) and asks how writes interact with the cache",
+        "The scout dispatch prompt contains the topic and the four standing questions but not the caching feature request or any intended approach",
+        "Derives a kebab-case feature name and uses .harness/<name>/ consistently for the dossier before scouts are dispatched"
       ],
       "anti_expectations": [
-        "Does not skip brainstorming entirely on the grounds that the problem is simple",
-        "Does not jump to writing implementation code or providing code snippets",
-        "Does not produce an exhaustive multi-page design disproportionate to the problem",
-        "Does not invent multiple straw-man alternative approaches when only one is realistic",
-        "Does not repeat the same insight across multiple sections in the design document"
+        "Does not skip to planning on the grounds the request sounds mechanical",
+        "Does not write any caching implementation code",
+        "Does not batch dependent questions (e.g. backing store and TTL semantics) into one AskUserQuestion call"
       ]
     },
     {
       "id": 3,
-      "name": "structural-refactoring",
-      "prompt": "Help me think through refactoring our payment processing module. It's a 2000-line file handling Stripe, PayPal, and bank transfers all in one class. Error handling is inconsistent and adding new payment methods is painful.",
-      "expected_output": "Exploration that reads the existing code, identifies boundaries and contracts, presents alternative refactor shapes, and produces an architectural design without code",
+      "name": "triage-close-call-grills-and-yagni-probes-the-knob",
+      "prompt": "Bump the HTTP retry count from 3 to 5, but make it configurable so we can tune it later without a deploy.",
+      "expected_output": "The bump alone would skip, but 'make it configurable' is a fork — triage grills. YAGNI challenges the knob: hardcode unless the right value is genuinely empirical.",
       "files": [],
       "expectations": [
-        "Reads and analyzes existing code during context gathering since the problem is code-level",
-        "Asks the right questions: which provider behaviors actually differ (auth, idempotency, webhook handling, refund semantics), which are accidentally divergent, what's the migration plan for in-flight payments",
-        "Does not miss important questions: error-handling unification approach, observability gap, backward compatibility for in-flight transactions, test coverage starting point",
-        "Identifies architectural challenges around boundaries, interfaces, and contracts between payment providers",
-        "Presents 2-3 distinct refactoring shapes (e.g., strategy pattern, plugin architecture, provider microservices) with trade-offs and recommendation",
-        "Stress-tests from multiple lenses: maintainer adding the 4th provider, system under failure (provider outage mid-payment), adjacent systems (refund flow, reconciliation job)",
-        "Applies YAGNI: rejects speculative abstraction layers that aren't needed for the three current providers",
-        "Runs a self-review / spec-reviewer pass on the design",
-        "Pauses for user approval before handoff"
+        "Recognizes the configurable knob as a fork that makes this a grill, not a skip",
+        "Applies the close-call rule by choosing to grill rather than debating at length",
+        "Challenges the knob under YAGNI: asks whether the value is genuinely empirical or should be hardcoded now and added when the need is real",
+        "Records the knob decision as an explicit D<n> entry with a recommendation",
+        "Keeps the resulting design short rather than padding it to justify the process"
       ],
       "anti_expectations": [
-        "Does not start refactoring or writing code during the brainstorm",
-        "Does not embed pseudocode or function bodies in the design document",
-        "Does not route this to harness:refactor — structural rework belongs in brainstorm, not tactical refactor",
-        "Does not analyze only the happy path while ignoring partial-failure and provider-outage scenarios",
-        "Does not duplicate the same architectural insight across Key Insights, Architectural Decisions, and Risks",
-        "Does not propose a generic 'plugin framework' with knobs for features not yet needed"
+        "Does not accept the configuration option silently as a requirement",
+        "Does not park the knob decision in Open Questions when it can be resolved by asking now"
       ]
     },
     {
       "id": 4,
-      "name": "scope-decomposition-triggered",
-      "prompt": "Brainstorm a complete newsletter system for our platform. We need subscriber signup with double opt-in, a daily send pipeline with unsubscribe handling, and analytics on bounces and opens.",
-      "expected_output": "Flags multi-subsystem scope, proposes decomposition into independent sub-projects, confirms with the user, then brainstorms the first sub-project alone",
+      "name": "triage-scope-decomposes-before-grilling",
+      "prompt": "Build a notifications system: email digests, Slack alerts, in-app notifications, and a preferences UI where users pick channels per event type.",
+      "expected_output": "Scope check fires before detailed questioning: multiple independently-shippable subsystems. Proposes a decomposition, confirms it, then grills only the first sub-project.",
       "files": [],
       "expectations": [
-        "Flags that the request spans multiple independent subsystems (subscribe, delivery, analytics) before deep-diving",
-        "Proposes decomposition into sub-projects that can each ship value independently",
-        "Names the contracts between sub-projects (e.g., subscribers table state shape) as deliberate design artifacts",
-        "Confirms decomposition with the user via AskUserQuestion before continuing",
-        "After confirmation, brainstorms only the first sub-project — does not bundle all three into one design"
+        "Flags the multi-subsystem scope before asking detailed design questions",
+        "Proposes a concrete decomposition into sub-projects with a suggested order",
+        "Confirms the decomposition with the user via a question before proceeding",
+        "Grills only the first sub-project after decomposition is agreed",
+        "Considers shared surface (e.g. a common notification/preference model) when drawing sub-project boundaries"
       ],
       "anti_expectations": [
-        "Does not produce a single design document covering subscribe, delivery, and analytics in one artifact",
-        "Does not over-split on prompts where sub-pieces share most of their files and ship together",
-        "Does not skip the decomposition check on prompts whose titles contain 'system', 'platform', or 'overhaul'"
+        "Does not produce one design covering all four subsystems",
+        "Does not spend early questions refining channel-level details before the decomposition is settled"
       ]
     },
     {
       "id": 5,
-      "name": "visual-companion-on-ui-work",
-      "prompt": "Brainstorm a redesign of our analytics dashboard. We want to compare layout options — a card grid vs a single-column scroll vs a left-nav-with-detail-pane.",
-      "expected_output": "Offers the visual companion as a standalone message because the work involves comparing visual layouts, then proceeds with text questions for non-visual decisions",
-      "files": [],
+      "name": "grill-with-prd-cites-and-fills-gaps",
+      "prompt": "Design the saved-searches feature. The PRD is at skills/brainstorm/evals/files/eval5_prd.md.",
+      "expected_output": "A design.md that cites the PRD for stated requirements and adds only what the grill discovered: limits, duplicate names, deleted-entity filters, a non-functional target. Verifier dispatched before hand-off.",
+      "files": [
+        "skills/brainstorm/evals/files/eval5_prd.md"
+      ],
       "expectations": [
-        "Offers the visual companion because the work involves comparing visual layouts",
-        "Sends the visual companion offer as its own standalone message — no clarifying questions, context, or other content in the same message",
-        "Uses AskUserQuestion for subsequent clarifying questions",
-        "Produces a design document at docs/plans/ with the chosen layout direction"
+        "Dispatches the codebase scout before the first clarifying question",
+        "Cites the PRD by path and section for SS-1 through SS-4 instead of restating them as new requirements",
+        "Surfaces at least three gaps the PRD leaves open: per-user limit, duplicate-name behavior, saved filter referencing a deleted entity, or a non-functional target",
+        "Asks dependent questions alone, one per turn, batching only unrelated ones",
+        "The design.md contains the hard-floor sections including Decisions; Open Questions appears only if a decision was actually parked, never holding the filler word 'none'",
+        "New requirements discovered by the grill are written in an EARS shape with R#/NF#/EC# ids",
+        "Dispatches the fresh-context claim verifier and folds its verdict in before declaring hand-off"
       ],
       "anti_expectations": [
-        "Does not combine the visual companion offer with clarifying questions or context in the same message",
-        "Does not offer the visual companion on purely backend work where no visual artifacts exist",
-        "Does not force every question through the browser after the companion is accepted — text questions stay in the terminal"
+        "Does not restate the PRD's stated requirements verbatim as its own R# list",
+        "Does not write requirements containing banned vague words (fast, robust, seamless, appropriate)",
+        "Does not treat the user's first approval-round change request as the final confirmation"
       ]
     },
     {
       "id": 6,
-      "name": "auto-bypass-review-gate",
-      "prompt": "Run in auto mode — don't wait for approval. Brainstorm adding rate limiting to our public API endpoints.",
-      "expected_output": "Completes context gathering, exploration, design, and self-review, but bypasses the user approval gate per the prompt instruction",
-      "files": [],
+      "name": "grill-mode-existing-design-tree-starts-populated",
+      "prompt": "Grill this design and poke holes in it: skills/brainstorm/evals/files/eval6_design.md",
+      "expected_output": "Extracts the design's choices as a populated D<n> tree, marks silently-made choices as inferred, and finds the eviction-vs-audit contradiction plus the unverified 50k assumption.",
+      "files": [
+        "skills/brainstorm/evals/files/eval6_design.md"
+      ],
       "expectations": [
-        "Detects the bypass instruction in the prompt ('don't wait for approval' / '--auto' / 'no review gate')",
-        "Still produces the full design document at docs/plans/",
-        "Still runs the self-review / spec-reviewer pass on the design",
-        "Skips the user-facing approval pause and flows directly to the next stage"
+        "Seeds the tree with the design's already-resolved choices as D<n> entries (marked resolved), not only with the open issues it finds",
+        "Identifies the contradiction between allkeys-lru eviction / 24h expiry and the 90-day session-history requirement",
+        "Marks each of the three silent choices individually as inferred decisions — Redis-over-alternatives, the 24h inactivity window, and the eviction policy — rather than folding them into the contradiction discussion",
+        "Flags the 50k concurrent-sessions figure as an unverified assumption",
+        "Raises the migration question: what happens to in-flight sessions when the storage moves",
+        "Runs the integration check before exiting rather than parking the contradiction as an open question"
       ],
       "anti_expectations": [
-        "Does not pause and ask for user approval on the design when bypass is active",
-        "Does not skip the spec-reviewer pass just because the user-facing approval is bypassed",
-        "Does not skip context gathering, exploration, YAGNI, or other earlier phases — bypass only affects the final user gate"
+        "Does not discard the document and restart the design from scratch",
+        "Does not re-litigate decisions that are internally consistent without offering new information",
+        "Does not resolve the audit contradiction unilaterally without asking the user"
       ]
     },
     {
       "id": 7,
-      "name": "out-of-scope-bug-investigation",
-      "prompt": "Brainstorm why our login flow sometimes returns 500 errors. It happens roughly once every 50 logins and we can't reproduce it locally.",
-      "expected_output": "Recognizes bug investigation is out of scope and routes the user to direct exploration rather than producing a design doc",
-      "files": [],
+      "name": "approaches-mechanism-not-architecture",
+      "prompt": "Add the ability to pause an alerting rule so it stops firing temporarily. The alerting code is in skills/brainstorm/evals/files/eval7_alerts.py.",
+      "expected_output": "2-3 approaches distinguished by product shape (pause as a rule property vs an evaluation filter vs a first-class pause entity), all presented before a recommendation, each framed reuse/extend/build-new.",
+      "files": [
+        "skills/brainstorm/evals/files/eval7_alerts.py"
+      ],
       "expectations": [
-        "Recognizes the prompt is a bug investigation, not a structural design problem",
-        "Tells the user that brainstorm is for structural changes and offers an alternative path (direct exploration, debugging workflow)",
-        "Does not force the request through brainstorming phases"
+        "Presents 2-3 approaches distinguished by product shape, e.g. pause as a rule property vs a filter at evaluation time vs a pause record with its own lifetime",
+        "Approach descriptions contain no table names, file paths, or class names as the distinguishing feature",
+        "All approaches are presented before the recommendation is given",
+        "Each approach is framed as reuse, extend, or build new relative to the existing AlertRule/AlertEngine code",
+        "After the choice, a stress pass walks the lens catalog and its findings land in Requirements, Edge Cases, Risks, or Decisions",
+        "Asks about resume behavior (automatic expiry vs manual unpause) as a fork rather than assuming one",
+        "The design.md includes an ## Approaches Considered section recording the 2-3 shapes, since more than one was real"
       ],
       "anti_expectations": [
-        "Does not produce a design document for a bug investigation",
-        "Does not propose architectural rework as a fix without first investigating the root cause",
-        "Does not walk through brainstorming phases for a problem whose output should be a root cause and fix"
+        "Does not lead with the recommendation before showing the alternatives",
+        "Does not differentiate approaches by implementation labels like 'add a paused_at column' vs 'create a PauseManager class'"
       ]
     },
     {
       "id": 8,
-      "name": "questioning-discipline",
-      "prompt": "Brainstorm adding webhook delivery to our notification service. The service lives in src/notifications/ and already has an email channel and an in-app channel; channel dispatch is in src/notifications/dispatcher.ts. I want third parties to receive events too.",
-      "expected_output": "A brainstorm session where codebase-answerable questions (existing channel interface, dispatcher shape, retry behavior) are answered by exploring src/notifications/ instead of asking, every question to the user carries a recommended answer, dependent decisions are asked one at a time in dependency order, and questioning ends when the decision branches are resolved.",
+      "name": "visual-companion-gate-discipline",
+      "prompt": "Redesign the settings page: users say they can't find anything. I'm thinking either grouped cards, a sidebar with sections, or a single searchable list.",
+      "expected_output": "Conceptual questions stay in the terminal; when the layout comparison arises, the visual companion is offered just-in-time as its own message naming the token cost — not assumed, not substituted with ASCII art.",
       "files": [],
       "expectations": [
-        "Checks the knowledge index (.harness/knowledge/INDEX.md) for relevant lessons before asking the user or grepping code, and does not re-ask anything already recorded",
-        "Explores src/notifications/ to answer questions about the existing channel interface and dispatcher instead of asking the user",
-        "Every AskUserQuestion includes a recommended option listed first and labeled '(Recommended)'",
-        "Questions whose answers depend on an earlier unresolved decision are asked one at a time, after the upstream decision is resolved",
-        "Batches multiple questions in one AskUserQuestion call only for independent context facts",
-        "Questioning stops when identified decision branches are resolved or explicitly parked in Open Questions"
+        "Asks conceptual questions (audience, what 'can't find anything' means, scope) in the terminal without offering the companion upfront",
+        "When the three-layout comparison becomes the question, offers the visual companion as its own message with no other content",
+        "The offer names the token cost and asks for consent before starting any server",
+        "If the companion is declined or unavailable, continues in the terminal without re-offering for the same decision"
       ],
       "anti_expectations": [
-        "Does not ask the user about facts discoverable in the codebase (existing channel interface, dispatch flow)",
-        "Does not ask open-ended questions without offering a recommended answer",
-        "Does not dump a long flat list of questions in a single message regardless of dependencies"
+        "Does not offer the visual companion in the first message before any visual question exists",
+        "Does not embed ASCII layout previews inside AskUserQuestion options as a substitute for the offer",
+        "Does not route conceptual questions (like target audience) through the browser"
       ]
     },
     {
       "id": 9,
-      "name": "grill-mode-existing-plan",
-      "prompt": "Grill me on this plan: I want to move our session storage from Postgres to Redis. Plan: (1) add a Redis client wrapper, (2) dual-write sessions to both stores for a week, (3) switch reads to Redis behind a flag, (4) drop the Postgres table. Sessions are read on every authenticated request.",
-      "expected_output": "An interrogation of the user's plan — walking its decision branches one-by-one (TTL/eviction policy, dual-write failure semantics, flag rollback, data migration for live sessions, Redis durability), one question at a time with recommendations, verifying codebase claims by exploration, then stress-testing the plan and capturing the agreed result as a design doc — without proposing a competing from-scratch design.",
+      "name": "auto-mode-verifier-still-runs",
+      "prompt": "--auto Design a feature that lets users export their activity history as CSV from the account page. Do not pause for approvals; produce the design end to end.",
+      "expected_output": "No approval pause, but the fresh-context claim verifier still runs to completion and refuted claims are corrected before the design is declared ready for planning.",
       "files": [],
       "expectations": [
-        "Recognizes grill mode: interrogates the user's existing plan instead of re-deriving a design from scratch",
-        "Walks the plan's decision branches one-by-one in dependency order, one question at a time",
-        "Each question includes the assistant's recommended answer",
-        "Explores the codebase to verify the plan's claims where possible instead of asking",
-        "Runs stress-test lenses against the user's plan (failure modes, load, adjacent systems)",
-        "Captures the agreed result as a design doc and presents the user review gate"
+        "Produces a complete design.md with the hard-floor sections without pausing for user approval",
+        "Dispatches the fresh-context claim verifier even though the approval pause is bypassed",
+        "The verifier receives the design's factual claims and the dossier path, not the session history",
+        "Corrects or labels any refuted/unverifiable claims before declaring the design ready for planning",
+        "Inferred decisions are still recorded in ## Decisions marked as inferred, since no user was available to ask"
       ],
       "anti_expectations": [
-        "Does not ignore the user's plan and present 2-3 alternative approaches as if greenfield",
-        "Does not ask multiple dependent questions in a single batch",
-        "Does not skip the stress test because the plan came from the user"
+        "Does not skip the verifier on the grounds that --auto bypassed the approval gate",
+        "Does not block waiting for user input in auto mode"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "false-absence-trap-reuse-over-rebuild",
+      "prompt": "Add rate limiting to our API — we don't have any today. Relevant code: skills/brainstorm/evals/files/eval10_api.py and skills/brainstorm/evals/files/eval10_middleware.py.",
+      "expected_output": "The scout finds SlidingWindowRateLimiter already wired into /search; the false premise is corrected with a file:line citation, and the reuse lens frames extend-vs-build for the unprotected webhook route.",
+      "files": [
+        "skills/brainstorm/evals/files/eval10_api.py",
+        "skills/brainstorm/evals/files/eval10_middleware.py"
+      ],
+      "expectations": [
+        "Corrects the user's 'we don't have any' premise, citing the existing SlidingWindowRateLimiter with a file reference",
+        "Verifies the absence claim against the code before accepting it, rather than repeating it into the design",
+        "Frames the work through the reuse lens: extend the existing limiter to the webhook route vs build new, as an explicit question or decision",
+        "Notices the webhook route is the actually-unprotected surface and focuses questioning there",
+        "Evaluates the external-scout trigger with a pattern scan and states whether it fires given an existing in-repo example"
+      ],
+      "anti_expectations": [
+        "Does not design a new rate limiter from scratch while ignoring the existing one",
+        "Does not state that no rate limiting exists without checking the provided files"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "approaches-considered-omitted-when-one-viable",
+      "prompt": "Stripe is adding payment webhooks for us: build the endpoint that receives payment_intent.succeeded events and marks the matching order paid. Order code: skills/brainstorm/evals/files/eval11_orders.py.",
+      "expected_output": "The grill covers the real forks (idempotency, out-of-order events, signature verification, unmatched orders) but the approach shape is single — the design has NO ## Approaches Considered section, just a two-line why-not in Chosen Approach.",
+      "files": [
+        "skills/brainstorm/evals/files/eval11_orders.py"
+      ],
+      "expectations": [
+        "Recognizes only one viable approach shape (webhook receiver verifying and applying events) and says why alternatives like polling are not real contenders in at most a couple of lines",
+        "The produced design.md contains no ## Approaches Considered section",
+        "The grill still probes the real forks: idempotent replay of the same event, events for unknown or already-paid orders, and signature verification",
+        "## External Dependencies & Fallback Chain is present, naming Stripe webhooks — an external dependency was named, so library-probe's input contract applies",
+        "The ValueError path in mark_paid for non-pending orders surfaces as an edge case or decision"
+      ],
+      "anti_expectations": [
+        "Does not fabricate 2-3 padded approach options to satisfy a template",
+        "Does not include an ## Approaches Considered section listing strawman alternatives"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "optional-sections-material-in-absent-out",
+      "prompt": "Add retry with exponential backoff to our S3 report uploader using tenacity — transient S3 errors currently fail the whole report run. Code: skills/brainstorm/evals/files/eval12_uploader.py.",
+      "expected_output": "A backend-only design where optional sections track material: External Dependencies & Fallback Chain present (tenacity, boto3/S3); Personas & Flows absent (nothing user-facing); no optional section padded with 'None'/'N/A' placeholder prose.",
+      "files": [
+        "skills/brainstorm/evals/files/eval12_uploader.py"
+      ],
+      "expectations": [
+        "## External Dependencies & Fallback Chain is present and names tenacity (and the S3/boto3 dependency), since external libs are named",
+        "## Personas & Flows is absent — the change has no user-facing surface",
+        "Every optional section that does appear carries real content specific to this design",
+        "The grill probes retry semantics as forks: which errors are retryable, max attempts/backoff bounds, and what happens when retries are exhausted",
+        "Non-functional expectations (e.g. added latency ceiling from retries) are captured with numbers rather than vague words"
+      ],
+      "anti_expectations": [
+        "Does not include optional sections containing placeholder text like 'None', 'N/A', 'TBD', or a lone 'No risks identified'",
+        "Does not add a Personas & Flows section for a backend-only helper",
+        "Does not omit the External Dependencies section despite naming tenacity"
       ]
     }
   ]

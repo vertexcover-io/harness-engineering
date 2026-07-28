@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Port of dag-update.sh. Manages .harness/runtime/<SPEC_NAME>/dag.json with atomic,
+// Port of dag-update.sh. Manages .harness/<SPEC_NAME>/dag.json with atomic,
 // lock-protected writes. Usage: dag-update.mjs <command> [args...]
 
 import { createReadStream, readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, statSync, unlinkSync, readdirSync } from "node:fs";

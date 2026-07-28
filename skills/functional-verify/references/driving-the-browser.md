@@ -95,8 +95,8 @@ step, the intermediate render that explains why the next click works, the toast 
 at least one frame, many earn more — a scenario with more *promoted* frames than steps is doing it right.
 
 **Capture to staging, promote only what you verified.** A frame is evidence once its assert passed *and* your own
-eyes confirmed it. Shoot into `.harness/runtime/<SPEC_NAME>/verify-staging/` — gitignored runtime, a different tree
-from `verification/` — and move a frame into `screenshots/` only once it earns its place. Re-takes, dead ends, and
+eyes confirmed it. Shoot into `.harness/<SPEC_NAME>/verify-staging/` — scratch, a sibling of `verification/` and
+never part of it — and move a frame into `screenshots/` only once it earns its place. Re-takes, dead ends, and
 missed clicks stay in staging and are discarded at cleanup.
 
 For every action, run one batch that acts, asserts, and captures **to staging**:
@@ -105,7 +105,7 @@ For every action, run one batch that acts, asserts, and captures **to staging**:
 cat <<'EOF' | agent-browser batch --json
 [["eval","(()=>document.querySelector('[data-testid=add-more]').click())()"],
  ["eval","(()=>({n: document.querySelectorAll('[data-testid^=row-]').length}))()"],
- ["screenshot","/abs/path/to/.harness/runtime/<SPEC_NAME>/verify-staging/02_half_rupee_gap_matches__03_rows_added.png"]]
+ ["screenshot","/abs/path/to/.harness/<SPEC_NAME>/verify-staging/02_half_rupee_gap_matches__03_rows_added.png"]]
 EOF
 ```
 

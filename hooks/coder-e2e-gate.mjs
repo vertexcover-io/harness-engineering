@@ -75,7 +75,7 @@ const runnerCounts = (runner, report) => {
 };
 
 const gate = (cwd, emit) => {
-  const breadcrumbPath = process.env.HARNESS_CURRENT_PHASE_FILE || ".harness/runtime/current-phase";
+  const breadcrumbPath = process.env.HARNESS_CURRENT_PHASE_FILE || ".harness/current-phase";
   const block = (msg) => {
     throw new GateExit(2, `CODER_E2E_GATE:BLOCK ${msg}\n`);
   };

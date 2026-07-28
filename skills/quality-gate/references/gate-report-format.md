@@ -1,10 +1,10 @@
 # Gate Report Format
 
-Write the report to `.harness/runtime/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g.
+Write the report to `.harness/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g.
 `gate-report-post-tdd-001.md`). Increment `<NNN>` from the existing reports in that directory.
 
 The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` and
-`<!-- QG:CHECK:N:… -->` (N = 1–10) — always emit them.
+`<!-- QG:CHECK:N:… -->` (N ∈ {1,2,3,4,6,7,9,10} — 5 and 8 are retired) — always emit them.
 
 ## Report structure
 
@@ -29,10 +29,8 @@ The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` a
 | 2 | Linter | exit=0, warnings=3 | exit=0, warnings=3 | PASS |
 | 3 | Test Suite + Behavior Coverage | exit=0, 42 passed | exit=0, 38 passed, 12/12 matrix IDs covered | PASS |
 | 4 | Coverage (diagnostic) | 85.5% | 87.3% (+1.8%) | INFO |
-| 5 | Scope Compliance | — | 3 files changed, all in plan | PASS |
 | 6 | Plan Compliance | — | 5/5 items verified | PASS |
 | 7 | Ignore Comment Audit | — | 0 new ignore comments | PASS |
-| 8 | Smoke Test | — | 2/2 passed | PASS |
 | 9 | E2E Tests | — | 12 passed, 0 failed | PASS |
 | 10 | Mutation Spot-Check | — | 4/4 mutants killed | PASS |
 
@@ -66,10 +64,10 @@ The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` a
 **Mutations:**
 | Behavior ID | File | Mutation | Killing test | Result |
 |-------------|------|----------|--------------|--------|
-| REQ-003 | validator.py | inverted `if amount > 0` | test_REQ_003_rejects_negative | KILLED |
-| REQ-005 | pricing.py | return constant `0` | — | SURVIVED |
+| R3 | validator.py | inverted `if amount > 0` | `S7: rejects a negative amount` | KILLED |
+| R5 | pricing.py | return constant `0` | — | SURVIVED |
 
-**BLOCKED:** REQ-005's test passed against a mutant returning 0 — the test does not verify the pricing behavior.
+**BLOCKED:** R5's test passed against a mutant returning 0 — the test does not verify the pricing behavior.
 ```
 
 ## Evidence capture rules

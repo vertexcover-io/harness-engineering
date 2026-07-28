@@ -6,7 +6,7 @@ description: >
   unit and e2e tests are not verification. Trigger on "tests pass", "implementation done", "ready for
   review", "ready to ship", "ship it", "verify this", "is this working", "can we merge", or any other
   move toward calling a feature finished. The only proof this skill ran is
-  .harness/features/<SPEC_NAME>/verification/proof-report.html — if that file does not exist for the
+  .harness/<SPEC_NAME>/verification/proof-report.html — if that file does not exist for the
   current spec, verification did not happen and the feature is not done.
 user-invocable: true
 ---
@@ -35,7 +35,7 @@ skipping" and stop.
 
 ## Inputs
 
-- **The feature's docs** in `.harness/features/<SPEC_NAME>/` — PRD, design, plan, whatever exists. Scenarios come
+- **The feature's docs** in `.harness/<SPEC_NAME>/` — PRD, design, plan, whatever exists. Scenarios come
   from what those docs say the feature must do.
 - **Project verification knowledge** — the app facts verification turns on (login, self-lying surfaces, toast
   duration, where a triggered email lands, shared datastores) live in the **project's own skills** and `CLAUDE.md`.
@@ -46,14 +46,14 @@ skipping" and stop.
 Everything this skill produces lives in the feature's `verification/` folder, flat:
 
 ```
-.harness/features/<SPEC_NAME>/verification/
+.harness/<SPEC_NAME>/verification/
 ├── proof-report.html                        the deliverable
 ├── NN_<slug>.mp4                            one video per scenario (Step 5)
 ├── NN_<slug>.<ext>                          API captures, webhook bodies, downloaded files
 └── screenshots/
     └── NN_<slug>__SS_<step>.png             every promoted frame, flat
 
-.harness/runtime/<SPEC_NAME>/verify-staging/  gitignored scratch; frames land here first
+.harness/<SPEC_NAME>/verify-staging/         scratch; frames land here first, and it is deleted at cleanup
 ```
 
 
@@ -202,4 +202,4 @@ never fail the verification**; both implementations are in `references/publish.m
 Then close the session (`agent-browser --session <SPEC_NAME> close`) and shut down the stack you started in Step 1
 the project's way — anything already running when you arrived stays running, and **never kill a server you didn't
 start**. Leave `verification/` in place, uncommitted — it is the deliverable, for a human to read. Delete the
-staging dir (`.harness/runtime/<SPEC_NAME>/verify-staging/`).
+staging dir (`.harness/<SPEC_NAME>/verify-staging/`).

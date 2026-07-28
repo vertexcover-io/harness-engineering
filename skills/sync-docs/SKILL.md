@@ -20,8 +20,8 @@ before commit. Only touches docs relevant to what changed — does not generate 
 ## Inputs
 
 - **Worktree path** — where the code changes live
-- **Spec directory** — `.harness/features/<SPEC_NAME>/` for context on what was built (design.md, spec.md, plan.md, library-probe.md, learnings.md, verification/)
-- **Harness directory** — `.harness/runtime/<SPEC_NAME>/phase-*.md` for per-phase delivery breakdowns
+- **Feature directory** — `.harness/<SPEC_NAME>/` for context on what was built (design.md, plan.md, phases/, library-probe.md, learnings.md, verification/)
+- **Harness directory** — `.harness/<SPEC_NAME>/phases/phase-*.md` for per-phase delivery breakdowns
 
 ---
 

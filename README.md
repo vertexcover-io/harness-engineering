@@ -151,7 +151,7 @@ Setup → Brainstorm → Planner → Coder → Quality Gate → Sync Docs → Le
 
 Stages 0–2 (Setup, Brainstorm, Planner) run interactively so you stay in control of design decisions. Stages 3–7 run as autonomous sub-agents.
 
-All artifacts land in `.harness/features/<name>/` — spec, plan, phase files, and quality reports.
+All artifacts land in `.harness/<name>/` — design, plan, phase files, and quality reports (gitignored; reviewers read them out-of-band).
 
 **Live DAG Dashboard**
 
@@ -187,7 +187,7 @@ Run `/orchestrate` with a prompt or spec file. It runs the full pipeline:
 6. **Captures learnings** from the run
 7. **Commits and creates a PR**
 
-All artifacts are saved to `.harness/features/<name>/` for traceability.
+All artifacts are saved to `.harness/<name>/` for traceability.
 
 ---
 
@@ -323,7 +323,7 @@ This executes each eval case against the skill, checks expectations and anti-exp
 Some skills run automatically when you're writing code — through `/tdd`, `/orchestrate`, or directly. You never invoke them:
 
 - **code-quality** — Enforces strict types (no `any`), immutability (`readonly`), pure functions, Result types for errors, early returns over nested conditionals
-- **testing** — Enforces behavior-driven test patterns, proper factories, minimal mocking — tests verify *what* not *how*
+- **testing standard** — lives inside `tdd` (`references/testing.md` + `anti-patterns.md`): behavior-driven tests, factories, minimal mocking — tests verify *what* not *how*
 - **refactor** — Kicks in after tests pass (GREEN phase) to assess code for extraction, simplification, and naming improvements
 
 ## Skill Reference
@@ -336,6 +336,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/brainstorm` | Deep problem exploration, produces design doc |
 | `/planning` | Breaks work into phases with dependency graph |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
+| `/implement` | Manual coding entry point: TDD + code-quality, review when green |
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md |
 | `/git-commit` | Groups changes into logical conventional commits |
 | `/tech-debt-finder` | Finds code smells, creates GitHub issues |
@@ -344,7 +345,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/skill-eval-generator` | Generates eval test suites for skills (pairs with `skill-creator eval`) |
 
 **Run automatically (no command needed):**
-`code-quality` · `testing` · `refactor` · `quality-gate` · `pipeline-setup` · `spec-generation` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
+`code-quality` · `refactor` · `quality-gate` · `pipeline-setup` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
 
 ## Structure
 
@@ -368,6 +369,7 @@ harness/
     ├── coverage-guard/
     ├── doc-quality-guard/
     ├── git-commit/
+    ├── implement/
     ├── learn/
     ├── orchestrate/
     ├── pipeline-setup/
@@ -376,11 +378,9 @@ harness/
     ├── refactor/
     ├── review-fixer/
     ├── skill-eval-generator/
-    ├── spec-generation/
     ├── sync-docs/
     ├── tdd/
     ├── tech-debt-finder/
-    ├── testing/
     └── using-git-worktrees/
 ```
 
