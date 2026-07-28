@@ -73,11 +73,11 @@ Full report + evidence: `.harness/<SPEC_NAME>/verification/proof-report.md`
 
 ## Scenarios
 
-| What is to be tested | Success/Failure | Reason/Details | Reference |
-|---|---|---|---|
-| Signing in lands the user on their dashboard | Success | Landed on /dashboard, session cookie set | `verification/login-redirects-to-dashboard/proof.mp4` |
-| A session that expires mid-save does not report success | Failure | "Saved" toast shown on a 401. Major. | `verification/expired-session-reports-saved/proof.mp4` |
-| Creating a user persists the row | Success | 201; DB count 1 as expected | see proof-report |
+| # | What is to be tested | Success/Failure | Reason/Details | Reference |
+|---|---|---|---|---|
+| 01 | Signing in lands the user on their dashboard | Success | Landed on /dashboard, session cookie set | `verification/01_login_redirects_to_dashboard.mp4` |
+| 02 | A session that expires mid-save does not report success | Failure | "Saved" toast shown on a 401. Major. | `verification/02_expired_session_reports_saved.mp4` |
+| 03 | Creating a user persists the row | Success | 201; DB count 1 as expected | see proof-report |
 
 ## Infrastructure
 - **Started:** `npm run dev` (PID 12345), `docker compose up -d`

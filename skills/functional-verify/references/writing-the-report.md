@@ -1,0 +1,161 @@
+# Writing the Proof Report
+
+**Read this when:** grading scenarios, assembling videos (Step 5), or writing the report (Step 6). Everything here
+is done once the browser is closed; the driving and capture craft is in `driving-the-browser.md`.
+
+## Grading — two tracks
+
+Grade each scenario on two tracks; they answer different questions and flow to different places.
+
+The **documented check** answers the question you were given: do these frames show the behaviour the docs describe?
+The verdict is Success or Failure, and it cites concrete evidence — a measured rect, a quoted string, a computed
+style, a network response. Layout claims cite a measurement. This becomes the scenario's `verdict` and `reason`.
+
+The **open visual review** asks what's wrong regardless of what was asked for: alignment, contrast, clipping,
+overlap, a broken empty state, copy issues. Run it on every scenario, including the ones that passed cleanly. Treat
+`truncate` and `line-clamp` on a primary headline as a bug to justify, not a default to accept. Anything real you
+find here is a bug, and Step 4 owns it.
+
+## Building the videos (Step 5)
+
+The videos are **assembled, not captured**: ffmpeg builds each one from the promoted frames in `screenshots/`. One
+video per scenario, grouped by the `NN_<slug>` prefix before the `__`, written beside the report:
+
+```bash
+cd verification
+for p in $(ls screenshots/*.png 2>/dev/null | sed 's#.*/##; s#__.*##' | sort -u); do
+  ffmpeg -v error -y -framerate 1/3 -pattern_type glob -i "screenshots/${p}__*.png" \
+    -vf "scale=1280:720:force_original_aspect_ratio=decrease,\
+pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p,\
+tpad=stop_mode=clone:stop_duration=2" \
+    -c:v libx264 -preset veryfast -r 30 "${p}.mp4" \
+    && echo "ok  ${p}.mp4" || echo "FAILED ${p}"
+done
+```
+
+Three seconds a frame, the last frame held two seconds longer, so a reviewer can follow each step. The `sed` strips
+the directory and everything from `__` on, leaving the `NN_<slug>` prefix, so each scenario's frames assemble into
+`NN_<slug>.mp4` — the exact name the scenario's `video` names.
+
+**Keep the frames** — they are the only machine-readable evidence, and a re-grade or second look needs the PNGs. If
+a merge fails, name the scenario and move on; its frames still prove it.
+
+## The report format
+
+Copy `references/proof-report-template.html` to `verification/proof-report.html` and **fill its JSON island — the
+`<script type="application/json" id="report-data">` block. Change nothing else in the file.** You write data, not
+markup; the template renders it. Its header comment is the field-by-field guide, and it stays in the file you ship.
+
+The reader knows the product and is deciding whether this ships. Three questions are what they came for: what
+worked, what didn't and why, and how you know. Anything serving none of them gets cut however true it is. Failing
+scenarios earn more words than passing ones; that is where a reader slows down.
+
+```json
+{
+  "title": "GSTR-2B monetary match",
+  "drivenOn": "The reconciliation report at `/app/<business>/reports/gstr2breconciliation`, June 2026.",
+  "scenarios": [
+    {
+      "n": "01",
+      "slug": "01_float_artefact_still_matches",
+      "short": "Float artefact matches",
+      "title": "An invoice whose tax total carries a floating-point artefact still reconciles against the supplier's filed entry",
+      "verdict": "Success",
+      "reason": "Books stored `7127.200000000001`; both sides render ₹7,127.20 and the pair reads **Complete Match**.",
+      "steps": ["Open the June 2026 reconciliation report", "Switch to Detailed View",
+                "Find the invoice filed at ₹7,127.20"],
+      "video": "01_float_artefact_still_matches.mp4",
+      "frames": [{ "src": "screenshots/01_float_artefact_still_matches__01_report_open.png",
+                   "label": "June report, detailed view" }]
+    }
+  ]
+}
+```
+
+**`n` is the scenario's stable number** and `slug` is the prefix every one of its artifacts carries, so a reader
+reaches its files from the scenario alone. **Write `title` as a sentence** a QA would use, and `short` as the three
+or four words that identify it in the left rail. `steps` is the walk you actually drove, one plain sentence each —
+they summarise the flow rather than mapping onto frames. `reason` is what decided the verdict — the rendered string,
+the measured value, the status code — and a blank line inside it starts a new paragraph.
+
+Two shapes are fixed, because they are what makes two reports comparable: **`steps` renders numbered in order**, and
+**`video` + `frames[]` render as Visual proof**, the video leading with the screenshots folded behind a toggle.
+Everything else is prose you shape yourself. When something fits none of the sections, put it in `extra[]` —
+`{heading, body, capture}`, all optional, no imposed shape.
+
+`` `code` `` and `**bold**` work in every prose field.
+
+### Proofs
+
+The frame proves the **surface**; a `proofs[]` entry proves the **mechanism** underneath it. A scenario earns one
+when it has one of two things a video cannot carry:
+
+- **No surface** — it never renders anywhere. A cache key, a queue write, a webhook body, a row written by a job.
+- **The mechanism behind a surface that did render** — the frame shows the outcome, the block shows it was reached
+  the way it was supposed to be. The intermediate call proving the right branch was taken; the query proving the
+  total was recomputed rather than served stale; the response behind a table that looks correct either way.
+
+Everything a QA could screenshot stays out — the board, the modal count, the toast, the received email are already
+proven in `screenshots/`. When a capture is half visible, quote only the fields the frame couldn't show.
+
+`tag` is the one-word kind shown as a chip — `queue`, `email`, `http`, `db`, `cache`, `file`:
+
+```json
+"proofs": [
+  {
+    "tag": "cache",
+    "heading": "Cached under a new key",
+    "body": "Both keys carry the v2 segment and no unversioned key was touched. The screen showed the right total either way — this is what proves it was recomputed rather than served from the pre-deploy key.",
+    "capture": "GET /businesses/$B/gstr2b-reconciliation/detailedview?period=062026 → 200\n{\"redis\":{\"get\":\"serana:gstr2brecon:v2:6a59…:062026\",\n          \"set\":\"serana:gstr2brecon:v2:6a59…:062026\",\"ttl\":604800}}"
+  }
+]
+```
+
+Each entry is three parts: `heading` names what it settles, `capture` is the excerpt that decides it — where it came
+from and its status included — and `body` is what that excerpt settled. The same shape whether it's HTTP, a log, a
+query, or a file. Save the full capture beside the report under its `NN_<slug>` prefix and list it in `artifacts[]`:
+the entry holds what you concluded, the file holds what a reader needs to reach the thing themselves — where it came
+from, whatever marks it as this run's rather than an earlier one, and anything the sink recorded alongside it. Write
+it as it arrived rather than summarised, keep excerpts short — twenty lines is plenty, the full file is one click
+away in the modal — redact secrets as `<redacted>`, and when the artifact came from a stand-in for the real thing,
+say so in the file.
+
+**Read the scenario's video, then its proofs: an entry that told you nothing the video left open should not have
+been written.**
+
+### Bugs
+
+`bugs[]` at the top level, each `{severity, title, body}` — **bugs in the application**, defects that will bite a
+user or a developer. A misleading message, lost or corrupted data, stale UI state, a 500 reaching the user, a silent
+no-op, a permission leak, a broken recovery path; or, for developers, a documented command that is gone, an artifact
+contradicting the tree.
+
+Each is a bug report a maintainer could act on without asking you a question: what it is, its severity (blocker /
+major / minor) and why that rung and not the one above, the repro, what happens, what should happen, and the video.
+Most consequential first. Your infrastructure adventures, the data you couldn't find, and the workaround that got
+the stack up go in what you report back to whoever dispatched you (Step 6). Found no bugs? Leave `bugs` empty; the
+sentence from Step 4 naming your best attack and why it didn't land goes in `bugsNote`, which renders either way.
+
+What this run could not reach goes in `gaps[]` — one entry each, naming where it belongs instead.
+
+## Completion checklist — the report is done when all of these hold
+
+- The JSON island parses, and the file opens in a browser showing every scenario. A report that does not render is
+  not a report — open it and look before you call this done.
+- Every scenario has a stable `n`, a `verdict`, and a `reason`, and every behaviour the docs describe is covered. One
+  you could not verify is a scenario with `NOT VERIFIED` and a reason saying what would close it; one that turned out
+  not to apply is `INVALID` with why. Neither is dropped, and neither is quietly backfilled with an adjacent passing
+  check.
+- Every verdict cites a live observation from this run — a DOM assert, an HTTP status and body, a DB read-back, a
+  measured rect, a captured webhook body. This is the only thing separating a real verification from a plausible
+  one. Where that observation is mechanism rather than surface, it is a `proofs[]` entry, written once.
+- Every UI scenario names its `video`, every path is report-relative, and every file named in `artifacts[]` exists
+  beside the report under the same `NN_<slug>` prefix. No frame or file resolves to a broken link.
+- Every side-effect scenario carries the right receipt: an **email** shows the mail-viewer frames and its video; a
+  **job-queue** scenario shows a bull-board frame (queue card + job), or — only when the board couldn't be brought
+  up — a log/Redis capture with a note saying why; a **webhook or delivered file** lists its captured artifact
+  (`NN_<slug>.<ext>`).
+- Things this skill genuinely cannot reach (touch-hold gestures, real-device sensors, visual diffs against last
+  week's build) are scenarios too, marked `NOT VERIFIED`.
+- No internal ids appear anywhere — the plain sequential `n` values are the only identifiers a reader needs. Nothing
+  is said twice.
