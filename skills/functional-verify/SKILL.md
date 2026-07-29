@@ -15,20 +15,23 @@ user-invocable: true
 
 ## Your Contract
 
-You are the gate between "tests are green" and "feature is done". You verify **through the UI**, where the user and
-QA work: a behaviour reachable through a form, page, or click is proven by driving it. Only surfaces a QA could
-never reach — a webhook, a cron job, a DB row — are proven headlessly (Step 3). You produce **one file**,
-`verification/proof-report.html`, and the evidence beside it.
+You are the gate between "tests are green" and "feature is done". A behaviour reachable through a form, page, or
+click is proven by driving it in a browser (Step 2). A behaviour with no screen — a webhook, a cron job, an API
+contract, a DB row — is proven headlessly at the same evidentiary bar (Step 3). **A feature with no UI is verified
+entirely in Step 3, at full scope**: "backend-only" describes where the evidence comes from, never how much of the
+feature you verify. You produce **one file**, `verification/proof-report.html`, and the evidence beside it.
 
 - **The report is for a QA reader** — plain English, describing what a behaviour *is* rather than naming it.
 - **One subject, one place** — a scenario, bug, or gap is written once and referenced elsewhere; evidence lives with
   the scenario it proves.
 
-Two things are non-negotiable, each a verification failure if skipped:
+Three things are non-negotiable, each a verification failure if skipped:
 
 1. **Evidence, not adjectives.** Every claim cites something concrete — a rect from `getBoundingClientRect()`, a
    quoted string, a computed style, an HTTP response, a video.
-2. **The adversarial pass runs** (Step 4).
+2. **The adversarial pass runs** (Step 4), over the feature and over your own gaps.
+3. **Every requirement is accounted for** (*Scope*, below). Coverage is a field in the report, not a judgement you
+   make about how much of the feature deserves verifying.
 
 When the feature's docs describe nothing a verification could drive, report "No functional verification scenarios —
 skipping" and stop.
@@ -40,6 +43,20 @@ skipping" and stop.
 - **Project verification knowledge** — the app facts verification turns on (login, self-lying surfaces, toast
   duration, where a triggered email lands, shared datastores) live in the **project's own skills** and `CLAUDE.md`.
   Read them first; this skill mandates no dedicated file for them.
+- **A level allocation is not a scope limit.** Where a doc assigns requirements to test levels — a test matrix, a
+  "proven at unit level" column, a phase file claiming a scenario — it tells you where *tests* live. Read it for
+  what the feature must do, and take your scope from *Scope* below. Passing unit and integration tests are the
+  thing this skill exists to distrust; a requirement they cover is a requirement you verify.
+
+## Scope: Account For Every Requirement
+
+Before planning a single walk, enumerate the requirements, stories and edge cases the docs list, by their ids where
+they have them. **That enumeration is this run's scope, and it becomes `coverage[]` in the report** — every id
+mapped to the scenario that proves it and that scenario's verdict. An id with no entry is an incomplete report, not
+a scoping decision.
+
+One walk often proves several requirements at once, and should. **Scenario count is not the target**; an id with
+nothing behind it is what you are looking for.
 
 ## Output Layout
 
@@ -84,6 +101,16 @@ viewer is infrastructure, not an optional extra. If you genuinely cannot start s
 on a free port you allocate — a running server is likely another worktree's. You start it, so you tear it down
 (Step 7). Hold the URLs you started on for the rest of this session.
 
+**Infrastructure includes state, and building it is your job.** Seeding records, creating accounts, provisioning a
+plan, aging a timestamp, populating a lookup the feature reads — the preconditions a scenario needs are yours to
+manufacture, through the product's own APIs where they exist and directly in the datastore where they don't.
+Absent test data is a task, not a blocker. You created it, so you remove it (Step 7); never mutate or delete a
+record you did not create.
+
+A seeded record **stands in for what the real source would produce**, so its shape and values must be ones that
+source can actually emit — a plausible address where a provider would return one, a real plan where the product
+would have written one. A value invented to see what breaks tests the datastore, not the feature.
+
 Confirm the stack by fetching the actual route you came to drive and checking it returns the page you expect. If
 startup fails, read the named log and stop.
 
@@ -106,9 +133,14 @@ confirmed it shows what you think.** Read at the moment you shoot — frames lag
 scenario has a `NN_<slug>` set of frames in `screenshots/` that tells its whole story, each frame backed by a
 passing assert and your own eyes.**
 
-## Step 3 — API, DB & Side-Effects: Surfaces a QA Cannot Reach
+## Step 3 — API, DB & Side-Effects: Proving What Has No Screen
 
-Only what has no screen to drive lands here. Run curl with `-w '\n%{http_code}'` and capture the exact command,
+What has no screen to drive lands here — and **when the feature has no UI at all, this step is the whole
+verification and carries the whole scope** from *Scope* above. Read `references/headless-verification.md` before
+your first request: it holds the shape of a headless walk, and the traps that make one look green when the code
+under test never ran.
+
+Run curl with `-w '\n%{http_code}'` and capture the exact command,
 status, and body; that becomes a `proofs[]` entry (shape in `references/writing-the-report.md`), so there is no
 separate receipt file. Record the verdict by exact-matching the expected response the design or plan
 describes. For a db check, query the database (an MCP tool, else the connection string from the stack you started in
@@ -140,8 +172,19 @@ Those observations are the source — the regressions and critical paths this pa
 design and plan for what the feature touches beyond what you drove, and leave your draft report closed; it biases
 you toward what you already wrote.
 
-Attack surfaces worth a scenario each, where they apply: boundary and malformed inputs (empty, max-length+1, wrong
-type, unicode, `<script>`, negative, far-future dates) · interrupted sequences (cancel mid-flow, double-submit,
+**Attacks come from actors, not from fields.** Before writing probes, list the surfaces this feature reads and mark
+each with who can write it: the user, another tenant, an operator, a third-party system, or the product itself.
+Probes come from the first three, and from the fourth only through its **real** failure modes — unreachable, slow,
+timing out, 500, not-found, a field absent, a record stale. Read the integration's own contract to decide what that
+service can actually emit.
+
+A value only a third-party system writes is attacked by making that system behave badly in a way it can, never by
+writing into its store a value it would never return. The same holds for any field the product populates from
+somewhere else — a derived total, a computed status, an id it issues.
+
+Attack surfaces worth a scenario each, where they apply: boundary and malformed values **in the fields an actor
+fills** — empty, max-length+1, wrong type, unicode, `<script>`, negative, far-future dates, entered where the
+product accepts them · interrupted sequences (cancel mid-flow, double-submit,
 back-during-save, reload, two tabs on one form) · the rest of the surface the change landed on — one new field on a
 settings page means exercising every other field there · error recovery, and whether state is left stale in UI, DB,
 or cache · status accuracy on cancellations, timeouts, and partial failures (the classic: a "Saved" toast on a 500)
@@ -157,7 +200,14 @@ screen follows Step 3. Then route each result by **provenance**:
 
 - It probed a behaviour the docs describe — a boundary on a validation rule, an error path. That is evidence for
   **that scenario**, not a scenario of its own. **Expect most probes to land here.**
-- It probed something nobody asked about and found a real bug — its own scenario, and an entry in `bugs[]`.
+- It probed something nobody asked about and found a real bug — its own scenario, and an entry in `bugs[]`. Before
+  writing that entry, settle two things about it. **Who reached it**: name the actor and the surface they used, in
+  one sentence. If the only route was writing a value into a store the product fills from somewhere else, there is
+  no actor to name — it is a corrupted database, not a defect, and it belongs in `extra[]` as a note on what the
+  feature trusts, or nowhere. **Where it came from**: run `git blame` and `git diff` on the lines that decide the
+  behaviour and say whether this change introduced it, or it predates the change, or it predates the change and
+  this work made its consequences worse. A maintainer's first question is whether to revert; answer it in the
+  report rather than in their head.
 - It probed something nobody asked about and the feature held — it appears only in the sentence naming your best
   attack.
 
@@ -165,9 +215,17 @@ A rejection you provoked is the feature working: a 400 on bad input is evidence 
 rule. A behaviour the docs deliberately exclude is expected, not a bug — though it still needs a decision if another
 artifact of the same feature contradicts it.
 
+**Then turn on your own gaps.** Every scenario you are about to mark `NOT VERIFIED` is a claim, and it gets
+attacked like one: what would make it reachable, and is the cause you wrote the real one or the first wall you hit?
+Read the blocking code path until you can name the line, the condition, the missing credential, or the absent
+datum. "The gate didn't fire" is a symptom; "condition X at `file:line` requires Y, which this environment has no
+way to supply" is a cause. A gap that survives this is real. One that doesn't was an early stop — go verify it.
+
 **Name the attack you most expected to land and say why it didn't.** And **film every bug by re-running its
 repro** — you can't capture a bug prospectively, so once a probe lands, write its steps and drive them again as its
-own scenario, filming the whole thing. **Done when every bug has an entry and reproduces from its own steps.**
+own scenario, filming the whole thing. **Done when every bug has an entry that reproduces from its own steps, names
+the actor who reached it and whether this change introduced it; and every `NOT VERIFIED` has been attacked and
+names its blocking mechanism.**
 
 ## Step 5 — Build the Videos
 
@@ -178,14 +236,21 @@ Assemble one video per scenario from the promoted frames in `screenshots/` — t
 
 Copy `references/proof-report-template.html` to `verification/proof-report.html` and fill its JSON island — the
 field-by-field contract and completion checklist are in `references/writing-the-report.md`. The invariants it
-enforces: every behaviour you were given is a scenario with a verdict (unverifiable → `NOT VERIFIED`,
-inapplicable → `INVALID`, neither dropped nor backfilled with an adjacent passing check); every verdict cites a
-live observation from this run; no internal ids appear anywhere; nothing is said twice.
+enforces: `coverage[]` accounts for every requirement id in the docs; every behaviour you were given is a scenario
+with a verdict (unverifiable → `NOT VERIFIED`, inapplicable → `INVALID`, neither dropped nor backfilled with an
+adjacent passing check); every `NOT VERIFIED` names its blocking mechanism, what you tried, and what would close
+it; every verdict cites a live observation from this run; no internal ids appear anywhere; nothing is said twice.
 
-Then **report back to whoever dispatched you** — everything the report excludes belongs here: the verdict per
-scenario and whether the feature works; every bug and what needs a decision rather than a fix; the `verification/`
-path and its videos; what it took to get here (infra that fought you, fixtures left behind, workarounds, docs that
-were wrong).
+**The overall verdict is derived, not chosen.** Read it off `coverage[]`: any scenario `Failure` → the run is
+`FAIL`; else any requirement `NOT VERIFIED` → `PARTIAL`; only an all-covered, all-`Success` run is `PASS`. A
+feature's headline promise left unproven is not a pass because the scenarios around it passed.
+
+Then **report back to whoever dispatched you** — everything the report excludes belongs here: the derived verdict
+and the verdict per scenario; whether the feature works; every bug and what needs a decision rather than a fix; the
+`verification/` path and its videos; and **the environment findings** — every config value that was wrong, service
+that would not boot, datastore that lied, fixture you had to build, command that was documented and gone. Write
+those as durable facts a later run can act on, not as an account of your afternoon: without them the next
+verification pays the same cost from scratch.
 
 ## Step 7 — Publish, Then Clean Up
 

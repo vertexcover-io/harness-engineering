@@ -28,7 +28,9 @@
        labels{}    rename a section: steps, media, frames, proofs, files,
                    extra, bugs, gaps  (extra has no heading unless you name it)
        scenarios[] see below
-       bugs[]      {severity,title,body}  severity: blocker | major | minor
+       bugs[]      {severity,origin,reachedBy,title,body}  severity: blocker | major | minor
+                   origin: introduced here | pre-existing | pre-existing, worsened here
+                   reachedBy: the actor and the surface that produced it — required
        bugsNote    the attack you most expected to land, and why it did not
        gaps[]      what this run could not reach
 
@@ -137,8 +139,10 @@
   "bugs": [
     {
       "severity": "blocker",
+      "origin": "<introduced here | pre-existing | pre-existing, worsened here>",
+      "reachedBy": "<the actor and the surface that produced this state — if you cannot name one, this is not a bug>",
       "title": "<what a maintainer would call it>",
-      "body": "<what it is>\n\n**Repro:** <steps> **Expected:** <what should happen> **Actual:** <what happens>"
+      "body": "<what it is, and what blame or diff settled its origin>\n\n**Repro:** <steps> **Expected:** <what should happen> **Actual:** <what happens>"
     }
   ],
   "bugsNote": "<the attack you most expected to land, and why it did not>",
@@ -452,6 +456,18 @@ a { color: var(--accent); }
   border: 1px solid currentColor; border-radius: 3px; padding: 1px 5px; color: var(--fail);
 }
 .bug--minor .bug__s { color: var(--hold); }
+.bug__o {
+  font: 600 9.5px/1.6 var(--ui); letter-spacing: .08em; text-transform: uppercase;
+  border: 1px dashed currentColor; border-radius: 3px; padding: 1px 5px; color: var(--fg-2);
+}
+.bug__o--new { color: var(--fail); border-style: solid; }
+.bug__r {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-2);
+  font-size: 12.5px; color: var(--fg-2);
+}
+.bug__rl { font: 700 9.5px/1.6 var(--ui); letter-spacing: .1em; text-transform: uppercase; flex: none; }
+.bug__rb { flex: 1 1 240px; }
 .bug__t { font-size: 14.5px; font-weight: 650; margin: 0; }
 .empty { color: var(--fg-2); font-size: 13.5px; }
 
@@ -865,10 +881,17 @@ code {
       const box = el('div', 'bug' + (/minor/i.test(b.severity || '') ? ' bug--minor' : ''));
       const h = el('div', 'bug__h');
       h.appendChild(el('span', 'bug__s', b.severity || 'bug'));
+      if (b.origin) h.appendChild(el('span', 'bug__o' + (/introduced/i.test(b.origin) ? ' bug__o--new' : ''), b.origin));
       h.appendChild(el('h3', 'bug__t', b.title || ''));
       box.appendChild(h);
       const p = el('div', 'prose'); if (b.body) paras(p, b.body);
       box.appendChild(p);
+      if (b.reachedBy) {
+        const r = el('div', 'bug__r');
+        r.appendChild(el('span', 'bug__rl', 'Reached by'));
+        r.appendChild(el('span', 'bug__rb', b.reachedBy));
+        box.appendChild(r);
+      }
       sec.appendChild(box);
     });
     if (D.bugsNote) {
