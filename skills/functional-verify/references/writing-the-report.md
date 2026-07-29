@@ -123,10 +123,55 @@ say so in the file.
 **Read the scenario's video, then its proofs: an entry that told you nothing the video left open should not have
 been written.**
 
+### Coverage and the derived verdict
+
+`coverage[]` at the top level is the scope ledger: **one entry per requirement id the feature's docs list**, whether
+or not you reached it. It is what makes an incomplete run visible instead of arithmetically green.
+
+```json
+"verdict": "PARTIAL",
+"coverage": [
+  { "req": "R2", "scenario": "01", "verdict": "Success" },
+  { "req": "R5", "scenario": "07", "verdict": "NOT VERIFIED" },
+  { "req": "R15", "scenario": "12", "verdict": "INVALID" }
+]
+```
+
+Several ids pointing at one scenario is normal and good — a single walk that proves five requirements is a better
+walk. What is not allowed is an id in the docs with no row here.
+
+**`verdict` is derived from that table, never chosen:** any scenario `Failure` → `FAIL`; else any requirement
+`NOT VERIFIED` → `PARTIAL`; only an all-covered, all-`Success` run is `PASS`. Compute it after the table is
+complete and write what it says, including when the run you just did feels like a pass.
+
 ### Bugs
 
-`bugs[]` at the top level, each `{severity, title, body}` — **bugs in the application**, defects that will bite a
-user or a developer. A misleading message, lost or corrupted data, stale UI state, a 500 reaching the user, a silent
+`bugs[]` at the top level, each `{severity, origin, reachedBy, title, body}` — **bugs in the application**, defects
+that will bite a user or a developer.
+
+Two of those fields decide whether the entry is a bug at all and what a maintainer does about it:
+
+```json
+{
+  "severity": "major",
+  "origin": "pre-existing, worsened here",
+  "reachedBy": "A returning customer changed plan on a lead whose proforma was raised the previous day — PATCH /demands/:leadId, ordinary account, nothing hand-written.",
+  "title": "…", "body": "…"
+}
+```
+
+**`reachedBy` names the actor and the surface they used.** It is what separates a defect from a corrupted database.
+Where the only route to the state was writing a value into a store the product populates from somewhere else — a
+third-party response, a derived total, an id the product issues — there is no actor to name and the field cannot be
+filled, so the entry does not belong here. Keep it, if it is worth keeping, as an `extra[]` note about which inputs
+the feature trusts.
+
+**`origin` is one of `introduced here` · `pre-existing` · `pre-existing, worsened here`**, decided by reading the
+lines that govern the behaviour with `git blame` and `git diff` against the base — not by impression. Say in `body`
+which commit or diff hunk settled it. A maintainer's first question is whether to revert this change; a bug that
+predates it will not be fixed by reverting, and one this change merely amplified needs both facts to be triaged.
+
+The same two fields belong on any scenario carrying a `Failure` verdict, for the same reasons. A misleading message, lost or corrupted data, stale UI state, a 500 reaching the user, a silent
 no-op, a permission leak, a broken recovery path; or, for developers, a documented command that is gone, an artifact
 contradicting the tree.
 
@@ -136,12 +181,40 @@ Most consequential first. Your infrastructure adventures, the data you couldn't 
 the stack up go in what you report back to whoever dispatched you (Step 6). Found no bugs? Leave `bugs` empty; the
 sentence from Step 4 naming your best attack and why it didn't land goes in `bugsNote`, which renders either way.
 
-What this run could not reach goes in `gaps[]` — one entry each, naming where it belongs instead.
+What this run could not reach goes in `gaps[]` — one entry per `NOT VERIFIED` scenario, and every field is
+required, because a gap without them is indistinguishable from an early stop:
+
+```json
+"gaps": [
+  {
+    "scenario": "07",
+    "req": "R5",
+    "mechanism": "`shouldCreateProforma()` at src/hooks/create-proforma-against-lead.js:310 requires the lead to carry both `product` and `pricePlan`; this environment's Premium business has no product with a price plan.",
+    "attempted": ["seeded a lead through the service and drove PATCH /demands/:id",
+                  "set source=PREMIUMN and retried",
+                  "re-ran with DEBUG=* and read the hook's own branch trace"],
+    "wouldClose": "A product with at least one price plan on the Premium business, or a fixture that builds one."
+  }
+]
+```
+
+`mechanism` names the line, condition, credential, or absent datum — not the symptom you observed. "The hook didn't
+fire" fails this field; the sentence above passes it. `attempted` is what you actually ran, distinct approaches
+rather than retries of one. `wouldClose` is the concrete thing a human or a later run can supply.
 
 ## Completion checklist — the report is done when all of these hold
 
 - The JSON island parses, and the file opens in a browser showing every scenario. A report that does not render is
   not a report — open it and look before you call this done.
+- `coverage[]` has a row for every requirement id the docs list, and `verdict` is what the derivation rule computes
+  from it — not what the run felt like. Grep the docs for their id pattern and diff that set against the table
+  before you call this done.
+- Every `NOT VERIFIED` scenario has a `gaps[]` entry whose `mechanism` names a line, condition, credential or
+  absent datum, with `attempted` listing distinct approaches and `wouldClose` naming the concrete unblock.
+- Every `bugs[]` entry and every `Failure` scenario carries a `reachedBy` naming a real actor and the surface they
+  used, and an `origin` of `introduced here` / `pre-existing` / `pre-existing, worsened here` settled by `git blame`
+  or the diff. An entry whose `reachedBy` you cannot write without saying "I wrote the value into the database
+  myself" is not a bug — move it to `extra[]` or drop it.
 - Every scenario has a stable `n`, a `verdict`, and a `reason`, and every behaviour the docs describe is covered. One
   you could not verify is a scenario with `NOT VERIFIED` and a reason saying what would close it; one that turned out
   not to apply is `INVALID` with why. Neither is dropped, and neither is quietly backfilled with an adjacent passing
