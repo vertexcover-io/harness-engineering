@@ -111,6 +111,10 @@ selected. If you spawn `security`, name the trust decision that changed.
 
 - Send **one message with all Agent tool calls** so they run concurrently, using the
   `general-purpose` subagent for each.
+- **The tool result is the report.** A persona returns its findings as its final message —
+  personas write no files, and nothing lands on disk until you write the Step 4 report. After
+  dispatching, wait for the tool results and go straight to Step 4 with them; filler commands
+  while waiting are noise.
 - Sub-agents share none of your context — paste in everything they need.
 - Every prompt gets the diff command, the commit list, the changed-file list, and this
   instruction:
@@ -122,7 +126,8 @@ selected. If you spawn `security`, name the trust decision that changed.
 > wastes the author's time and erodes trust. Report what you can trace in the code; when you
 > can't confirm something but the blast radius is high (data loss, corruption, an exploit),
 > report it anyway and say plainly what you couldn't verify. Anything else you can't stand
-> behind, drop — three real findings beat twenty maybes. Under 400 words."*
+> behind, drop — three real findings beat twenty maybes. Return your report as your final
+> message — write no files. Under 400 words."*
 
 - **Each persona's brief is its reference file** — paste the full text in rather than
   summarizing, plus the extra context below.
