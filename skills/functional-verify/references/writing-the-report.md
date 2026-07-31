@@ -46,9 +46,13 @@ Copy `references/proof-report-template.html` to `verification/proof-report.html`
 `<script type="application/json" id="report-data">` block. Change nothing else in the file.** You write data, not
 markup; the template renders it. Its header comment is the field-by-field guide, and it stays in the file you ship.
 
-The reader knows the product and is deciding whether this ships. Three questions are what they came for: what
-worked, what didn't and why, and how you know. Anything serving none of them gets cut however true it is. Failing
-scenarios earn more words than passing ones; that is where a reader slows down.
+The reader knows the product and is deciding whether this ships, and the contract's four questions are what they
+came for. Anything serving none of them gets cut however true it is. Failing scenarios earn more words than passing
+ones; that is where a reader slows down.
+
+`summary` at the top level is the Overview pane a reader lands on, in three short paragraphs: what this feature does
+in the product's terms, what was tested and how it was driven, and what the verdict means for shipping. Plain
+sentences a reader takes in at a glance — the environment detail belongs in `drivenOn` and `fields[]` beside it.
 
 ```json
 {
@@ -61,9 +65,10 @@ scenarios earn more words than passing ones; that is where a reader slows down.
       "short": "Float artefact matches",
       "title": "An invoice whose tax total carries a floating-point artefact still reconciles against the supplier's filed entry",
       "verdict": "Success",
+      "expected": "An invoice whose books total is `7127.200000000001` and whose filed entry is `7127.20` reads **Complete Match**, both sides rendering ₹7,127.20.",
       "reason": "Books stored `7127.200000000001`; both sides render ₹7,127.20 and the pair reads **Complete Match**.",
       "steps": ["Open the June 2026 reconciliation report", "Switch to Detailed View",
-                "Find the invoice filed at ₹7,127.20"],
+                "Find invoice `INV-4417`, books ₹7,127.200000000001 against filed ₹7,127.20"],
       "video": "01_float_artefact_still_matches.mp4",
       "frames": [{ "src": "screenshots/01_float_artefact_still_matches__01_report_open.png",
                    "label": "June report, detailed view" }]
@@ -74,11 +79,19 @@ scenarios earn more words than passing ones; that is where a reader slows down.
 
 **`n` is the scenario's stable number** and `slug` is the prefix every one of its artifacts carries, so a reader
 reaches its files from the scenario alone. **Write `title` as a sentence** a QA would use, and `short` as the three
-or four words that identify it in the left rail. `steps` is the walk you actually drove, one plain sentence each —
-they summarise the flow rather than mapping onto frames. `reason` is what decided the verdict — the rendered string,
-the measured value, the status code — and a blank line inside it starts a new paragraph.
+or four words that identify it in the left rail.
 
-Two shapes are fixed, because they are what makes two reports comparable: **`steps` renders numbered in order**, and
+**Write `expected` from the docs before you drive it** — one or two sentences naming the outcome and the values it
+turns on. It is the bar the run is graded against, and `reason` is the diff between it and what you saw. A scenario
+whose `expected` could only have been written afterwards has graded itself.
+
+`steps` is the walk you actually drove, one plain sentence each, **each naming the value it sent** — "POST the client
+as `{clientId:"v-crm-1", name:"Verify Acme"}`" rather than "POST the client" — so a dev re-runs the walk from the
+report alone. They summarise the flow rather than mapping onto frames. `reason` is what decided the verdict — the
+rendered string, the measured value, the status code — and a blank line inside it starts a new paragraph.
+
+Three shapes are fixed, because they are what makes two reports comparable: **`expected` renders above the walk**,
+**`steps` renders numbered in order**, and
 **`video` + `frames[]` render as Visual proof**, the video leading with the screenshots folded behind a toggle.
 Everything else is prose you shape yourself. When something fits none of the sections, put it in `extra[]` —
 `{heading, body, capture}`, all optional, no imposed shape.
@@ -95,8 +108,8 @@ when it has one of two things a video cannot carry:
   the way it was supposed to be. The intermediate call proving the right branch was taken; the query proving the
   total was recomputed rather than served stale; the response behind a table that looks correct either way.
 
-Everything a QA could screenshot stays out — the board, the modal count, the toast, the received email are already
-proven in `screenshots/`. When a capture is half visible, quote only the fields the frame couldn't show.
+Where a frame already carries the surface — the board, the modal count, the toast, the received email — the entry
+carries the mechanism under it. **Where there is no frame, the exchange is the whole evidence, so it goes in whole.**
 
 `tag` is the one-word kind shown as a chip — `queue`, `email`, `http`, `db`, `cache`, `file`:
 
@@ -106,19 +119,25 @@ proven in `screenshots/`. When a capture is half visible, quote only the fields 
     "tag": "cache",
     "heading": "Cached under a new key",
     "body": "Both keys carry the v2 segment and no unversioned key was touched. The screen showed the right total either way — this is what proves it was recomputed rather than served from the pre-deploy key.",
-    "capture": "GET /businesses/$B/gstr2b-reconciliation/detailedview?period=062026 → 200\n{\"redis\":{\"get\":\"serana:gstr2brecon:v2:6a59…:062026\",\n          \"set\":\"serana:gstr2brecon:v2:6a59…:062026\",\"ttl\":604800}}"
+    "capture": "GET /businesses/6a59f2c1/gstr2b-reconciliation/detailedview?period=062026\n→ 200\n{\"redis\":{\"get\":\"serana:gstr2brecon:v2:6a59f2c1:062026\",\n          \"set\":\"serana:gstr2brecon:v2:6a59f2c1:062026\",\"ttl\":604800}}"
   }
 ]
 ```
 
-Each entry is three parts: `heading` names what it settles, `capture` is the excerpt that decides it — where it came
-from and its status included — and `body` is what that excerpt settled. The same shape whether it's HTTP, a log, a
-query, or a file. Save the full capture beside the report under its `NN_<slug>` prefix and list it in `artifacts[]`:
-the entry holds what you concluded, the file holds what a reader needs to reach the thing themselves — where it came
-from, whatever marks it as this run's rather than an earlier one, and anything the sink recorded alongside it. Write
-it as it arrived rather than summarised, keep excerpts short — twenty lines is plenty, the full file is one click
-away in the modal — redact secrets as `<redacted>`, and when the artifact came from a stand-in for the real thing,
-say so in the file.
+Each entry is three parts: `heading` names what it settles, `capture` is the **verbatim exchange** that decides it,
+and `body` is what that exchange settled.
+
+`capture` is the input and the output as they went over the wire: the request exactly as sent — method, full path,
+the body as JSON — then the status, then the complete response body as it came back, **however long**; the block
+renders collapsed, so length costs a reader nothing until they open it. The same shape whether it's HTTP, a log, a
+query (the SQL as run, the rows as returned), or a file. Redact secrets as `<redacted>`, and say in `body` when the
+exchange ran against a stand-in for the real thing.
+
+**Several calls settling one mechanism go in one entry, in the order you drove them**, separated by a blank line —
+the retry after the conflict, the read-back after the write.
+
+`artifacts[]` is for files **the product produced** — a webhook body it posted, a file it delivered, a document it
+generated.
 
 **Read the scenario's video, then its proofs: an entry that told you nothing the video left open should not have
 been written.**
@@ -149,7 +168,8 @@ complete and write what it says, including when the run you just did feels like 
 `bugs[]` at the top level, each `{severity, origin, reachedBy, title, body}` — **bugs in the application**, defects
 that will bite a user or a developer.
 
-Two of those fields decide whether the entry is a bug at all and what a maintainer does about it:
+`reachedBy` and `origin` are the two Step 4 settled before you got here — the actor and surface that produced it,
+and what `git blame` said about where it came from:
 
 ```json
 {
@@ -160,16 +180,11 @@ Two of those fields decide whether the entry is a bug at all and what a maintain
 }
 ```
 
-**`reachedBy` names the actor and the surface they used.** It is what separates a defect from a corrupted database.
-Where the only route to the state was writing a value into a store the product populates from somewhere else — a
-third-party response, a derived total, an id the product issues — there is no actor to name and the field cannot be
-filled, so the entry does not belong here. Keep it, if it is worth keeping, as an `extra[]` note about which inputs
-the feature trusts.
+`reachedBy` is one sentence: the actor and the surface they used. An entry you cannot write one for is not a bug —
+it goes to `extra[]` as a note on what the feature trusts, or nowhere.
 
-**`origin` is one of `introduced here` · `pre-existing` · `pre-existing, worsened here`**, decided by reading the
-lines that govern the behaviour with `git blame` and `git diff` against the base — not by impression. Say in `body`
-which commit or diff hunk settled it. A maintainer's first question is whether to revert this change; a bug that
-predates it will not be fixed by reverting, and one this change merely amplified needs both facts to be triaged.
+`origin` is one of `introduced here` · `pre-existing` · `pre-existing, worsened here`. Say in `body` which commit or
+diff hunk settled it.
 
 The same two fields belong on any scenario carrying a `Failure` verdict, for the same reasons. A misleading message, lost or corrupted data, stale UI state, a 500 reaching the user, a silent
 no-op, a permission leak, a broken recovery path; or, for developers, a documented command that is gone, an artifact
@@ -198,9 +213,9 @@ required, because a gap without them is indistinguishable from an early stop:
 ]
 ```
 
-`mechanism` names the line, condition, credential, or absent datum — not the symptom you observed. "The hook didn't
-fire" fails this field; the sentence above passes it. `attempted` is what you actually ran, distinct approaches
-rather than retries of one. `wouldClose` is the concrete thing a human or a later run can supply.
+`mechanism` is the cause Step 4 made you read the blocking path for, written to the standard set there — the
+sentence above passes it. `attempted` is what you actually ran, distinct approaches rather than retries of one.
+`wouldClose` is the concrete thing a human or a later run can supply.
 
 ## Completion checklist — the report is done when all of these hold
 
@@ -215,6 +230,11 @@ rather than retries of one. `wouldClose` is the concrete thing a human or a late
   used, and an `origin` of `introduced here` / `pre-existing` / `pre-existing, worsened here` settled by `git blame`
   or the diff. An entry whose `reachedBy` you cannot write without saying "I wrote the value into the database
   myself" is not a bug — move it to `extra[]` or drop it.
+- Every scenario carries an `expected` taken from the docs, `steps` naming the values it sent, and a `reason` that
+  reads as the diff between the two.
+- Every `capture` shows a request a dev could paste and the complete response it returned, inline — nothing about an
+  exchange is left in a file for the reader to go and open.
+- `summary` opens the report with what the feature does, what was tested, and what the verdict means for shipping.
 - Every scenario has a stable `n`, a `verdict`, and a `reason`, and every behaviour the docs describe is covered. One
   you could not verify is a scenario with `NOT VERIFIED` and a reason saying what would close it; one that turned out
   not to apply is `INVALID` with why. Neither is dropped, and neither is quietly backfilled with an adjacent passing

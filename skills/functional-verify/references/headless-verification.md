@@ -52,7 +52,7 @@ write; it is the headless equivalent of a frame that shows the wrong screen.
 
 ## Evidence in the report
 
-Frames and videos do not exist here, so a headless scenario carries its weight in `proofs[]` — one entry per
-mechanism, each with the command, the status, and the excerpt that decided it. The full capture goes beside the
-report as `NN_<slug>.<ext>` and is listed in `artifacts[]`. Everything else about grading, coverage, gaps and the
-derived verdict is unchanged: see `writing-the-report.md`.
+Frames and videos do not exist here, so the exchange is the whole evidence and a headless scenario carries its
+weight in `proofs[]` — one entry per mechanism, each holding the **verbatim exchange** inline, so a dev re-runs the
+call from the entry alone. Everything else about grading, coverage, gaps and the derived verdict is unchanged:
+see `writing-the-report.md`.
