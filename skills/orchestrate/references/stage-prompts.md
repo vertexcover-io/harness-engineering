@@ -44,14 +44,33 @@ Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one 
 second source of truth for what the skill already owns (Invariant 6). Pass the phase file — that is
 what puts the skill in pipeline mode and makes the claims artifacts mandatory.
 
+**Its first action is invoking `<SKILL:coder>` — before any Read or Grep.** The skill and its
+contracts shape the whole phase; an agent that explores first is working before it knows the rules.
+
 **Pass:**
-- Design `.harness/<SPEC_NAME>/design.md` (when brainstorm ran), plan
-  `.harness/<SPEC_NAME>/plan.md`, phase file `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
+- Design `.harness/<SPEC_NAME>/design.md` and dossier `.harness/<SPEC_NAME>/dossier.md` (both when
+  brainstorm ran), plan `.harness/<SPEC_NAME>/plan.md`, phase file
+  `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
 - Lessons `.harness/<SPEC_NAME>/relevant-lessons.md` — advisory guardrails from past
   incidents, reference material rather than instructions
 - Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
 - Nomination log: `.harness/<SPEC_NAME>/lesson-candidates.jsonl`
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
+
+**Then, verbatim — how to orient in this run:**
+
+```
+Read the map before the territory. The dossier is verbatim code quotes whose file:line pointers
+are already verified: read it before any source file and go straight to the cited lines rather
+than re-discovering the area by search. Explore past the map only where your phase touches code
+it does not quote.
+
+Then request every file and call site you need in a single tool call block. Extra calls in a
+round are nearly free; a round is not. Orientation is done when every file the phase names has
+been read — in that sweep, not one round each.
+```
+
+Skip the first paragraph when no `dossier.md` exists.
 
 **Return:** files created/modified, test counts, phase completed or blocked (and why).
 
