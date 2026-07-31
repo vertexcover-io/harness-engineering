@@ -30,7 +30,7 @@ The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` a
 | 3 | Test Suite + Behavior Coverage | exit=0, 42 passed | exit=0, 38 passed, 12/12 matrix IDs covered | PASS |
 | 4 | Coverage (diagnostic) | 85.5% | 87.3% (+1.8%) | INFO |
 | 6 | Plan Compliance | — | 5/5 items verified | PASS |
-| 7 | Ignore Comment Audit | — | 0 new ignore comments | PASS |
+| 7 | Comment Audit | — | 0 new ignore directives · 3 comments removed | PASS |
 | 9 | E2E Tests | — | 12 passed, 0 failed | PASS |
 | 10 | Mutation Spot-Check | — | 4/4 mutants killed | PASS |
 
