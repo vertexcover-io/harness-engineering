@@ -26,7 +26,7 @@ cd verification
 for p in $(ls screenshots/*.png 2>/dev/null | sed 's#.*/##; s#__.*##' | sort -u); do
   ffmpeg -v error -y -framerate 1/3 -pattern_type glob -i "screenshots/${p}__*.png" \
     -vf "scale=1280:720:force_original_aspect_ratio=decrease,\
-pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p,\
+pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p,\
 tpad=stop_mode=clone:stop_duration=2" \
     -c:v libx264 -preset veryfast -r 30 "${p}.mp4" \
     && echo "ok  ${p}.mp4" || echo "FAILED ${p}"
@@ -36,6 +36,20 @@ done
 Three seconds a frame, the last frame held two seconds longer, so a reviewer can follow each step. The `sed` strips
 the directory and everything from `__` on, leaving the `NN_<slug>` prefix, so each scenario's frames assemble into
 `NN_<slug>.mp4` — the exact name the scenario's `video` names.
+
+**The canvas is fixed and every frame letterboxes into it — a frame is never reshaped to fill it.** A phone frame
+sits in a pillarbox and a 16:10 desktop frame gets bars top and bottom; both are correct, and neither is a reason to
+resize the canvas to the frames. Widening it to swallow the bars is what squashes the phone frame into a landscape
+shape and passes off a geometry that was never on screen. Prove the shape survived before you leave this step:
+
+```bash
+ffmpeg -hide_banner -ss <seconds-into-a-phone-frame> -t 0.5 -i NN_<slug>.mp4 -vf cropdetect -f null - 2>&1 \
+  | grep -o 'crop=[0-9:]*' | tail -1
+```
+
+Keep the default loglevel — `-v error` silences cropdetect itself. It reports the picture inside the bars, so a
+phone frame comes back a few hundred pixels wide (`crop=320:720:478:0`), never the full `crop=1280:720:0:0`. Full
+width on a portrait frame means it was stretched.
 
 **Keep the frames** — they are the only machine-readable evidence, and a re-grade or second look needs the PNGs. If
 a merge fails, name the scenario and move on; its frames still prove it.
