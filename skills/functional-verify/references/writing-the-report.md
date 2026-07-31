@@ -205,8 +205,9 @@ no-op, a permission leak, a broken recovery path; or, for developers, a document
 contradicting the tree.
 
 Each is a bug report a maintainer could act on without asking you a question: what it is, its severity (blocker /
-major / minor) and why that rung and not the one above, the repro, what happens, what should happen, and the video.
-Most consequential first. Your infrastructure adventures, the data you couldn't find, and the workaround that got
+major / minor) and why that rung and not the one above, the repro, and the video. What should have happened and what
+did are already the scenario's `expected` and `reason`, so the entry points at the scenario rather than restating
+them. Most consequential first. Your infrastructure adventures, the data you couldn't find, and the workaround that got
 the stack up go in what you report back to whoever dispatched you (Step 6). Found no bugs? Leave `bugs` empty; the
 sentence from Step 4 naming your best attack and why it didn't land goes in `bugsNote`, which renders either way.
 
