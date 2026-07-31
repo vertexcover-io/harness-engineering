@@ -82,7 +82,8 @@ a filename alone what was tested and where it belongs.
 
 - A screenshot is `NN_<slug>__SS_<step>.png` — prefix, **double underscore**, zero-padded step number from `01`, and
   what the frame shows. Step 5 splits on that `__` to group a scenario's frames, so keep it to two underscores and
-  outside the slug.
+  outside the slug. A phone frame is the same name with `_mobile` on the end — the same scenario, so it lands in
+  the same video.
 - Report links are **report-relative** — the report sits in `verification/`, so its video is `NN_<slug>.mp4` and its
   frames are under `screenshots/`.
 
@@ -129,10 +130,15 @@ Open the UI service you started in Step 1 and hold **one session** for every sce
 `references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, and the capture loop are
 all there.
 
+A scenario driving **the surface the change landed on** is filmed on a phone too, in the same session and the same
+`NN_<slug>` set — the layout a narrow screen forces is where a change breaks something nobody was watching. Whether
+this app is meant to work on a phone at all is a project fact like any other.
+
 The invariant governing the whole step: **a frame is evidence only once its assert passed and your own eyes
 confirmed it shows what you think.** Read at the moment you shoot — frames lag renders. **Done when every UI
 scenario has a `NN_<slug>` set of frames in `screenshots/` that tells its whole story, each frame backed by a
-passing assert and your own eyes.**
+passing assert and your own eyes, and every scenario on the surface the change landed on carries phone frames in
+that set.**
 
 ## Step 3 — API, DB & Side-Effects: Proving What Has No Screen
 

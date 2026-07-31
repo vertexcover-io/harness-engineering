@@ -156,5 +156,18 @@ photographs as covered. Ask the page what is on top of each cell:
 **Every cell the frame is offered as evidence for must be un-occluded at its own centre, and the row must be
 identifiable in that same frame.**
 
+## The same scenario on a phone
+
+`agent-browser set device "iPhone 14"` — a **device**, not a narrow viewport. An app that branches on user-agent or
+touch rather than width serves its desktop layout to a resized window, and you photograph a mobile pass that never
+happened.
+
+**Re-shoot, don't re-drive.** Switch device at the end of the scenario and shoot the frames that carry the feature;
+the walk stays driven once. Then restore the desktop device before the next scenario, as with any setting you
+changed.
+
+What a phone frame is worth shooting for is yours to judge on the page in front of you — a phone claim cites a live
+observation like every other claim here.
+
 **Done when every scenario has a `NN_<slug>` set of promoted frames in `screenshots/` telling its whole story, each
 one backed by a passing assert and your own eyes.**
