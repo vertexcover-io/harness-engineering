@@ -242,7 +242,7 @@
       ],
       "anti_expectations": [
         "Does not return a Result/discriminated union for the expired case on the grounds that the skill prefers it",
-        "Does not skip the JSDoc block on the grounds that comments should be rare",
+        "Does not skip the JSDoc block on the grounds that a comment must be load-bearing — CONTRIBUTING.md documents the convention, and a documented standard overrides the default",
         "Does not treat CONTRIBUTING.md's silence on dependency injection as permission to construct the store internally",
         "Does not ignore CONTRIBUTING.md and apply the skill defaults throughout",
         "Does not use `any` or type assertions to satisfy the error types"

@@ -53,7 +53,7 @@ Keep impure operations — I/O, mutation, time, randomness — at the boundaries
 
 Build programs from small, focused functions that compose together. Each function does one thing.
 
-Signs you need to decompose: a body over ~20 lines, more than 2 levels of nesting, or a section that needs a comment to explain it. In that last case prefer a well-named function over the comment — but only one that passes the gate below. Read the next section before extracting.
+Signs you need to decompose: a body over ~20 lines, more than 2 levels of nesting, or a section that needs a comment to explain it. Read the next section before extracting — an extraction still has to pass the gate there.
 
 ### The Cost of Abstraction
 
@@ -135,28 +135,22 @@ When a function takes 3+ parameters, use a named structure (options object in Ty
 
 ## Self-Documenting Code
 
-**Comments should be rare.** Write one only when the code is genuinely hard to understand and cannot be made easier — a non-obvious algorithm, a workaround for an upstream bug, a constraint imposed from outside the code (a protocol quirk, a legal requirement, a performance trade-off that looks wrong until you know why). The test is whether a competent reader would otherwise stop and puzzle over it. Rarity is the point: when comments are rare, the ones that exist get read.
+**A comment must be load-bearing** — delete it and a competent reader stalls. Exactly two things carry that load:
 
-This applies to **test files exactly as to production code**, and to docblocks exactly as to `//`. Everything else is a signal to refactor — rename, name the intermediate value, use a type alias — not to annotate.
+- **The code is not obvious** from its names and shape — a non-obvious algorithm, a workaround for an upstream bug, a constraint imposed from outside the code (a protocol quirk, a legal requirement).
+- **A trade-off was taken** whose reason is invisible in what the code does.
 
-Never write a comment that:
-
-- **Restates an adjacent name** — two things to keep in sync.
-- **Cites a spec, plan, or ticket** — `REQ-013`, `AC7`, `EC2`, `TC-F2`, `FL3`, phase numbers, handoff notes. These go in test names, where they're checked and stay current; in source they're stale the moment the spec is archived.
-- **Narrates the work's history** — `// BUG 2 (fixed in review)`, `// break risk called out in the handoff`. That's the commit message's job.
+Judge it per comment, and judge test files exactly as production code, docblocks exactly as `//`. Anything that fails the test is a signal to refactor instead — rename, name the intermediate value, use a type alias.
 
 ```js
-// BAD — restates the name, cites a spec the reader cannot see, narrates a review.
-// BUG 2 (REQ-013/AC7): a selection always wins over the table's total.
-const resolveExportCount = ({ documentIds, totalRecords }) => ...
-
-// GOOD — the reason is invisible in the code, so the comment earns its place.
 // Server returns totals one page behind under concurrent writes; re-reading after
 // the final page is the only way to get a consistent count. Upstream issue #4471.
 const total = await refetchTotal();
 ```
 
-**Match the file you are in.** If every method around you carries a JSDoc block, yours does too. Density is the file's call; narration is never anyone's.
+Three species carry no load and stay out: a comment that **restates an adjacent name** (two things to keep in sync), one that **cites a spec, plan, or ticket** (`REQ-013`, `AC7`, phase numbers — these belong in test names, where they stay checked), and one that **narrates the work's history** (`// BUG 2 (fixed in review)` — that is the commit message's job).
+
+**Match the file's style, not its density.** Where a comment is load-bearing and the file documents in JSDoc, write JSDoc. A file thick with docblocks never makes a new one load-bearing.
 
 ---
 
@@ -204,8 +198,7 @@ Before considering code complete, verify:
 - [ ] Functions are small and compose well (max ~20 lines, max 2 nesting levels)
 - [ ] Every extracted function passes the gate — it removes decoding cost or repeated lines
 - [ ] No function exists solely to give a test something to import
-- [ ] Comments are rare and explain genuinely hard code — none restate a name, cite a spec/ticket,
-      or narrate the work's history
+- [ ] Every comment is load-bearing
 - [ ] Declarative transformations over imperative loops
 - [ ] Early returns instead of nested conditionals
 - [ ] Named parameters for functions with 3+ arguments
