@@ -126,8 +126,9 @@ class Order:
 from dataclasses import replace
 
 updated_user = replace(user, name="New Name")
-# user is unchanged, updated_user has the new name
 ```
+
+`user` is untouched; `replace` returns a new instance.
 
 ---
 
@@ -144,7 +145,6 @@ class CreateUserRequest(BaseModel):
     email: EmailStr
     name: str
 
-# Validate at boundary
 def create_user_endpoint(body: dict[str, object]) -> User:
     request = CreateUserRequest.model_validate(body)
     return user_service.create(request.email, request.name)
@@ -187,8 +187,10 @@ class PaymentGateway(Protocol):
 - Better for dependency injection — any object with matching methods works
 - More Pythonic (duck typing with type safety)
 
+No inheritance or registration — the type checker verifies structurally that
+`PostgresUserRepository` satisfies the `UserRepository` protocol:
+
 ```python
-# This works without any inheritance or registration
 class PostgresUserRepository:
     def find_by_id(self, user_id: str) -> User | None:
         # ...
@@ -197,7 +199,6 @@ class PostgresUserRepository:
     def delete(self, user_id: str) -> None:
         # ...
 
-# Type checker verifies PostgresUserRepository satisfies UserRepository protocol
 def create_user_service(repo: UserRepository) -> UserService:
     # ...
 ```
@@ -225,20 +226,20 @@ class Failure(Generic[E]):
 
 type Result[T, E] = Success[T] | Failure[E]
 
-# Usage
 def find_user(user_id: str) -> Result[User, str]:
     user = database.find_by_id(user_id)
     if user is None:
         return Failure("User not found")
     return Success(user)
 
-# Caller handles both cases
 match find_user("123"):
     case Success(data=user):
         print(user.email)
     case Failure(error=msg):
         print(f"Error: {msg}")
 ```
+
+The union plus an exhaustive `match` forces the caller to handle both cases.
 
 For Python < 3.12, use `Union[Success[T], Failure[E]]` instead of the `type` alias syntax.
 
@@ -277,41 +278,43 @@ Use keyword-only arguments (`*`) for dependency injection to make call sites exp
 
 Python's comprehensions are the idiomatic equivalent of `map`/`filter`:
 
-```python
-# Transform
-emails = [u.email for u in users]
-
-# Filter
-active = [u for u in users if u.is_active]
-
-# Filter + transform
-active_emails = [u.email for u in users if u.is_active]
-
-# Dict comprehension
-user_by_id = {u.id: u for u in users}
-```
+| Intent | Expression |
+|---|---|
+| Transform | `[u.email for u in users]` |
+| Filter | `[u for u in users if u.is_active]` |
+| Filter + transform | `[u.email for u in users if u.is_active]` |
+| Dict comprehension | `{u.id: u for u in users}` |
 
 ### functools for Composition
+
+To aggregate, prefer `sum` with a generator over `reduce` with a lambda:
+
+```python
+total = sum(item.price * item.quantity for item in items)
+```
+
+`functools.reduce` earns its place only when the fold is not a sum, min, max, or join:
 
 ```python
 from functools import reduce
 
-# Aggregate
-total = reduce(lambda acc, item: acc + item.price * item.quantity, items, 0.0)
-
-# Or use sum with a generator
-total = sum(item.price * item.quantity for item in items)
+merged = reduce(operator.or_, configs, {})
 ```
 
 ### Immutable Updates
 
+Update a field with `dataclasses.replace`; merge dicts with `|` (Python 3.9+):
+
 ```python
 from dataclasses import replace
 
-# Update a field
 updated = replace(user, name="New Name")
+updated_config = base_config | {"key": "new_value"}
+```
 
-# Update nested — create new parent with new child
+Nested updates create a new parent holding the new child:
+
+```python
 updated_order = replace(
     order,
     items=tuple(
@@ -319,9 +322,6 @@ updated_order = replace(
         for item in order.items
     ),
 )
-
-# Dict merge (Python 3.9+)
-updated_config = base_config | {"key": "new_value"}
 ```
 
 ### Pure Functions
@@ -376,11 +376,12 @@ PaymentAmount = NewType("PaymentAmount", float)
 def process_payment(user_id: UserId, amount: PaymentAmount) -> Result[Transaction, str]:
     # ...
 
-# Type checker catches mixing up IDs
 user_id = UserId("user-123")
 order_id = OrderId("order-456")
 process_payment(order_id, PaymentAmount(100.0))  # Type error!
 ```
+
+The type checker catches the swapped ID at the call site.
 
 `NewType` has zero runtime cost — it's erased at runtime. Use it when you have multiple primitives of the same base type that could be confused.
 

@@ -34,10 +34,8 @@ def stage_hunks(filepath, keep_indices):
     diff = subprocess.check_output(['git', 'diff', filepath]).decode()
     lines = diff.split('\n')
 
-    # Find hunk boundaries
     hunk_starts = [i for i, l in enumerate(lines) if l.startswith('@@')]
 
-    # Build filtered patch: header + selected hunks
     header = lines[:hunk_starts[0]] if hunk_starts else []
     selected = []
     for idx in keep_indices:

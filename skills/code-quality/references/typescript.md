@@ -156,7 +156,6 @@ const CreateUserRequestSchema = z.object({
 
 type CreateUserRequest = z.infer<typeof CreateUserRequestSchema>;
 
-// Validate at boundary
 const validated = CreateUserRequestSchema.parse(requestBody);
 ```
 
@@ -299,15 +298,15 @@ const findUser = (userId: string): Result<User> => {
   return { success: true, data: user };
 };
 
-// Caller must handle both cases
 const result = findUser('123');
 if (!result.success) {
   console.error(result.error);
   return;
 }
-// TypeScript knows result.data exists here
 console.log(result.data.email);
 ```
+
+The union forces the caller to handle both cases: past the `success` guard, the type checker knows `data` exists.
 
 Reserve `throw` for programmer errors (invariant violations, assertion failures) where recovery isn't expected.
 
@@ -326,11 +325,12 @@ const processPayment = (userId: UserId, amount: PaymentAmount) => {
   // ...
 };
 
-// Can't accidentally pass an OrderId where UserId is expected
 const userId = 'user-123' as UserId;
 const amount = 100 as PaymentAmount;
 processPayment(userId, amount);
 ```
+
+Passing an `OrderId` where a `UserId` is expected is now a compile error, not a runtime surprise.
 
 Branded types are most valuable when you have multiple IDs or quantities that could be confused at call sites.
 
@@ -340,36 +340,43 @@ Branded types are most valuable when you have multiple IDs or quantities that co
 
 Complete reference for replacing mutations with immutable alternatives:
 
+**Arrays**
+
+| Operation | Expression |
+|---|---|
+| Add to end | `[...items, newItem]` |
+| Add to start | `[newItem, ...items]` |
+| Remove last | `items.slice(0, -1)` |
+| Remove first | `items.slice(1)` |
+| Remove at index | `[...items.slice(0, index), ...items.slice(index + 1)]` |
+| Insert at index | `[...items.slice(0, index), newItem, ...items.slice(index)]` |
+| Update at index | `items.map((item, i) => i === index ? newValue : item)` |
+| Reverse | `[...items].reverse()` |
+| Sort | `[...items].sort(compareFn)` |
+| Remove by ID | `items.filter(item => item.id !== targetId)` |
+| Replace by ID | `items.map(item => item.id === targetId ? newItem : item)` |
+
+**Objects**
+
+| Operation | Expression |
+|---|---|
+| Update property | `{ ...user, name: "New" }` |
+| Remove property | `const { removed, ...rest } = obj` |
+| Merge | `{ ...defaults, ...overrides }` |
+
+**Nested** — update a nested property:
+
 ```typescript
-// --- Arrays ---
-// Add to end:     [...items, newItem]
-// Add to start:   [newItem, ...items]
-// Remove last:    items.slice(0, -1)
-// Remove first:   items.slice(1)
-// Remove at index:
-//   [...items.slice(0, index), ...items.slice(index + 1)]
-// Insert at index:
-//   [...items.slice(0, index), newItem, ...items.slice(index)]
-// Update at index:
-//   items.map((item, i) => i === index ? newValue : item)
-// Reverse:        [...items].reverse()
-// Sort:           [...items].sort(compareFn)
-// Remove by ID:   items.filter(item => item.id !== targetId)
-// Replace by ID:  items.map(item => item.id === targetId ? newItem : item)
-
-// --- Objects ---
-// Update property:       { ...user, name: "New" }
-// Remove property:       const { removed, ...rest } = obj
-// Merge:                 { ...defaults, ...overrides }
-
-// --- Nested ---
-// Update nested property:
-const updated = {
+const updatedOrder = {
   ...order,
   shipping: { ...order.shipping, address: newAddress },
 };
-// Update item in nested array:
-const updated = {
+```
+
+Update an item inside a nested array:
+
+```typescript
+const updatedCart = {
   ...cart,
   items: cart.items.map((item, i) =>
     i === targetIndex ? { ...item, quantity: newQuantity } : item
@@ -383,27 +390,20 @@ const updated = {
 
 Use `map`, `filter`, `reduce` over imperative loops:
 
+| Intent | Expression |
+|---|---|
+| Transform | `users.map(u => u.email)` |
+| Filter | `users.filter(u => u.isActive)` |
+| Aggregate | `items.reduce((sum, item) => sum + item.price * item.quantity, 0)` |
+| Find (early termination) | `users.find(u => u.role === 'admin')` |
+| Check every / any | `users.every(u => u.verified)` · `users.some(u => u.role === 'admin')` |
+
+Chain them rather than building an intermediate:
+
 ```typescript
-// Transform
-const emails = users.map(u => u.email);
-
-// Filter
-const active = users.filter(u => u.isActive);
-
-// Aggregate
-const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-// Chain
 const activeEmails = users
   .filter(u => u.isActive)
   .map(u => u.email);
-
-// Find (early termination)
-const admin = users.find(u => u.role === 'admin');
-
-// Check conditions
-const allVerified = users.every(u => u.verified);
-const hasAdmin = users.some(u => u.role === 'admin');
 ```
 
 Loops are acceptable when early termination with side effects is needed and no declarative alternative exists.

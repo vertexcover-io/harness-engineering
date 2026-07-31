@@ -94,22 +94,20 @@ A test that inserts into the database AND calls an external API AND writes to a 
 
 ### Integration Test Structure
 
-```python
-# Example: Testing that order creation persists correctly
+Preconditions go in through the real database, and the assertion reads back out of it — the
+test name says what is being proven, so the arrange/act/assert phases need no labels:
 
+```python
 def test_created_order_is_retrievable(db_session):
-    # Arrange: set up preconditions using real database
     user = insert_user(db_session, make_user())
     product = insert_product(db_session, make_product(stock=10))
 
-    # Act: exercise the real code path including database writes
     order = order_service.create_order(
         db=db_session,
         user_id=user.id,
         items=[{"product_id": product.id, "quantity": 2}],
     )
 
-    # Assert: verify by reading back from the real database
     saved = order_repo.get_by_id(db_session, order.id)
     assert saved.user_id == user.id
     assert saved.total == product.price * 2
@@ -127,7 +125,7 @@ def test_order_creation_fails_on_insufficient_stock(db_session):
             items=[{"product_id": product.id, "quantity": 5}],
         )
 
-    # Verify no order was created (transaction rolled back)
+    # The failed create rolls its transaction back, so nothing is left behind.
     assert order_repo.count(db_session) == 0
 ```
 
@@ -211,31 +209,27 @@ The suite must bring up its own DB/services on runtime-allocated free ports and 
 
 ### E2E Test Structure
 
-```python
-# Example: Playwright e2e test for checkout flow
+Role-and-name selectors already name each step, so the journey reads without labels — blank
+lines group it:
 
+```python
 def test_user_can_complete_checkout(page, authenticated_user, seeded_products):
-    # Navigate to the product page
     page.goto("/products")
     page.get_by_role("link", name="Wireless Headphones").click()
 
-    # Add to cart
     page.get_by_role("button", name="Add to Cart").click()
     expect(page.get_by_text("Added to cart")).to_be_visible()
 
-    # Go to checkout
     page.get_by_role("link", name="Cart").click()
     page.get_by_role("button", name="Checkout").click()
 
-    # Fill payment (using test card)
+    # 4242… is the gateway's always-succeeds test card; any other number is declined.
     page.get_by_label("Card number").fill("4242424242424242")
     page.get_by_label("Expiry").fill("12/30")
     page.get_by_label("CVC").fill("123")
 
-    # Place order
     page.get_by_role("button", name="Place Order").click()
 
-    # Verify confirmation
     expect(page.get_by_text("Order confirmed")).to_be_visible()
     expect(page.get_by_text("Wireless Headphones")).to_be_visible()
 ```
