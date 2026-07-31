@@ -24,6 +24,8 @@
 
      TOP LEVEL
        title       the feature, as a short phrase
+       verdict     PASS | PARTIAL | FAIL, derived from coverage[] — the badge
+                   on the Overview pane
        summary     the Overview pane a reader lands on: what this feature does,
                    what was tested, how it was driven, what the verdict means
        drivenOn    where you drove, as what user, against which data
@@ -908,8 +910,8 @@ code {
     pane.textContent = '';
     const head = el('div', 'head');
     head.appendChild(el('h2', 'head__t', D.title || L.overview));
-    const v = (D.fields || []).find(f => /verdict/i.test(f.label || ''));
-    if (v) head.appendChild(el('span', 'head__v v--' + kind(String(v.value).split(/[\s—-]/)[0]), String(v.value).split(/\s[—-]\s/)[0]));
+    const v = D.verdict || ((D.fields || []).find(f => /verdict/i.test(f.label || '')) || {}).value;
+    if (v) head.appendChild(el('span', 'head__v v--' + kind(String(v).split(/[\s—-]/)[0]), String(v).split(/\s[—-]\s/)[0]));
     pane.appendChild(head);
     const sec = el('div', 'sec');
     const p = el('div', 'summary'); paras(p, D.summary); sec.appendChild(p);
