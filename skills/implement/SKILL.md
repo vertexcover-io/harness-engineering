@@ -22,13 +22,13 @@ a review-fix agent in the second.
 
 Two rules from the manual flow are **suspended**, in both cases:
 
-- **Do not invoke `code-review`.** Stage 4 owns review, across the whole change rather than one
-  phase — and a review agent that called it would be reviewing its own fixes.
-- **Do not ask before committing, and do not stop to summarise.** The pipeline runs to completion
-  without pausing; a phase's `## Commit` section is its message.
+- **Stage 4 owns review**, across the whole change rather than one phase — leave it there; a
+  review agent reviewing here would be reviewing its own fixes.
+- **Commit and keep going.** The pipeline runs to completion without pausing; a phase's
+  `## Commit` section is its message.
 
-**With a phase file, also read `skills/orchestrate/references/coder-contracts.md` before writing
-code.** It carries the phase-input mapping, the mandatory E2E leg and its gate, the report
+**With a phase file, read `skills/orchestrate/references/coder-contracts.md` before you open any
+source file.** It carries the phase-input mapping, the mandatory E2E leg and its gate, the report
 artifacts (`phase-<N>-claims.json` and `e2e-report.json`), and the `LIB_SUSPECT` signal. A phase
 that ends without those artifacts is blocked by the `coder-e2e-gate` hook, however green its tests
 are. A review-fix agent owes none of them — it is fixing inside phases that already reported.

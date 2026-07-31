@@ -208,7 +208,7 @@ The trust gate — every external dependency verified before planning builds on 
 
 Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 block in `references/stage-prompts.md` — one agent per phase file.
 
-**The coder agent invokes exactly one skill: `<SKILL:coder>`, defaulting to `implement`.** It is the single coding entry point, and it reaches `tdd`, `code-quality`, and `references/coder-contracts.md` on its own. Do not name those in the dispatch and do not invoke them alongside it — per Invariant 6, a second copy of what the skill already says is a second source of truth. Handing it the phase file is what puts it in pipeline mode, where the claims artifacts become mandatory and it neither reviews nor pauses to ask before committing.
+**The coder agent invokes exactly one skill: `<SKILL:coder>`, defaulting to `implement`** — dispatch shape in `references/stage-prompts.md`. Handing it the phase file is what puts it in pipeline mode.
 
 Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook reads it per phase, quality-gate's Check 9 reads the aggregate) **and** `e2e-report.json` (raw run summary — quality-gate reads this). Neither is an input to functional-verify: that skill derives its scenarios from the feature's docs, not from claims.
 
