@@ -45,8 +45,7 @@ Use `Glob` and `Grep` to find docs that reference changed code:
 1. **README files** — root README, package-level READMEs
 2. **CLAUDE.md / AGENTS.md** — project guidance for AI agents
 3. **docs/ directory** — architecture docs, guides, API references
-4. **Inline documentation** — JSDoc, docstrings, type annotations on changed files
-5. **Config references** — .env.example, docker-compose comments, CI config docs
+4. **Config references** — .env.example, docker-compose comments, CI config docs
 
 ### Step 3: Diff Docs Against Code
 
@@ -64,7 +63,6 @@ Apply updates using `Edit` (prefer over `Write` for existing files):
 **What to update:**
 - README sections that describe affected features
 - CLAUDE.md if project conventions, tooling commands, or architecture changed
-- Inline docs (JSDoc/docstrings) on changed public API surfaces
 - Architecture docs that reference modified components
 - Config examples if new env vars or settings were added
 
@@ -72,8 +70,10 @@ Apply updates using `Edit` (prefer over `Write` for existing files):
 - Don't create new doc files unless genuinely needed (e.g., a whole new subsystem)
 - Don't add boilerplate or filler content
 - Don't document internal/private implementation details
-- Don't add redundant comments that just restate the code
 - Don't touch docs unrelated to the changes
+
+**Scope.** This skill owns prose docs — README, CLAUDE.md, `docs/`, config examples. Comments
+inside source files, JSDoc and docstrings included, are not its surface.
 
 ### Step 5: Structure for Dual Audience
 
@@ -101,7 +101,7 @@ Return a summary of what was updated:
 Docs synced:
 - Updated: README.md — added new CLI command section
 - Updated: CLAUDE.md — added new env var, updated build command
-- Updated: src/auth/handler.ts — JSDoc on exported authenticate()
+- Updated: docs/api.md — documented the new /sessions endpoint
 - No changes needed: docs/architecture.md
 ```
 

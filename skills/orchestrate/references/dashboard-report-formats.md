@@ -103,7 +103,7 @@ reader sees the verdict at a glance, and every piece of evidence stays in the re
 | 4 | Coverage (diagnostic) | X% | Y% | INFO |
 | 5 | Scope compliance | — | in-plan / out-of-plan | PASS/FAIL |
 | 6 | Plan compliance | — | X/Y scenarios evidenced | PASS/FAIL |
-| 7 | Ignore comment audit | — | N new | PASS/FAIL |
+| 7 | Comment audit | — | N new ignore directives · M comments removed | PASS/FAIL |
 | 8 | Smoke test | — | run / none defined | PASS/INFO |
 | 9 | E2E report | — | X passed, 0 failed | PASS/FAIL |
 | 10 | Mutation spot-check | — | X/Y mutants killed | PASS/FAIL |

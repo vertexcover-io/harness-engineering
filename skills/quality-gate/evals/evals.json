@@ -12,7 +12,7 @@
         "Captures state snapshot by running git log --oneline -1 and git diff --stat before any checks",
         "Every command is run with the pattern: <command> 2>&1; echo \"EXIT_CODE=$?\"",
         "Report includes exact command, raw output, and exit code for every check executed",
-        "All mandatory checks are attempted: type checker, linter, test suite + behavior coverage (every spec matrix row's named test passes), scope compliance, plan compliance, ignore comment audit, and the mutation spot-check (Check 10)",
+        "All mandatory checks are attempted: type checker, linter, test suite + behavior coverage (every spec matrix row's named test passes), scope compliance, plan compliance, comment audit, and the mutation spot-check (Check 10)",
         "Coverage (Check 4) is reported as a diagnostic INFO — it never produces a FAIL verdict on its own",
         "Check 8 (smoke test) is attempted or noted as 'No smoke test defined'",
         "Reads baseline.json and compares current results against baseline values",
@@ -60,7 +60,7 @@
         "Runs all mandatory checks (including behavior coverage and the mutation spot-check) plus the optional smoke test",
         "Gate report sequence number is incremented based on existing reports in the directory",
         "Report includes verbatim output for all checks that were run before stagnation was determined",
-        "Includes the ignore comment audit check, scanning git diff for @ts-ignore, @ts-expect-error, eslint-disable, etc."
+        "Includes the comment audit check, scanning git diff for @ts-ignore, @ts-expect-error, eslint-disable, etc. (blocking), and judging each new comment against code-quality's load-bearing test — deleting the ones that fail and reporting each deletion"
       ],
       "anti_expectations": [
         "Does not retry or suggest retrying after detecting stagnation",

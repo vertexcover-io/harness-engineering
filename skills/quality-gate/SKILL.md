@@ -103,18 +103,31 @@ create/modify file table serves human review, not this gate.
 - Scenarios that require human judgment → flagged as `UNVERIFIABLE` (INFO, not BLOCKED)
 - Report: each scenario with its evidence or UNVERIFIABLE status
 
-### Check 7: Ignore Comment Audit
+### Check 7: Comment Audit
 
-- Run: `git diff --unified=0 2>&1 | grep -E '^\+[^+]'` and search for these patterns:
-  - `@ts-ignore`, `@ts-expect-error`
-  - `# noqa`
-  - `//nolint`
-  - `#[allow(`
-  - `eslint-disable`
+One scan, `git diff --unified=0 2>&1 | grep -E '^\+[^+]'`, read two ways.
+
+**Ignore directives — blocking.** Search the added lines for `@ts-ignore`, `@ts-expect-error`,
+`# noqa`, `//nolint`, `#[allow(`, `eslint-disable`.
+
 - Report exact file, line, and pattern for each match
-- **Pass:** No new ignore comments, OR all new ignore comments have inline justification
-- **Fail:** Any new ignore comment without inline justification → BLOCKED
-- Report: list of new ignore comments with context
+- **Pass:** No new ignore directives, OR all of them have inline justification
+- **Fail:** Any new ignore directive without inline justification → BLOCKED
+- This part alone decides the row's verdict.
+
+**New comments — judge and remove.** From the same added lines, take every one that is a comment.
+Read `code-quality`'s **Self-Documenting Code** section and judge each against its load-bearing
+test — that skill is the only definition; do not restate or reinvent the test here. Delete the
+comments that fail, with `Edit`, and leave the ones that pass.
+
+This is the last stage that reads the diff before it is committed, so a comment that survives here
+ships. Removing one cannot change behavior, which is why this check fixes rather than blocks — and
+why nothing needs re-running after it acts.
+
+- Report every deletion as `file:line` with the text removed
+- **Pass:** always — the failures are gone rather than flagged
+- `0 removed` is a result. State it; never omit the line.
+- Report: `N new ignore directives · M comments removed`
 
 ### Check 8 — removed
 
