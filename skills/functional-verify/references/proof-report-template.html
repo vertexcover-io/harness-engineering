@@ -12,17 +12,22 @@
 
      A scenario renders in this order:
        reason         free prose, under the verdict
+       Expected       FIXED FORMAT   expected
        Steps          FIXED FORMAT   steps[]
        Visual proof   FIXED FORMAT   video + frames[]
        Extra proofs   proofs[]       collapsed
        Files          artifacts[]
        free blocks    extra[]        anything the above does not fit
 
-     Steps and Visual proof are shaped on purpose — they are what makes two
-     reports comparable. Everything else is prose you shape yourself.
+     Expected, Steps and Visual proof are shaped on purpose — they are what
+     makes two reports comparable. Everything else is prose you shape yourself.
 
      TOP LEVEL
        title       the feature, as a short phrase
+       verdict     PASS | PARTIAL | FAIL, derived from coverage[] — the badge
+                   on the Overview pane
+       summary     the Overview pane a reader lands on: what this feature does,
+                   what was tested, how it was driven, what the verdict means
        drivenOn    where you drove, as what user, against which data
        fields[]    {label,value} shown behind "Stack · ports · sinks" in the bar
        labels{}    rename a section: steps, media, frames, proofs, files,
@@ -41,16 +46,22 @@
        title       the behaviour, as a sentence a QA would use
        verdict     Success | Failure | NOT VERIFIED | INVALID
                    Failure and NOT VERIFIED colour the row in the rail
-       reason      what decided it. Blank line starts a new paragraph.
-       steps[]     plain sentences, in the order you drove them
+       reason      what decided it — the diff between expected and observed.
+                   Blank line starts a new paragraph.
+       expected    what should happen, written from the docs before driving
+       steps[]     plain sentences naming the values you sent, in order
        video       NN_<slug>.mp4 — the first frame becomes its poster
        videoLabel  caption under the video (default "Watch the whole run")
        frames[]    {src,label} in order. A bare path works too — the label is
                    then derived from the filename.
        framesOpen  true to leave the Screenshots toggle open on load
        proofs[]    {tag,heading,body,capture} — what a frame cannot show.
+                   capture is the verbatim exchange, inline and whole: the
+                   request as sent, the status, the response as it came back.
                    tag is a one-word kind: queue, email, http, db, cache, file
-       artifacts[] {label,href,note} files sitting beside the report
+       artifacts[] {label,href,note} files the product produced, sitting beside
+                   the report — a webhook body, a download. Exchanges you drove
+                   live inline in proofs[].
        extra[]     {heading,body,capture} — free blocks, no imposed shape
 
      `code` and **bold** work in every prose field.
@@ -66,6 +77,7 @@
 <script type="application/json" id="report-data">
 {
   "title": "<feature name>",
+  "summary": "<what this feature does, in the product's terms>\n\n<what was tested and how it was driven>\n\n<what the verdict means for shipping>",
   "drivenOn": "<where you drove, as what user, against which data>",
   "fields": [
     {
@@ -85,8 +97,9 @@
       "title": "<the behaviour, as a sentence a QA would use>",
       "verdict": "Success",
       "reason": "<what decided it — the rendered string, the measured value, the status code>\n\n<a second paragraph if one observation is not enough>",
+      "expected": "<what should happen, from the docs, with the values it turns on>",
       "steps": [
-        "<the walk you drove>",
+        "<the walk you drove, naming the value each step sent>",
         "<one line per step>"
       ],
       "video": "01_<slug>.mp4",
@@ -308,6 +321,7 @@ a { color: var(--accent); }
   padding: 6px 10px; border: 1px solid currentColor; border-radius: 4px;
 }
 .summary { margin: 14px 0 0; font-size: 14px; color: var(--fg); max-width: 92ch; }
+.expect { border-left: 2px solid var(--line); padding-left: 12px; margin-top: 0; }
 .summary p { margin: 0 0 9px; }
 .summary p:last-child { margin: 0; }
 
@@ -610,6 +624,8 @@ code {
   };
 
   const L = Object.assign({
+    overview: 'Overview',
+    expected: 'Expected',
     steps: 'Steps',
     media: 'Visual proof',
     frames: 'Screenshots',
@@ -670,7 +686,17 @@ code {
 
   /* ── rail ── */
   const rail = document.getElementById('rail');
-  let current = S.length ? 0 : 'bugs';
+  let current = D.summary ? 'overview' : (S.length ? 0 : 'bugs');
+  const aux = [];
+
+  if (D.summary) {
+    const b = el('button', 'item item--aux');
+    b.type = 'button';
+    b.appendChild(el('span', 'item__t', L.overview));
+    b.addEventListener('click', () => select('overview'));
+    rail.appendChild(b);
+    aux.push(['overview', b]);
+  }
 
   const hScen = el('div', 'rail__h');
   hScen.appendChild(document.createTextNode('Scenarios'));
@@ -690,7 +716,6 @@ code {
 
   rail.appendChild(el('div', 'rail__sep'));
   rail.appendChild(el('div', 'rail__h', 'Report'));
-  const aux = [];
   [['bugs', L.bugs, BUGS.length, BUGS.length > 0], ['gaps', 'Not reached', GAPS.length, false]].forEach(([id, txt, c, hot]) => {
     if (id === 'gaps' && !GAPS.length) return;
     const b = el('button', 'item item--aux' + (hot ? ' item--fail' : ''));
@@ -748,6 +773,14 @@ code {
         src.split('/').pop().replace(/\.\w+$/, '').split('__').pop().replace(/^\d+_/, '').replace(/_/g, ' ')
     };
   });
+
+  /* Expected — FIXED FORMAT. s.expected: the outcome written from the docs before
+     driving, so a reader meets the bar before the evidence. */
+  function renderExpected(sec, s) {
+    const d = el('div', 'summary expect');
+    paras(d, s.expected);
+    sec.appendChild(d);
+  }
 
   /* Steps — FIXED FORMAT. s.steps[]: plain sentences, numbered in the order you drove them. */
   function renderSteps(sec, s) {
@@ -842,6 +875,7 @@ code {
      and put the field in the JSON. Steps and Visual proof are fixed format on
      purpose; everything below them is free prose. */
   const SECTIONS = [
+    ['expected', s => s.expected,                                 renderExpected],
     ['steps',  s => s.steps && s.steps.length,                    renderSteps],
     ['media',  s => s.video || (s.frames && s.frames.length),     renderVisual],
     ['proofs', s => s.proofs && s.proofs.length,                  renderProofs],
@@ -868,6 +902,24 @@ code {
       render(sec, s);
       pane.appendChild(sec);
     });
+  }
+
+  /* Overview — D.summary: what the feature is, what was tested, what the verdict means.
+     The pane a reader lands on when it is present. */
+  function drawOverview() {
+    pane.textContent = '';
+    const head = el('div', 'head');
+    head.appendChild(el('h2', 'head__t', D.title || L.overview));
+    const v = D.verdict || ((D.fields || []).find(f => /verdict/i.test(f.label || '')) || {}).value;
+    if (v) head.appendChild(el('span', 'head__v v--' + kind(String(v).split(/[\s—-]/)[0]), String(v).split(/\s[—-]\s/)[0]));
+    pane.appendChild(head);
+    const sec = el('div', 'sec');
+    const p = el('div', 'summary'); paras(p, D.summary); sec.appendChild(p);
+    if (D.drivenOn) {
+      sec.appendChild(el('p', 'sec__h', 'Driven on'));
+      const q = el('div', 'prose'); paras(q, D.drivenOn); sec.appendChild(q);
+    }
+    pane.appendChild(sec);
   }
 
   function drawBugs() {
@@ -918,7 +970,8 @@ code {
     current = id;
     rows.forEach((b, i) => b.classList.toggle('is-on', i === id));
     aux.forEach(([k, b]) => b.classList.toggle('is-on', k === id));
-    if (id === 'bugs') drawBugs();
+    if (id === 'overview') drawOverview();
+    else if (id === 'bugs') drawBugs();
     else if (id === 'gaps') drawGaps();
     else drawScenario(S[id], id);
     document.querySelector('.pane').scrollTop = 0;
@@ -1103,7 +1156,7 @@ code {
   });
 
   paint();
-  select(S.length ? 0 : 'bugs');
+  select(D.summary ? 'overview' : (S.length ? 0 : 'bugs'));
 })();
 </script>
 </body>

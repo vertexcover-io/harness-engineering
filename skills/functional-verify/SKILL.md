@@ -21,7 +21,8 @@ contract, a DB row — is proven headlessly at the same evidentiary bar (Step 3)
 entirely in Step 3, at full scope**: "backend-only" describes where the evidence comes from, never how much of the
 feature you verify. You produce **one file**, `verification/proof-report.html`, and the evidence beside it.
 
-- **The report is for a QA reader** — plain English, describing what a behaviour *is* rather than naming it.
+- **The report is for a QA reader.** A scenario answers four questions in plain English — what was tested, what went
+  in, what should have happened, what did. One behaviour per scenario, so its expectation fits in the sentences.
 - **One subject, one place** — a scenario, bug, or gap is written once and referenced elsewhere; evidence lives with
   the scenario it proves.
 
@@ -66,7 +67,7 @@ Everything this skill produces lives in the feature's `verification/` folder, fl
 .harness/<SPEC_NAME>/verification/
 ├── proof-report.html                        the deliverable
 ├── NN_<slug>.mp4                            one video per scenario (Step 5)
-├── NN_<slug>.<ext>                          API captures, webhook bodies, downloaded files
+├── NN_<slug>.<ext>                          files the product produced: webhook bodies, downloads
 └── screenshots/
     └── NN_<slug>__SS_<step>.png             every promoted frame, flat
 
@@ -140,11 +141,11 @@ verification and carries the whole scope** from *Scope* above. Read `references/
 your first request: it holds the shape of a headless walk, and the traps that make one look green when the code
 under test never ran.
 
-Run curl with `-w '\n%{http_code}'` and capture the exact command,
-status, and body; that becomes a `proofs[]` entry (shape in `references/writing-the-report.md`), so there is no
-separate receipt file. Record the verdict by exact-matching the expected response the design or plan
-describes. For a db check, query the database (an MCP tool, else the connection string from the stack you started in
-Step 1) and record actual against expected.
+Run curl with `-w '\n%{http_code}'` and keep the **verbatim exchange**, which a dev re-runs to check you: it goes
+**inline and whole** into a `proofs[]` entry (shape in `references/writing-the-report.md`) rather than into a file.
+Record the verdict by exact-matching the expected response the design or plan describes. For a db check, query the
+database (an MCP tool, else the connection string from the stack you started in Step 1) and keep that exchange the
+same way.
 
 **A triggered side effect is a claim too.** When a walk fires something out of band — email, SMS, webhook,
 delivered file — prove it at its sink (a project fact) with a **hard deadline** on the poll:
@@ -234,16 +235,11 @@ Assemble one video per scenario from the promoted frames in `screenshots/` — t
 
 ## Step 6 — Write the Proof Report, Then Report Back
 
-Copy `references/proof-report-template.html` to `verification/proof-report.html` and fill its JSON island — the
-field-by-field contract and completion checklist are in `references/writing-the-report.md`. The invariants it
-enforces: `coverage[]` accounts for every requirement id in the docs; every behaviour you were given is a scenario
-with a verdict (unverifiable → `NOT VERIFIED`, inapplicable → `INVALID`, neither dropped nor backfilled with an
-adjacent passing check); every `NOT VERIFIED` names its blocking mechanism, what you tried, and what would close
-it; every verdict cites a live observation from this run; no internal ids appear anywhere; nothing is said twice.
-
-**The overall verdict is derived, not chosen.** Read it off `coverage[]`: any scenario `Failure` → the run is
-`FAIL`; else any requirement `NOT VERIFIED` → `PARTIAL`; only an all-covered, all-`Success` run is `PASS`. A
-feature's headline promise left unproven is not a pass because the scenarios around it passed.
+Copy `references/proof-report-template.html` to `verification/proof-report.html` and fill its JSON island. The
+field-by-field contract, the derivation of the overall verdict, and the completion checklist are in
+`references/writing-the-report.md`. **The overall verdict is derived, not chosen** — a feature's headline promise
+left unproven is not a pass because the scenarios around it passed. **Done when every bullet of that checklist
+holds.**
 
 Then **report back to whoever dispatched you** — everything the report excludes belongs here: the derived verdict
 and the verdict per scenario; whether the feature works; every bug and what needs a decision rather than a fix; the
