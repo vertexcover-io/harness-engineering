@@ -58,8 +58,9 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1
 
 ## Start the server (background job)
 
-`serve` is long-running (keeps an HTTP server alive until `finalize`), so it MUST be a separate,
-backgrounded Bash call — foreground would block the pipeline:
+`serve` holds its process open until `finalize` kills it via `server.pid` (or it receives
+SIGINT/SIGTERM), so it MUST be a separate, backgrounded Bash call — foreground would block the
+pipeline:
 
 ```
 Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve", run_in_background=true)

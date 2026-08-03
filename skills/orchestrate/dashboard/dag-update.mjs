@@ -228,8 +228,19 @@ const cmdServe = async () => {
 
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const { port } = server.address();
-  writeFileSync(join(harnessDir, "server.pid"), String(process.pid));
-  writeFileSync(join(harnessDir, "server.port"), String(port));
+  const pidFile = join(harnessDir, "server.pid");
+  const portFile = join(harnessDir, "server.port");
+  writeFileSync(pidFile, String(process.pid));
+  writeFileSync(portFile, String(port));
+
+  const shutdown = () => {
+    server.close();
+    try { unlinkSync(pidFile); } catch {}
+    try { unlinkSync(portFile); } catch {}
+    process.exit(0);
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 
   const url = `http://localhost:${port}`;
   const opener =
@@ -242,9 +253,9 @@ const cmdServe = async () => {
   } catch {}
 
   process.stdout.write(`${url}\n`);
-  // Detach: server keeps running after this process exits. To match bash
-  // behavior (which backgrounds python3), we let Node keep the event loop alive
-  // — orchestrate is expected to kill via server.pid in finalize.
+  // keepAlive tells the CLI entrypoint to skip its process.exit — the server owns
+  // this process until finalize kills it via server.pid.
+  return { keepAlive: true, server };
 };
 
 const inlineDataIntoHtml = (htmlPath, dagFile, harnessDir) => {
@@ -352,7 +363,8 @@ export const run = async (argv = []) => {
         "Usage: dag-update.mjs <init|add-node|add-edge|set-status|set-artifact|write-report|serve|finalize> [args...]",
       );
     }
-    await handler(...rest);
+    const result = await handler(...rest);
+    if (result?.keepAlive) return { exitCode: 0, stderr: "", keepAlive: true, server: result.server };
     return { exitCode: 0, stderr: "" };
   } catch (e) {
     if (e instanceof DagExit) return { exitCode: e.exitCode, stderr: e.stderr };
@@ -363,7 +375,7 @@ export const run = async (argv = []) => {
 const isMain = () => import.meta.url === `file://${process.argv[1]}`;
 
 if (isMain()) {
-  const { exitCode, stderr } = await run(process.argv.slice(2));
+  const { exitCode, stderr, keepAlive } = await run(process.argv.slice(2));
   if (stderr) process.stderr.write(stderr);
-  process.exit(exitCode);
+  if (!keepAlive) process.exit(exitCode);
 }
