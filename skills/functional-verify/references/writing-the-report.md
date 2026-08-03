@@ -171,7 +171,9 @@ or not you reached it. It is what makes an incomplete run visible instead of ari
 ```
 
 Several ids pointing at one scenario is normal and good — a single walk that proves five requirements is a better
-walk. What is not allowed is an id in the docs with no row here.
+walk. One id proven by more than one walk — a desktop scenario and its phone replay — stays **one row** whose
+`scenario` names them both (`"01, 09"`), and takes the weaker of their verdicts. What is not allowed is an id in the
+docs with no row here.
 
 **`verdict` is derived from that table, never chosen:** any scenario `Failure` → `FAIL`; else any requirement
 `NOT VERIFIED` → `PARTIAL`; only an all-covered, all-`Success` run is `PASS`. Compute it after the table is
@@ -179,8 +181,12 @@ complete and write what it says, including when the run you just did feels like 
 
 ### Bugs
 
-`bugs[]` at the top level, each `{severity, origin, reachedBy, title, body}` — **bugs in the application**, defects
-that will bite a user or a developer.
+`bugs[]` at the top level, each `{severity, origin, reachedBy, scenario, title, body}` — **bugs in the
+application**, defects that will bite a user or a developer.
+
+`scenario` is the `n` of the scenario that reproduces it — the Step 4 walk you filmed for this bug. It is what
+carries the reader from the Bugs pane to the expectation, the observed behaviour and the video, so the entry never
+restates them.
 
 `reachedBy` and `origin` are the two Step 4 settled before you got here — the actor and surface that produced it,
 and what `git blame` said about where it came from:
@@ -190,6 +196,7 @@ and what `git blame` said about where it came from:
   "severity": "major",
   "origin": "pre-existing, worsened here",
   "reachedBy": "A returning customer changed plan on a lead whose proforma was raised the previous day — PATCH /demands/:leadId, ordinary account, nothing hand-written.",
+  "scenario": "09",
   "title": "…", "body": "…"
 }
 ```
@@ -205,10 +212,11 @@ no-op, a permission leak, a broken recovery path; or, for developers, a document
 contradicting the tree.
 
 Each is a bug report a maintainer could act on without asking you a question: what it is, its severity (blocker /
-major / minor) and why that rung and not the one above, the repro, and the video. What should have happened and what
-did are already the scenario's `expected` and `reason`, so the entry points at the scenario rather than restating
-them. Most consequential first. Your infrastructure adventures, the data you couldn't find, and the workaround that got
-the stack up go in what you report back to whoever dispatched you (Step 6). Found no bugs? Leave `bugs` empty; the
+major / minor) and why that rung and not the one above, and the repro. What should have happened and what did are
+already the scenario's `expected` and `reason`, so the entry names that scenario in `scenario` rather than
+restating them — and the reader reaches its video from there. Most consequential first. Your infrastructure
+adventures, the data you couldn't find, and the workaround that got the stack up go in what you report back to
+whoever dispatched you (Step 6). Found no bugs? Leave `bugs` empty; the
 sentence from Step 4 naming your best attack and why it didn't land goes in `bugsNote`, which renders either way.
 
 What this run could not reach goes in `gaps[]` — one entry per `NOT VERIFIED` scenario, and every field is
@@ -245,6 +253,8 @@ sentence above passes it. `attempted` is what you actually ran, distinct approac
   used, and an `origin` of `introduced here` / `pre-existing` / `pre-existing, worsened here` settled by `git blame`
   or the diff. An entry whose `reachedBy` you cannot write without saying "I wrote the value into the database
   myself" is not a bug — move it to `extra[]` or drop it.
+- Every `bugs[]` entry names in `scenario` the `n` of the scenario that reproduces it, and that scenario exists with
+  the `expected` and `reason` the entry leans on.
 - Every scenario carries an `expected` taken from the docs, `steps` naming the values it sent, and a `reason` that
   reads as the diff between the two.
 - Every `capture` shows a request a dev could paste and the complete response it returned, inline — nothing about an

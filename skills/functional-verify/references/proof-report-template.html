@@ -33,9 +33,11 @@
        labels{}    rename a section: steps, media, frames, proofs, files,
                    extra, bugs, gaps  (extra has no heading unless you name it)
        scenarios[] see below
-       bugs[]      {severity,origin,reachedBy,title,body}  severity: blocker | major | minor
+       bugs[]      {severity,origin,reachedBy,scenario,title,body}  severity: blocker | major | minor
                    origin: introduced here | pre-existing | pre-existing, worsened here
                    reachedBy: the actor and the surface that produced it — required
+                   scenario: the n of the scenario that reproduces it — required; its
+                   expected, reason and video are what the body no longer restates
        bugsNote    the attack you most expected to land, and why it did not
        gaps[]      what this run could not reach
 
@@ -154,6 +156,7 @@
       "severity": "blocker",
       "origin": "<introduced here | pre-existing | pre-existing, worsened here>",
       "reachedBy": "<the actor and the surface that produced this state — if you cannot name one, this is not a bug>",
+      "scenario": "<n of the scenario that reproduces it — its expected, reason and video>",
       "title": "<what a maintainer would call it>",
       "body": "<what it is, and what blame or diff settled its origin>\n\n**Repro:** <steps>"
     }
@@ -482,6 +485,12 @@ a { color: var(--accent); }
 }
 .bug__rl { font: 700 9.5px/1.6 var(--ui); letter-spacing: .1em; text-transform: uppercase; flex: none; }
 .bug__rb { flex: 1 1 240px; }
+.bug__go {
+  flex: none; font: 600 12.5px/1.5 var(--ui); color: var(--fg);
+  background: none; border: 1px solid var(--line-2); border-radius: 4px;
+  padding: 2px 8px; cursor: pointer;
+}
+.bug__go:hover { border-color: currentColor; }
 .bug__t { font-size: 14.5px; font-weight: 650; margin: 0; }
 .empty { color: var(--fg-2); font-size: 13.5px; }
 
@@ -942,6 +951,18 @@ code {
         const r = el('div', 'bug__r');
         r.appendChild(el('span', 'bug__rl', 'Reached by'));
         r.appendChild(el('span', 'bug__rb', b.reachedBy));
+        box.appendChild(r);
+      }
+      if (b.scenario != null) {
+        const i = S.findIndex(s => String(s.n) === String(b.scenario));
+        const r = el('div', 'bug__r');
+        r.appendChild(el('span', 'bug__rl', 'Proven in'));
+        if (i < 0) r.appendChild(el('span', 'bug__rb', 'Scenario ' + b.scenario + ' (missing)'));
+        else {
+          const a = el('button', 'bug__go', 'Scenario ' + S[i].n + ' — ' + (S[i].short || S[i].title || ''));
+          a.addEventListener('click', () => select(i));
+          r.appendChild(a);
+        }
         box.appendChild(r);
       }
       sec.appendChild(box);
