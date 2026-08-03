@@ -156,5 +156,30 @@ photographs as covered. Ask the page what is on top of each cell:
 **Every cell the frame is offered as evidence for must be un-occluded at its own centre, and the row must be
 identifiable in that same frame.**
 
+## Replaying the scenario on a phone
+
+`agent-browser set device "iPhone 14"` — a **device**, not a narrow viewport. An app that branches on user-agent or
+touch rather than width serves its desktop layout to a resized window, and you photograph a mobile pass that never
+happened.
+
+**Replay, don't re-shoot.** Set the device, then drive the walk again from its first click — the same batches and
+the same asserts as the desktop run, under the replay's own `NN_<slug>`. The phone's own path is the evidence: the
+CTA behind a hamburger that no longer opens, the touch handler that never fires, the sticky footer over the submit
+button all sit ahead of the final screen, where a frame shot at the end reaches none of them. Restore the desktop
+device afterwards, as with any setting you changed.
+
+The replay carries a verdict, so the walk answers the same question it answered on desktop:
+
+- **The closing assert returns the value it returned on desktop** — the outcome, not a similar-looking screen. This
+  is what the scenario's `expected` already claims, now claimed at phone width.
+- **Nothing scrolls sideways** — `(()=>({over: document.documentElement.scrollWidth -
+  document.documentElement.clientWidth}))()` returns `0`. Anything above zero is a bug with its measurement already
+  attached.
+- **Controls are reached the way the phone presents them** — driven through the menu the layout collapsed them into,
+  the way the user gets to them.
+
+A replay that fails is a `Failure` scenario and a `bugs[]` entry like any other, and its `reachedBy` writes itself:
+the user on that device, and the surface they touched.
+
 **Done when every scenario has a `NN_<slug>` set of promoted frames in `screenshots/` telling its whole story, each
 one backed by a passing assert and your own eyes.**

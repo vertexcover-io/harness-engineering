@@ -129,10 +129,15 @@ Open the UI service you started in Step 1 and hold **one session** for every sce
 `references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, and the capture loop are
 all there.
 
+A scenario driving **the surface the change landed on** is then **replayed on a phone** — the same walk driven
+again from its first click at an emulated phone, as its own numbered scenario in the same session. Whether this app
+is meant to work on a phone at all is a project fact like any other.
+
 The invariant governing the whole step: **a frame is evidence only once its assert passed and your own eyes
 confirmed it shows what you think.** Read at the moment you shoot — frames lag renders. **Done when every UI
 scenario has a `NN_<slug>` set of frames in `screenshots/` that tells its whole story, each frame backed by a
-passing assert and your own eyes.**
+passing assert and your own eyes; and every scenario on the surface the change landed on has a phone replay driven
+through to its closing assert, whatever that assert returned.**
 
 ## Step 3 — API, DB & Side-Effects: Proving What Has No Screen
 
