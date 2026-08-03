@@ -52,14 +52,22 @@ When `AUTO_MODE=true`:
 A stale harness runs stale contracts. Check the installed plugin against the published one **before the worktree exists**, so a halt here leaves nothing to clean up:
 
 ```bash
-LOCAL=$(jq -r .version "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/.claude-plugin/plugin.json")
-REMOTE=$(curl -fsSL --max-time 10 https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main/.claude-plugin/plugin.json | jq -r .version)
-echo "LOCAL=$LOCAL REMOTE=$REMOTE"
+semver() { case "$1" in ''|*[!0-9.]*|.*|*.) return 1 ;; esac; }
+LOCAL=$(jq -er '.version // empty' "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/.claude-plugin/plugin.json" 2>/dev/null) || LOCAL=''
+REMOTE=$(curl -fsSL --max-time 10 https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main/.claude-plugin/plugin.json 2>/dev/null | jq -er '.version // empty' 2>/dev/null) || REMOTE=''
+semver "$LOCAL" || LOCAL=''; semver "$REMOTE" || REMOTE=''
+if [ -z "$LOCAL" ] || [ -z "$REMOTE" ]; then echo "VERSION_GATE=UNKNOWN local=${LOCAL:-?} remote=${REMOTE:-?}"
+elif [ "$(printf '%s\n%s\n' "$LOCAL" "$REMOTE" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$LOCAL" ]; then echo "VERSION_GATE=OK local=$LOCAL remote=$REMOTE"
+else echo "VERSION_GATE=STALE local=$LOCAL remote=$REMOTE"; fi
 ```
 
-- `REMOTE` empty or unparseable (offline, rate-limited) → log one warning line and continue. A network blip does not block a ticket.
-- `LOCAL` lower than `REMOTE` under `sort -V` → **stop before creating anything.** Report both versions and tell the user to update the harness plugin (`/plugin`), then reload the session or restart Claude and re-run the same orchestrate command. In `--auto` mode, log the same warning and continue — CI cannot reload a session.
-- Otherwise (equal, or local ahead — a dev checkout) → continue.
+Act on the printed verdict — do not re-derive it:
+
+- `OK` (equal, or local ahead — a dev checkout) → continue.
+- `UNKNOWN` → log one warning line and continue. Either side may be missing for reasons that have nothing to do with staleness — offline, a proxy or rate-limit page returning JSON with no `version`, an unreadable manifest — and none of them justify blocking a ticket. The gate only ever halts on a version it actually read.
+- `STALE` → **stop before creating anything.** Report both versions and tell the user to update the harness plugin (`/plugin`), then reload the session or restart Claude and re-run the same orchestrate command. In `--auto` mode, log the same warning and continue — CI cannot reload a session.
+
+Both versions are validated as dotted numerics before they are compared, and the comparison is a POSIX field-wise numeric sort — `1.20.0` correctly outranks `1.9.0`, and `sort -V` (absent on some BSD userlands) is not required.
 
 ### Step 3: Create Worktree, then Bootstrap the DAG Dashboard
 
