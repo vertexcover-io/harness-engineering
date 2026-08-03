@@ -233,14 +233,11 @@ const cmdServe = async () => {
   writeFileSync(pidFile, String(process.pid));
   writeFileSync(portFile, String(port));
 
-  const shutdown = () => {
+  const cleanup = () => {
     server.close();
     try { unlinkSync(pidFile); } catch {}
     try { unlinkSync(portFile); } catch {}
-    process.exit(0);
   };
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
 
   const url = `http://localhost:${port}`;
   const opener =
@@ -254,8 +251,10 @@ const cmdServe = async () => {
 
   process.stdout.write(`${url}\n`);
   // keepAlive tells the CLI entrypoint to skip its process.exit — the server owns
-  // this process until finalize kills it via server.pid.
-  return { keepAlive: true, server };
+  // this process until finalize kills it via server.pid. Signal handling belongs to
+  // the entrypoint: an in-process caller must not get process-wide handlers it never
+  // asked for, so it gets cleanup() to call instead.
+  return { keepAlive: true, server, cleanup };
 };
 
 const inlineDataIntoHtml = (htmlPath, dagFile, harnessDir) => {
@@ -364,7 +363,9 @@ export const run = async (argv = []) => {
       );
     }
     const result = await handler(...rest);
-    if (result?.keepAlive) return { exitCode: 0, stderr: "", keepAlive: true, server: result.server };
+    if (result?.keepAlive) {
+      return { exitCode: 0, stderr: "", keepAlive: true, server: result.server, cleanup: result.cleanup };
+    }
     return { exitCode: 0, stderr: "" };
   } catch (e) {
     if (e instanceof DagExit) return { exitCode: e.exitCode, stderr: e.stderr };
@@ -375,7 +376,14 @@ export const run = async (argv = []) => {
 const isMain = () => import.meta.url === `file://${process.argv[1]}`;
 
 if (isMain()) {
-  const { exitCode, stderr, keepAlive } = await run(process.argv.slice(2));
+  const { exitCode, stderr, keepAlive, cleanup } = await run(process.argv.slice(2));
   if (stderr) process.stderr.write(stderr);
   if (!keepAlive) process.exit(exitCode);
+
+  const shutdown = () => {
+    cleanup?.();
+    process.exit(0);
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 }
