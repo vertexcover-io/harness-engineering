@@ -163,10 +163,10 @@ touch rather than width serves its desktop layout to a resized window, and you p
 happened.
 
 **Replay, don't re-shoot.** Set the device, then drive the walk again from its first click — the same batches and
-the same asserts as the desktop run, under the replay's own `NN_<slug>`. Switching device at the end and
-re-shooting the last screen proves one layout and nothing about how a phone reaches it: the CTA behind a hamburger
-that no longer opens, the touch handler that never fires, the sticky footer sitting on the submit button all live
-on the path that gets skipped. Restore the desktop device afterwards, as with any setting you changed.
+the same asserts as the desktop run, under the replay's own `NN_<slug>`. The phone's own path is the evidence: the
+CTA behind a hamburger that no longer opens, the touch handler that never fires, the sticky footer over the submit
+button all sit ahead of the final screen, where a frame shot at the end reaches none of them. Restore the desktop
+device afterwards, as with any setting you changed.
 
 The replay carries a verdict, so the walk answers the same question it answered on desktop:
 
@@ -175,10 +175,8 @@ The replay carries a verdict, so the walk answers the same question it answered 
 - **Nothing scrolls sideways** — `(()=>({over: document.documentElement.scrollWidth -
   document.documentElement.clientWidth}))()` returns `0`. Anything above zero is a bug with its measurement already
   attached.
-- **Every element a frame is offered as evidence for is un-occluded at its centre**, by the `elementFromPoint` check
-  above — the narrow layout is exactly where a sticky bar lands on top of what you photographed.
 - **Controls are reached the way the phone presents them** — driven through the menu the layout collapsed them into,
-  never bypassed by clicking a node the user cannot see.
+  the way the user gets to them.
 
 A replay that fails is a `Failure` scenario and a `bugs[]` entry like any other, and its `reachedBy` writes itself:
 the user on that device, and the surface they touched.

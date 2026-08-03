@@ -43,13 +43,13 @@ resize the canvas to the frames. Widening it to swallow the bars is what squashe
 shape and passes off a geometry that was never on screen. Prove the shape survived before you leave this step:
 
 ```bash
-ffmpeg -hide_banner -ss <seconds-into-a-phone-frame> -t 0.5 -i NN_<slug>.mp4 -vf cropdetect -f null - 2>&1 \
+ffmpeg -hide_banner -ss 1 -t 0.5 -i NN_<slug>.mp4 -vf cropdetect -f null - 2>&1 \
   | grep -o 'crop=[0-9:]*' | tail -1
 ```
 
 Keep the default loglevel — `-v error` silences cropdetect itself. It reports the picture inside the bars, so a
-phone frame comes back a few hundred pixels wide (`crop=320:720:478:0`), never the full `crop=1280:720:0:0`. Full
-width on a portrait frame means it was stretched.
+phone replay's video comes back a few hundred pixels wide (`crop=320:720:478:0`), never the full
+`crop=1280:720:0:0`. Full width on a portrait frame means it was stretched.
 
 **Keep the frames** — they are the only machine-readable evidence, and a re-grade or second look needs the PNGs. If
 a merge fails, name the scenario and move on; its frames still prove it.
@@ -172,8 +172,8 @@ or not you reached it. It is what makes an incomplete run visible instead of ari
 
 Several ids pointing at one scenario is normal and good — a single walk that proves five requirements is a better
 walk. One id proven by more than one walk — a desktop scenario and its phone replay — stays **one row** whose
-`scenario` names them both (`"01, 09"`), and takes the weaker of their verdicts. What is not allowed is an id in the
-docs with no row here.
+`scenario` names them both (`"01, 09"`), carrying `Failure` if either failed and `NOT VERIFIED` if either went
+unproven. What is not allowed is an id in the docs with no row here.
 
 **`verdict` is derived from that table, never chosen:** any scenario `Failure` → `FAIL`; else any requirement
 `NOT VERIFIED` → `PARTIAL`; only an all-covered, all-`Success` run is `PASS`. Compute it after the table is
@@ -216,8 +216,8 @@ major / minor) and why that rung and not the one above, and the repro. What shou
 already the scenario's `expected` and `reason`, so the entry names that scenario in `scenario` rather than
 restating them — and the reader reaches its video from there. Most consequential first. Your infrastructure
 adventures, the data you couldn't find, and the workaround that got the stack up go in what you report back to
-whoever dispatched you (Step 6). Found no bugs? Leave `bugs` empty; the
-sentence from Step 4 naming your best attack and why it didn't land goes in `bugsNote`, which renders either way.
+whoever dispatched you (Step 6). Found no bugs? Leave `bugs` empty; the sentence from Step 4 naming your best
+attack and why it didn't land goes in `bugsNote`, which renders either way.
 
 What this run could not reach goes in `gaps[]` — one entry per `NOT VERIFIED` scenario, and every field is
 required, because a gap without them is indistinguishable from an early stop:
