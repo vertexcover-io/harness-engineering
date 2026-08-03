@@ -19,7 +19,7 @@ Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & 
 
 ## Invariants
 
-1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, create the worktree, start the dashboard inside it.
+1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, gate on the plugin version, create the worktree, start the dashboard inside it.
 2. **No pause after Stage 2.** Two skills own approval gates of their own — `brainstorm` (its design gate, Stage 1) and `planning` (its plan gate, Stage 2). Those are the only pauses, they belong to the skills, and both self-bypass in `--auto`. Once the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back with NO stopping, pausing, questions, or interim summaries. The orchestrator adds no gate of its own. Internal corrective re-dispatches (e.g. LIB_SUSPECT loopback) are NOT pauses — perform them automatically and keep going.
 3. **Halt only on a genuine BLOCK/FAIL** (functional verification FAILED, quality gate BLOCKED/STAGNATION, review hard-standards failure, library-probe BLOCKED, or a sub-agent error). On halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.
 4. **Every question uses `AskUserQuestion`** — never plain text. In `--auto` mode, skip all `AskUserQuestion` calls.
@@ -47,7 +47,29 @@ When `AUTO_MODE=true`:
 - Skip PR creation in Stage 6 — only commit and push; caller handles PR.
 - All artifacts still produced (design docs, specs, plans) for auditability.
 
-### Step 2: Create Worktree, then Bootstrap the DAG Dashboard
+### Step 2: Plugin Version Gate
+
+A stale harness runs stale contracts. Check the installed plugin against the published one **before the worktree exists**, so a halt here leaves nothing to clean up:
+
+```bash
+semver() { case "$1" in ''|*[!0-9.]*|.*|*.) return 1 ;; esac; }
+LOCAL=$(jq -er '.version // empty' "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/.claude-plugin/plugin.json" 2>/dev/null) || LOCAL=''
+REMOTE=$(curl -fsSL --max-time 10 https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main/.claude-plugin/plugin.json 2>/dev/null | jq -er '.version // empty' 2>/dev/null) || REMOTE=''
+semver "$LOCAL" || LOCAL=''; semver "$REMOTE" || REMOTE=''
+if [ -z "$LOCAL" ] || [ -z "$REMOTE" ]; then echo "VERSION_GATE=UNKNOWN local=${LOCAL:-?} remote=${REMOTE:-?}"
+elif [ "$(printf '%s\n%s\n' "$LOCAL" "$REMOTE" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$LOCAL" ]; then echo "VERSION_GATE=OK local=$LOCAL remote=$REMOTE"
+else echo "VERSION_GATE=STALE local=$LOCAL remote=$REMOTE"; fi
+```
+
+Act on the printed verdict — do not re-derive it:
+
+- `OK` (equal, or local ahead — a dev checkout) → continue.
+- `UNKNOWN` → log one warning line and continue. Either side may be missing for reasons that have nothing to do with staleness — offline, a proxy or rate-limit page returning JSON with no `version`, an unreadable manifest — and none of them justify blocking a ticket. The gate only ever halts on a version it actually read.
+- `STALE` → **stop before creating anything.** Report both versions and tell the user to update the harness plugin (`/plugin`), then reload the session or restart Claude and re-run the same orchestrate command. In `--auto` mode, log the same warning and continue — CI cannot reload a session.
+
+Both versions are validated as dotted numerics before they are compared, and the comparison is a POSIX field-wise numeric sort — `1.20.0` correctly outranks `1.9.0`, and `sort -V` (absent on some BSD userlands) is not required.
+
+### Step 3: Create Worktree, then Bootstrap the DAG Dashboard
 
 DAG commands, the init block, and the transition pattern all live in **`references/dag-commands.md`**. Resolve `DAG_SCRIPT` first:
 
@@ -159,10 +181,10 @@ Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys 
 
 ### Stage 0: Setup (Main Conversation)
 
-Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
+Worktree already created in Step 3 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
 1. `set-status baseline running`.
-2. **Invoke `pipeline-setup` via `Skill`** — it owns tooling detection, baseline metrics, the artifact directory, and lesson routing. Do not hand-roll any of it (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
+2. **Invoke `pipeline-setup` via `Skill`** — it owns tooling detection, baseline metrics, the artifact directory, and lesson routing. Do not hand-roll any of it (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 3, and the skill adopts a caller-supplied path instead of creating a second one.
 3. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`, and **`ROUTED_LESSONS`** (`.harness/<SPEC_NAME>/relevant-lessons.md` — may hold the no-match sentinel, which is still a valid path to pass on). Every later stage that takes a `Lessons:` path takes this one; there is no other producer of it.
 4. Create the directories `pipeline-setup` does not: `.harness/<SPEC_NAME>/verification/screenshots/`, `.harness/<SPEC_NAME>/verify-staging/`, `.harness/<SPEC_NAME>/review/`, and `.harness/<SPEC_NAME>/phases/` (`reports/` already created by dashboard init). The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored — artifacts reach reviewers out-of-band.
 5. **Load stage config.** If `orchestrate.config.json` exists at the worktree root, `Read` its `stages` map into `STAGE_CONFIG`; else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md`.
