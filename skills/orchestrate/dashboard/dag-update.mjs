@@ -242,9 +242,8 @@ const cmdServe = async () => {
   } catch {}
 
   process.stdout.write(`${url}\n`);
-  // Detach: server keeps running after this process exits. To match bash
-  // behavior (which backgrounds python3), we let Node keep the event loop alive
-  // — orchestrate is expected to kill via server.pid in finalize.
+  // The listening socket keeps the event loop alive on its own — that is what makes
+  // serve long-running. finalize kills it via server.pid.
 };
 
 const inlineDataIntoHtml = (htmlPath, dagFile, harnessDir) => {
@@ -365,5 +364,7 @@ const isMain = () => import.meta.url === `file://${process.argv[1]}`;
 if (isMain()) {
   const { exitCode, stderr } = await run(process.argv.slice(2));
   if (stderr) process.stderr.write(stderr);
-  process.exit(exitCode);
+  // Never process.exit() here: it would kill serve's listening socket the moment it
+  // starts. Setting exitCode lets each command end when its own work is done.
+  process.exitCode = exitCode;
 }

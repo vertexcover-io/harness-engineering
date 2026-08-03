@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -105,4 +105,50 @@ test("S7: dag-update.mjs CLI still exits 1 with usage on an unknown subcommand",
   const r = spawnSync(process.execPath, [DAG_CLI, "bogus"], { encoding: "utf8" });
   assert.equal(r.status, 1);
   assert.ok((r.stderr || "").includes("Usage:"), `expected usage on stderr, got:\n${r.stderr}`);
+});
+
+const firstLine = (child) =>
+  new Promise((resolve, reject) => {
+    let buf = "";
+    child.stdout.on("data", (d) => {
+      buf += d;
+      const nl = buf.indexOf("\n");
+      if (nl !== -1) resolve(buf.slice(0, nl));
+    });
+    child.once("exit", (code) => reject(new Error(`exited ${code} before printing a URL`)));
+  });
+
+test("CLI 'serve' keeps serving after printing its URL - it must not exit 0 immediately", async () => {
+  const dir = makeHarnessDir("running", { n1: { status: "running" } });
+  const child = spawn(process.execPath, [DAG_CLI, "serve"], {
+    env: { ...process.env, HARNESS_DIR: dir, BROWSER: "true" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    const url = await firstLine(child);
+    assert.match(url, /^http:\/\/localhost:\d+$/);
+    assert.equal(child.exitCode, null, "serve process died instead of staying up");
+
+    const res = await fetch(`${url}/`);
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /<html/i);
+    assert.equal((await fetch(`${url}/dag.json`)).status, 200);
+  } finally {
+    child.kill();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI 'set-status' still exits 0 promptly - keeping serve alive must not hang the other commands", () => {
+  const dir = makeHarnessDir("running", { n1: { status: "running" } });
+  try {
+    const r = spawnSync(process.execPath, [DAG_CLI, "set-status", "n1", "done"], {
+      env: { ...process.env, HARNESS_DIR: dir },
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    assert.equal(r.status, 0);
+    assert.equal(r.signal, null, "command did not exit on its own");
+    assert.equal(readStatus(dir, "n1"), "done");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
