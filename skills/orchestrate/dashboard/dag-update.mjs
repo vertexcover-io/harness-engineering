@@ -228,16 +228,8 @@ const cmdServe = async () => {
 
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const { port } = server.address();
-  const pidFile = join(harnessDir, "server.pid");
-  const portFile = join(harnessDir, "server.port");
-  writeFileSync(pidFile, String(process.pid));
-  writeFileSync(portFile, String(port));
-
-  const cleanup = () => {
-    server.close();
-    try { unlinkSync(pidFile); } catch {}
-    try { unlinkSync(portFile); } catch {}
-  };
+  writeFileSync(join(harnessDir, "server.pid"), String(process.pid));
+  writeFileSync(join(harnessDir, "server.port"), String(port));
 
   const url = `http://localhost:${port}`;
   const opener =
@@ -250,11 +242,8 @@ const cmdServe = async () => {
   } catch {}
 
   process.stdout.write(`${url}\n`);
-  // keepAlive tells the CLI entrypoint to skip its process.exit — the server owns
-  // this process until finalize kills it via server.pid. Signal handling belongs to
-  // the entrypoint: an in-process caller must not get process-wide handlers it never
-  // asked for, so it gets cleanup() to call instead.
-  return { keepAlive: true, server, cleanup };
+  // The listening socket keeps the event loop alive on its own — that is what makes
+  // serve long-running. finalize kills it via server.pid.
 };
 
 const inlineDataIntoHtml = (htmlPath, dagFile, harnessDir) => {
@@ -362,10 +351,7 @@ export const run = async (argv = []) => {
         "Usage: dag-update.mjs <init|add-node|add-edge|set-status|set-artifact|write-report|serve|finalize> [args...]",
       );
     }
-    const result = await handler(...rest);
-    if (result?.keepAlive) {
-      return { exitCode: 0, stderr: "", keepAlive: true, server: result.server, cleanup: result.cleanup };
-    }
+    await handler(...rest);
     return { exitCode: 0, stderr: "" };
   } catch (e) {
     if (e instanceof DagExit) return { exitCode: e.exitCode, stderr: e.stderr };
@@ -376,14 +362,9 @@ export const run = async (argv = []) => {
 const isMain = () => import.meta.url === `file://${process.argv[1]}`;
 
 if (isMain()) {
-  const { exitCode, stderr, keepAlive, cleanup } = await run(process.argv.slice(2));
+  const { exitCode, stderr } = await run(process.argv.slice(2));
   if (stderr) process.stderr.write(stderr);
-  if (!keepAlive) process.exit(exitCode);
-
-  const shutdown = () => {
-    cleanup?.();
-    process.exit(0);
-  };
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
+  // Never process.exit() here: it would kill serve's listening socket the moment it
+  // starts. Setting exitCode lets each command end when its own work is done.
+  process.exitCode = exitCode;
 }

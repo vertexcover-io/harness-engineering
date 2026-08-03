@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -139,41 +139,16 @@ test("CLI 'serve' keeps serving after printing its URL - it must not exit 0 imme
   }
 });
 
-test("dagRun(['serve']) reports keepAlive so the CLI knows not to exit; other commands do not", async () => {
+test("CLI 'set-status' still exits 0 promptly - keeping serve alive must not hang the other commands", () => {
   const dir = makeHarnessDir("running", { n1: { status: "running" } });
   try {
-    const served = await withHarnessDir(dir, () => dagRun(["serve"]));
-    assert.equal(served.exitCode, 0);
-    assert.equal(served.keepAlive, true);
-    served.cleanup();
-
-    const status = await withHarnessDir(dir, () => dagRun(["set-status", "n1", "done"]));
-    assert.notEqual(status.keepAlive, true);
-    assert.notEqual((await dagRun(["bogus"])).keepAlive, true);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("dagRun(['serve']) installs no process signal handlers - a stale one would kill the host on SIGINT", async () => {
-  const dir = makeHarnessDir("running", { n1: { status: "running" } });
-  const before = ["SIGINT", "SIGTERM"].map((s) => process.listenerCount(s));
-  try {
-    const served = await withHarnessDir(dir, () => dagRun(["serve"]));
-    const after = ["SIGINT", "SIGTERM"].map((s) => process.listenerCount(s));
-    served.cleanup();
-    assert.deepEqual(after, before, "serve registered a process-wide signal handler");
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("cleanup() returned by serve stops the server and removes its pid/port files", async () => {
-  const dir = makeHarnessDir("running", { n1: { status: "running" } });
-  try {
-    const served = await withHarnessDir(dir, () => dagRun(["serve"]));
-    const port = readFileSync(join(dir, "server.port"), "utf8");
-    assert.equal((await fetch(`http://localhost:${port}/dag.json`)).status, 200);
-
-    served.cleanup();
-    assert.equal(existsSync(join(dir, "server.pid")), false);
-    assert.equal(existsSync(join(dir, "server.port")), false);
-    await assert.rejects(() => fetch(`http://localhost:${port}/dag.json`));
+    const r = spawnSync(process.execPath, [DAG_CLI, "set-status", "n1", "done"], {
+      env: { ...process.env, HARNESS_DIR: dir },
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    assert.equal(r.status, 0);
+    assert.equal(r.signal, null, "command did not exit on its own");
+    assert.equal(readStatus(dir, "n1"), "done");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
