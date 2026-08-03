@@ -156,18 +156,32 @@ photographs as covered. Ask the page what is on top of each cell:
 **Every cell the frame is offered as evidence for must be un-occluded at its own centre, and the row must be
 identifiable in that same frame.**
 
-## The same scenario on a phone
+## Replaying the scenario on a phone
 
 `agent-browser set device "iPhone 14"` — a **device**, not a narrow viewport. An app that branches on user-agent or
 touch rather than width serves its desktop layout to a resized window, and you photograph a mobile pass that never
 happened.
 
-**Re-shoot, don't re-drive.** Switch device at the end of the scenario and shoot the frames that carry the feature;
-the walk stays driven once. Then restore the desktop device before the next scenario, as with any setting you
-changed.
+**Replay, don't re-shoot.** Set the device, then drive the walk again from its first click — the same batches and
+the same asserts as the desktop run, under the replay's own `NN_<slug>`. Switching device at the end and
+re-shooting the last screen proves one layout and nothing about how a phone reaches it: the CTA behind a hamburger
+that no longer opens, the touch handler that never fires, the sticky footer sitting on the submit button all live
+on the path that gets skipped. Restore the desktop device afterwards, as with any setting you changed.
 
-What a phone frame is worth shooting for is yours to judge on the page in front of you — a phone claim cites a live
-observation like every other claim here.
+The replay carries a verdict, so the walk answers the same question it answered on desktop:
+
+- **The closing assert returns the value it returned on desktop** — the outcome, not a similar-looking screen. This
+  is what the scenario's `expected` already claims, now claimed at phone width.
+- **Nothing scrolls sideways** — `(()=>({over: document.documentElement.scrollWidth -
+  document.documentElement.clientWidth}))()` returns `0`. Anything above zero is a bug with its measurement already
+  attached.
+- **Every element a frame is offered as evidence for is un-occluded at its centre**, by the `elementFromPoint` check
+  above — the narrow layout is exactly where a sticky bar lands on top of what you photographed.
+- **Controls are reached the way the phone presents them** — driven through the menu the layout collapsed them into,
+  never bypassed by clicking a node the user cannot see.
+
+A replay that fails is a `Failure` scenario and a `bugs[]` entry like any other, and its `reachedBy` writes itself:
+the user on that device, and the surface they touched.
 
 **Done when every scenario has a `NN_<slug>` set of promoted frames in `screenshots/` telling its whole story, each
 one backed by a passing assert and your own eyes.**
