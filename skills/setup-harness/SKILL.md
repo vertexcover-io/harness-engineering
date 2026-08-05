@@ -1,6 +1,6 @@
 ---
 name: setup-harness
-description: "Preflight the harness in a repo — probe for the tools, git wiring, and tracker credentials the pipeline needs, install what's missing, and hand the user the short list only they can do. Use when the user says 'set up the harness', is running a harness skill in this repo for the first time, or when a skill halts on BLOCKED:no-agent-browser, an unset tracker credential, or a standing CLAUDE.md/memory instruction that stops a pipeline stage."
+description: "Preflight the harness in a repo — probe for the tools, git wiring, and tracker credentials the pipeline needs, install what's missing, and hand the user the short list only they can do. Use when the user says 'set up the harness', is running a harness skill in this repo for the first time, or when a skill halts on BLOCKED:no-agent-browser or BLOCKED:no-infra, an unset tracker credential, or a standing CLAUDE.md/memory instruction that stops a pipeline stage."
 argument-hint: "[optional: project root — defaults to cwd]"
 allowed-tools: Bash, Read, Edit, Write, AskUserQuestion
 user-invocable: true
@@ -14,7 +14,7 @@ Three kinds of red, and the split decides who acts:
 
 - **Yours** — a missing binary or a `.gitignore` line. Install or edit it in Step 3 without asking.
 - **Contested** — a standing instruction in their `CLAUDE.md`, memory, or settings that countermands something the pipeline does unattended. Yours to fix, theirs to approve: propose the edit in Step 4, apply only the answer they pick.
-- **Theirs** — anything holding a secret or a browser login: authentication, tokens, workspace ids. Never attempt these; collect them into the Step 5 summary.
+- **Theirs** — anything holding a secret or a browser login: authentication, tokens, workspace ids. Never attempt these; collect them into the Step 6 summary.
 
 Run every step from the **main repo root**, not a worktree — `git rev-parse --show-toplevel`. `.gitignore` lives there.
 
@@ -78,11 +78,11 @@ uname -s; command -v brew apt-get dnf pacman zypper apk winget 2>/dev/null
 
 After installing worktrunk, run `wt config shell install` — it wires the shell integration the CLI needs.
 
-Prefer the path that needs no `sudo`. When the only route is a system package manager that will prompt for a password, install nothing: put the exact command in the Step 4 summary and let the user run it.
+Prefer the path that needs no `sudo`. When the only route is a system package manager that will prompt for a password, install nothing: put the exact command in the Step 6 summary and let the user run it.
 
 `fallow` and `radon` need no install — tech-debt-finder fetches them on demand and skips cleanly when offline.
 
-**Done when** every tool Step 1 printed MISSING is either installed and re-probed OK, or listed in Step 5 with the reason it could not be installed here.
+**Done when** every tool Step 1 printed MISSING is either installed and re-probed OK, or listed in Step 6 with the reason it could not be installed here.
 
 ## Step 4 — Resolve contested instructions
 
@@ -92,15 +92,27 @@ Read every file the probe printed under `instructions`, in full. Any standing in
 
 `.claude/settings.json` outranks prose. A `permissions.deny` entry or a blocking `PreToolUse` hook is a wall, not a tendency — the stage fails outright and no reasoning recovers it.
 
-Sort by cost: **halting** (the run stops, or `--auto` waits on an answer that never comes) against **friction** (a stage degrades and still finishes). Ask about the halting ones; friction goes to Step 6.
+Sort by cost: **halting** (the run stops, or `--auto` waits on an answer that never comes) against **friction** (a stage degrades and still finishes). Ask about the halting ones; friction goes to Step 7.
 
-Per halting conflict, quote the line, name the stage it stops, and ask: **scope it** so the directive stands but exempts the pipeline (default), **remove it**, or **keep it** — a kept one stays red through Step 6.
+Per halting conflict, quote the line, name the stage it stops, and ask: **scope it** so the directive stands but exempts the pipeline (default), **remove it**, or **keep it** — a kept one stays red through Step 7.
 
 Scope a conflict living outside this repo — `~/.claude/CLAUDE.md`, `~/.claude/rules/`, memory — by writing the exemption into the repo's own `CLAUDE.md`. Repo-local wins here and their other projects stay untouched; setup never mutates state outside the repo it was pointed at.
 
 **Done when** every file the probe listed has been read in full, every halting conflict has a recorded verdict, and no file was edited except by an answer the user picked.
 
-## Step 5 — Hand the rest to the user
+## Step 5 — Smoke the stack
+
+functional-verify boots the app for real. Whatever is broken there surfaces mid-orchestrate with nobody watching, as `BLOCKED:no-infra`. Find it now, cold.
+
+Start where functional-verify starts — a project skill that brings the services up, else the repo's own configs. functional-verify's own Step 1 has the derivation; use that, don't restate it.
+
+Then run what you find, exactly as declared — a justfile target, a compose file, a start script. Bring the infra up, bring the services up, and fetch a route each one serves. A start command nobody has run since it was written is a failure you inherit at verify time; assume nothing is up until a response says so. Tear down what you started.
+
+A failure here is a finding, not a fix — credentials, a missing image, a stale target, a port already held. Anything you could not bring up, or brought up only by hand, goes to Step 6 with the command and what it printed. If no stack skill exists, say so: without one, functional-verify re-derives the boot procedure on every run.
+
+**Done when** every service the stack declares is up and has answered on a route it serves, or is recorded with the command that failed and its output — and everything started here is torn down.
+
+## Step 6 — Hand the rest to the user
 
 Secrets and logins are theirs. Print a numbered list of exactly the ones still red, each with the command to run — and stop there. Attempt none of them.
 
@@ -111,13 +123,16 @@ Secrets and logins are theirs. Print a numbered list of exactly the ones still r
 | `asana-workspace` UNSET | Open Asana, copy the workspace GID from the URL, and add `ASANA_WORKSPACE_GID=<gid>` to the repo-root `.env`. The `ASANA_PAT` token goes there too. |
 | `gh` present but unauthenticated | Run `gh auth login` — interactive. |
 | any tool needing `sudo` | Give the exact one-liner from Step 3 for their platform. |
+| a service that would not start | Quote the command and its output, and name what only they can supply — a credential, a login, an image, a free port. |
 
-**Done when** every red item from Step 3 has a line here with a runnable command, and nothing on this list was attempted.
+**Done when** every red item from Steps 3 and 5 has a line here with a runnable command, and nothing on this list was attempted.
 
-## Step 6 — Report
+## Step 7 — Report
 
 Re-run the Step 1 block and print the result as a table: item · verdict · what it unblocks. Close with the pipeline's entry point — `/orchestrate "<task>"` — and one line per on-demand item still red, naming the skill that will degrade when it is reached (`agent-browser` red → functional-verify halts on `BLOCKED:no-agent-browser`; `claude-sessions` red → publish skips).
 
 Add a second table for Step 4: file · the directive · verdict (scoped / removed / kept) · stage affected. A kept halting conflict is a red item — say which stage stops and that the pipeline will not complete unattended until it is scoped.
 
-**Done when** both tables account for every item from Step 1, with no required item and no kept halting conflict left unstated.
+Add a line per service the stack declares: up, or down with the stage it costs — a service still down means functional-verify exits `BLOCKED:no-infra`.
+
+**Done when** both tables account for every item from Step 1, every declared service has a verdict, and no required item or kept halting conflict is left unstated.
