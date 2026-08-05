@@ -1,6 +1,6 @@
 ---
 name: setup-harness
-description: "Preflight the harness in a repo — probe for the tools, git wiring, and tracker credentials the pipeline needs, install what's missing, and hand the user the short list only they can do. Use when the user says 'set up the harness', is running a harness skill in this repo for the first time, or when a skill halts on BLOCKED:no-agent-browser or an unset tracker credential."
+description: "Preflight the harness in a repo — probe for the tools, git wiring, and tracker credentials the pipeline needs, install what's missing, and hand the user the short list only they can do. Use when the user says 'set up the harness', is running a harness skill in this repo for the first time, or when a skill halts on BLOCKED:no-agent-browser, an unset tracker credential, or a standing CLAUDE.md/memory instruction that stops a pipeline stage."
 argument-hint: "[optional: project root — defaults to cwd]"
 allowed-tools: Bash, Read, Edit, Write, AskUserQuestion
 user-invocable: true
@@ -10,10 +10,11 @@ user-invocable: true
 
 A **preflight**: every item is checked, then fixed, then re-checked. Items are **required** (the pipeline cannot run without them) or **on-demand** (only one branch of the pipeline needs them — a missing one is a warning, never a halt).
 
-Two kinds of red, and the split decides who acts:
+Three kinds of red, and the split decides who acts:
 
 - **Yours** — a missing binary or a `.gitignore` line. Install or edit it in Step 3 without asking.
-- **Theirs** — anything holding a secret or a browser login: authentication, tokens, workspace ids. Never attempt these; collect them into the Step 4 summary.
+- **Contested** — a standing instruction in their `CLAUDE.md`, memory, or settings that countermands something the pipeline does unattended. Yours to fix, theirs to approve: propose the edit in Step 4, apply only the answer they pick.
+- **Theirs** — anything holding a secret or a browser login: authentication, tokens, workspace ids. Never attempt these; collect them into the Step 5 summary.
 
 Run every step from the **main repo root**, not a worktree — `git rev-parse --show-toplevel`. `.gitignore` lives there.
 
@@ -33,12 +34,19 @@ else p claude-sessions MISSING; fi
 W="${ASANA_WORKSPACE_GID:-$(grep -hs '^ASANA_WORKSPACE_GID=' .env | tail -1 | cut -d= -f2-)}"
 [ -n "$W" ] && p asana-workspace "OK ($W)" || p asana-workspace UNSET
 grep -qxF '.harness/' .gitignore 2>/dev/null && p ignore-harness OK || p ignore-harness MISSING
+M=~/.claude/projects/"$(printf %s "$PWD" | tr '/.' '--')"/memory
+for f in $(git ls-files '*CLAUDE.md' '*AGENTS.md') CLAUDE.local.md \
+         .claude/settings.json .claude/settings.local.json \
+         ~/.claude/CLAUDE.md ~/.claude/rules/*.md "$M"/*.md; do
+  [ -f "$f" ] && p instructions "$f"; done
 ```
 
 Required: `git`, `node`, `jq`, `curl`, `ignore-harness`.
 On-demand: `just`, `mani`, `wt` (the repo's own task/multi-repo/worktree commands) · `agent-browser` (functional-verify's UI proofs) · `gh` (code-review on a PR, orchestrate's PR stage) · `claude-sessions` and `asana-workspace` (functional-verify's publish step, best-effort — it skips in one line when either is red).
 
 The `wt` line reports which name answered — on Windows worktrunk installs as `git-wt`, since Windows Terminal owns `wt`.
+
+Each `instructions` line is one file Step 4 must read — that print is the read list.
 
 **Done when** every line above is printed with a verdict.
 
@@ -74,9 +82,25 @@ Prefer the path that needs no `sudo`. When the only route is a system package ma
 
 `fallow` and `radon` need no install — tech-debt-finder fetches them on demand and skips cleanly when offline.
 
-**Done when** every tool Step 1 printed MISSING is either installed and re-probed OK, or listed in Step 4 with the reason it could not be installed here.
+**Done when** every tool Step 1 printed MISSING is either installed and re-probed OK, or listed in Step 5 with the reason it could not be installed here.
 
-## Step 4 — Hand the rest to the user
+## Step 4 — Resolve contested instructions
+
+The pipeline runs unattended: it branches, writes the failing test first, creates files, dispatches sub-agents, commits, pushes, opens a PR — stage after stage with nobody watching.
+
+Read every file the probe printed under `instructions`, in full. Any standing instruction that would interrupt that run — a pause, a confirmation, a refusal, a ban on something a stage does — is **contested**. Judge meaning, not wording: "ask before committing," "confirm destructive actions first," and "no autonomous git" are one conflict in three phrasings, sharing no keyword. Expect directives no list anticipates; the test never changes — when this line fires mid-run with nobody there, does the run continue?
+
+`.claude/settings.json` outranks prose. A `permissions.deny` entry or a blocking `PreToolUse` hook is a wall, not a tendency — the stage fails outright and no reasoning recovers it.
+
+Sort by cost: **halting** (the run stops, or `--auto` waits on an answer that never comes) against **friction** (a stage degrades and still finishes). Ask about the halting ones; friction goes to Step 6.
+
+Per halting conflict, quote the line, name the stage it stops, and ask: **scope it** so the directive stands but exempts the pipeline (default), **remove it**, or **keep it** — a kept one stays red through Step 6.
+
+Scope a conflict living outside this repo — `~/.claude/CLAUDE.md`, `~/.claude/rules/`, memory — by writing the exemption into the repo's own `CLAUDE.md`. Repo-local wins here and their other projects stay untouched; setup never mutates state outside the repo it was pointed at.
+
+**Done when** every file the probe listed has been read in full, every halting conflict has a recorded verdict, and no file was edited except by an answer the user picked.
+
+## Step 5 — Hand the rest to the user
 
 Secrets and logins are theirs. Print a numbered list of exactly the ones still red, each with the command to run — and stop there. Attempt none of them.
 
@@ -90,8 +114,10 @@ Secrets and logins are theirs. Print a numbered list of exactly the ones still r
 
 **Done when** every red item from Step 3 has a line here with a runnable command, and nothing on this list was attempted.
 
-## Step 5 — Report
+## Step 6 — Report
 
 Re-run the Step 1 block and print the result as a table: item · verdict · what it unblocks. Close with the pipeline's entry point — `/orchestrate "<task>"` — and one line per on-demand item still red, naming the skill that will degrade when it is reached (`agent-browser` red → functional-verify halts on `BLOCKED:no-agent-browser`; `claude-sessions` red → publish skips).
 
-**Done when** the table accounts for every item from Step 1, with no required item red.
+Add a second table for Step 4: file · the directive · verdict (scoped / removed / kept) · stage affected. A kept halting conflict is a red item — say which stage stops and that the pipeline will not complete unattended until it is scoped.
+
+**Done when** both tables account for every item from Step 1, with no required item and no kept halting conflict left unstated.
