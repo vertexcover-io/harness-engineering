@@ -77,6 +77,9 @@ Every failure below stops here, not inside four parallel sub-agents.
 2. **Stop and report** on: empty diff (write no report), unresolvable ref, PR not found or
    `gh` unauthenticated (suggest `gh auth login`), or a `plan-path` that doesn't exist (ask
    whether to proceed without the spec axis).
+3. **Commit the tree before dispatch.** `git status --porcelain` decides: commit any dirty
+   tracked file as a WIP commit, fold it into the reviewed range, and note it in the report
+   header — this is what makes a persona's edit-and-revert experiment recoverable.
 
 Then gather the **map**, not the territory: the diff command, the commit list
 (`git log <base>..HEAD --oneline`), the changed-file list with change volume, the languages
@@ -128,8 +131,9 @@ selected. If you spawn `security`, name the trust decision that changed.
 > wastes the author's time and erodes trust. Report what you can trace in the code; when you
 > can't confirm something but the blast radius is high (data loss, corruption, an exploit),
 > report it anyway and say plainly what you couldn't verify. Anything else you can't stand
-> behind, drop — three real findings beat twenty maybes. Return your report as your final
-> message — write no files. Under 400 words."*
+> behind, drop — three real findings beat twenty maybes. Editing a file to test a hypothesis is
+> fine once the work is safe: run `git status --porcelain` first and commit anything dirty, then
+> experiment and `git checkout --` freely. Return your report as your final message — write no files. Under 400 words."*
 
 - **Each persona's brief is its reference file** — paste the full text in rather than
   summarizing, plus the extra context below.
