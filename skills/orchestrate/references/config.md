@@ -10,7 +10,7 @@ stage's default skill name (`implement`) — both resolve the same stage. A work
   "stages": {
     "brainstorm":      { "skill": "my-brainstorm" },
     "coder":           { "skill": "my-implement", "model": "opus" },
-    "code-review":     { "model": "opus" },
+    "code-review":     { "skill": "my-code-review" },
     "quality-gate":    { "skill": "my-quality-gate" },
     "planning":        { "skill": "my-planning" },
     "verify-finalize": { "model": "haiku" }
@@ -24,7 +24,7 @@ Look the entry up by stage ID, then by default skill name; call the match `CFG`.
   prefers project/plugin over global, so no path lookup) → global default. `CFG.skill` is a skill
   **name only**; a value with `/` is ignored (log it). Log the resolved override:
   `"Using custom skill for stage <id>: <skill-name>"`.
-- **model** (sub-agent stages `coder`/`code-review`/`verify-finalize` only) = `CFG.model` → the
+- **model** (sub-agent stages `coder`/`verify-finalize` only) = `CFG.model` → the
   dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model` on a
   main-conversation stage has no Agent to retarget — ignore it (log).
 - **disabled** = `CFG.disabled === true` skips the stage, exactly like a caller "skip <stage>" (DAG
@@ -49,7 +49,7 @@ FAILURE/BLOCKED.
 | `library-probe` | `library-probe` | `<!-- LP:VERDICT:PASS -->` / `BLOCKED` |
 | `planning` | `planning` | — |
 | `coder` | `implement` | phase `…-claims.json` (`executed>0`, `failed=0`) |
-| `code-review` | `code-review` | `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
+| `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
 | `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 
 Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,6,7,9,10}).

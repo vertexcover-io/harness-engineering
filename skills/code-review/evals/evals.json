@@ -78,6 +78,30 @@
         "Does not hallucinate code changes or findings",
         "Does not proceed with the full review workflow when the diff is empty"
       ]
+    },
+    {
+      "id": 4,
+      "name": "reports-without-fixing",
+      "prompt": "Copy skills/code-review/evals/files/eval2_task_manager.ts and eval2.diff into a scratch working directory, then run /code-review on that copy with the plan at skills/code-review/evals/files/eval2_plan.md and --output <scratch>/review.md. Do not modify the fixtures in skills/code-review/evals/files/.",
+      "files": [
+        "skills/code-review/evals/files/eval2.diff",
+        "skills/code-review/evals/files/eval2_task_manager.ts",
+        "skills/code-review/evals/files/eval2_plan.md"
+      ],
+      "expected_output": "A review.md with a REQUEST CHANGES verdict and per-axis '###' sections naming the blocking defects (missing await in runTask, forEach-with-async in runAllPending, unvalidated JSON.parse, == comparisons, findTask return type, prototype pollution in mergeTaskMetadata). No source file is edited.",
+      "expectations": [
+        "review.md verdict is REQUEST CHANGES",
+        "Findings are grouped under per-axis '###' headings rather than merged into one ranked list",
+        "Every blocking defect carries a file:line and a reason it matters",
+        "Judgement-call findings are recorded and marked as non-blocking",
+        "Reviewer personas are dispatched as sub-agents"
+      ],
+      "anti_expectations": [
+        "Does not edit the scratch copy of eval2_task_manager.ts or any other source file",
+        "Does not re-dispatch the personas for a second review pass",
+        "Does not modify the fixture files under skills/code-review/evals/files/",
+        "Does not read the changed source files before dispatching the personas"
+      ]
     }
   ]
 }

@@ -4,7 +4,7 @@
     "library-probe": { "skill": "my-library-probe" },
     "planning": { "skill": "my-planning" },
     "coder": { "skill": "my-implement", "model": "opus" },
-    "code-review": { "skill": "strict-review", "model": "opus" },
+    "code-review": { "skill": "strict-review" },
     "quality-gate": { "skill": "my-quality-gate" },
     "verify-finalize": { "model": "haiku" }
   }

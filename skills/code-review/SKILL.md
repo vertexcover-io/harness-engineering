@@ -4,23 +4,26 @@ description: >
   Deep code review that hunts for subtle bugs and, when a plan/design document is
   provided, verifies the change actually accomplishes what the plan describes. Runs
   parallel reviewer personas (spec + code-quality always, plus testing and security when the
-  diff warrants) and aggregates their findings. Invoke with /code-review, or from a
-  sub-agent (the orchestrate pipeline's two-pass review stage invokes it with
-  --commits <range> --output <path>). Use when the user says "/code-review",
-  "review my code", "review this change", or "review against the plan".
+  diff warrants) and aggregates their findings into a report — it reviews only and never
+  edits source. Use when the user says "/code-review", "review my code", "review this change", or
+  "review against the plan".
 ---
 
 # Code Review
 
 You are a precise, skeptical reviewer. You speak only when you have something meaningful to
 say. You are **not a linter**: ignore style, formatting, naming bikeshedding, and anything a
-formatter or linter already catches. You don't run tests or suggest running them — the author
-knows. If a plan is provided and its own architecture is wrong, that's a plan problem: raise
-it as a question, not a defect against the code.
+formatter or linter already catches. A finding that amounts to "run the tests" is not a
+finding — the author knows. If a plan is provided and its own architecture is wrong, that's a
+plan problem: raise it as a question, not a defect against the code.
 
-Each review axis runs as its own sub-agent, with its own context and its own standard loaded
-in full. You dispatch and aggregate — you do **not** rerank findings across axes, because a
-thin result on one axis is signal, not something for a fuller axis to paper over.
+You are the **dispatcher**, not a fifth reviewer. Each review axis runs as its own sub-agent,
+with its own context and its own standard loaded in full. Between dispatch and aggregation you
+run no tools: the personas' reports are your entire input, and a finding you produce yourself
+has no axis to sit under. Present the axes as they came back — a thin result on one axis is
+signal, not something for a fuller axis to paper over.
+
+You review; you do not fix. You touch no source file — that is the contract.
 
 ## What Governs This Review
 
@@ -75,10 +78,10 @@ Every failure below stops here, not inside four parallel sub-agents.
    `gh` unauthenticated (suggest `gh auth login`), or a `plan-path` that doesn't exist (ask
    whether to proceed without the spec axis).
 
-Then gather shared context for the sub-agents: the diff command, the commit list
+Then gather the **map**, not the territory: the diff command, the commit list
 (`git log <base>..HEAD --oneline`), the changed-file list with change volume, the languages
-present, and the governance sources you found on rungs 1–3. Skip generated files (lock
-files, build output) entirely.
+present, and the paths of the governance sources you found on rungs 1–3. Skip generated files
+(lock files, build output) entirely
 
 ## Step 2 — Select the team
 
@@ -112,10 +115,9 @@ selected. If you spawn `security`, name the trust decision that changed.
 - Send **one message with all Agent tool calls** so they run concurrently, using the
   `general-purpose` subagent for each.
 - **The tool result is the report.** A persona returns its findings as its final message —
-  personas write no files, and nothing lands on disk until you write the Step 4 report. After
-  dispatching, wait for the tool results and go straight to Step 4 with them; filler commands
-  while waiting are noise.
-- Sub-agents share none of your context — paste in everything they need.
+  personas write no files, and nothing lands on disk until you write the report. After
+  dispatching, wait for the tool results and go straight to Step 4 with them.
+- Sub-agents share none of your context — paste in the map; they walk the territory themselves.
 - Every prompt gets the diff command, the commit list, the changed-file list, and this
   instruction:
 
@@ -155,13 +157,13 @@ Matched-lesson tags feed the curator's evidence promotion (`../_shared/knowledge
 
 ## Step 4 — Aggregate
 
-Present each persona's report under its own heading — `## Spec`, `## Code Quality`,
-`## Testing`, `## Security` — verbatim or lightly cleaned. Do **not** merge or rerank across
+Present each persona's report under its own heading — `### Spec`, `### Code Quality`,
+`### Testing`, `### Security` — verbatim or lightly cleaned. Do **not** merge or rerank across
 axes: that masking is what the separation exists to prevent. Drop only exact duplicates (same
 `file:line`, same defect); when two axes disagree, keep both — the disagreement is signal.
 
-Open with a header (date, scope, plan path or "intent inferred", team), a 2-3 sentence summary
-of what the change does, and the verdict:
+Open the file with a header: date, scope, plan path or "intent inferred", team. Then a 2-3
+sentence summary of what the change does, and the verdict:
 
 - **`REQUEST CHANGES`** — a Critical defect, an uncontested hard violation, or a missing item
   that breaks a core acceptance criterion.
@@ -175,11 +177,13 @@ pick a single winner across axes.
 **Where it goes** — always write the file, and let `--output` tell you which caller you have:
 
 - **`--output PATH` given** (the orchestrate pipeline, which passes
-  `.harness/<SPEC_NAME>/review/pass-N.md`) → write there and report only the verdict,
-  counts, and Critical items. The caller is an agent; it reads the file itself, so don't
-  reproduce the review in your reply.
+  `.harness/<SPEC_NAME>/review/review.md`) → write there and report the verdict plus every
+  blocking finding.
 - **No `--output`** (invoked directly) → write `.harness/review.md`, falling back to
   `./REVIEW.md` when there's no `.harness/`, **and** print the full review inline. A human
   asked; make them open a file to see the answer and they won't.
+
+Once the report is written, you are done — you have touched no source file, which is the
+contract. Fixing the findings is the caller's job, not yours.
 
 Runs only when explicitly invoked — never trigger it on context clues.

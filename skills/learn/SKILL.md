@@ -225,7 +225,7 @@ echo '{"signal":"<type>","summary":"<one sentence, ≤200 chars>","files":["<pat
 |---|---|---|
 | coder | `stagnation-recovery` | stuck ≥3 attempts on one thing, then recovered |
 | coder | `hard-won-success` | a non-obvious workflow took 3+ attempts to land |
-| review pass 1 | `review-fix` | one per Critical/Important defect fixed |
+| review | `review-fix` | one per Critical/Important defect reported |
 | verify | `verify-break` | one per confirmed adversarial break |
 | verify | `gate-blocked` | the quality gate BLOCKED, then passed |
 

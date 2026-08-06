@@ -2,7 +2,7 @@
 name: orchestrate
 description: >
   Multi-agent pipeline orchestrator. Takes a prompt or a document describing the work and runs:
-  brainstorm, planner, coder (the implement skill — TDD + stagnation detection), code review (two-pass review+fix),
+  brainstorm, planner, coder (the implement skill — TDD + stagnation detection), code review (persona review),
   verify & finalize (functional verification + quality gate + sync docs + learnings), and commit/PR.
   All run artifacts live in .harness/<name>/ (gitignored — reviewers read them out-of-band). Use when the user says orchestrate, run the pipeline,
   full workflow, or wants end-to-end development from spec to PR.
@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
 
 # Orchestrate: Multi-Agent Development Pipeline
 
-Runs a full development pipeline in 7 stages. Brainstorm, Planner, and Commit & PR run in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
+Runs a full development pipeline in 7 stages. Brainstorm, Planner, Code Review, and Commit & PR run in the main conversation. All other stages are dispatched as sub-agents via the `Agent` tool.
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
@@ -96,7 +96,7 @@ The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}
 | 1.5 | Library Probe | **Main conversation** | `.harness/<name>/library-probe.md` + verified probe scripts (`.harness/<name>/probes/`) |
 | 2 | Planner | **Main conversation** | `.harness/<name>/plan.md` + `.harness/<name>/phases/phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-claims.json` + `e2e-report.json` |
-| 4 | Code Review | Sub-agent (2-pass) | `.harness/<name>/review/pass-{1,2}.md` verdicts, fixes applied |
+| 4 | Code Review | **Main conversation** | `.harness/<name>/review/review.md` — per-axis findings + verdict (review only, no source edits) |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
@@ -156,7 +156,6 @@ digraph pipeline {
   stage_6 [label="6: Commit & PR"]
   stage_0 -> stage_1 -> stage_15 -> stage_2 -> stage_3
   stage_3 -> stage_4 -> stage_5 -> stage_6
-  stage_4 -> stage_4 [label="2-pass review+fix" style=dashed]
   stage_3 -> stage_15 [label="LIB_SUSPECT loopback" style=dashed color=red]
 }
 ```
@@ -173,7 +172,7 @@ Parallelism is **graph-driven**, not file-count-driven. Under vertical slicing (
 
 ## Per-stage Config: `orchestrate.config.json`
 
-Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys each stage ID (or default skill name) to `{ skill?, model?, disabled? }`. `skill` swaps the stage's skill (name only); `model` retargets sub-agent stages (`coder`/`code-review`/`verify-finalize`); `disabled` skips — honored only on the skippable stage (`brainstorm`), rejected on mandatory ones. Full resolution rules, the gate-contract table, and an example: **`references/config.md`**. Does NOT apply to `orchestrate` itself.
+Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys each stage ID (or default skill name) to `{ skill?, model?, disabled? }`. `skill` swaps the stage's skill (name only); `model` retargets sub-agent stages (`coder`/`verify-finalize`); `disabled` skips — honored only on the skippable stage (`brainstorm`), rejected on mandatory ones. Full resolution rules, the gate-contract table, and an example: **`references/config.md`**. Does NOT apply to `orchestrate` itself.
 
 ---
 
@@ -267,9 +266,15 @@ After every coder sub-agent returns, scan its report for `<!-- LIB_SUSPECT:<lib>
 
 This is the only automatic retry loop — library failure is the one class where retrying the *same* code is futile; swap the tool, don't iterate the call.
 
-### Stage 4: Code Review Loop
+### Stage 4: Code Review
 
-Two-pass review: a review+fix agent addresses defects, then a final review validates. `set-status code-review running`. Dispatch Pass 1 (review & fix) then Pass 2 (final review) from `references/stage-prompts.md`; model = code-review model (`sonnet` default). `set-status code-review done`.
+`set-status code-review running`. Invoke `<SKILL:code-review>` **in this conversation** — it dispatches its own reviewer personas, so there is no sub-agent to dispatch and no model to retarget. It reviews only and edits no source. Pass what only this run knows:
+
+- Plan `.harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
+- `--output .harness/<SPEC_NAME>/review/review.md`
+- Lessons `.harness/<SPEC_NAME>/relevant-lessons.md`, nomination log `.harness/<SPEC_NAME>/lesson-candidates.jsonl`
+
+`set-status code-review done`.
 
 **Verdict parsing:** match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
 
@@ -325,9 +330,9 @@ Stop the pipeline and report which stage failed and why on any of:
 | Quality gate BLOCKED | Report what failed |
 | Quality gate STAGNATION | Do NOT retry — report the stagnated check, repeated error signature, need for manual intervention |
 | Library-probe BLOCKED | No viable alternative; or `BLOCKED:repeated-lib-failure` after 2 loopbacks |
-| Review hard-standards failure | Pass-2 still `REQUEST CHANGES` **and** pass-2.md has an unresolved hard violation (a breach of a documented standard, cited to its source file + rule) → stop; report the cited rule + `file:line` |
+| Review hard-standards failure | `REQUEST CHANGES` **and** `review.md` has a hard violation (a breach of a documented standard, cited to its source file + rule) → stop; report the cited rule + `file:line` |
 
-Review pass 2 returning `REQUEST CHANGES` with only judgement-call defects (no cited standard) → **log a warning but proceed** to Stage 5; verification and gate catch the rest. On any halt, the worktree is preserved for manual intervention — present what was accomplished and suggest next steps.
+`REQUEST CHANGES` with only judgement-call defects (no cited standard) → **log a warning but proceed** to Stage 5; verification and gate catch the rest. On any halt, the worktree is preserved for manual intervention — present what was accomplished and suggest next steps.
 
 ---
 
@@ -347,7 +352,7 @@ Present ONLY after Stage 6 completes, or after a genuine BLOCK/FAIL halt — nev
 | 1. Brainstorm | Design: .harness/<name>/design.md |
 | 2. Plan | <phase_count> phases |
 | 3. Coder | <files> files, <tests> tests |
-| 4. Review | <verdict> (2-pass) |
+| 4. Review | <verdict> (<findings> findings) |
 | 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated |
 | Learning loop | lessons: retrieved <N> / matched <M> / captured <P> (stale: <count or 0>) |
 | 6. PR | <PR_URL> |
