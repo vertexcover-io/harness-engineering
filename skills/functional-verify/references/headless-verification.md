@@ -9,7 +9,7 @@ under test actually ran, and that the state it was supposed to change actually c
 A walk is a sequence of real calls against the running service, not a single request. Four parts, every one of them
 captured:
 
-1. **Preconditions** — the records the walk needs, built through the product's own APIs where they exist. Record
+1. **Preconditions** — the records the walk needs, built the Step 1 way. Record
    what you created and its ids; they belong in the scenario's capture so a reader can tell your data from the
    database's.
 2. **The trigger** — the real entry point a user or an integration would hit. `curl -w '\n%{http_code}'`, the exact
