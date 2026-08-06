@@ -106,6 +106,8 @@ functional-verify boots the app for real. Whatever is broken there surfaces mid-
 
 Start where functional-verify starts — a project skill that brings the services up, else the repo's own configs. functional-verify's own Step 1 has the derivation; use that, don't restate it.
 
+The stack reads its config first — a `.env`, a settings file, whatever the repo ships a template for. Check it: present, and every key the template declares actually filled, since a placeholder is as unset as a missing key. Writing those values is theirs, never yours — an invented one buys a service that starts and lies. Anything missing or half-filled goes to Step 6.
+
 Then run what you find, exactly as declared — a justfile target, a compose file, a start script. Bring the infra up, bring the services up, and fetch a route each one serves. A start command nobody has run since it was written is a failure you inherit at verify time; assume nothing is up until a response says so. Tear down what you started.
 
 A failure here is a finding, not a fix — credentials, a missing image, a stale target, a port already held. Anything you could not bring up, or brought up only by hand, goes to Step 6 with the command and what it printed. If no stack skill exists, say so: without one, functional-verify re-derives the boot procedure on every run.
