@@ -78,27 +78,6 @@ The orchestrator verifies the claims report independently — do not take the ag
 
 ---
 
-## Stage 4 — Code Review (two passes)
-
-**Skill:** `<SKILL:code-review>` · **Model:** `CFG.model` → `sonnet`
-
-**Pass 1 — review & fix.** Pass: plan `.harness/<SPEC_NAME>/plan.md`, scope
-`--commits <BASE_BRANCH>..HEAD`, output `--output .harness/<SPEC_NAME>/review/pass-1.md`,
-lessons `.harness/<SPEC_NAME>/relevant-lessons.md`, fixes log
-`.harness/<SPEC_NAME>/review/fixes-applied.md`, nomination log
-`.harness/<SPEC_NAME>/lesson-candidates.jsonl`.
-On `REQUEST CHANGES` the agent fixes Critical/Important defects itself, invoking `<SKILL:coder>` for
-the fixes.
-
-**Pass 2 — final.** Same, `--output …/review/pass-2.md`, and tell it this is the final pass and its
-verdict is definitive.
-
-**Return:** verdict, defects found, defects fixed, files modified.
-
-**Verdict parsing:** match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
-
----
-
 ## Stage 5 — Verify & Finalize
 
 **Skills, in order:** `<SKILL:functional-verify>` → `<SKILL:quality-gate>` → `<SKILL:sync-docs>` →
