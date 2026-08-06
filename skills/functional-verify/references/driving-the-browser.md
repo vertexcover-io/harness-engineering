@@ -90,7 +90,7 @@ with the `ms` lifetime you measured.
 ## The capture loop — act, assert, capture to staging, promote
 
 **Film the whole life of the scenario, not a checklist of its steps.** The frames are what a reviewer watches to
-believe you, so shoot whatever the flow needs end to end: the state you started from, the data you seeded, each
+believe you, so shoot whatever the flow needs end to end: the seeded preconditions as the page renders them, each
 step, the intermediate render that explains why the next click works, the toast that confirms it. Every step earns
 at least one frame, many earn more — a scenario with more *promoted* frames than steps is doing it right.
 

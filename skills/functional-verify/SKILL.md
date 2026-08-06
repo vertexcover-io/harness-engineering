@@ -103,9 +103,9 @@ on a free port you allocate — a running server is likely another worktree's. Y
 (Step 7). Hold the URLs you started on for the rest of this session.
 
 **Infrastructure includes state, and building it is your job.** Seeding records, creating accounts, provisioning a
-plan, aging a timestamp, populating a lookup the feature reads — the preconditions a scenario needs are yours to
-manufacture, through the product's own APIs where they exist and directly in the datastore where they don't.
-Absent test data is a task, not a blocker. You created it, so you remove it (Step 7); never mutate or delete a
+plan, aging a timestamp, populating a lookup the feature reads — **a scenario's fixtures are seeded into the
+datastore before that scenario is driven**, written straight in, through the product's own API only where a single
+write can't reproduce what it stores. Absent test data is a task, not a blocker. You created it, so you remove it (Step 7); never mutate or delete a
 record you did not create.
 
 A seeded record **stands in for what the real source would produce**, so its shape and values must be ones that
@@ -125,7 +125,9 @@ Drive a real browser through the `agent-browser` CLI — this is where every UI 
 binary first: if `agent-browser` isn't on PATH, stop with **BLOCKED:no-agent-browser**, name the scenarios you
 couldn't prove, and print `npm i -g agent-browser && agent-browser install`.
 
-Open the UI service you started in Step 1 and hold **one session** for every scenario. Read
+Open the UI service you started in Step 1 and hold **one session** for every scenario. The browser proves the
+behaviour under test, not the setup that reached it — a fixture you find missing mid-walk is seeded the Step 1 way
+and the walk re-driven. Read
 `references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, and the capture loop are
 all there.
 
