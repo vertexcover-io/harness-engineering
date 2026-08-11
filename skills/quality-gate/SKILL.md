@@ -116,8 +116,8 @@ One scan, `git diff --unified=0 2>&1 | grep -E '^\+[^+]'`, read two ways.
 - This part alone decides the row's verdict.
 
 **New comments — judge and remove.** From the same added lines, take every one that is a comment.
-Read `code-quality`'s **Self-Documenting Code** section and judge each against its load-bearing
-test — that skill is the only definition; do not restate or reinvent the test here. Delete the
+Read `code-quality`'s **Comments** section and judge each against its three triggers — that
+skill is the only definition; do not restate or reinvent them here. Delete the
 comments that fail, with `Edit`, and leave the ones that pass.
 
 This is the last stage that reads the diff before it is committed, so a comment that survives here
