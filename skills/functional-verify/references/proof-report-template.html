@@ -25,9 +25,7 @@
      TOP LEVEL
        title       the feature, as a short phrase
        verdict     PASS | PARTIAL | FAIL, derived from coverage[] — the badge
-                   on the Overview pane
-       summary     the Overview pane a reader lands on: what this feature does,
-                   what was tested, how it was driven, what the verdict means
+                   in the top bar
        drivenOn    where you drove, as what user, against which data
        fields[]    {label,value} shown behind "Stack · ports · sinks" in the bar
        labels{}    rename a section: steps, media, frames, proofs, files,
@@ -79,7 +77,6 @@
 <script type="application/json" id="report-data">
 {
   "title": "<feature name>",
-  "summary": "<what this feature does, in the product's terms>\n\n<what was tested and how it was driven>\n\n<what the verdict means for shipping>",
   "drivenOn": "<where you drove, as what user, against which data>",
   "fields": [
     {
@@ -233,6 +230,10 @@ a { color: var(--accent); }
 .bar__title {
   font-size: 14px; font-weight: 650; margin: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bar__verdict {
+  flex: none; font: 600 10.5px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase;
+  padding: 5px 8px; border: 1px solid currentColor; border-radius: 4px;
 }
 .bar__spacer { flex: 1 1 auto; min-width: 8px; }
 .bar__counts { display: flex; gap: 4px; flex: none; }
@@ -582,6 +583,7 @@ code {
 
 <header class="bar">
   <h1 class="bar__title" id="b-title"></h1>
+  <span class="bar__verdict" id="b-verdict" hidden></span>
   <span class="bar__spacer"></span>
   <div class="bar__counts" id="b-counts"></div>
   <button class="bar__btn" id="b-run">Run details</button>
@@ -633,7 +635,6 @@ code {
   };
 
   const L = Object.assign({
-    overview: 'Overview',
     expected: 'Expected',
     steps: 'Steps',
     media: 'Visual proof',
@@ -651,6 +652,15 @@ code {
   /* ── bar ── */
   document.getElementById('b-title').textContent = D.title || 'Proof Report';
   document.title = 'Proof · ' + (D.title || '');
+
+  const topVerdict = D.verdict || ((D.fields || []).find(f => /verdict/i.test(f.label || '')) || {}).value;
+  if (topVerdict) {
+    const vb = document.getElementById('b-verdict');
+    const text = String(topVerdict).split(/\s[—-]\s/)[0];
+    vb.textContent = text;
+    vb.classList.add('v--' + kind(text.split(/[\s—-]/)[0]));
+    vb.hidden = false;
+  }
 
   let filter = 'all';
   const counts = document.getElementById('b-counts');
@@ -695,17 +705,8 @@ code {
 
   /* ── rail ── */
   const rail = document.getElementById('rail');
-  let current = D.summary ? 'overview' : (S.length ? 0 : 'bugs');
+  let current = S.length ? 0 : 'bugs';
   const aux = [];
-
-  if (D.summary) {
-    const b = el('button', 'item item--aux');
-    b.type = 'button';
-    b.appendChild(el('span', 'item__t', L.overview));
-    b.addEventListener('click', () => select('overview'));
-    rail.appendChild(b);
-    aux.push(['overview', b]);
-  }
 
   const hScen = el('div', 'rail__h');
   hScen.appendChild(document.createTextNode('Scenarios'));
@@ -913,24 +914,6 @@ code {
     });
   }
 
-  /* Overview — D.summary: what the feature is, what was tested, what the verdict means.
-     The pane a reader lands on when it is present. */
-  function drawOverview() {
-    pane.textContent = '';
-    const head = el('div', 'head');
-    head.appendChild(el('h2', 'head__t', D.title || L.overview));
-    const v = D.verdict || ((D.fields || []).find(f => /verdict/i.test(f.label || '')) || {}).value;
-    if (v) head.appendChild(el('span', 'head__v v--' + kind(String(v).split(/[\s—-]/)[0]), String(v).split(/\s[—-]\s/)[0]));
-    pane.appendChild(head);
-    const sec = el('div', 'sec');
-    const p = el('div', 'summary'); paras(p, D.summary); sec.appendChild(p);
-    if (D.drivenOn) {
-      sec.appendChild(el('p', 'sec__h', 'Driven on'));
-      const q = el('div', 'prose'); paras(q, D.drivenOn); sec.appendChild(q);
-    }
-    pane.appendChild(sec);
-  }
-
   function drawBugs() {
     pane.textContent = '';
     const head = el('div', 'head');
@@ -991,8 +974,7 @@ code {
     current = id;
     rows.forEach((b, i) => b.classList.toggle('is-on', i === id));
     aux.forEach(([k, b]) => b.classList.toggle('is-on', k === id));
-    if (id === 'overview') drawOverview();
-    else if (id === 'bugs') drawBugs();
+    if (id === 'bugs') drawBugs();
     else if (id === 'gaps') drawGaps();
     else drawScenario(S[id], id);
     document.querySelector('.pane').scrollTop = 0;
@@ -1177,7 +1159,7 @@ code {
   });
 
   paint();
-  select(D.summary ? 'overview' : (S.length ? 0 : 'bugs'));
+  select(S.length ? 0 : 'bugs');
 })();
 </script>
 </body>
