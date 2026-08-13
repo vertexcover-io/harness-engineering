@@ -3,7 +3,7 @@ name: orchestrate
 description: >
   Multi-agent pipeline orchestrator. Takes a prompt or a document describing the work and runs:
   brainstorm, planner, coder (the implement skill — TDD + stagnation detection), code review (persona review),
-  verify & finalize (functional verification + quality gate + sync docs + learnings), and commit/PR.
+  verify & finalize (functional verification + quality gate + sync docs), and commit/PR.
   All run artifacts live in .harness/<name>/ (gitignored — reviewers read them out-of-band). Use when the user says orchestrate, run the pipeline,
   full workflow, or wants end-to-end development from spec to PR.
   Supports --auto mode for CI/CD pipelines — bypasses interactive approval gates while still producing all artifacts.
@@ -97,7 +97,7 @@ The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}
 | 2 | Planner | **Main conversation** | `.harness/<name>/plan.md` + `.harness/<name>/phases/phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-claims.json` + `e2e-report.json` |
 | 4 | Code Review | **Main conversation** | `.harness/<name>/review/review.md` — per-axis findings + verdict (review only, no source edits) |
-| 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
+| 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
 **Every stage runs a skill, and which one is never hardcoded here** — `references/config.md` owns the
@@ -183,8 +183,8 @@ Optional file at the **repo root**, read once in Stage 0. Its `stages` map keys 
 Worktree already created in Step 3 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
 1. `set-status baseline running`.
-2. **Invoke `pipeline-setup` via `Skill`** — it owns tooling detection, baseline metrics, the artifact directory, and lesson routing. Do not hand-roll any of it (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 3, and the skill adopts a caller-supplied path instead of creating a second one.
-3. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`, and **`ROUTED_LESSONS`** (`.harness/<SPEC_NAME>/relevant-lessons.md` — may hold the no-match sentinel, which is still a valid path to pass on). Every later stage that takes a `Lessons:` path takes this one; there is no other producer of it.
+2. **Invoke `pipeline-setup` via `Skill`** — it owns tooling detection, baseline metrics, and the artifact directory. Do not hand-roll any of it (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 3, and the skill adopts a caller-supplied path instead of creating a second one.
+3. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
 4. Create the directories `pipeline-setup` does not: `.harness/<SPEC_NAME>/verification/screenshots/`, `.harness/<SPEC_NAME>/verify-staging/`, `.harness/<SPEC_NAME>/review/`, and `.harness/<SPEC_NAME>/phases/` (`reports/` already created by dashboard init). The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored — artifacts reach reviewers out-of-band.
 5. **Load stage config.** If `orchestrate.config.json` exists at the worktree root, `Read` its `stages` map into `STAGE_CONFIG`; else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md`.
 6. `write-report baseline`, `set-status baseline done`, `set-status setup done`.
@@ -211,7 +211,7 @@ The trust gate — every external dependency verified before planning builds on 
 ### Stage 2: Planner (Main Conversation)
 
 1. `set-status planning running`.
-2. Invoke `planning` via `Skill` — it reads `design.md` + `dossier.md` (or the prompt, when brainstorm was skipped) internally before exploring code. Include `Lessons: <ROUTED_LESSONS>` — known pitfalls matching this spec become plan steps.
+2. Invoke `planning` via `Skill` — it reads `design.md` + `dossier.md` (or the prompt, when brainstorm was skipped) internally before exploring code.
 3. Planner runs recon, asks interactive questions, designs **vertical-slice** phases, and holds **its own approval gate** (the skill's `## Approval gate`). The orchestrator does not add a second `AskUserQuestion` here — the skill owns the pause, and the PreToolUse hook handles the `waiting` status.
 4. Output: `.harness/<SPEC_NAME>/plan.md` + `.harness/<SPEC_NAME>/phases/phase-*.md`. Store `PLAN_PATH`, `PHASE_DIR`.
 5. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `set-status planning done`.
@@ -220,7 +220,7 @@ The trust gate — every external dependency verified before planning builds on 
 
 - Mark the `planning` node `done` and record the route in its report.
 - **Skip Stages 3 and 4 entirely** — there is no phase graph to dispatch from and no slice to review at. Set both DAG nodes to `skipped`.
-- Invoke `implement` via `Skill` with the recon findings planning handed back, then go to **Stage 5**. Stage 5's claims checks (`MISSING_CLAIMS_FILE`, `E2E_NOT_EXECUTED`) do not apply — there are no phase claims — so run functional-verify, quality-gate, sync-docs, and learn, and enforce only the `proof-report.html` artifact contract.
+- Invoke `implement` via `Skill` with the recon findings planning handed back, then go to **Stage 5**. Stage 5's claims checks (`MISSING_CLAIMS_FILE`, `E2E_NOT_EXECUTED`) do not apply — there are no phase claims — so run functional-verify, quality-gate, and sync-docs, and enforce only the `proof-report.html` artifact contract.
 - Stage 6 runs unchanged.
 
 **Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count — or the `implement` route.
@@ -248,8 +248,6 @@ EOF
 
 After each phase completes, delete the breadcrumb (`rm -f .harness/current-phase`) so later-stage subagents don't trigger the gate.
 
-**Nomination signals (learning loop, all of stages 3–5):** stages nominate lesson candidates to `.harness/<SPEC_NAME>/lesson-candidates.jsonl`; the stage-5 curator judges them. Format, taxonomy and rules: the `learn` skill's **Nominate mode** — pass every stage sub-agent that path, not a copy of the format.
-
 **Claims aggregation (mandatory, after the last phase completes):** aggregate every `phase-*-claims.json` into a single `.harness/<SPEC_NAME>/claims.json`. Schema + exact `jq` command: `references/claims-aggregation-format.md` — invoke verbatim. If aggregation fails (`MISSING_PHASE_CLAIMS`), stop the pipeline. The aggregated `claims.json` is what verify reads; phase files are kept for audit.
 
 ### LIB_SUSPECT Loopback (Stage 3 → 1.5)
@@ -272,7 +270,6 @@ This is the only automatic retry loop — library failure is the one class where
 
 - Plan `.harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
 - `--output .harness/<SPEC_NAME>/review/review.md`
-- Lessons `.harness/<SPEC_NAME>/relevant-lessons.md`, nomination log `.harness/<SPEC_NAME>/lesson-candidates.jsonl`
 
 `set-status code-review done`.
 
@@ -280,7 +277,7 @@ This is the only automatic retry loop — library failure is the one class where
 
 ### Stage 5: Verify & Finalize
 
-Single consolidated sub-agent: functional verification → quality gate → sync docs → curate learnings. `set-status verify-finalize running`. Dispatch the Stage 5 template from `references/stage-prompts.md`; model = verify-finalize model (`sonnet` default).
+Single consolidated sub-agent: functional verification → quality gate → sync docs. `set-status verify-finalize running`. Dispatch the Stage 5 template from `references/stage-prompts.md`; model = verify-finalize model (`sonnet` default).
 
 **After the sub-agent returns, enforce the artifact + e2e-execution contracts before trusting the verdict:**
 
@@ -307,7 +304,7 @@ Failure modes (stop the pipeline):
 
 `set-status commit-pr running`. Do these directly (no sub-agent):
 
-1. **Generate `.harness/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict stated inline; one-paragraph summary; TOC naming each artifact (`design.md`, `plan.md`, `phases/`, `library-probe.md`, `learnings.md` if present); library-probe verdict line (selected lib + alternatives); PR link placeholder. Nothing under `.harness/` is committed — reviewers read this index and its artifacts out-of-band (directly, or uploaded to the tracker).
+1. **Generate `.harness/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict stated inline; one-paragraph summary; TOC naming each artifact (`design.md`, `plan.md`, `phases/`, `library-probe.md`); library-probe verdict line (selected lib + alternatives); PR link placeholder. Nothing under `.harness/` is committed — reviewers read this index and its artifacts out-of-band (directly, or uploaded to the tracker).
 2. Invoke `git-commit` via `Skill` for the feature changes. `.harness/` paths are gitignored and never staged — if `git status` shows them, fix `.gitignore` instead of committing.
 3. `git push -u origin <BRANCH_NAME>`.
 4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`.
@@ -354,7 +351,6 @@ Present ONLY after Stage 6 completes, or after a genuine BLOCK/FAIL halt — nev
 | 3. Coder | <files> files, <tests> tests |
 | 4. Review | <verdict> (<findings> findings) |
 | 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated |
-| Learning loop | lessons: retrieved <N> / matched <M> / captured <P> (stale: <count or 0>) |
 | 6. PR | <PR_URL> |
 
 **Issues:** <any retries, failures, stagnation, or "None">

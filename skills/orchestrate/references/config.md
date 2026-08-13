@@ -44,16 +44,16 @@ FAILURE/BLOCKED.
 
 | Stage ID | Default skill | Gate contract (gated stages only) |
 |----------|---------------|------------------------------------|
-| `setup` | `pipeline-setup` | `baseline.json`, `relevant-lessons.md` (`ROUTED_LESSONS`) |
+| `setup` | `pipeline-setup` | `baseline.json` |
 | `brainstorm` | `brainstorm` | — |
 | `library-probe` | `library-probe` | `<!-- LP:VERDICT:PASS -->` / `BLOCKED` |
 | `planning` | `planning` | — |
 | `coder` | `implement` | phase `…-claims.json` (`executed>0`, `failed=0`) |
 | `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
-| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
+| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 
 Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,6,7,9,10}).
-`verify-finalize` is a bundle — overriding its `skill` replaces all four sub-skills and their
+`verify-finalize` is a bundle — overriding its `skill` replaces all three sub-skills and their
 contracts; override `quality-gate` (etc.) to swap just one.
 
 Worktree creation is not in this table: it runs during Initialization, before this file is read. It

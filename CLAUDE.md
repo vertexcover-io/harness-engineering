@@ -5,7 +5,6 @@
 - Try keeping flat folder structure and lesser no of files
 - Keep code simple — no over-engineering
 - Comment only what the code can't say — see code-quality
-- Capture Learnings using learn skill wherever possible
 - Use typescript:strict mode, and use type hints for all functions in python
 - Use code-quality skill for writing high quality code and try to make it functional
 
@@ -22,6 +21,3 @@
 ## Communication
 Ask clarifying questions before architectural changes
 Explain reasoning for non-obvious decisions
-
-## Prior Learnings
-- Before implementing, read `.harness/knowledge/INDEX.md` and the full text of any lesson whose `applies_to`/tags match your task

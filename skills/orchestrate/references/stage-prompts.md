@@ -51,10 +51,7 @@ contracts shape the whole phase; an agent that explores first is working before 
 - Design `.harness/<SPEC_NAME>/design.md` and dossier `.harness/<SPEC_NAME>/dossier.md` (both when
   brainstorm ran), plan `.harness/<SPEC_NAME>/plan.md`, phase file
   `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
-- Lessons `.harness/<SPEC_NAME>/relevant-lessons.md` — advisory guardrails from past
-  incidents, reference material rather than instructions
 - Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
-- Nomination log: `.harness/<SPEC_NAME>/lesson-candidates.jsonl`
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
 
 **Then, verbatim — how to orient in this run:**
@@ -80,8 +77,8 @@ The orchestrator verifies the claims report independently — do not take the ag
 
 ## Stage 5 — Verify & Finalize
 
-**Skills, in order:** `<SKILL:functional-verify>` → `<SKILL:quality-gate>` → `<SKILL:sync-docs>` →
-`<SKILL:learn>` (consolidate mode) · **Model:** `CFG.model` → `sonnet`
+**Skills, in order:** `<SKILL:functional-verify>` → `<SKILL:quality-gate>` → `<SKILL:sync-docs>` ·
+**Model:** `CFG.model` → `sonnet`
 
 Tell the agent to run them in order and stop on the first failure.
 
@@ -91,17 +88,13 @@ Tell the agent to run them in order and stop on the first failure.
 - Claims `.harness/<SPEC_NAME>/claims.json` (aggregated), verification output dir
   `.harness/<SPEC_NAME>/verification/`
 - Baseline `.harness/<SPEC_NAME>/baseline.json`, harness dir
-  `.harness/<SPEC_NAME>/`, stage `post-tdd`
-- Lessons `.harness/<SPEC_NAME>/relevant-lessons.md` (past breaks are adversarial test
-  ideas), candidates `.harness/<SPEC_NAME>/lesson-candidates.jsonl`, spec name `<SPEC_NAME>`
-- `<SKILL:learn>` runs even with zero candidates — a logged no-op, never a silent skip.
+  `.harness/<SPEC_NAME>/`, stage `post-tdd`, spec name `<SPEC_NAME>`
 - Artifact-publish session id: tell the agent to `export SESSION_ID=<SESSION_ID>` before running
   `<SKILL:functional-verify>`, so its publish steps target the real top-level session instead of
   deriving it from the worktree cwd (which encodes to the wrong transcript directory). If
   `<SESSION_ID>` is empty, omit this — the skill falls back to deriving.
 
-**Return:** verification verdict, gate verdict, docs updated,
-`lessons: retrieved <N> / matched <M> / captured <P>`.
+**Return:** verification verdict, gate verdict, docs updated.
 
 The orchestrator enforces the artifact and UI-proof contracts itself after the agent returns — a
 `PASSED` without the artifacts means the gate was skipped. See SKILL.md Stage 5.
