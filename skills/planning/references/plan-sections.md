@@ -25,12 +25,23 @@ a complete plan.
 | `## Global constraints` | something binds every phase and is invisible to one built in isolation — fixed values, verbatim copy, platform limits. A value used in one phase belongs in that step. |
 | `## Signature index` | a name is defined in one phase and used in another |
 | `## Blockers in existing code` | existing code must be repaired or worked around to build this |
-| `## Test matrix` | there is more than one behavior to place |
+| `## Test Matrix` | requirements exist — one row per requirement |
 | `## Acceptance` | something is provable only after every phase lands |
-| `## Deferred` | work was deliberately excluded, or the user chose to defer an open question |
+| `## Deferred` | work was deliberately excluded, the user chose to defer an open question, or `--auto` deferred one (marked `auto`) |
 
 No status fields — progress derives from git and the DAG. No file inventory, no patterns table,
 no reuse-verdict table: those belong in the steps they govern.
+
+### The phase digraph
+
+Inside `## Phases`, one DOT digraph names the build order — orchestrate dispatches coder waves
+from it. One node per phase id; an edge means "must land first".
+
+    digraph phases {
+      p1 [label="1: <capability>"]
+      p2 [label="2: <capability>"]
+      p1 -> p2
+    }
 
 ### The signature index
 
@@ -55,15 +66,16 @@ Only what must be repaired or worked around to build this — problems that bloc
 make the new code hard to write, test, or understand. Each gets a phase.
 
 Pre-existing problems in a file you happen to be touching are out of scope; they are
-`tech-debt-finder`'s job, and listing them trains the reader to skim the ones that matter. A
-row whose disposition is "leave" has already answered its own question.
+`tech-debt-finder`'s job, and listing them trains the reader to skim the ones that matter.
+If a row's resolution would be "leave the code as is", the problem is not a blocker — delete
+the row.
 
 Quote the code. A blocker described in prose is a claim the reader has to verify; the four
 lines that show it are the argument.
 
 ## phase-N.md
 
-Header: `# Phase N (<tag>): <the capability title>` + a `Depends on:` line.
+Header: `# Phase N: <the capability title>` + a `Depends on:` line.
 
 | Section | Answers only | Must not contain |
 |---|---|---|
@@ -88,9 +100,9 @@ signature, or an algorithm whose correctness isn't obvious. It states where the 
 its contract is, and — where the location or shape had a plausible alternative — what that was
 and why not.
 
-The alternative clause is one sentence when there is one and absent when there isn't. Naming it
-is how "wrong abstraction" becomes reviewable: a reader can only push back on a choice they can
-see was a choice.
+The alternative clause is one sentence when there is one and absent when there isn't. Name the
+rejected alternative so a reviewer can challenge the choice — a reader can only push back on a
+choice they can see was a choice.
 
 A step that is only "modify X to do Y" is mechanical — the coder will see it on opening the
 file. Reduce it to a one-line note, or cut it. Steps are not a change list.
@@ -114,8 +126,8 @@ createFlow, the parent-plus-children builder`) and let the coder read it whole. 
 the prose already determines the change, or when orienting would take forty lines: a quote that
 long is a lie about how self-contained the change is.
 
-Elide to the lines that matter, and show only the changed lines in the after — an after-block as
-long as the before-block is a diff pretending to be an explanation.
+In the before-block, elide to the lines that matter. In the after-block, show only the changed
+lines. An after-block as long as the before-block is a diff pretending to be an explanation.
 
 ```markdown
 1. **Modify `src/services/user.ts:31 — createUser, the insert path`** — reject duplicates
@@ -142,8 +154,9 @@ size of the change at the same time.
 
 ### Traps
 
-Something the coder would plausibly undo without knowing why — a guard that looks redundant, a
-flag that looks vestigial — gets one line naming what breaks. It isn't a step; it's a fence.
+Some code looks safe to undo but is not: a guard that looks redundant, a flag that looks
+vestigial. Give each one line naming what breaks if the coder removes it. It isn't a step;
+it's a fence.
 
 ### Test-file steps
 

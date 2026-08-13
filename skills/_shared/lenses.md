@@ -2,14 +2,13 @@
 
 One catalog, two modes. **Generation** (the grill): walk every lens; where it fires, ask the
 question it states. **Review** (the stress pass on a chosen approach, and planning's recon):
-walk it again against the decided shape; every finding lands in the consuming doc's own
-sections — for a design: Requirements, Edge Cases, Risks, or a Decision; for a plan: a
-Codebase Context entry, a Tech Debt disposition, a matrix row, or a question to the user —
-nowhere else.
+walk it again against the decided shape. Every finding becomes one of four things: a `D<n>`
+entry in the written tree, a question to the user, a Test Matrix row or scenario, or a named
+risk in the checkpoint summary — nowhere else.
 
 | Lens | Fires when | Then ask |
 |---|---|---|
-| Reuse | the dossier found something adjacent | extend it, or build new — and why? |
+| Reuse | the code sweep found something adjacent | extend it, or build new — and why? |
 | Abstraction | 2+ call sites will need the same shape | what is the seam, and does it pass `code-quality`'s extraction gate? |
 | Load | any new read/write path | what breaks at 10×? what's the actual expected volume? |
 | Security & abuse | a new input, endpoint, or trust decision | who exploits this, and what does the boundary validate? |

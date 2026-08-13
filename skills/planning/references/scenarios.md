@@ -1,9 +1,7 @@
 # Test Scenarios — the writing contract
 
-How a scenario is written. *Which level* it runs at and *which phase* proves it are the Test
-Matrix's decisions — a scenario lives in the phase file its matrix row names; a flow provable
-only after every phase lands lives in plan.md's `## Acceptance`, and the phase completing the
-journey authors and runs it. Examples use a neutral domain (user auth) unrelated to the feature
+How a scenario is written. *Which level* it runs at, *which phase* proves it, and where each
+scenario lives are the Test Matrix's decisions — see `phase-design.md`. Examples use a neutral domain (user auth) unrelated to the feature
 being planned.
 
 ## Behavior, not implementation
@@ -56,8 +54,7 @@ Expected:
 - **Heading** — `**S<n> — <observable outcome>** · <ids>`. The id is globally unique across the
   plan, assigned in the Test Matrix; `tdd` carries it in the test title and `quality-gate`
   resolves it against the phase file. Trace ids sit on the heading so coverage is scannable
-  without reading bodies — a reader checking whether a requirement is covered shouldn't have to
-  read twenty scenario bodies to find out. A scenario tracing to nothing is dropped, or flags a
+  without reading bodies. A scenario tracing to nothing is dropped, or flags a
   missing requirement.
 - **Setup** — a `Given …:` clause when state and trigger fuse into one situation; a numbered
   list when they genuinely don't. If the clause needs an "and" joining two independent
@@ -87,19 +84,18 @@ needs its negative at the boundary that can actually **reject the write** — no
 that hides the button. Derive both: offered-only-in-context (UI) and
 rejected-when-submitted-directly (the outermost in-scope boundary that gates the write).
 Assert the *desired* rejection even when today's code would accept it — a test encodes the
-requirement, not the present bug; flag the gap, never invert the assertion. Only when no
-in-scope write path could reject it — no server, no service, no validating form with the
-gating context — is there no boundary to assert against: record that omission as a one-line
-decision in the phase, not a fabricated API test.
+requirement, not the present bug; flag the gap, never invert the assertion. Sometimes no
+in-scope write path can reject it: no server, no service, no validating form with the gating
+context. Then there is no boundary to assert against. Record that omission as a one-line
+decision in the phase file. Do not fabricate an API test.
 
-**Regression, when shared code is touched.** Every existing behavior flowing through code
-this plan modifies gets a scenario asserting it is unchanged — each named variant separately,
-even when the source doc names no such requirement (add it and note the gap). Label them
-`(regression)`.
+**Regression, when shared code is touched.** Find every existing behavior that flows through code this plan modifies. Each gets a
+scenario asserting it is unchanged — one per named variant. When the source doc names no
+such requirement, add the requirement and note the gap. Label them `(regression)`.
 
 ## Before writing phase files
 
-Pair every source item — each requirement, edge case, risk, "shall not change" clause, each
-named variant — with the scenario id(s) covering it, in a working pass (never a section in
-any output file). What a linear read misses, the pairing catches: the third variant, the
+Pair every source item with the scenario id(s) that cover it. Source items are: each
+requirement, edge case, risk, "shall not change" clause, and each named variant. Do the
+pairing as scratch work — never write it as a section in any output file. What a linear read misses, the pairing catches: the third variant, the
 enforcement negative, the plain create-then-read.
