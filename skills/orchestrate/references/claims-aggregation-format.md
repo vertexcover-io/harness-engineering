@@ -1,5 +1,14 @@
 # Claims Aggregation Format & UI-Proof Gate
 
+## Contents
+
+- [Aggregated `claims.json` schema](#aggregated-claimsjson-schema)
+- [Aggregation command](#aggregation-command)
+- [Aggregated-claims check (Stage 5)](#aggregated-claims-check-stage-5)
+- [Verification proof (runs AFTER functional-verify returns)](#verification-proof-runs-after-functional-verify-returns)
+- [Verdict mapping](#verdict-mapping)
+- [Why verification is not gated](#why-verification-is-not-gated)
+
 After every coder phase has produced `.harness/<SPEC_NAME>/phase-<N>-claims.json` (see `skills/orchestrate/references/phase-claims-format.md` for the per-phase shape), orchestrate aggregates them into a single `.harness/<SPEC_NAME>/claims.json` that functional-verify consumes.
 
 ## Aggregated `claims.json` schema
@@ -39,37 +48,28 @@ After every coder phase has produced `.harness/<SPEC_NAME>/phase-<N>-claims.json
 
 ## Aggregation command
 
+Run the script — do not transcribe its `jq`. It writes the schema above and emits
+`MISSING_PHASE_CLAIMS` when the coder produced no phase reports:
+
 ```bash
-cd '<WORKTREE_PATH>' || exit 1
-HARNESS_SPEC_DIR='.harness/<SPEC_NAME>'
-shopt -s nullglob
-PHASE_FILES=( "$HARNESS_SPEC_DIR"/phase-*-claims.json )
-if [ ${#PHASE_FILES[@]} -eq 0 ]; then
-  echo 'MISSING_PHASE_CLAIMS — coder produced no phase-*-claims.json files'; exit 1
-fi
-jq -s '{
-  spec: "<SPEC_NAME>",
-  aggregated_at: (now | todate),
-  executed: (map(.executed // 0) | add),
-  passed:   (map(.passed   // 0) | add),
-  failed:   (map(.failed   // 0) | add),
-  phases:   (map(.phase)),
-  e2e_runs: (map(select(.e2e_run != null) | {
-              phase: .phase,
-              runner: .e2e_run.runner,
-              report_path: .e2e_run.report_path,
-              command: .e2e_run.command,
-              executed: .executed,
-              passed:   .passed,
-              failed:   .failed,
-              started_at:  .e2e_run.started_at,
-              finished_at: .e2e_run.finished_at
-            })),
-  claims:   (map(.claims // []) | add)
-}' "${PHASE_FILES[@]}" > "$HARNESS_SPEC_DIR/claims.json"
+bash "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/scripts/aggregate-claims.sh" '<WORKTREE_PATH>' '<SPEC_NAME>'
 ```
 
 If aggregation fails → stop the pipeline with `MISSING_PHASE_CLAIMS`.
+
+## Aggregated-claims check (Stage 5)
+
+Before trusting the Stage 5 verdict, prove the coder's suites actually ran and passed:
+
+```bash
+cd '<WORKTREE_PATH>' || exit 1
+CLAIMS='.harness/<SPEC_NAME>/claims.json'
+test -f "$CLAIMS" || { echo 'MISSING_CLAIMS_FILE'; exit 1; }
+jq -e '.executed > 0' "$CLAIMS" >/dev/null || { echo 'E2E_NOT_EXECUTED'; exit 1; }
+jq -e '.failed == 0'  "$CLAIMS" >/dev/null || { echo 'E2E_FAILED'; exit 1; }
+```
+
+Any printed token stops the pipeline (see [Verdict mapping](#verdict-mapping)).
 
 ## Verification proof (runs AFTER functional-verify returns)
 
@@ -99,6 +99,8 @@ claims to decide what to drive. It just no longer decides whether verification c
 | Gate passes | Continue to quality-gate |
 | `MISSING_PHASE_CLAIMS` | Stop pipeline. Coder did not produce phase reports. |
 | `MISSING_CLAIMS_FILE` | Stop pipeline. Aggregation step was skipped. |
+| `E2E_NOT_EXECUTED` | Stop pipeline. Phase suites were authored but never run (`executed = 0`). |
+| `E2E_FAILED` | Stop pipeline. A phase suite ran red (`failed > 0`). |
 | `MISSING_PROOF_REPORT` | Stop pipeline. Functional-verify did not run (Stop hook should have caught this). |
 
 ## Why verification is not gated

@@ -36,6 +36,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const withLock = async (dagFile, mutate) => {
   const lockDir = join(dirname(dagFile), "dag.lock.d");
   let acquired = false;
+  // 50 attempts x 100ms = a 5-second budget to acquire the lock.
   for (let i = 0; i < 50; i++) {
     try {
       mkdirSync(lockDir);
@@ -47,6 +48,9 @@ const withLock = async (dagFile, mutate) => {
     }
   }
   if (!acquired) {
+    // Budget exhausted: assume the holder died and break the lock. Say so on stderr —
+    // a forced unlock means a concurrent writer's update can be lost.
+    console.error(`dag-update: lock held longer than 5s at ${lockDir} — force-unlocking`);
     try { spawnSync("rm", ["-rf", lockDir]); } catch {}
     try { mkdirSync(lockDir); } catch {}
   }

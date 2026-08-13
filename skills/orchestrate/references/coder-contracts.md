@@ -1,5 +1,13 @@
 # Coder Stage Contracts
 
+## Contents
+
+- [Input: the phase file](#input-the-phase-file)
+- [Tooling commands](#tooling-commands)
+- [E2E is mandatory and gated](#e2e-is-mandatory-and-gated)
+- [Report artifacts (mandatory, machine-derived)](#report-artifacts-mandatory-machine-derived)
+- [Behavior coverage is judged at altitude](#behavior-coverage-is-judged-at-altitude)
+
 **Read this when** executing a coder phase inside the orchestrate pipeline — the `implement` skill
 sends you here the moment it is handed a phase file. It carries every pipeline-specific input,
 output, and signal the coder stage owes the orchestrator. The craft — the RED-GREEN-REFACTOR loop
@@ -50,7 +58,7 @@ is BLOCKED until the E2E test passes and the report artifacts are written.
   flag or feature gate, the harness must turn it on, or the test goes green because the code
   never ran — a false pass, not a done scenario.
 - **The E2E flow is given, not chosen.** The phase's `### E2E` block is the finish-line spec —
-  use it verbatim. Flows in plan.md's `## System Verification` are cross-slice: author one
+  use it verbatim. Flows in plan.md's `## Acceptance` are cross-slice: author one
   only when your phase file names it as yours to run (the slice completing the journey), and
   take its steps from the plan verbatim. Before creating a new spec file, grep the e2e
   directory for the surface (route, command, topic, selector); if one covers it, **extend
@@ -104,12 +112,3 @@ the same shape one altitude up.
 
 ---
 
-## `LIB_SUSPECT` — library failure signal
-
-When a test fails ≥3 times in a row with every failure's stack trace inside the *same* external
-lib (error class `auth` / `schema` / `not-found` / `import-error` / `timeout`), stop retrying:
-the lib, not your code, may be wrong. Emit `<!-- LIB_SUSPECT:<lib>:<error-class> -->` in your
-report and return control — orchestrate re-invokes the `library-probe` skill to walk the
-fallback chain. Guard against false positives: most failures are in your code, so flip only
-when the lib frame is *consistently* in the stack, read the docs (context7) first, and treat a
-different error on each retry as flailing, not a lib problem.

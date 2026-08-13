@@ -8,7 +8,6 @@ stage's default skill name (`implement`) — both resolve the same stage. A work
 ```json
 {
   "stages": {
-    "brainstorm":      { "skill": "my-brainstorm" },
     "coder":           { "skill": "my-implement", "model": "opus" },
     "code-review":     { "skill": "my-code-review" },
     "quality-gate":    { "skill": "my-quality-gate" },
@@ -27,11 +26,9 @@ Look the entry up by stage ID, then by default skill name; call the match `CFG`.
 - **model** (sub-agent stages `coder`/`verify-finalize` only) = `CFG.model` → the
   dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model` on a
   main-conversation stage has no Agent to retarget — ignore it (log).
-- **disabled** = `CFG.disabled === true` skips the stage, exactly like a caller "skip <stage>" (DAG
-  node → `skipped`, "Handling Skipped Stages" applies). Honored ONLY for the **Skippable Stage**
-  (`brainstorm`); on any **Mandatory** stage it is rejected
-  (`"Cannot disable mandatory stage <id> — ignoring"`). Planning is mandatory — its own
-  "is a plan warranted?" gate (inside the skill, after recon) is the only route to `implement`.
+- **disabled** = every stage is mandatory, so `disabled` is always rejected
+  (`"Cannot disable mandatory stage <id> — ignoring"`). Planning scales itself — its step 0 collapses
+  the question loop for trivial work, and its own gate is the only route to `implement`.
 
 Does NOT apply to `orchestrate` itself (no recursive override).
 
@@ -45,14 +42,12 @@ FAILURE/BLOCKED.
 | Stage ID | Default skill | Gate contract (gated stages only) |
 |----------|---------------|------------------------------------|
 | `setup` | `pipeline-setup` | `baseline.json`, `relevant-lessons.md` (`ROUTED_LESSONS`) |
-| `brainstorm` | `brainstorm` | — |
-| `library-probe` | `library-probe` | `<!-- LP:VERDICT:PASS -->` / `BLOCKED` |
-| `planning` | `planning` | — |
+| `planning` | `planning` | `plan.html` + extracted `plan.md`/`phases/` (or the `implement` route) |
 | `coder` | `implement` | phase `…-claims.json` (`executed>0`, `failed=0`) |
 | `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
 | `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` + `learn` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 
-Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,6,7,9,10}).
+Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,7,9,10}).
 `verify-finalize` is a bundle — overriding its `skill` replaces all four sub-skills and their
 contracts; override `quality-gate` (etc.) to swap just one.
 
