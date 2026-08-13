@@ -69,6 +69,7 @@ a complete plan.
 | `## Phases` | always — capability title, repos touched, builds/needs, *why the cut is there*, and the digraph |
 | `## Global constraints` | something binds every phase and is invisible to one built in isolation — fixed values, verbatim copy, platform limits. A value used in one phase belongs in that step. |
 | `## Signature index` | a name is defined in one phase and used in another |
+| `## Design References` | a phase builds a user-facing surface a design already defines — one row per screen, from `design/INDEX.md` |
 | `## Blockers in existing code` | existing code must be repaired or worked around to build **or test** this |
 | `## Test Matrix` | requirements exist — one row per requirement |
 | `## Acceptance` | something is provable only after every phase lands |
@@ -103,6 +104,19 @@ cannot open the phase file that defines the name. Duplication is the point of an
 
 It introduces nothing. Every entry is defined by a step. A name here that no step builds is a
 finding.
+
+### Design References
+
+Flat, one row per screen, copied from the design scout's `design/INDEX.md` and dropping its
+source column. It exists for the same reader as the signature index: a coder building one phase
+in isolation who needs to know that the checkout screen is already drawn, and where.
+
+The step that builds the surface carries the instruction — *build to `design/checkout-empty.png`* —
+and the index carries the paths. A screen here that no step builds is a finding, as in the
+signature index.
+
+Omit the section when no design exists. **Say so in the step instead**: a surface with no design
+is one the coder is authorized to invent, and that is worth one clause where the work happens.
 
 ### Blockers
 

@@ -6,12 +6,13 @@ Walk the list twice: in step 2 against the problem, to find questions the user d
 in step 3 against the approach you chose, to find where it breaks.
 
 Most lenses will not fire. Skip those, with no note. When one does fire, its finding becomes a
-decision, a question to the user, a Test Matrix row or scenario, a `## Blockers in existing
-code` entry, or a named risk.
+decision, a question to the user, a Test Matrix row or scenario, a `## Design References` row,
+a `## Blockers in existing code` entry, or a named risk.
 
 | Lens | Fires when | Ask |
 |---|---|---|
 | Reuse | the sweep found code that already does part of this | does it apply here, and what does using it cost? |
+| Design fidelity | the change has a user-facing surface | does a design or an existing screen already define this, or are we inventing it? |
 | Abstraction | the same shape exists in two or more places, or this change adds another copy | should one thing serve them all, and does that pass `code-quality`'s extraction gate? |
 | Testability | you cannot name the function a unit test would call to prove the core behavior | what shape would make that possible, and which phase builds it? |
 | Load | the solution adds a read path or a write path | what is the real expected volume, and what breaks at ten times that? |
