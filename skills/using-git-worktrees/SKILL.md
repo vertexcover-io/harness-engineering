@@ -264,7 +264,7 @@ Ready to implement auth feature
 ## Integration
 
 **Called by:**
-- **brainstorming** (Phase 4) - REQUIRED when design is approved and implementation follows
+- **planning** - REQUIRED when the plan is approved and implementation follows
 - Any skill needing isolated workspace
 
 **Pairs with:**

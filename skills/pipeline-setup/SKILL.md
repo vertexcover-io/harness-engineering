@@ -115,8 +115,8 @@ the runner and a **single-file** command so each iteration stays scoped.
 
 ### 4. Create the Feature Directory
 
-One directory holds everything — `.harness/<SPEC_NAME>/` (design.md, plan.md, phases/,
-library-probe.md, baseline.json, manifest.json, e2e-report.json, gate-report-*.md, review/,
+One directory holds everything — `.harness/<SPEC_NAME>/` (design.md, plan.html, plan.md, phases/,
+baseline.json, manifest.json, e2e-report.json, gate-report-*.md, review/,
 probes/, verification/). The whole `.harness/` tree is gitignored (knowledge/ excepted);
 reviewers read artifacts out-of-band.
 

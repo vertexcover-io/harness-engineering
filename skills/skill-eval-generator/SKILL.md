@@ -251,7 +251,7 @@ For multi-stage pipeline skills — assert on stage completion and artifacts:
     "Changes committed with meaningful messages"
   ],
   "anti_expectations": [
-    "Does not skip the brainstorm or planning stages",
+    "Does not skip the planning stage",
     "Does not commit without running tests first"
   ]
 }
