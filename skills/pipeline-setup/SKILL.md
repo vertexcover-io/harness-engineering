@@ -177,24 +177,7 @@ keys are unchanged — `commands` is additive.
 
 Downstream stages append `stages.<stage_name> = { started_at, completed_at, outcome }` entries.
 
-6. **Route prior lessons** (learning loop — contract: `../_shared/knowledge.md`):
-
-```bash
-node "<plugin-root>/skills/_shared/knowledge.mjs" verify
-node "<plugin-root>/skills/_shared/knowledge.mjs" migrate   # no-op on migrated repos
-node "<plugin-root>/skills/_shared/knowledge.mjs" route --spec "<SPEC_NAME>" \
-  --keywords "<csv: spec title words + tags>" --paths "<csv: planned/likely touched paths>"
-```
-
-- `verify` exit 2 (gitignored knowledge zone) → **halt the pipeline** with the error —
-  this is the one loud failure.
-- `route`/`migrate` failure or non-JSON output → record `knowledge skipped — <reason>`
-  in the manifest and continue; the learning loop never blocks setup.
-- Keywords come from the task title + spec tags; paths from the task description's
-  named files/dirs (planning refines them later — routing tolerates imprecision).
-- Store the written path as `ROUTED_LESSONS`.
-
-Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`, `ROUTED_LESSONS`
+Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
 
 ---
 
@@ -210,4 +193,3 @@ After completion, the following variables are available for downstream stages:
 | `SPEC_DIR` | Path to `.harness/<SPEC_NAME>/` (all run artifacts, gitignored) |
 | `BASELINE_PATH` | Path to `.harness/<SPEC_NAME>/baseline.json` |
 | `MANIFEST_PATH` | Path to `.harness/<SPEC_NAME>/manifest.json` |
-| `ROUTED_LESSONS` | Path to `.harness/<SPEC_NAME>/relevant-lessons.md` (routed prior lessons; may contain the no-match sentinel) |

@@ -108,7 +108,7 @@ The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}
 | 1 | Design & Plan | **Main conversation** | `design.md` (recorder; carries the dependency + fallback chain) · `plan.html` (review surface, gate) → extracted `plan.md` + `phases/phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-claims.json` + `e2e-report.json` |
 | 4 | Code Review | **Main conversation** | `.harness/<SPEC_NAME>/review/review.md` — per-axis findings + verdict (review only, no source edits) |
-| 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs, learnings captured |
+| 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 
 **Every stage runs a skill, and which one is never hardcoded here** — `references/config.md` owns the
@@ -163,8 +163,8 @@ Parallelism is **graph-driven**, not file-count-driven. Under vertical slicing (
 Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
 1. `set-status baseline running`.
-2. **Invoke `pipeline-setup` via `Skill`** — it owns tooling detection, baseline metrics, the spec artifact directory, and lesson routing. Do not hand-roll any of it (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
-3. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`, and **`ROUTED_LESSONS`** (`.harness/<SPEC_NAME>/relevant-lessons.md` — may hold the no-match sentinel, which is still a valid path to pass on). Every later stage that takes a `Lessons:` path takes this one; there is no other producer of it.
+2. **Invoke `pipeline-setup` via `Skill`** — it owns tooling detection, baseline metrics, and the spec artifact directory. Do not hand-roll any of it (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
+3. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
 4. Create the directories `pipeline-setup` does not: `.harness/<SPEC_NAME>/verification/screenshots/`, `.harness/<SPEC_NAME>/verify-staging/`, `.harness/<SPEC_NAME>/review/`, and `.harness/<SPEC_NAME>/phases/` (`reports/` already created by dashboard init). The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
 5. **Load stage config.** `orchestrate.config.json` is optional and lives at the worktree root; if it exists, `Read` its `stages` map into `STAGE_CONFIG`, else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md` — it owns every rule about that file, and none are restated here.
 6. `write-report baseline`, `set-status baseline done`, `set-status setup done`.
@@ -172,7 +172,7 @@ Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `-
 ### Stage 1: Design & Plan (Main Conversation)
 
 1. `set-status planning running`.
-2. Invoke `planning` via `Skill`. Pass `TASK_CONTEXT` (the prompt or document) and `Lessons: <ROUTED_LESSONS>` — known pitfalls matching this spec become plan steps.
+2. Invoke `planning` via `Skill`. Pass `TASK_CONTEXT` (the prompt or document).
 3. The skill owns the whole arc: understand → question loop → solution review → **inline checkpoint** (pause 1) → recorder writes `design.md` → phase design → **plan gate** on `.harness/<SPEC_NAME>/plan.html` (pause 2) → payload extraction. The orchestrator adds no `AskUserQuestion` of its own; the PreToolUse hook handles the `waiting` status. The skill's step 0 scales the flow itself — trivial work skips the checkpoint. Do not pre-empt that call.
 4. After the skill returns, verify the outputs: `.harness/<SPEC_NAME>/plan.html` and extracted `plan.md` + `phases/phase-*.md`.
 5. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `write-report planning`, `set-status planning done`.
@@ -181,7 +181,7 @@ Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `-
 
 - Mark the `planning` node `done` and record the route in its report.
 - **Skip Stages 3 and 4 entirely** — there is no phase graph to dispatch from and no slice to review at. Set both DAG nodes to `skipped`.
-- Invoke `implement` via `Skill` with the recon findings planning handed back, then go to **Stage 5**. Stage 5's claims checks (`MISSING_CLAIMS_FILE`, `E2E_NOT_EXECUTED`) do not apply — there are no phase claims — so run functional-verify, quality-gate, sync-docs, and learn, and enforce only the `proof-report.html` artifact contract.
+- Invoke `implement` via `Skill` with the recon findings planning handed back, then go to **Stage 5**. Stage 5's claims checks (`MISSING_CLAIMS_FILE`, `E2E_NOT_EXECUTED`) do not apply — there are no phase claims — so run functional-verify, quality-gate, and sync-docs, and enforce only the `proof-report.html` artifact contract.
 - Stage 6 runs unchanged.
 
 **Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count — or the `implement` route.
@@ -209,8 +209,6 @@ EOF
 
 After each phase completes, delete the breadcrumb (`rm -f .harness/current-phase`) so later-stage sub-agents don't trigger the gate.
 
-**Nomination signals (learning loop, all of stages 3–5):** stages nominate lesson candidates to `.harness/<SPEC_NAME>/lesson-candidates.jsonl`; the stage-5 curator judges them. Format, taxonomy and rules: the `learn` skill's **Nominate mode** — pass every stage sub-agent that path, not a copy of the format.
-
 **Claims aggregation (mandatory, after the last phase completes):** aggregate every `phase-*-claims.json` into a single `.harness/<SPEC_NAME>/claims.json` by running the script — do not transcribe its `jq`:
 
 ```bash
@@ -225,7 +223,6 @@ The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>
 
 - Plan `.harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
 - `--output .harness/<SPEC_NAME>/review/review.md`
-- Lessons `.harness/<SPEC_NAME>/relevant-lessons.md`, nomination log `.harness/<SPEC_NAME>/lesson-candidates.jsonl`
 
 `set-status code-review done`.
 
@@ -233,7 +230,7 @@ The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>
 
 ### Stage 5: Verify & Finalize
 
-Single consolidated sub-agent: functional verification → quality gate → sync docs → curate learnings. `set-status verify-finalize running`. Dispatch the Stage 5 template from `references/stage-prompts.md`; model = verify-finalize model (`sonnet` default).
+Single consolidated sub-agent: functional verification → quality gate → sync docs. `set-status verify-finalize running`. Dispatch the Stage 5 template from `references/stage-prompts.md`; model = verify-finalize model (`sonnet` default).
 
 **After the sub-agent returns, enforce the artifact + e2e-execution contracts before trusting the verdict:**
 
@@ -267,7 +264,7 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
 
 `set-status commit-pr running`. Do these directly (no sub-agent):
 
-1. **Generate `.harness/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict stated inline; one-paragraph summary; TOC naming each artifact (`plan.html` first — the review surface — then `design.md`, `plan.md`, `phases/`, `learnings.md` if present); PR link placeholder. Reviewers read this index and its artifacts out-of-band (directly, or uploaded to the tracker), since nothing under `.harness/` reaches the PR.
+1. **Generate `.harness/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict stated inline; one-paragraph summary; TOC naming each artifact (`plan.html` first — the review surface — then `design.md`, `plan.md`, `phases/`); PR link placeholder. Reviewers read this index and its artifacts out-of-band (directly, or uploaded to the tracker), since nothing under `.harness/` reaches the PR.
 2. Invoke `git-commit` via `Skill` for the feature changes. `.harness/` paths are gitignored and never staged — if `git status` shows them, fix `.gitignore` instead of committing.
 3. `git push -u origin <BRANCH_NAME>`.
 4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`.
@@ -314,7 +311,6 @@ Present ONLY after Stage 6 completes, or after a genuine BLOCK/FAIL halt — nev
 | 3. Coder | <files> files, <tests> tests |
 | 4. Review | <verdict> (<findings> findings) |
 | 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated |
-| Learning loop | lessons: retrieved <N> / matched <M> / captured <P> (stale: <count or 0>) |
 | 6. PR | <PR_URL> |
 
 **Issues:** <any retries, failures, stagnation, or "None">
