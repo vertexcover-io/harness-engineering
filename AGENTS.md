@@ -4,7 +4,7 @@
 - Prefer editing existing files over creating new ones. 
 - Try keeping flat folder structure and lesser no of files
 - Keep code simple — no over-engineering
-- No unnecessary comments or docstrings
+- Comment only what the code can't say — see code-quality
 - Capture Learnings using learn skill wherever possible
 - Use typescript:strict mode, and use type hints for all functions in python
 - Use code-quality skill for writing high quality code and try to make it functional

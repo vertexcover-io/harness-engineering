@@ -133,14 +133,17 @@ When a function takes 3+ parameters, use a named structure (options object in Ty
 
 ---
 
-## Self-Documenting Code
+## Comments
 
-**A comment must be load-bearing** — delete it and a competent reader stalls. Exactly two things carry that load:
+Write a comment when one of three things is true:
 
-- **The code is not obvious** from its names and shape — a non-obvious algorithm, a workaround for an upstream bug, a constraint imposed from outside the code (a protocol quirk, a legal requirement).
-- **A trade-off was taken** whose reason is invisible in what the code does.
+- **The code is not obvious** — a non-obvious algorithm, a workaround for an upstream bug, a constraint imposed from outside the code (a protocol quirk, a legal requirement).
+- **A design decision is invisible in the block** — a trade-off taken, an alternative rejected, an ordering that matters.
+- **A future maintainer would otherwise break it** — why this must stay in sync with something else, why the obvious simplification is wrong.
 
-Judge it per comment, and judge test files exactly as production code, docblocks exactly as `//`. Anything that fails the test is a signal to refactor instead — rename, name the intermediate value, use a type alias.
+Each is **load-bearing**: delete it and a competent reader stalls. Judge per comment, test files exactly as production code, docblocks exactly as `//`.
+
+**One or two lines.** Say the thing the code can't and stop — the reason, not the mechanism. If the reason needs a paragraph, it belongs in the design doc or the commit message, and the comment is the one line that points there.
 
 ```js
 // Server returns totals one page behind under concurrent writes; re-reading after
@@ -148,7 +151,13 @@ Judge it per comment, and judge test files exactly as production code, docblocks
 const total = await refetchTotal();
 ```
 
-Three species carry no load and stay out: a comment that **restates an adjacent name** (two things to keep in sync), one that **cites a spec, plan, or ticket** (`REQ-013`, `AC7`, phase numbers — these belong in test names, where they stay checked), and one that **narrates the work's history** (`// BUG 2 (fixed in review)` — that is the commit message's job).
+If none of the three apply, the fix belongs in the code, not in a comment — rename the thing, give the intermediate value a name, add a type alias.
+
+Three kinds of comment feel natural to write and never apply. Delete them on sight:
+
+- **Restates an adjacent name** — now there are two things to keep in sync.
+- **Cites a spec, plan, or ticket** (`REQ-013`, `AC7`, phase numbers) — these belong in test names, where they stay checked.
+- **Narrates the work's history** (`// BUG 2 (fixed in review)`) — that is the commit message's job.
 
 **Match the file's style, not its density.** Where a comment is load-bearing and the file documents in JSDoc, write JSDoc. A file thick with docblocks never makes a new one load-bearing.
 
