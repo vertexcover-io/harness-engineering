@@ -260,9 +260,10 @@ verification pays the same cost from scratch.
 Publish so a reviewer finds the evidence without hunting through a worktree. Two homes, both **best-effort — they
 never fail the verification**; both implementations are in `references/publish.md`:
 
-- **The feature's tracker** — three attachments: the proof report, a zip of the whole `verification/` folder (so its
-  relative links resolve once unzipped), and each video. Which tracker and how a branch maps to a ticket are project
-  facts. When the config says `none`, is absent, or its token is unset, skip in one line.
+- **The feature's tracker** — one attachment: a zip of the whole `verification/` folder, so the report, its frames
+  and its videos all resolve once unzipped. That zip is the whole delivery; the ticket keeps the PR link, design and
+  plan a human put there. Which tracker and how a branch maps to a ticket are project facts. When the config says
+  `none`, is absent, or its token is unset, skip in one line.
 - **Claude Sessions** — the report and videos, so they show in the Sessions Artifacts tab. Use the injected
   `SESSION_ID` (orchestrate exports it) verbatim; on a standalone run, derive it from the newest transcript under
   the cwd. Not installed / not authenticated → skip in one line.
