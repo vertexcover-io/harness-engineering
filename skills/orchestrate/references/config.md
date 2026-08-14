@@ -41,9 +41,9 @@ FAILURE/BLOCKED.
 
 | Stage ID | Default skill | Gate contract (gated stages only) |
 |----------|---------------|------------------------------------|
-| `setup` | `pipeline-setup` | `baseline.json` |
+| `setup` | none — inline in orchestrate | `harness.json` read, `start` + `package` + `check` events appended |
 | `planning` | `planning` | `plan.html` + extracted `plan.md`/`phases/` (or the `implement` route) |
-| `coder` | `implement` | phase `…-claims.json` (`executed>0`, `failed=0`) |
+| `coder` | `implement` | `ledger state --assert coder` exits 0 |
 | `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
 | `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 

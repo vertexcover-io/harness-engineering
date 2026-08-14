@@ -6,7 +6,7 @@ How the gate detects a project's toolchain and records the starting metrics.
 
 Run at pipeline start, immediately after worktree setup, so gates can detect regressions against a
 known-good starting point. Capture these metrics and write them to
-`.harness/<SPEC_NAME>/baseline.json`:
+`harness.json` at the worktree root:
 
 ```json
 {
@@ -37,7 +37,7 @@ If a tool is not detected, record `null` for that key — do not omit it.
 
 ## Scope to changed packages (monorepos)
 
-If `baseline.json`'s `commands.monorepo` is set (turborepo/nx), use `commands.test_changed`
+If a package in `harness.json` names a `monorepo` tool (turborepo/nx), use its `test_changed`
 (substitute `{BASE}` with `<BASE_BRANCH>`) to run typecheck/lint/test against only the **changed
 packages and their dependents** — e.g. `turbo run test:unit lint typecheck --filter='...[<BASE_BRANCH>]'`.
 Turbo's `...[base]` filter includes downstream dependents, so regressions in affected packages are
