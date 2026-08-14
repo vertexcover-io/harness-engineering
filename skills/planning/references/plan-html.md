@@ -9,8 +9,12 @@ byte-for-byte what the coders receive.
 
 Copy `scripts/plan-shell.html` (resolve the path from this skill's own directory) to
 `.harness/<name>/plan.html`, then fill its `SLOT:` comments — extraction refuses
-unfilled slots. The shell carries the machinery —
-theme, left nav, scroll-spy, xref tooltips, drill-downs, case-list builder — and it is not
+unfilled slots. Fill incrementally, one save per section (order in SKILL.md step 7): the
+live server reloads the user's tab on every save, and any `SLOT:` comment still in the body
+renders as a spinner, so a half-built page reads as "in progress", never as broken. The
+shell carries the machinery —
+theme, left nav, scroll-spy, xref tooltips, drill-downs, case-list builder, the slot
+spinners — and it is not
 edited outside the slots. Regenerating machinery by hand is the failure mode this shell exists
 to prevent: wasted tokens and broken JS.
 

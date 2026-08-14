@@ -218,6 +218,24 @@ One authored artifact, two layers:
   `references/plan-html.md` (sections, xref tooltips, altitude rule, the one optional
   widget).
 
+Building the page takes a while — stream it so the user watches it grow instead of waiting:
+
+1. **Start the live view first** (background it):
+   ```bash
+   bash <skill-dir>/scripts/start-server.sh --file <abs-path>/.harness/<name>/plan.html
+   ```
+   Print the returned `url` to the user immediately — it carries `?key=…`; never strip the
+   query string. The page auto-reloads on every save; keep the startup JSON (the session
+   dir is the parent of its `state_dir`) for the step-8 shutdown. If the server fails to
+   start, build the file anyway and present it as a `file://` link — never block on the
+   viewer.
+2. **Copy the shell** to `.harness/<name>/plan.html`. Unfilled slots render as spinners.
+3. **Fill top-down, one save per section**: title, brand, nav, and the hero first; then
+   each `SLOT:content` section in order. Insert each new section *above* the remaining
+   `SLOT:content` comment and delete the comment only with the last section — that comment
+   is what keeps the spinner pinned to the end of the written content.
+4. Payloads and the engine data (`X`, `CASES`, `RX`, widget) last.
+
 Then run the self-review in `references/phase-design.md` (five groups) and fix findings
 inline.
 
@@ -226,18 +244,21 @@ found nothing blocking.
 
 ## Step 8 — The plan gate
 
-Present `plan.html` — print its absolute path as a `file://` link — with a one-paragraph
-summary: the phase list and anything that changed since the checkpoint. One
+Present `plan.html` — the live-view URL when the server is running (the open tab already
+shows the finished page), plus its absolute path as a `file://` fallback — with a
+one-paragraph summary: the phase list and anything that changed since the checkpoint. One
 `AskUserQuestion`. In `--auto`, auto-approve.
 
 After any revision the user asks for: update plan.html — payloads included — re-run step 7's
-self-review, and re-present. A revision is not a confirmation; extract only after explicit
+self-review, and re-present. Keep the server running through revisions; every save shows up
+in the user's tab on its own. A revision is not a confirmation; extract only after explicit
 approval.
 
-On approval, extract the payloads:
+On approval, extract the payloads and stop the server:
 
 ```bash
 node <skill-dir>/scripts/extract-plan.mjs .harness/<name>/plan.html
+bash <skill-dir>/scripts/stop-server.sh <session-dir>
 ```
 
 The HTML is the source; the extracted files are build products. Never hand-edit them —

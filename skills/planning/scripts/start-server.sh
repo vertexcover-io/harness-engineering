@@ -6,6 +6,9 @@
 # Each session gets its own directory to avoid conflicts.
 #
 # Options:
+#   --file <path>         Serve exactly this HTML file (live-reload on save)
+#                         instead of the newest file in the session content dir.
+#                         The file is served from its real location — no copying.
 #   --project-dir <path>  Store session files under <path>/.superpowers/brainstorm/
 #                         instead of /tmp. Files persist after server stops.
 #   --host <bind-host>    Host/interface to bind (default: 127.0.0.1).
@@ -21,6 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Parse arguments
 PROJECT_DIR=""
+SERVE_FILE=""
 FOREGROUND="false"
 FORCE_BACKGROUND="false"
 BIND_HOST="127.0.0.1"
@@ -30,6 +34,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-dir)
       PROJECT_DIR="$2"
+      shift 2
+      ;;
+    --file)
+      SERVE_FILE="$2"
       shift 2
       ;;
     --host)
@@ -77,6 +85,19 @@ if [[ -n "$IDLE_TIMEOUT_MINUTES" ]]; then
     exit 1
   fi
   export BRAINSTORM_IDLE_TIMEOUT_MS=$(( IDLE_TIMEOUT_MINUTES * 60 * 1000 ))
+fi
+
+# Resolve --file to an absolute path before we cd into SCRIPT_DIR.
+if [[ -n "$SERVE_FILE" ]]; then
+  case "$SERVE_FILE" in
+    /*) ;;
+    *) SERVE_FILE="$(pwd)/$SERVE_FILE" ;;
+  esac
+  if [[ ! -d "$(dirname "$SERVE_FILE")" ]]; then
+    echo "{\"error\": \"--file directory does not exist: $(dirname "$SERVE_FILE")\"}"
+    exit 1
+  fi
+  export BRAINSTORM_FILE="$SERVE_FILE"
 fi
 
 is_windows_like_shell() {

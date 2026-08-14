@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><!-- SLOT:title — "<Feature name> · Implementation Plan" --></title>
+<title>Plan — being written…</title><!-- SLOT:title — replace the title element's text with
+  "<Feature name> · Implementation Plan", then delete this comment. (The slot comment lives
+  OUTSIDE <title> because <title> renders markup as literal text.) -->
 <style>
 /* ============================================================
    MACHINERY — do not edit below unless a slot says so.
@@ -163,6 +165,10 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
 }
 .flash { animation: flash 1.6s ease-out; }
 @keyframes flash { 0%, 40% { background: var(--amber-bg); } 100% { background: transparent; } }
+.slot-loading { display: flex; align-items: center; gap: 10px; color: var(--ink2); font: 500 13.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; letter-spacing: normal; text-transform: none; padding: 18px 4px; }
+.spin { width: 15px; height: 15px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.writing-pill { position: fixed; right: 18px; bottom: 18px; z-index: 95; display: flex; align-items: center; gap: 9px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 12.5px; font-weight: 600; color: var(--ink2); box-shadow: 0 4px 18px rgba(0,0,0,0.14); }
 /* SLOT:extra-css — styles for the one bespoke widget, if any. Keep under ~60 lines. */
 </style>
 </head>
@@ -303,6 +309,27 @@ document.querySelectorAll('.x').forEach((sp) => {
     t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash');
   });
 });
+
+/* ---- engine: loaders while the page is still being written ----
+   Any SLOT: comment left in the body renders as a spinner; a floating pill
+   says the page updates itself. Both vanish once every slot is filled. */
+const slotWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT);
+const pendingSlots = [];
+while (slotWalker.nextNode()) {
+  if (/^\s*SLOT:/.test(slotWalker.currentNode.nodeValue)) pendingSlots.push(slotWalker.currentNode);
+}
+pendingSlots.forEach((c) => {
+  const el = document.createElement('div');
+  el.className = 'slot-loading';
+  el.innerHTML = '<span class="spin"></span><span>Still writing this part…</span>';
+  c.parentNode.insertBefore(el, c.nextSibling);
+});
+if (pendingSlots.length) {
+  const pill = document.createElement('div');
+  pill.className = 'writing-pill';
+  pill.innerHTML = '<span class="spin"></span>Plan in progress — updates automatically';
+  document.body.appendChild(pill);
+}
 
 /* ---- engine: sidebar scroll-spy ---- */
 const navLinks = [...document.querySelectorAll('#side-nav a')].filter(a => a.hash);
