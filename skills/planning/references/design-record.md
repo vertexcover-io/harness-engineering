@@ -11,7 +11,8 @@ The recorder cannot see the conversation. The dispatch prompt must carry, verbat
 
 - the resolved decision list (every `D<n>` from the written tree, with status)
 - the external dependencies the solution names, with env keys and fallback order
-- questions resolved during the grill, and any the user chose to defer
+- questions resolved during the question loop, and any the user chose to defer
+- every risk named in the checkpoint summary
 - a `file:line` citation for every decision that rests on code
 
 The recorder formats; it does not decide. A decision missing from the dispatch prompt is lost —
@@ -23,7 +24,8 @@ the main agent owns completeness, not the recorder.
 |---|---|---|
 | `## Decisions` | one row per fork taken | the core — see shape below |
 | `## External Dependencies & Fallback Chain` | every external library, API, or service named | exact shape below; omit only when no external dependency exists |
-| `## Resolved questions` | each question the grill settled, with its answer | plain question, plain answer |
+| `## Resolved questions` | each question the question loop settled, with its answer | plain question, plain answer |
+| `## Risks` | every risk named in the checkpoint summary | one line each: what could go wrong, and what it costs |
 | `## Deferred` | questions the user chose to defer | only user-deferred items; nothing self-deferred |
 
 Omit an empty section. Never pad with "None".
@@ -42,7 +44,7 @@ user's behalf `— inferred`; they are bets a reviewer should check.
 ```
 
 Cite PRD story ids in the `Because` column where a story drives the fork. A decision the PRD
-never asked about cites `grill finding`.
+never asked about cites `lens finding`.
 
 ## `## External Dependencies & Fallback Chain` — shape
 

@@ -1,23 +1,23 @@
-# Lens Catalog
+# Lenses
 
-One catalog, two modes. **Generation** (the grill): walk every lens; where it fires, ask the
-question it states. **Review** (the stress pass on a chosen approach, and planning's recon):
-walk it again against the decided shape. Every finding becomes one of four things: a `D<n>`
-entry in the written tree, a question to the user, a Test Matrix row or scenario, or a named
-risk in the checkpoint summary — nowhere else.
+Angles to think from. Consider each one against the work in front of you.
 
-| Lens | Fires when | Then ask |
+Walk the list twice: in step 2 against the problem, to find questions the user did not ask;
+in step 3 against the approach you chose, to find where it breaks.
+
+Most lenses will not fire. Skip those, with no note. When one does fire, its finding becomes a
+decision, a question to the user, a Test Matrix row or scenario, a `## Blockers in existing
+code` entry, or a named risk.
+
+| Lens | Fires when | Ask |
 |---|---|---|
-| Reuse | the code sweep found something adjacent | extend it, or build new — and why? |
-| Abstraction | 2+ call sites will need the same shape | what is the seam, and does it pass `code-quality`'s extraction gate? |
-| Load | any new read/write path | what breaks at 10×? what's the actual expected volume? |
-| Security & abuse | a new input, endpoint, or trust decision | who exploits this, and what does the boundary validate? |
-| Failure | any dependency | what happens when it dies, times out, or half-succeeds? |
-| Concurrency | shared mutable state | two writers, read-during-write, stale actor |
-| Maintainer | always | where does the next reader get stuck? |
-| Adjacent systems | a shared contract | what did we assume that might change? |
-| Migration | existing data or callers | how do in-flight and existing records cross over? |
-| Testability | a behavior's natural test level is higher than its nature warrants | is that the lowest level that gives confidence, or the lowest the current code allows? if the code, its shape is a Blocker with a phase step |
-
-A lens that fires is **probed or parked** — never silently passed. A lens that doesn't fire
-needs no note.
+| Reuse | the sweep found code that already does part of this | does it apply here, and what does using it cost? |
+| Abstraction | the same shape exists in two or more places, or this change adds another copy | should one thing serve them all, and does that pass `code-quality`'s extraction gate? |
+| Testability | you cannot name the function a unit test would call to prove the core behavior | what shape would make that possible, and which phase builds it? |
+| Load | the solution adds a read path or a write path | what is the real expected volume, and what breaks at ten times that? |
+| Security & abuse | the solution adds an input, an endpoint, or a trust decision | who abuses this, and what does the boundary check? |
+| Failure | the solution calls something that can fail on its own | what happens when it is down, when it times out, and when it half-completes? |
+| Concurrency | two actors can write the same state | what happens with two writers, a read during a write, and an actor holding a stale copy? |
+| Maintainer | the design adds a concept, a name, or an indirection the codebase does not have | what does the next reader need in order to change this safely? |
+| Adjacent systems | the change alters a contract another system depends on | what did we assume about that system that could change? |
+| Migration | the change alters stored data, or a contract with live callers | how do existing records and in-flight requests move to the new behavior? |

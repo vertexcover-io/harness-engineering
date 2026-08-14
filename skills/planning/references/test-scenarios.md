@@ -1,35 +1,63 @@
-# Test Scenarios — the writing contract
+# Test Scenarios — what to test, at which level
 
-How a scenario is written. *Which level* it runs at, *which phase* proves it, and where each
-scenario lives are the Test Matrix's decisions — see `phase-design.md`. Examples use a neutral domain (user auth) unrelated to the feature
-being planned.
+One row per requirement in plan.md's `## Test Matrix`: **requirement · level · strategy ·
+phase**. Order the rows by level — `unit` first, `qa-agent` last — so the pyramid is
+visible at a glance. Each scenario is written out in the phase file that proves it — in
+full, exactly once, never restated elsewhere or replaced by an id-only pointer. A flow
+provable only after every phase lands rows to plan.md's `## Acceptance`; the phase that
+completes the journey authors and runs it. Examples here use a neutral domain (user auth)
+unrelated to the feature being planned.
+
+## Derive what to test
+
+Start from what the PRD already gives — stated requirements, acceptance criteria, named
+scenarios — and cite their ids. Then add what it implies but does not say:
+
+- the negative/failure half of every requirement that has one
+- edge cases: empty, absent, duplicate, malformed, boundary value
+- state transitions beyond create (edit, delete) and the round-trip: saved data reads
+  back in its original shape, on the normal read path
+- config- or data-driven behavior: vary the driving data and assert the output follows —
+  never assert a constant
+- every capability an actor exercises across screens or services: one flow scenario per
+  named variant — a variant is never covered by substituting a peer
+- **the enforcement negative** — a gated requirement ("only an admin deletes") needs its
+  rejection asserted at the boundary that can actually reject the write, not only the UI
+  that hides the button. Assert the desired rejection even when today's code would accept
+  it — flag the gap, never invert the assertion. When no in-scope boundary can reject it,
+  record that omission as a one-line decision in the phase file; never fabricate an API
+  test.
+- **regression, when shared code is touched** — every existing behavior flowing through
+  code this plan modifies gets a scenario asserting it is unchanged, one per named
+  variant, labelled `(regression)`. When the source doc names no such requirement, add
+  the requirement and note the gap.
+
+Before writing phase files, pair every source item (requirement, edge case, risk, named
+variant, "shall not change" clause) with the scenario id(s) covering it — as scratch work,
+never as an output section. The pairing catches what a linear read misses: the third
+variant, the enforcement negative, the plain create-then-read.
 
 ## Behavior, not implementation
 
-A scenario describes an **observable outcome** for an **actor** (user, API caller, another
-service) given a **starting state** and a **trigger**. It stays true when the code is
-refactored, because it never names a private function, an internal call order, or an
-intermediate data shape.
+A scenario states an **observable outcome** for an **actor** (user, API caller, another
+service) given a starting state and a trigger. It never names a private function, a call
+order, or an internal data shape — so it stays true across refactors.
 
-| Smells like implementation | Reads like behavior |
+| Implementation (rewrite it) | Behavior |
 |---|---|
 | "`hash(pw)` returns a 60-char string" | "the stored password is not the plaintext; the right password verifies, a wrong one doesn't" |
 | "`buildOptions()` calls `config.filter`" | "a viewer-role editor offers read only — never delete" |
-| "the validator invokes `regex.test`" | "a password without a digit shows the rule's error and blocks registration" |
-| asserts a private helper's signature | asserts what the actor sees at the boundary |
-| couples to call order or module layout | couples only to the requirement |
 
-The test: **if the assertion would have to change when someone refactors internals without
-changing what the user experiences, rewrite it.** Assert at the outermost stable boundary
-that isolates the behavior — rendered output, the service's public method and its persisted
-effect, the HTTP response. Naming a file in the setup is fine (it says where the behavior
-lives); the expectations assert only what an actor can observe.
+The litmus: **if the assertion would change when internals are refactored without changing
+what the actor experiences, rewrite it.** Assert at the outermost stable boundary —
+rendered output, the public method and its persisted effect, the HTTP response. Naming a
+file in the setup is fine; the expectations assert only what an actor observes.
 
-## The format
+## Format
 
-The shape scales with the scenario. One whose setup is a single situation states it in a
-`Given` clause; one with genuinely staged setup lists the stages. A numbered list of one is
-ceremony — it makes a condition look like a procedure.
+Heading `**S<n> — <observable outcome>** · <trace ids>` — the id is globally unique across
+the plan; `tdd` carries it in the test title and `quality-gate` resolves it against the
+phase file. A scenario tracing to nothing is dropped, or flags a missing requirement.
 
 ```markdown
 **S3 — A weak password is rejected with the rule's error** · R2, EC1
@@ -39,63 +67,47 @@ Given registration is attempted with a password missing a digit:
 - the message names the unmet rule
 ```
 
-```markdown
-**S9 — A session expires and the next call is rejected as expired** · R4, R5, EC3
+A `Given …:` clause when state and trigger fuse into one situation; a numbered list only
+when setup is genuinely staged (then label the outcomes `Expected:`). A `Given` needing an
+"and" between two independent conditions wants the list — or it is two scenarios. Include
+the negative half where it matters ("edit and delete are **not** offered"). Regressions:
+`**S12 (regression) — …**`.
 
-1. Register an account and confirm it
-2. Sign in and capture the session
-3. Advance past the session's expiry and retry the protected call
+In the phase file, group the scenarios under level subsections — `### Unit` ·
+`### Integration` · `### E2E` · `### QA Agent` — including only the subsections the phase
+has.
 
-Expected:
-- the first protected call succeeds
-- the retry is rejected as expired, not as unauthenticated
-```
+## Choose the level — pyramid, not ladder
 
-- **Heading** — `**S<n> — <observable outcome>** · <ids>`. The id is globally unique across the
-  plan, assigned in the Test Matrix; `tdd` carries it in the test title and `quality-gate`
-  resolves it against the phase file. Trace ids sit on the heading so coverage is scannable
-  without reading bodies. A scenario tracing to nothing is dropped, or flags a
-  missing requirement.
-- **Setup** — a `Given …:` clause when state and trigger fuse into one situation; a numbered
-  list when they genuinely don't. If the clause needs an "and" joining two independent
-  conditions, it wants the list — or it's two scenarios.
-- **Expectations** — bulleted observable outcomes, including the negative half where it matters
-  ("edit and delete are **not** offered"). Labelled `Expected:` only after a numbered list,
-  where it separates the two; after a `Given` clause the bullets follow the colon directly.
-- **Regression** — `**S12 (regression) — …**`.
-- Written out in full exactly once, in its home file — never restated elsewhere, never replaced
-  by an id-only pointer, never summarised in the Test Matrix.
+Four levels:
 
-## Deriving the set
+- `unit` — a function or component constructed and asserted on its own
+- `integration` — real pieces wired together: an API route with its store, a component
+  with its children, a service against a real (local) dependency
+- `e2e` — a browser or full system driving the feature as an actor would
+- `qa-agent` — a property no automated assertion can check: visual correctness, copy tone,
+  "does this feel right" judgments. These rows are not coder-written tests — the QA agent
+  (the `functional-verify` skill) drives the running app after all phases land and films
+  the proof. Use it for what genuinely needs eyes, never as an overflow bucket.
 
-Walk each source; each yields one or more scenarios:
+Pick the **lowest level that gives confidence** (heuristic:
+`../../tdd/references/integration-e2e.md`): the finished matrix leans heavily on `unit`
+rows, carries some `integration` rows, and holds few `e2e` rows.
 
-- [ ] Every requirement: its happy path **and** its negative/failure half where one exists.
-- [ ] Every edge case: empty, absent, duplicate, malformed, boundary value.
-- [ ] State transitions beyond create — edit, re-index, delete — and the round-trip: data
-      saved then read back arrives in the original shape, on the normal read path.
-- [ ] Config- or data-driven behavior: vary the driving data in the test and assert the
-      output follows — never assert a constant.
-- [ ] Every capability an actor exercises across screens or services: one flow scenario, per
-      named variant — a variant is never covered by substituting a peer.
+An e2e row is earned only by a fact no lower level can see — computed layout, focus,
+navigation, a cross-service journey. Two checks before accepting any climb:
 
-**The enforcement negative.** A gated requirement ("only an admin deletes", "only in draft")
-needs its negative at the boundary that can actually **reject the write** — not only the UI
-that hides the button. Derive both: offered-only-in-context (UI) and
-rejected-when-submitted-directly (the outermost in-scope boundary that gates the write).
-Assert the *desired* rejection even when today's code would accept it — a test encodes the
-requirement, not the present bug; flag the gap, never invert the assertion. Sometimes no
-in-scope write path can reject it: no server, no service, no validating form with the gating
-context. Then there is no boundary to assert against. Record that omission as a one-line
-decision in the phase file. Do not fabricate an API test.
+- **Code shape is never a reason.** If the behavior would test at `unit` in a plain
+  function but the unit cannot be constructed in a test alone, that is a `## Blockers in
+  existing code` entry with a phase step that fixes it — not a silent level climb.
+- **A missing tool is a step, not a reason.** A test library or helper that does not
+  exist yet gets added by a phase. The reverse climb is also wrong: a level that cannot
+  see the property proves nothing — jsdom measures nothing, so sizes, truncation, and
+  overflow stay in a browser however small the unit.
 
-**Regression, when shared code is touched.** Find every existing behavior that flows through code this plan modifies. Each gets a
-scenario asserting it is unchanged — one per named variant. When the source doc names no
-such requirement, add the requirement and note the gap. Label them `(regression)`.
+**Red flag:** more than a third of rows at `e2e`. Account for every one — a real-browser
+fact keeps its row; anything else traces to a named Blocker.
 
-## Before writing phase files
-
-Pair every source item with the scenario id(s) that cover it. Source items are: each
-requirement, edge case, risk, "shall not change" clause, and each named variant. Do the
-pairing as scratch work — never write it as a section in any output file. What a linear read misses, the pairing catches: the third variant, the
-enforcement negative, the plain create-then-read.
+The strategy column makes a row reviewable before any test exists: what is faked, what is
+diffed, what is data-driven. A requirement with no row means the plan is incomplete or the
+requirement is not real — both are findings.

@@ -1,9 +1,9 @@
 # plan.html — the human review surface
 
 Path: `.harness/<name>/plan.html`. One self-contained file, no external requests. Everything
-the approval must cover appears here. The
-agent-facing markdown rides inside it as payload blocks; what the reviewer drills into is
-byte-for-byte what the coders receive.
+the approval must cover appears in the authored HTML. The agent-facing markdown rides inside
+the same file as payload blocks, which the browser does not render — the reviewer never sees
+them, so the human layer must stand alone.
 
 ## Build from the shell
 
@@ -41,8 +41,9 @@ The shell's `SLOT:content` comment lists the section order. Rules the slots don'
 - **Phases** — each phase card carries: one goal sentence · an `.unlock` box ("After this
   lands…") · a drill-down with a *File / Job / The rule to know* table · a `.tests-line` of
   xref spans naming the groups/cases that prove it.
-- **Tests** — level cards carry counts. The all-cases drill-down (`id="all-cases"`, body
-  `id="case-groups"`) is generated from `CASES`; every case is one line.
+- **Tests** — one card per level (Unit / Integration / E2E / QA Agent) carrying its count.
+  The all-cases drill-down (`id="all-cases"`, body `id="case-groups"`) is generated from
+  `CASES`; group `CASES` by those same levels, every case one line.
 - **UI features** — when the feature has a user-facing surface, the phase card embeds the
   mockup/screenshot inline (data: URI) or links the Figma/app URL. An API-only feature omits
   this without comment.
@@ -82,5 +83,6 @@ The markdown the coders receive is embedded at the bottom of the page:
 - One block per file; paths relative to the spec dir. Content follows `plan-sections.md`.
 - **The sync rule:** every number, name, signature, and path shown in the human layer comes
   from a payload block or from the PRD it cites. The human layer may summarize; it may never
-  contradict or invent.
+  contradict or invent. No reader can check this — the payloads are invisible on the page — so
+  the two layers drift unless you verify each figure against its block yourself.
 - A literal `</script>` inside a payload is written `<\/script>`.

@@ -25,8 +25,9 @@ standalone, derive a short kebab-case name from the topic before step 1):
 | `plan.html` | step 7 | the user — the review surface |
 | `plan.md` + `phases/phase-N.md` | step 8, extracted from plan.html | coders, quality-gate |
 
-People read the checkpoint summary, plan.html, and the markdown inside it. Write those per
-`../_shared/writing-style.md`. Only agents read `design.md` — skip the style rules there.
+People read the checkpoint summary and `plan.html`. Write those per
+`../_shared/writing-style.md`. The other three are agent-facing: `design.md` skips the style
+rules; `plan.md` and the phase files keep them, for precision rather than readability.
 
 **Never assume.** State a claim about the code only after one of three things: you read the
 code, the user confirmed it, or you labeled it an assumption.
@@ -67,10 +68,7 @@ Do not split when the pieces share more than ~30% of files and ship together.
   a fast model (`sonnet`). Send them before your first question, so they search while the
   user answers. Each returns findings inline with `file:line` pointers: what already does
   part of this, the conventions to follow, how the code runs and tests, what is fragile
-  nearby. Ask each sweep one testability question outright: **can the unit this work changes be
-  constructed in a test on its own — and which test libraries actually resolve?** A monolith no
-  test can build, and a library listed in `package.json` but missing a peer, both push every
-  later matrix row to the browser.
+  nearby.
 - **The sweep locates; you read.** Open yourself every file a decision turns on.
 - When the repo holds fewer than 3 examples of the pattern this work needs, also research
   externally — prior art, known failure modes, current API facts. Findings return inline
@@ -81,7 +79,7 @@ Do not split when the pieces share more than ~30% of files and ship together.
 **Done when:** you can state the problem, the actor, and the outcome, and what exists in the
 code today — each claim cited or labeled an assumption.
 
-## Step 2 — The question loop (the grill)
+## Step 2 — The question loop
 
 Close every open fork. Keep a written tree, not a mental model:
 
@@ -90,7 +88,7 @@ D<n>: <the decision> — blocks: D<a> · blocked-by: D<c> · [open|resolved|park
 ```
 
 Resolve top-down: the decision that unblocks the most others first. To find the questions the
-user did not think of, walk `../_shared/lenses.md` — read it before the first pass.
+user did not think of, walk `references/lenses.md` — read it before the first pass.
 
 Asking mechanics — always `AskUserQuestion` (on surfaces without it, plain text in the same
 shape):
@@ -112,8 +110,8 @@ fine alone — "sessions expire after 24h" vs "remember-me lasts 30 days". Ask a
 clash now.
 
 **Done when:** every checklist item holds — actor identified · outcome stated · scope
-boundaries known · success criteria known or recorded as assumptions · every lens that fired
-probed or parked · answers checked against each other · every `D<n>` resolved or parked.
+boundaries known · success criteria known or recorded as assumptions · answers checked against
+each other · every `D<n>` resolved or parked.
 
 ## Step 3 — Solutions
 
@@ -130,14 +128,14 @@ Present 2-3 approaches only when real alternatives exist; one viable option gets
 - Present all approaches, then recommend. A recommendation given first biases how the user
   reads the rest.
 
-Poke holes in the chosen approach: walk `../_shared/lenses.md` again in review mode. Findings
-become questions or decisions.
+Walk `references/lenses.md` again, this time against the approach you chose. Route each finding
+to the destination that file names.
 
 Last, apply YAGNI to every option and flag: needed now? If not, hardcode the value; add the
 option when a real need appears.
 
-**Done when:** one approach is chosen and every hole found is resolved, parked, or carried as
-a named risk.
+**Done when:** one approach is chosen, and every finding is resolved, parked, or carried as a
+named risk.
 
 ## Step 4 — Review the solution, before asking
 
@@ -175,7 +173,8 @@ sentence per the writing style:
 3. **Decisions** — the resolved `D<n>` list as bullets, one line each. Flag every fork closed
    on the user's behalf with *(inferred — confirm)*.
 4. **External dependencies** — each with its fallback order. Omit when none.
-5. **Next** — one sentence: what the plan will contain.
+5. **Risks** — one line each. Omit when none.
+6. **Next** — one sentence: what the plan will contain.
 
 On a large solution, present the decisions in blocks and confirm each block before the final
 question. Then `AskUserQuestion`: header `Approve?`, options
@@ -194,8 +193,30 @@ prompt must include verbatim. Then move to step 6.
 
 ## Step 6 — Design the phases
 
-Read `references/phase-design.md` now — it carries the phase-cutting rules, the scenario and
-test-matrix contract, and the payload writing habits.
+Cut the work into phases. Phases exist so a coder can hold one in context, a human can
+review one in a sitting, and — the biggest win — independent phases can run in parallel.
+Each phase also costs a dispatch, a TDD cycle, a commit, and one more document to read, so
+every phase must earn its place.
+
+A good phase is a **vertical slice**: it covers one or more requirements and is testable
+on its own, end to end — never a code layer. "db: schema" fails (no requirement can be
+proven against a schema alone); "an account can be created and read back" passes. Typical:
+2-4 phases small, 4-6 large.
+
+- **Phase 1 is the thinnest slice.** Barely functional but visible end to end — it proves
+  the wiring before anything is built on top. Setup and plumbing are never their own
+  phase; they ride inside the first phase that needs them.
+- **Prefer fewer phases.** Merge when a phase cannot be demoed without the next, when its
+  only consumer is the next, or when both are small enough that a reviewer reads them in
+  one sitting. Two phases touching the same file are ordered, never parallel.
+- **One mechanism, one phase.** "Export CSV" and "export JSON" are one phase when one
+  exporter handles both as data — split only when a case needs new production code.
+
+After approval, phase numbers are frozen — commits and claims files reference them. A
+deleted phase leaves a gap; never renumber the survivors.
+
+Then derive the tests: read `references/test-scenarios.md` now and build the Test Matrix
+from it.
 
 Two rules bind every step you write:
 
@@ -215,7 +236,7 @@ One authored artifact, two layers:
 
 - **Payloads** — `plan.md` and each `phases/phase-N.md`, embedded as
   `<script type="text/markdown" data-file="…">` blocks. Contract:
-  `references/plan-sections.md`. The payload test: **a reader who has the PRD but not the
+  `references/plan-sections.md`. The payload test: **a coder that has the PRD but not the
   codebase can follow every step without opening a file.**
 - **Human layer** — built from `scripts/plan-shell.html`, never from scratch. Contract:
   `references/plan-html.md` (sections, xref tooltips, altitude rule, the one optional
@@ -239,8 +260,26 @@ Building the page takes a while — stream it so the user watches it grow instea
    is what keeps the spinner pinned to the end of the written content.
 4. Payloads and the engine data (`X`, `CASES`, `RX`, widget) last.
 
-Then run the self-review in `references/phase-design.md` (five groups) and fix findings
-inline.
+Then self-review and fix findings inline. Each check is a lookup, not a judgment; findings
+are `[phase N, step M]: <issue>`. A failed check below blocks the gate; anything else is a
+recommendation:
+
+- **Inputs.** Every cited id resolves in the document named · every recorded decision
+  appears in a step, or `design.md` (when it exists) was updated to supersede it · every
+  repo and dependency the inputs name is touched by a phase or accounted for.
+- **Phasing.** No two phases modify the same file unless ordered · every phase is provable
+  by its own scenarios the moment it lands · a phase consuming what a "parallel" phase
+  builds is not parallel.
+- **Steps.** Every step states a location, a contract, or an algorithm · no step instructs
+  the coder to discover something · no call site is described in prose where the changed
+  lines would fit.
+- **Coverage.** Every requirement has a matrix row · every row names a phase or an
+  acceptance flow · every scenario appears exactly once across all payloads · `e2e` rows
+  stay under a third of the matrix, or each excess row traces to a real-browser fact or a
+  named Blocker.
+- **The layers agree.** Every number, name, signature, and path in the human layer comes
+  from a payload block · every internal id on the page has a tooltip entry · the
+  above-the-fold view answers *what, why, what each phase unlocks* without a drill-down.
 
 **Done when:** the shell's slots are filled, the payloads are complete, and the self-review
 found nothing blocking.
