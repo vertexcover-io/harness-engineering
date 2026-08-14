@@ -5,6 +5,4 @@ docs/*
 orchestrate-workspace
 code-review-workspace
 dev-docs
-.harness/*
-!.harness/knowledge/
-!.harness/README.md
+.harness/
