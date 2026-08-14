@@ -17,6 +17,7 @@ risk in the checkpoint summary — nowhere else.
 | Maintainer | always | where does the next reader get stuck? |
 | Adjacent systems | a shared contract | what did we assume that might change? |
 | Migration | existing data or callers | how do in-flight and existing records cross over? |
+| Testability | a behavior's natural test level is higher than its nature warrants | is that the lowest level that gives confidence, or the lowest the current code allows? if the code, its shape is a Blocker with a phase step |
 
 A lens that fires is **probed or parked** — never silently passed. A lens that doesn't fire
 needs no note.

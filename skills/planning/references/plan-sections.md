@@ -24,7 +24,7 @@ a complete plan.
 | `## Phases` | always — capability title, repos touched, builds/needs, *why the cut is there*, and the DOT digraph |
 | `## Global constraints` | something binds every phase and is invisible to one built in isolation — fixed values, verbatim copy, platform limits. A value used in one phase belongs in that step. |
 | `## Signature index` | a name is defined in one phase and used in another |
-| `## Blockers in existing code` | existing code must be repaired or worked around to build this |
+| `## Blockers in existing code` | existing code must be repaired or worked around to build **or test** this |
 | `## Test Matrix` | requirements exist — one row per requirement |
 | `## Acceptance` | something is provable only after every phase lands |
 | `## Deferred` | work was deliberately excluded, the user chose to defer an open question, or `--auto` deferred one (marked `auto`) |
@@ -64,6 +64,11 @@ finding.
 
 Only what must be repaired or worked around to build this — problems that block the work, or
 make the new code hard to write, test, or understand. Each gets a phase.
+
+**A unit no test can construct is a blocker, even when the feature builds fine around it.** The
+symptom shows up in the Test Matrix, not in the steps: rows climb to `e2e (system)` because
+nothing lower can reach the behavior. Name the shape that forces the climb, quote it, and give a
+phase the step that opens it up. `phase-design.md`'s red flag says when to go looking.
 
 Pre-existing problems in a file you happen to be touching are out of scope; they are
 `tech-debt-finder`'s job, and listing them trains the reader to skim the ones that matter.

@@ -67,7 +67,10 @@ Do not split when the pieces share more than ~30% of files and ship together.
   a fast model (`sonnet`). Send them before your first question, so they search while the
   user answers. Each returns findings inline with `file:line` pointers: what already does
   part of this, the conventions to follow, how the code runs and tests, what is fragile
-  nearby.
+  nearby. Ask each sweep one testability question outright: **can the unit this work changes be
+  constructed in a test on its own — and which test libraries actually resolve?** A monolith no
+  test can build, and a library listed in `package.json` but missing a peer, both push every
+  later matrix row to the browser.
 - **The sweep locates; you read.** Open yourself every file a decision turns on.
 - When the repo holds fewer than 3 examples of the pattern this work needs, also research
   externally — prior art, known failure modes, current API facts. Findings return inline
@@ -276,3 +279,6 @@ works through them directly.
 | "The user seems impatient" | A wrong plan costs more than one more question. Ask the highest-leverage one. |
 | "I'll flag it for the coder to check" | The coder has less context than you. Resolve it or ask the user. |
 | "The summary can gloss this decision" | The summary is what the user approves. A decision missing from it was never approved. |
+| "This unit is untestable, so the test is e2e" | That is a finding about the code, not a level. Name it a Blocker and give a phase the step that opens it up. |
+| "The existing code has no tests, so this is how it is" | The input describes the code today. The plan says what it becomes. Never copy a constraint you are allowed to remove. |
+| "Most rows are e2e because the feature is user-facing" | User-facing describes the requirement. It never describes the level. Run the counterfactual on every row. |

@@ -46,6 +46,35 @@ The strategy column is what makes the matrix worth reading: what is faked, what 
 what is driven by data rather than asserted against a constant. A wrong test comes from a
 wrong strategy, and the strategy is reviewable before any test is written.
 
+**The level states what gives confidence, never what the code permits.** Run the counterfactual
+on each row: *if this behavior sat in a plain function, which level would prove it?* When that
+answer is lower than the level you wrote, the gap is the shape of the code, not the nature of
+the behavior. Say so — the shape is a `## Blockers in existing code` entry, and a phase step
+fixes it. Never let an untestable unit set the plan's test level and go unnamed.
+
+**Red flag — an `e2e (system)` heavy matrix.** Count those rows. Past a third of the matrix,
+stop and account for every one:
+
+- a real-browser fact — computed layout, focus, navigation, a cross-service journey — is at the
+  right level. Keep it.
+- render logic, a branch on state, a mapping, a permission gate — is at the wrong level.
+  Something cannot be rendered or called on its own. Find it, name it as a Blocker, and give a
+  phase the step that extracts it.
+
+The count is the tell, not the verdict. A ticket that is mostly CSS and layout earns browser
+rows honestly. Browser rows that assert *which items a list renders* mean the list is trapped
+inside something no test can construct.
+
+Two traps that push rows upward for the wrong reason. Check both before accepting a level:
+
+- **The harness gap.** A level is unavailable because a library is missing or a helper does not
+  exist yet — not because the code resists it. Adding the dependency is a step, not a reason to
+  climb.
+- **The environment lie.** A level looks available but cannot answer the question. jsdom reports
+  zero for every measurement, so a size, a truncation or an overflow belongs in a browser however
+  small the unit is. Moving *down* to a level that cannot see the property is as wrong as
+  staying up.
+
 Per-phase scenarios live in their phase file. Some flows are provable only after every phase
 lands: those live in plan.md's `## Acceptance`, and the phase that completes the journey
 notes that in one line, then authors and runs them.
@@ -84,7 +113,9 @@ instructs the coder to discover something · no call site is described in prose 
 changed lines would fit.
 
 **Coverage.** Every requirement has a matrix row · every row names a phase or an acceptance
-flow · every scenario appears exactly once across all payloads.
+flow · every scenario appears exactly once across all payloads · `e2e (system)` rows are under a
+third of the matrix, or every row above that share is either a real-browser fact or traced to a
+named Blocker with a phase step that fixes it.
 
 **The two layers agree.** Re-read the rendered sections cold — the browser view is not
 available to you. Every number, name, signature, and path in the human layer comes from a
