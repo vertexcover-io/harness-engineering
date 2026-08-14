@@ -1,13 +1,13 @@
 ---
 name: library-probe
 description: >
-  Pre-flight gate that validates every external library/API named in the design doc
-  *before* planning. Runs cheap health heuristics, then a use-case
+  Trust gate that validates every external library/API named in design.md
+  *before* the plan is built. Runs cheap health heuristics, then a use-case
   smoke test against the live service using credentials from project-root `.env.harness` (gitignored).
   Produces `.harness/<name>/library-probe.md` with a per-library verdict
-  (VERIFIED / FAILED / UNTESTABLE). On FAILED, walks the design doc's declared
+  (VERIFIED / FAILED / UNTESTABLE). On FAILED, walks the declared
   fallback chain; after all alternatives are exhausted, escalates via AskUserQuestion.
-  Use after brainstorm, before planning. Also re-invoked by orchestrate when
+  Runs inside the planning stage. Also re-invoked by orchestrate when
   the coder stage emits a `LIB_SUSPECT` signal.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, AskUserQuestion
 ---
@@ -23,9 +23,9 @@ turns belief into evidence before a single line of production code is written.
 
 ## When this skill runs
 
-1. **Primary path** — between `brainstorm` and `planning` in the orchestrate
-   pipeline. Reads the design doc's `## External Dependencies & Fallback Chain`
-   section.
+1. **Primary path** — invoked by the `planning` skill right after its checkpoint, before any
+   phase is designed. Reads the `## External Dependencies & Fallback Chain` section of
+   `.harness/<SPEC_NAME>/design.md` (written by planning's recorder sub-agent).
 2. **Loopback path** — when `tdd` emits `LIB_SUSPECT` during coding, orchestrate
    re-invokes this skill with `--lib <name>` to re-probe the suspect lib and walk
    the fallback chain.
@@ -34,7 +34,9 @@ turns belief into evidence before a single line of production code is written.
 
 ## Inputs
 
-- Design doc: `.harness/<SPEC_NAME>/design.md` (or path passed in)
+- Decision record: `.harness/<SPEC_NAME>/design.md` (or path passed in). The recorder that
+  writes it is dispatched at planning's checkpoint — if the file does not exist yet, wait
+  briefly and re-check before declaring it missing.
 - Feature dir: `.harness/<SPEC_NAME>/` (gitignored — `library-probe.md`, `verification/verification-stubs.md`, `probes/<lib>/` scripts and logs)
 - Optional flag: `--lib <name>` to probe a single library on loopback
 - Optional flag: `--auto` to skip AskUserQuestion (CI mode)
@@ -57,9 +59,9 @@ turns belief into evidence before a single line of production code is written.
 
 ## Step 1 — Extract dependency list
 
-Read the design doc's `## External Dependencies & Fallback Chain` section.
-Format expected (added by the brainstorm skill — see the conditional sections in its
-`references/design-sections.md`):
+Read the `## External Dependencies & Fallback Chain` section of `design.md`.
+Format expected (written by the planning skill's recorder — see its
+`references/design-record.md`):
 
 ```markdown
 ## External Dependencies & Fallback Chain
@@ -76,9 +78,9 @@ Format expected (added by the brainstorm skill — see the conditional sections 
 3. build-custom — <approach, e.g. "Playwright scraper">
 ```
 
-If the section is missing, **stop** with: `BLOCKED: design doc missing
-'External Dependencies & Fallback Chain' section. Re-run brainstorm — the section is required
-whenever the design names an external library, API, or service.`
+If the section is missing, **stop** with: `BLOCKED: design.md missing
+'External Dependencies & Fallback Chain' section. Re-run planning's recorder — the section
+is required whenever the solution names an external library, API, or service.`
 
 If no external deps are declared (pure-internal feature), write a short
 `library-probe.md` with `verdict: NOT_APPLICABLE` and exit 0.
@@ -131,7 +133,7 @@ MAIN_REPO=$(dirname "$COMMON_DIR")
 ENV_FILE="$MAIN_REPO/.env.harness"
 ```
 
-The design doc declares **which keys** a probe needs, not a file path. Load via
+The design record declares **which keys** a probe needs, not a file path. Load via
 `set -a; source "$ENV_FILE"; set +a` in the probe script, then verify the
 declared keys are present and non-empty.
 
@@ -196,7 +198,7 @@ Run each probe. Classify the result:
 
 If any required library lands in a `Pivot? Yes` state:
 
-1. Pick the next entry from the design doc's fallback list.
+1. Pick the next entry from the design record's fallback list.
 2. Re-run Steps 2–4 for the new lib.
 3. After each failed alternative, append to `library-probe.md` under `## Pivot Log`.
 4. Cap at **3 pivots**. After exhaustion → escalate.
@@ -206,15 +208,15 @@ If any required library lands in a `Pivot? Yes` state:
 ```
 Question: All declared libraries failed for <use case>. How should I proceed?
 Options:
-  A) Use paid API: <name from design doc, if present>
-  B) Build custom: <approach declared in design doc fallback>
+  A) Use paid API: <name from design.md, if present>
+  B) Build custom: <approach declared in the design.md fallback>
   C) Drop this requirement from scope
-  D) I'll add a new library to the design doc and retry
+  D) I'll add a new library to design.md and retry
 ```
 
 Record the user's choice in `library-probe.md` under `## Resolution`.
 
-In `--auto` mode: pick option B (build custom) if declared in the design doc,
+In `--auto` mode: pick option B (build custom) if declared in design.md,
 else fail the gate with verdict `BLOCKED:no-viable-library`.
 
 ---

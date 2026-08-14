@@ -1,5 +1,15 @@
 # Dashboard Report Formats
 
+## Contents
+
+- [Coder Phase Report](#coder-phase-report)
+- [Code Review Report](#code-review-report)
+- [Verification Report](#verification-report)
+- [Quality Gate Report](#quality-gate-report)
+- [Sync Docs Report](#sync-docs-report)
+- [Learnings Report](#learnings-report)
+- [Commit & PR Report](#commit--pr-report)
+
 Use these formats when the orchestrator or sub-agents write dashboard reports via `dag-update write-report`.
 Each format corresponds to a pipeline stage.
 
@@ -27,10 +37,10 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 - Issue and resolution (or "None")
 ```
 
-## Code Review Report (Review #N)
+## Code Review Report
 
 ```
-# Code Review #N
+# Code Review
 
 ## Verdict: <APPROVE|APPROVE WITH SUGGESTIONS|REQUEST CHANGES>
 
@@ -44,22 +54,6 @@ Usage: `/usr/bin/env bash '<DAG_SCRIPT>' write-report <node-id> '<markdown follo
 
 ## Details
 <key findings with file:line references>
-```
-
-## Fix Report (Fix #N)
-
-```
-# Fix #N
-
-## Defects Addressed
-- **<defect title>** (`file:line`) — <what was fixed>
-
-## Files Modified
-- `path/to/file` — <what changed>
-
-## Tests
-- All passing: yes/no
-- New tests added: <count or "none">
 ```
 
 ## Verification Report

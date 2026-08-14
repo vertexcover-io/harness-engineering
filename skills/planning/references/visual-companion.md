@@ -1,5 +1,7 @@
-<!-- Vendored verbatim from obra/superpowers (skills/brainstorming/visual-companion.md), MIT license.
-     Scripts in ../scripts/ are vendored from the same source. Keep in sync with upstream. -->
+<!-- Vendored from obra/superpowers (skills/brainstorming/visual-companion.md), MIT license.
+     Scripts in ../scripts/ are vendored from the same source, with one local addition:
+     start-server.sh/server.cjs accept --file <path> (env BRAINSTORM_FILE) to serve and
+     live-reload a single named file in place — used by SKILL.md step 7 for plan.html. -->
 
 # Visual Companion Guide
 

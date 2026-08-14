@@ -239,7 +239,7 @@ Hand off to `/orchestrate` with:
 ```
 Run the spec at dev-.harness/YYYY-MM-DD-doc-quality-fixes-spec.md
 
-IMPORTANT: Skip brainstorm, planning, and sync-docs stages — all context, file locations, and per-file fix instructions are already in the spec. This is a doc-fix task so sync-docs is redundant.
+IMPORTANT: The spec already carries all context, file locations, and per-file fix instructions — planning's question loop and checkpoint are unnecessary, so expect its step 0 to take the short route. Skip sync-docs: this is a doc-fix task, so it is redundant.
 ```
 
 ---

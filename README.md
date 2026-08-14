@@ -171,7 +171,7 @@ Click any completed node to inspect its report:
 After the pipeline completes, the dashboard is finalized into a self-contained HTML file you can share or archive.
 
 You can also run stages individually if you prefer more control:
-`/brainstorm` → `/planning` → `/tdd` → `/quality-gate` → `/git-commit`
+`/planning` → `/tdd` → `/quality-gate` → `/git-commit`
 
 ## Recipes
 
@@ -333,7 +333,6 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | Command | What it does |
 |---------|-------------|
 | `/orchestrate` | Full pipeline: design → plan → code → PR |
-| `/brainstorm` | Deep problem exploration, produces design doc |
 | `/planning` | Breaks work into phases with dependency graph |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
 | `/implement` | Manual coding entry point: TDD + code-quality, review when green |
@@ -363,7 +362,6 @@ harness/
 ├── hooks/
 │   └── hooks.json   # Session hooks for dashboard management (ask-user, DAG updates)
 └── skills/          # Reusable skills that extend Claude Code and Codex
-    ├── brainstorm/
     ├── code-quality/
     ├── code-review/
     ├── coverage-guard/

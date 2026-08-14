@@ -16,7 +16,7 @@ This is the gate between "the coder says it's done" and "the feature ships." Eve
 
 The quality gate receives these parameters from the orchestrator:
 
-- **Feature dir:** `.harness/<SPEC_NAME>/` (gitignored — plan.md, phases/, baseline.json, e2e-report.json, claims.json, gate reports)
+- **Feature dir:** `.harness/<SPEC_NAME>/` (gitignored — baseline.json, e2e-report.json, claims.json, gate reports)
 - **Stage:** `post-tdd` (the gate runs once, after the TDD stage, before commit)
 
 ---
@@ -64,17 +64,10 @@ Detect the project's toolchain (type / lint / test / coverage) and capture start
   already ran; Check 9 reads that run's report, it is not re-run here.
   Coverage runs the tests, so a plain test run followed by a separate coverage run executes the whole
   suite twice — do NOT do that. This one invocation feeds both Check 3 (pass/fail) and Check 4 (coverage).
-- **Behavior coverage procedure:** the plan's `## Test Matrix` in
-  `.harness/<SPEC_NAME>/plan.md` has a **`Where it's proven` column** naming the `S<n>` scenario
-  for each requirement row. For every row at an automated level (`unit` / `api` / `e2e`), grep the
-  test files/output for that scenario id — the coder carries `S<n>` in the test title — and confirm
-  it passes. Rows at the `functional-verify` level are that skill's job, not this check's; skip them
-  with a note. When the REFACTOR consolidation note says a row's test was merged or moved to another
-  level, verify the surviving test passes.
-- **Pass:** Exit code 0 AND every automated matrix row's scenario test passes
-- **Fail:** Non-zero exit code OR any automated matrix row's scenario test is missing or failing
-- Test count is NOT compared — consolidation may legitimately reduce it. The budget is the matrix.
-- Report: exit code, pass/fail/skip counts, matrix rows covered/missing
+- **Pass:** Exit code 0
+- **Fail:** Non-zero exit code
+- Test count is NOT compared — consolidation may legitimately reduce it.
+- Report: exit code, pass/fail/skip counts
 
 ### Check 4: Coverage (diagnostic only — parsed from the Check 3 run, do NOT re-run the suite)
 
@@ -90,18 +83,9 @@ Compared changed files against "the plan's file list" — a section no plan temp
 defined, so it never enforced anything. The number is retired, not reused; the plan's
 create/modify file table serves human review, not this gate.
 
-### Check 6: Plan Compliance
+### Check 6 — removed
 
-- Read each `phases/phase-N.md` in `.harness/<SPEC_NAME>/phases/`. A phase's `## Test Scenarios` section
-  (its `S<n>` scenarios) is its definition of done — there is no separate "Done When" section.
-- For each scenario, cite specific evidence it is satisfied:
-  - The passing test that proves it (`proven_by` / test name)
-  - A file that exists
-  - Command output that proves completion
-- **Pass:** Every scenario has verifiable evidence
-- **Fail:** Any scenario lacks evidence
-- Scenarios that require human judgment → flagged as `UNVERIFIABLE` (INFO, not BLOCKED)
-- Report: each scenario with its evidence or UNVERIFIABLE status
+Plan-compliance checking moved out of the gate: the plan gate reviews the plan, and Check 9 verifies the e2e evidence. The gate no longer reads plan artifacts.
 
 ### Check 7: Comment Audit
 
@@ -133,7 +117,7 @@ why nothing needs re-running after it acts.
 
 Hunted a "Smoke Test" section no template ever defined, so it INFO-passed on every run.
 The number is retired, not reused; runnable end-to-end proof is Check 9's job, and
-human-observable properties live in the Test Matrix's `functional-verify` rows.
+human-observable properties are functional-verify's job, not the gate's.
 
 ### Check 9: E2E Report Verification
 
@@ -145,11 +129,11 @@ This check **only reads** the coder's e2e artifacts — it does not launch a bro
 - If file exists, verify:
   1. `failed` count is 0 — any E2E failures during coding are a hard block
   2. `coverage` array is non-empty — the report must cover at least one scenario
-  3. Each `coverage[].scenario` is a scenario `S<n>` id (not a requirement id) — confirm the S-id appears in a phase file's `## Test Scenarios` or, for a cross-slice flow, in plan.md's `## System Verification`; where that scenario's `(traces to …)` tag names an `R#`/`NF#`/`EC#`, confirm the requirement has a row in the plan's Test Matrix
+  3. Each `coverage[].scenario` is a scenario `S<n>` id (not a requirement id)
   4. `gaps` field exists and is non-empty — a report with no documented gaps is suspicious; flag as WARNING (not BLOCKED)
   5. Timestamp is within the pipeline run window (not stale from a previous run)
 - **Then corroborate against `claims.json`** (aggregated from the coder's `phase-*-claims.json`), when present: aggregated `failed == 0` and `executed > 0`, and every `type: "ui"` claim's `proven_by` names a real test. A `claims.json` that disagrees with `e2e-report.json` (e.g. `failed > 0` in one) is a hard block — the two views of the same run must agree.
-- **Pass:** `failed` = 0 in both files, coverage non-empty, every coverage S-id resolves, timestamp current
+- **Pass:** `failed` = 0 in both files, coverage non-empty, timestamp current
 - **Fail:** `failed` > 0 in either file, or coverage empty, or a coverage S-id doesn't resolve, or e2e-report.json missing for a user-facing task
 - Report: failed count (both files), coverage count, gap count, S-id resolution results
 
@@ -157,8 +141,8 @@ This check **only reads** the coder's e2e artifacts — it does not launch a bro
 
 Detects tautological / written-to-pass tests — the only check that proves tests can fail for the right reason.
 
-1. From the plan's Test Matrix, pick 3-5 behaviors implemented or changed in this run.
-   Prefer the riskiest: branching logic, validation, calculations.
+1. From the code changed in this run, pick 3-5 behaviors. Prefer the riskiest: branching
+   logic, validation, calculations.
 2. Confirm the working tree is clean for the target files (`git diff --quiet -- <file>` or note the
    exact pre-mutation content). Apply ONE mutation at a time to the production code:
    - Invert a boolean condition (`if (x)` → `if (!x)`)

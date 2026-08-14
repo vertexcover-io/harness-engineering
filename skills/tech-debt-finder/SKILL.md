@@ -48,7 +48,7 @@ Parse `$ARGUMENTS`:
 - **Python** (`pyproject.toml`, `setup.py`, or `*.py` files) → deterministic backend = radon
   (+ pip-audit). Identify all Python packages.
 - **TS/JS** (`package.json`, `tsconfig.json`, or `*.ts/*.tsx/*.js/*.jsx/*.mjs/*.cjs`) →
-  deterministic backend = **fallow** (see `../_shared/fallow.md (relative to this skill dir)`).
+  deterministic backend = **fallow**.
 - **Other** (Go, Rust, Java, Ruby, C#, …) → no deterministic backend; the language-agnostic
   LLM pattern scanner (Agent C) runs best-effort.
 
@@ -63,10 +63,7 @@ Two kinds of scanners run and their findings merge in Step 3: a **deterministic 
 
 #### Step 2a: Deterministic backend pass (fallow, TS/JS)
 
-If the scope contains TS/JS (Step 1), run fallow per the shared contract
-(`../_shared/fallow.md (relative to this skill dir)`) — read it for the exact invocation,
-TS/JS gate, exit-code handling, skip-with-note protocol, and the full envelope→finding +
-severity + rule-name mapping. Run all three from the scope root:
+If the scope contains TS/JS (Step 1), run all three fallow commands from the scope root:
 
 ```bash
 FALLOW_AGENT_SOURCE=claude_code npx --yes fallow@2.86.0 dead-code --format json --quiet 2>/dev/null || true
@@ -75,10 +72,11 @@ FALLOW_AGENT_SOURCE=claude_code npx --yes fallow@2.86.0 health    --format json 
 ```
 
 Map each finding into `{category, rule, item, severity, detail, fix_hint, file, line,
-auto_fixable, fallow_action}` using the contract's tables (e.g. `unused_exports[]` →
+auto_fixable, fallow_action}` using the rule names in `references/suppression-rules.md`
+(e.g. `unused_exports[]` →
 `unused-export`/code-smell/Low, `circular_dependencies[]` → `circular-dependency`/dependency/Medium,
 `health.findings[]` with `cyclomatic >= 16` → `high-cyclomatic-complexity`/complexity/High). Set
-`auto_fixable`/`fallow_action` from the finding's `actions[]` per the contract's auto-fixable rule
+`auto_fixable`/`fallow_action` from the finding's `actions[]`
 (a remediation action fallow itself marks `auto_fixable: true`, e.g. `remove-export` → `true`;
 suppression actions and remediations fallow leaves `auto_fixable: false` such as `delete-file` → `false`). Preserve these structured fields — do not collapse findings to bare counts; you
 persist the full list in Step 4.5 and it is the source of truth for the automated fix pass. Don't dump
