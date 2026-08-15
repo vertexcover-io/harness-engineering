@@ -13,7 +13,7 @@
    .card .tag / .grid .g2 .g3 / .pill (ok|err|warn|info) / .chip
    .steps .step / table + .tbl-scroll / details + .d-body + .cnt
    .pipe* (numbered pipeline) / .phase* (phase cards) / .unlock
-   .explorer .exp-* (interactive widget frame) / .gloss / .x (xref)
+   #matrix (the scenario table) / .gloss / .x (xref)
    ============================================================ */
 :root {
   --bg: #faf9f7; --surface: #ffffff; --surface2: #f3f1ed; --ink: #1a1815; --ink2: #5c5850;
@@ -104,10 +104,15 @@ details > summary:hover { background: var(--surface2); border-radius: 10px; }
 details .d-body { padding: 4px 17px 15px; font-size: 13.5px; }
 details .d-body p { color: var(--ink2); margin: 6px 0; }
 summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-weight: 500; }
-.case-list { list-style: none; }
-.case-list li { padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 13px; color: var(--ink2); display: flex; gap: 10px; }
-.case-list li:last-child { border-bottom: none; }
-.case-list .cid { font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 700; color: var(--accent); flex: 0 0 68px; padding-top: 1px; }
+/* #matrix — the scenario table in #tests. One row per scenario, transcribed from the phase
+   payloads per references/test-scenarios.md. Do not restyle per plan. */
+#matrix td { vertical-align: top; }
+#matrix td.lvl, #matrix td.ph { white-space: nowrap; color: var(--ink2); }
+#matrix .sc { display: block; margin-bottom: 5px; }
+#matrix .given { display: block; color: var(--ink2); font-size: 13px; }
+#matrix ul, #matrix ol { margin: 4px 0 0; padding-left: 19px; }
+#matrix ul + .given, #matrix ol + .given { margin-top: 8px; }
+#matrix li { color: var(--ink2); font-size: 13px; margin: 2px 0; }
 .pipe { display: flex; flex-direction: column; margin: 16px 0; }
 .pipe-stage { display: flex; gap: 15px; }
 .pipe-rail { display: flex; flex-direction: column; align-items: center; width: 32px; flex-shrink: 0; }
@@ -127,7 +132,6 @@ summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-we
 .phase-head h3 { font-size: 17px; }
 .unlock { background: var(--accent-soft); border-radius: 8px; padding: 9px 13px; font-size: 13.5px; margin: 11px 0; }
 .unlock b { color: var(--accent); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; display: block; margin-bottom: 2px; }
-.tests-line { font-size: 13px; color: var(--ink2); margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 /* .impl — the implementation steps inside a phase drill-down. One <li> per step in that
    phase's payload, same order, same titles. Do not restyle per plan. */
 .impl { counter-reset: ist; margin: 4px 0 2px; padding: 0; }
@@ -150,17 +154,6 @@ summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-we
 .impl details.media > summary { font-size: 12.5px; padding: 8px 12px; }
 .impl details.media img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; margin: 2px 0 5px; }
 .impl details.media .cap { font-size: 12px; color: var(--ink2); margin: 0 0 9px; }
-.explorer { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin: 14px 0; }
-.exp-setup { background: var(--surface2); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 14px; }
-.exp-grid { display: grid; grid-template-columns: minmax(250px, 1.1fr) 1fr; gap: 18px; }
-@media (max-width: 720px) { .exp-grid { grid-template-columns: 1fr; } }
-.exp-btn { display: block; width: 100%; text-align: left; background: var(--surface2); border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; margin-bottom: 6px; font-family: inherit; }
-.exp-btn:hover { border-color: var(--accent); }
-.exp-btn.active { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-.exp-out { border-radius: 10px; padding: 16px; background: var(--surface2); align-self: start; position: sticky; top: 16px; }
-.exp-out .status { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
-.exp-out p { font-size: 13.5px; color: var(--ink2); }
-.exp-out .why { margin-top: 10px; font-size: 12.5px; border-top: 1px dashed var(--line); padding-top: 10px; }
 .gloss { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
 .gloss .card h3 { font-size: 14.5px; } .gloss .card p { font-size: 13px; }
 .gloss .ref { display: block; margin-top: 8px; font-size: 11.5px; font-family: ui-monospace, monospace; color: var(--accent); }
@@ -191,7 +184,6 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
 .spin { width: 15px; height: 15px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .writing-pill { position: fixed; right: 18px; bottom: 18px; z-index: 95; display: flex; align-items: center; gap: 9px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 12.5px; font-weight: 600; color: var(--ink2); box-shadow: 0 4px 18px rgba(0,0,0,0.14); }
-/* SLOT:extra-css — styles for the one bespoke widget, if any. Keep under ~60 lines. */
 </style>
 </head>
 <body>
@@ -201,7 +193,7 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
   <div class="brand"><!-- SLOT:brand — "<TICKET> · Plan" --></div>
   <nav id="side-nav">
     <!-- SLOT:nav — one <a href="#id"> per section, numbered; then a "Jump to" .grp
-         with shortcuts to the widget, all-cases, decisions, glossary. -->
+         with shortcuts to decisions, the scenario table, glossary. -->
   </nav>
   <div class="foot"><button class="theme-btn" onclick="toggleTheme()">◐ Theme</button></div>
 </aside>
@@ -218,11 +210,10 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
                      goal line · .unlock ("After this lands") · details holding an
                      ol.impl — one li per implementation step in that phase's payload,
                      same order, same titles, carrying that step's prose, its code
-                     blocks and its .rule box · .tests-line with pre-marked xref spans
-       #tests        level cards with counts, the bespoke widget (if the feature has a
-                     mechanism worth exploring interactively), test matrix details,
-                     all-cases details (id="all-cases", body id="case-groups" — the
-                     engine builds the list from CASES)
+                     blocks and its .rule box
+       #tests        one table (id="matrix"), no details wrapper: Scenarios · Level ·
+                     Phase, one row per scenario across the phase payloads, transcribed
+                     from their ## Test Scenarios (references/test-scenarios.md)
        #verify       .grid.g2 of by-hand checks
        #reference    glossary .gloss (id="glossary"), contract tables in details,
                      signature index details, repo map
@@ -259,14 +250,9 @@ function toggleTheme() {
 if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme','dark');
 
 /* SLOT:xrefs — every internal id used anywhere on the page → [tooltip text, jump-target id or ""].
-   Cover: requirement ids, decision ids, flow/edge-case ids, error codes, test-group ids (TCG-*).
-   Individual test cases are auto-registered from CASES below. */
+   Cover: requirement ids, decision ids, flow/edge-case ids, error codes. Scenario ids stay
+   out — they name a heading in the phase file, not a target on this page. */
 const X = {
-};
-
-/* SLOT:cases — every test case: "Group label": [["TC-id","one-line description"], ...].
-   The engine renders them into #case-groups and registers each id in X. */
-const CASES = {
 };
 
 /* SLOT:images — every design/mockup the steps embed, as "file.png": "data:image/png;base64,…".
@@ -275,36 +261,16 @@ const CASES = {
 const IMG = {
 };
 
-/* SLOT:widget — OPTIONAL bespoke interactive widget data + ≤40 lines of wiring.
-   Example shape: a scenario explorer (see .explorer / .exp-* classes). Delete if unused. */
-
 /* ---- engine: design images ---- */
 document.querySelectorAll('img[data-img]').forEach((el) => {
   const src = IMG[el.dataset.img];
   if (src) { el.src = src; el.loading = 'lazy'; }
 });
 
-/* ---- engine: case list builder ---- */
-const groupsBox = document.getElementById('case-groups');
-if (groupsBox) Object.entries(CASES).forEach(([gname, list]) => {
-  const gid = 'grp-' + gname[0];
-  const h = document.createElement('h3');
-  h.id = gid; h.textContent = gname + ' · ' + list.length + ' cases';
-  h.style.cssText = 'margin:14px 0 4px;font-size:13.5px';
-  const ul = document.createElement('ul'); ul.className = 'case-list';
-  list.forEach(([id, txt]) => {
-    X[id] = [txt, id];
-    const li = document.createElement('li'); li.id = id;
-    li.innerHTML = '<span class="cid">' + id + '</span><span>' + txt + '</span>';
-    ul.appendChild(li);
-  });
-  groupsBox.appendChild(h); groupsBox.appendChild(ul);
-});
-
 /* ---- engine: auto-link internal ids in prose ----
    SLOT:xref-regex — extend the alternation to match this feature's id families.
-   Longest alternatives first. Keep TC-/TCG- first so D\d never eats "TC-D7". */
-const RX = /\b(TC-[A-Z]\d{1,2}[a-z]?|TCG-[A-Z]|D\d{1,2}|AC\d{1,2}|FL\d{1,2}|EC\d{1,2})\b/g;
+   Longest alternatives first. */
+const RX = /\b(D\d{1,2}|AC\d{1,2}|FL\d{1,2}|EC\d{1,2})\b/g;
 function linkify(root) {
   const test = new RegExp(RX.source);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(n) {

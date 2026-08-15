@@ -240,11 +240,11 @@ One authored artifact, two layers:
   `references/plan-sections.md`. The payload test: **a coder that has the PRD but not the
   codebase can follow every step without opening a file.**
 - **Human layer** — built from `scripts/plan-shell.html`, never from scratch. Contract:
-  `references/plan-html.md` (sections, xref tooltips, altitude rule, the one optional
-  widget).
+  `references/plan-html.md` (sections, xref tooltips, altitude rule).
 
 The `#phases` drill-down belongs to both: it is the payload's `## Implementation` section
-**transcribed** into HTML, part for part. `references/step-card.md` is the one contract for
+**transcribed** into HTML, part for part. `#tests` is the same move on the payloads'
+`## Test Scenarios`, per `references/test-scenarios.md`. `references/step-card.md` is the one contract for
 those parts — read it before writing either layer.
 
 Building the page takes a while — stream it so the user watches it grow instead of waiting:
@@ -263,10 +263,10 @@ Building the page takes a while — stream it so the user watches it grow instea
    each `SLOT:content` section in order. Insert each new section *above* the remaining
    `SLOT:content` comment and delete the comment only with the last section — that comment
    is what keeps the spinner pinned to the end of the written content.
-4. **Write each `phases/phase-N.md` payload before the `#phases` card that renders it** —
-   you cannot transcribe a document you have not written. Payload blocks never render, so
-   this costs the stream nothing. `plan.md` and the engine data (`X`, `CASES`, `RX`,
-   `IMG`, widget) last.
+4. **Write each `phases/phase-N.md` payload before the `#phases` card and the `#tests` table
+   that render it** — you cannot transcribe a document you have not written. Payload blocks
+   never render, so this costs the stream nothing. `plan.md` and the engine data (`X`, `RX`,
+   `IMG`) last.
 
 Then self-review and fix findings inline. Each check is a lookup, not a judgment; findings
 are `[phase N, step M]: <issue>`. A failed check below blocks the gate; anything else is a
@@ -290,7 +290,8 @@ recommendation:
   numbered steps in that payload's `## Implementation`, same order, same titles · every code
   block in a step reaches its `<li>` · every existing-code snippet carries a `.snip-lbl.cur`
   with its reason · every step that names a design embeds it, and every `data-img` resolves
-  in `IMG`.
+  in `IMG` · rows in `#matrix` == scenarios across all payloads, each carrying that
+  scenario's id, heading, `Given` line and outcomes word for word.
 - **The layers agree.** Every number, name, signature, and path in the human layer comes
   from a payload block · every internal id on the page has a tooltip entry · the
   above-the-fold view answers *what, why, what each phase unlocks* without a drill-down.
