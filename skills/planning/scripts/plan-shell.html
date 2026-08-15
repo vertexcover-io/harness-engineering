@@ -103,6 +103,10 @@ details[open] > summary::before { content: "–"; }
 details > summary:hover { background: var(--surface2); border-radius: 10px; }
 details .d-body { padding: 4px 17px 15px; font-size: 13.5px; }
 details .d-body p { color: var(--ink2); margin: 6px 0; }
+/* The inset is the panel's, not the wrapper's: content written straight into a <details>,
+   with no .d-body around it, still clears the border. */
+details > :not(summary):not(.d-body) { margin-inline: 17px; max-width: calc(100% - 34px); }
+details > :not(summary):not(.d-body):last-child { margin-bottom: 13px; }
 summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-weight: 500; }
 /* #matrix — the scenario table in #tests. One row per scenario, transcribed from the phase
    payloads per references/test-scenarios.md. Do not restyle per plan. */
@@ -152,8 +156,12 @@ summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-we
 .impl .snip-lbl + pre { margin-top: 5px; }
 .impl details.media { margin: 9px 0 0; max-width: 730px; }
 .impl details.media > summary { font-size: 12.5px; padding: 8px 12px; }
-.impl details.media img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; margin: 2px 0 5px; }
-.impl details.media .cap { font-size: 12px; color: var(--ink2); margin: 0 0 9px; }
+.impl details.media img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; margin-block: 2px 5px; }
+.impl details.media .cap { font-size: 12px; color: var(--ink2); margin-block: 0 9px; }
+/* .d-body is what insets a panel. A media panel written without one insets its own children,
+   so the frame clears the border either way. Both rules set margin-block only — a shorthand
+   here would reset the inline margins these two restore. */
+.impl details.media > img, .impl details.media > .cap { margin-inline: 12px; max-width: calc(100% - 24px); }
 footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10px; font-size: 12.5px; color: var(--ink2); }
 .svgd { width: 100%; height: auto; margin: 12px 0; }
 .svgd .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; rx: 8; }
@@ -207,7 +215,14 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
                      goal line · .unlock ("After this lands") · details holding an
                      ol.impl — one li per implementation step in that phase's payload,
                      same order, same titles, carrying that step's prose, its code
-                     blocks and its .rule box
+                     blocks and its .rule box. Every details opens with its summary,
+                     and the panel wraps in .d-body:
+                       <details><summary>The work <span class="cnt">4 steps</span></summary>
+                         <div class="d-body"><ol class="impl">…</ol></div></details>
+                     A step's design panel takes the same shape, captioned:
+                       <details class="media"><summary>Design — what it settles</summary>
+                         <div class="d-body"><img data-img="x.png" alt="…">
+                         <div class="cap">…</div></div></details>
        #tests        one table (id="matrix"), no details wrapper: Scenarios · Level ·
                      Phase, one row per scenario across the phase payloads, transcribed
                      from their ## Test Scenarios (references/test-scenarios.md)
@@ -259,6 +274,28 @@ const IMG = {
 document.querySelectorAll('img[data-img]').forEach((el) => {
   const src = IMG[el.dataset.img];
   if (src) { el.src = src; el.loading = 'lazy'; }
+});
+
+/* ---- engine: give every <details> a <summary> ----
+   A summary-less <details> falls back to the browser's own marker: an unstyled control
+   labelled "Details" that collapses the panel behind a word naming nothing. Rather than
+   trust every panel to carry one, derive the missing ones — a phase panel from the steps
+   it holds, a design panel from the caption or the alt text. */
+document.querySelectorAll('details').forEach((d) => {
+  if (d.firstElementChild && d.firstElementChild.tagName === 'SUMMARY') return;
+  const steps = d.querySelectorAll('.impl > li').length;
+  const img = d.querySelector('img');
+  const cap = d.querySelector('.cap');
+  const label = steps ? 'The work' : (cap && cap.textContent.trim())
+    || (img && ('Design — ' + (img.alt || img.dataset.img))) || 'Details';
+  const s = document.createElement('summary');
+  s.textContent = label;
+  if (steps) {
+    const c = document.createElement('span');
+    c.className = 'cnt'; c.textContent = steps + (steps === 1 ? ' step' : ' steps');
+    s.appendChild(c);
+  }
+  d.prepend(s);
 });
 
 /* ---- engine: auto-link internal ids in prose ----

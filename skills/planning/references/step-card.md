@@ -66,6 +66,21 @@ A step that builds to a design embeds the frame, with a one-line caption naming 
 Two steps using the same frame both embed it — the shell embeds each file once and wires it to
 every use, so repeats cost nothing.
 
+In the drill-down the frame is a panel, and a panel is three parts — summary, `.d-body`, content:
+
+```html
+<details class="media">
+  <summary>Design — the name block hovered</summary>
+  <div class="d-body">
+    <img data-img="menu-super-admin-hover.png" alt="User menu with the name block highlighted">
+    <div class="cap">Settles how far the hover background extends across the name block.</div>
+  </div>
+</details>
+```
+
+The summary is what the reader clicks and the only thing they see closed, so it names the frame's
+subject, not the file. Drop it and the browser substitutes its own control, labelled "Details".
+
 Where no design exists, say so in the step. A surface with no design is one the developer is
 authorized to invent, and that is worth one clause where the work happens.
 

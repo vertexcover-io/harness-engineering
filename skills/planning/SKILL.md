@@ -291,7 +291,8 @@ recommendation:
   numbered steps in that payload's `## Implementation`, same order, same titles · every code
   block in a step reaches its `<li>` · every existing-code snippet carries a `.snip-lbl.cur`
   with its reason · every step that names a design embeds it, and every `data-img` resolves
-  in `IMG` · rows in `#matrix` == scenarios across all payloads, each carrying that
+  in `IMG` · every `<details>` opens with a `<summary>` and wraps its panel in `.d-body` ·
+  rows in `#matrix` == scenarios across all payloads, each carrying that
   scenario's id, heading, `Given` line and outcomes word for word.
 - **The layers agree.** Every number, name, signature, and path in the human layer comes
   from a payload block · every internal id on the page has a tooltip entry · the
