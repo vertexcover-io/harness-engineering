@@ -13,7 +13,7 @@
    .card .tag / .grid .g2 .g3 / .pill (ok|err|warn|info) / .chip
    .steps .step / table + .tbl-scroll / details + .d-body + .cnt
    .pipe* (numbered pipeline) / .phase* (phase cards) / .unlock
-   #matrix (the scenario table) / .gloss / .x (xref)
+   #matrix (the scenario table) / .x (xref)
    ============================================================ */
 :root {
   --bg: #faf9f7; --surface: #ffffff; --surface2: #f3f1ed; --ink: #1a1815; --ink2: #5c5850;
@@ -154,9 +154,6 @@ summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-we
 .impl details.media > summary { font-size: 12.5px; padding: 8px 12px; }
 .impl details.media img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; margin: 2px 0 5px; }
 .impl details.media .cap { font-size: 12px; color: var(--ink2); margin: 0 0 9px; }
-.gloss { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 12px; }
-.gloss .card h3 { font-size: 14.5px; } .gloss .card p { font-size: 13px; }
-.gloss .ref { display: block; margin-top: 8px; font-size: 11.5px; font-family: ui-monospace, monospace; color: var(--accent); }
 footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10px; font-size: 12.5px; color: var(--ink2); }
 .svgd { width: 100%; height: auto; margin: 12px 0; }
 .svgd .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; rx: 8; }
@@ -193,7 +190,7 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
   <div class="brand"><!-- SLOT:brand — "<TICKET> · Plan" --></div>
   <nav id="side-nav">
     <!-- SLOT:nav — one <a href="#id"> per section, numbered; then a "Jump to" .grp
-         with shortcuts to decisions, the scenario table, glossary. -->
+         with shortcuts to decisions and the scenario table. -->
   </nav>
   <div class="foot"><button class="theme-btn" onclick="toggleTheme()">◐ Theme</button></div>
 </aside>
@@ -214,9 +211,6 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
        #tests        one table (id="matrix"), no details wrapper: Scenarios · Level ·
                      Phase, one row per scenario across the phase payloads, transcribed
                      from their ## Test Scenarios (references/test-scenarios.md)
-       #verify       .grid.g2 of by-hand checks
-       #reference    glossary .gloss (id="glossary"), contract tables in details,
-                     signature index details, repo map
        footer        one line: sources + PR links + style note
        All prose: STE rules (skills/_shared/writing-style.md). -->
 </main>
