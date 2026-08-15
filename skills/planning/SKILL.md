@@ -217,7 +217,7 @@ After approval, phase numbers are frozen — commits and claims files reference 
 deleted phase leaves a gap; never renumber the survivors.
 
 Then derive the tests: read `references/test-scenarios.md` now and build the Test Matrix
-from it.
+from it — a basis, not a checklist.
 
 Two rules bind every step you write:
 
@@ -229,7 +229,8 @@ Two rules bind every step you write:
   `design.md` when it exists, and state the change in the step-8 summary.
 
 **Done when:** every phase has a capability title, every requirement has a matrix row, every
-scenario has exactly one home, and every file a step edits was opened.
+scenario has exactly one home and names a failure no other scenario catches, and every file
+a step edits was opened.
 
 ## Step 7 — Build plan.html
 

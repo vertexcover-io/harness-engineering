@@ -10,6 +10,12 @@ unrelated to the feature being planned.
 
 ## Derive what to test
 
+The finished set is a **basis**: every scenario is a direction no other scenario covers, and
+together they span the behavior. Both halves bind — a row that spans nothing new is dropped
+or folded into the row that already covers it, and a gap left by folding is a missing row,
+not a saved one. The gate on each row: **name the failure only it catches.** Two rows no
+single bug can tell apart are one row.
+
 Start from what the PRD already gives — stated requirements, acceptance criteria, named
 scenarios — and cite their ids. Then add what it implies but does not say:
 
@@ -33,9 +39,15 @@ scenarios — and cite their ids. Then add what it implies but does not say:
   the requirement and note the gap.
 
 Before writing phase files, pair every source item (requirement, edge case, risk, named
-variant, "shall not change" clause) with the scenario id(s) covering it — as scratch work,
-never as an output section. The pairing catches what a linear read misses: the third
-variant, the enforcement negative, the plain create-then-read.
+variant, "shall not change" clause) with the scenario id(s) covering it, then read the
+pairing back the other way — as scratch work, never as an output section. Forward, it
+catches what a linear read misses: the third variant, the enforcement negative, the plain
+create-then-read. Backward, it proves the basis: a scenario pairing to nothing is dropped,
+and scenarios pairing to the same item survive only where each names a failure the others
+miss.
+
+**Red flag:** two scenarios sharing a `Given`, or one whose named failure another already
+catches. Both are one scenario.
 
 ## Behavior, not implementation
 
@@ -72,6 +84,10 @@ when setup is genuinely staged (then label the outcomes `Expected:`). A `Given` 
 "and" between two independent conditions wants the list — or it is two scenarios. Include
 the negative half where it matters ("edit and delete are **not** offered"). Regressions:
 `**SC12 (regression) — …**`.
+
+One `Given` is one scene: every outcome observable in it belongs to that scenario's list,
+however many facts that is. A second scenario is earned by a different starting state or a
+different trigger — never by a further fact visible in the same scene.
 
 The heading is also the reviewer-facing line: `plan.html`'s scenario table transcribes it
 verbatim. It states one observable outcome, present tense, and carries no rationale clause —
