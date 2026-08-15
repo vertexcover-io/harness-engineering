@@ -128,6 +128,28 @@ summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-we
 .unlock { background: var(--accent-soft); border-radius: 8px; padding: 9px 13px; font-size: 13.5px; margin: 11px 0; }
 .unlock b { color: var(--accent); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; display: block; margin-bottom: 2px; }
 .tests-line { font-size: 13px; color: var(--ink2); margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* .impl — the implementation steps inside a phase drill-down. One <li> per step in that
+   phase's payload, same order, same titles. Do not restyle per plan. */
+.impl { counter-reset: ist; margin: 4px 0 2px; padding: 0; }
+.impl > li { list-style: none; counter-increment: ist; position: relative; margin-left: 10px; padding: 0 0 17px 28px; border-left: 2px solid var(--line); }
+.impl > li:last-child { border-left-color: transparent; padding-bottom: 2px; }
+.impl > li::before { content: counter(ist); position: absolute; left: -11px; top: -1px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--surface); font: 700 11px/20px -apple-system, sans-serif; text-align: center; }
+.impl .it { font-size: 14px; font-weight: 650; color: var(--ink); margin-bottom: 3px; }
+.impl p { font-size: 13.5px; color: var(--ink2); margin: 6px 0; max-width: 730px; }
+.impl pre { font-size: 12px; margin: 8px 0; max-width: 730px; }
+.impl .rule { background: var(--surface2); border-radius: 8px; padding: 8px 12px; margin: 9px 0 0; font-size: 13px; color: var(--ink2); max-width: 730px; }
+.impl .rule b { display: block; margin-bottom: 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+.impl .rule.trap { background: var(--amber-bg); }
+.impl .rule.trap b { color: var(--amber); }
+.impl .snip-lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin: 11px 0 0; }
+.impl .snip-lbl.new { color: var(--accent); }
+.impl .snip-lbl.cur { color: var(--ink2); }
+.impl .snip-lbl .why { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--ink2); }
+.impl .snip-lbl + pre { margin-top: 5px; }
+.impl details.media { margin: 9px 0 0; max-width: 730px; }
+.impl details.media > summary { font-size: 12.5px; padding: 8px 12px; }
+.impl details.media img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; margin: 2px 0 5px; }
+.impl details.media .cap { font-size: 12px; color: var(--ink2); margin: 0 0 9px; }
 .explorer { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin: 14px 0; }
 .exp-setup { background: var(--surface2); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 14px; }
 .exp-grid { display: grid; grid-template-columns: minmax(250px, 1.1fr) 1fr; gap: 18px; }
@@ -193,9 +215,10 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
        #design       approach prose, .svgd system diagram, .pipe request/data flow,
                      API surface table, decisions table (tr id per decision)
        #phases       .phase-graph, then one .phase card per phase:
-                     goal line · .unlock ("After this lands") · details with a
-                     File/Job/Rule-to-know table + at most 2 short code snippets ·
-                     .tests-line with pre-marked xref spans
+                     goal line · .unlock ("After this lands") · details holding an
+                     ol.impl — one li per implementation step in that phase's payload,
+                     same order, same titles, carrying that step's prose, its code
+                     blocks and its .rule box · .tests-line with pre-marked xref spans
        #tests        level cards with counts, the bespoke widget (if the feature has a
                      mechanism worth exploring interactively), test matrix details,
                      all-cases details (id="all-cases", body id="case-groups" — the
@@ -246,8 +269,20 @@ const X = {
 const CASES = {
 };
 
+/* SLOT:images — every design/mockup the steps embed, as "file.png": "data:image/png;base64,…".
+   Each file appears ONCE here however many steps use it; the engine wires it to every
+   <img data-img="file.png">. Omit the entry and that img stays blank — no other breakage. */
+const IMG = {
+};
+
 /* SLOT:widget — OPTIONAL bespoke interactive widget data + ≤40 lines of wiring.
    Example shape: a scenario explorer (see .explorer / .exp-* classes). Delete if unused. */
+
+/* ---- engine: design images ---- */
+document.querySelectorAll('img[data-img]').forEach((el) => {
+  const src = IMG[el.dataset.img];
+  if (src) { el.src = src; el.loading = 'lazy'; }
+});
 
 /* ---- engine: case list builder ---- */
 const groupsBox = document.getElementById('case-groups');
