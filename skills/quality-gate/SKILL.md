@@ -1,6 +1,6 @@
 ---
 name: quality-gate
-description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads baseline metrics from .harness/<SPEC_NAME>/baseline.json."
+description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads package commands from harness.json and baseline numbers from the run's state.json."
 user-invocable: false
 ---
 
@@ -16,7 +16,7 @@ This is the gate between "the coder says it's done" and "the feature ships." Eve
 
 The quality gate receives these parameters from the orchestrator:
 
-- **Feature dir:** `.harness/<SPEC_NAME>/` (gitignored — baseline.json, e2e-report.json, claims.json, gate reports)
+- **Feature dir:** `.harness/<SPEC_NAME>/` (gitignored — events.jsonl, state.json, gate reports)
 - **Stage:** `post-tdd` (the gate runs once, after the TDD stage, before commit)
 
 ---
@@ -32,7 +32,7 @@ the report template, and the state-snapshot commands live in `references/gate-re
 ## Tooling detection & baseline
 
 Detect the project's toolchain (type / lint / test / coverage) and capture starting metrics to
-`baseline.json` per `references/tooling-detection.md`. Each tool resolves to one of three states:
+`harness.json` per `references/tooling-detection.md`. Each tool resolves to one of three states:
 
 - `DETECTED` — tool found, command determined.
 - `NOT_APPLICABLE` — justified skip (e.g. all changed files are `.md`). Must state the justification.
@@ -58,7 +58,7 @@ Detect the project's toolchain (type / lint / test / coverage) and capture start
 
 ### Check 3: Test Suite + Behavior Coverage (ONE run, feeds both Check 3 and Check 4)
 
-- Run the **unit** suite **with coverage enabled** in a SINGLE invocation — use `baseline.json`'s
+- Run the **unit** suite **with coverage enabled** in a SINGLE invocation — use `harness.json`'s
   `commands.coverage_all` (e.g. `vitest run --coverage`, `pytest --cov`, `go test -cover ./...`).
   This is the unit suite only — it must **not** invoke the e2e suite (`e2e.e2e_cmd`), which the coder
   already ran; Check 9 reads that run's report, it is not re-run here.
@@ -121,20 +121,15 @@ human-observable properties are functional-verify's job, not the gate's.
 
 ### Check 9: E2E Report Verification
 
-This check **only reads** the coder's e2e artifacts — it does not launch a browser or re-run the e2e suite. The suite ran once, during coding. It reads two files: `e2e-report.json` (the raw run summary) and `claims.json` (the aggregated claim ledger).
+This check **only reads** what the coder already recorded — it launches no browser and re-runs no suite. The suite ran once, during coding. Read `.harness/<SPEC_NAME>/state.json`.
 
-- Read `.harness/<SPEC_NAME>/e2e-report.json`
-- If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found". Note: a hermetic runner (`e2e.self_provisioning` in baseline) should **emit this file itself** from the framework's machine output (e.g. Playwright's JSON reporter) — a `failed`/`coverage`/`timestamp` derived from the actual run, not hand-authored. A report whose numbers can't be traced to a runner invocation is not evidence.
-- If `not_applicable: true` → `NOT_APPLICABLE` with the reason from the file
-- If file exists, verify:
-  1. `failed` count is 0 — any E2E failures during coding are a hard block
-  2. `coverage` array is non-empty — the report must cover at least one scenario
-  3. Each `coverage[].scenario` is a scenario `S<n>` id (not a requirement id)
-  4. `gaps` field exists and is non-empty — a report with no documented gaps is suspicious; flag as WARNING (not BLOCKED)
-  5. Timestamp is within the pipeline run window (not stale from a previous run)
-- **Then corroborate against `claims.json`** (aggregated from the coder's `phase-*-claims.json`), when present: aggregated `failed == 0` and `executed > 0`, and every `type: "ui"` claim's `proven_by` names a real test. A `claims.json` that disagrees with `e2e-report.json` (e.g. `failed > 0` in one) is a hard block — the two views of the same run must agree.
-- **Pass:** `failed` = 0 in both files, coverage non-empty, timestamp current
-- **Fail:** `failed` > 0 in either file, or coverage empty, or a coverage S-id doesn't resolve, or e2e-report.json missing for a user-facing task
+- Every coder phase has a `checks.tests` entry with `total` above 0.
+- Every one of those carries at least one `proofs` path, and that file exists on disk.
+- Each proof file is the runner's own machine output — a Playwright JSON report, a vitest or jest `--reporter=json` run. Numbers that trace to no runner invocation are not evidence.
+- The proof file's own counts match what the phase recorded. `ledger state --assert coder` already enforces this; a mismatch there is a hard block.
+- Each phase's timestamps fall inside this run's window, not a previous one.
+
+- **Fail:** any phase reports `failed` above 0, or a phase has no tests, or a proof file is missing for a user-facing task
 - Report: failed count (both files), coverage count, gap count, S-id resolution results
 
 ### Check 10: Mutation Spot-Check
@@ -207,4 +202,4 @@ The checks enforce most discipline on their own. These three are judgment calls 
 
 - **Weakening a threshold** — every check runs at full strength, every run. Zero errors means zero, not "zero minus the minor ones."
 - **Marking NOT_APPLICABLE without justification** — state why the tool doesn't apply (e.g. "all changed files are `.md`"). An unjustified skip is a MISSING tool, which blocks.
-- **Running without a baseline** — capture `baseline.json` first; without it, regressions are invisible, and a reported coverage number must come from the tool run, never an estimate.
+- **Running without a baseline** — stage 0's setup `check` events are the baseline; without them, regressions are invisible, and a reported coverage number must come from the tool run, never an estimate.

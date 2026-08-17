@@ -30,7 +30,7 @@ are tabled in `config.md`.
 You are working in the worktree at <WORKTREE_PATH>.
 Your working directory is <WORKTREE_PATH>.
 
-Tooling commands for this repo are in <HARNESS_DIR>/baseline.json (`commands`). Read it and use
+Tooling commands for this repo are in harness.json at the worktree root. Read it and use
 those exact invocations — do not rediscover the runner or guess a file-filter flag. The baseline
 `results` there are what "no new failures" is measured against; a suite that is already red is not
 your regression.
@@ -49,7 +49,7 @@ Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one 
 **The coder agent invokes `<SKILL:coder>` and nothing else.** That skill reaches `tdd`,
 `code-quality`, and `references/coder-contracts.md` itself; naming them in the dispatch would be a
 second source of truth for what the skill already owns (Invariant 6). Pass the phase file — that is
-what puts the skill in pipeline mode and makes the claims artifacts mandatory.
+what puts the skill in pipeline mode and makes the ledger events mandatory.
 
 **Its first action is invoking `<SKILL:coder>` — before any Read or Grep.** The skill and its
 contracts shape the whole phase; an agent that explores first is working before it knows the rules.
@@ -58,7 +58,7 @@ contracts shape the whole phase; an agent that explores first is working before 
 - Design record `.harness/<SPEC_NAME>/design.md` (when the full flow ran), plan
   `.harness/<SPEC_NAME>/plan.md` (extracted from plan.html), phase file
   `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
-- Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
+- Ledger dir `LEDGER_DIR=.harness/<SPEC_NAME>` and the phase token `<TOKEN>`
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
 
 **Then, verbatim — how to orient in this run:**
@@ -71,7 +71,7 @@ phase names has been read — in that sweep, not one round each.
 
 **Return:** files created/modified, test counts, phase completed or blocked (and why).
 
-The orchestrator verifies the claims report independently — do not take the agent's word for it.
+The orchestrator runs `ledger state --assert coder` afterwards — do not take the agent's word for it.
 
 ---
 
@@ -85,9 +85,9 @@ Tell the agent to run them in order and stop on the first failure.
 **Pass:**
 - Design record `.harness/<SPEC_NAME>/design.md` (when the full flow ran), plan
   `.harness/<SPEC_NAME>/plan.md`, phase files `.harness/<SPEC_NAME>/phases/phase-*.md`
-- Claims `.harness/<SPEC_NAME>/claims.json` (aggregated), verification output dir
+- Verification output dir
   `.harness/<SPEC_NAME>/verification/`
-- Baseline `.harness/<SPEC_NAME>/baseline.json`, harness dir
+- Package commands in `harness.json`, harness dir
   `.harness/<SPEC_NAME>/`, stage `post-tdd`, spec name `<SPEC_NAME>`
 - Artifact-publish session id: tell the agent to `export SESSION_ID=<SESSION_ID>` before running
   `<SKILL:functional-verify>`, so its publish steps target the real top-level session instead of
@@ -105,7 +105,7 @@ The orchestrator enforces the artifact and UI-proof contracts itself after the a
 
 | Belongs in the dispatch | Belongs in the skill |
 |---|---|
-| `<WORKTREE_PATH>`, `<SPEC_NAME>`, `<PHASE_N>` | what a phase claims file must contain |
+| `<WORKTREE_PATH>`, `<SPEC_NAME>`, `<PHASE_N>`, `<TOKEN>` | which events a phase must append |
 | `--commits <BASE_BRANCH>..HEAD` | how to review, what a verdict means |
 | where to write an artifact | what the artifact must say, and its gate |
 | which skill, which model | the procedure the skill performs |

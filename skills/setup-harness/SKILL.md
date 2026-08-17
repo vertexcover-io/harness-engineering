@@ -129,7 +129,63 @@ Secrets and logins are theirs. Print a numbered list of exactly the ones still r
 
 **Done when** every red item from Steps 3 and 5 has a line here with a runnable command, and nothing on this list was attempted.
 
-## Step 7 — Report
+## Step 7 — Detect the packages
+
+The pipeline needs one build, lint, typecheck, test, e2e and watch command per package. Work that
+out once, here. It never runs during a pipeline run.
+
+**List, do not guess.** A list of known filenames always misses one — `.golangci.yaml`, `mani.yaml`,
+`justfile`, the next ecosystem. Start from the tree instead:
+
+```bash
+git ls-files | awk -F/ 'NF<=3' | sort
+find . -maxdepth 3 -name .git -not -path './.git'   # nested checkouts list nothing above
+```
+
+Expect 20 to 160 lines. Run the first command inside each nested checkout too.
+
+**Read the inventory the project already wrote**, if the listing showed one: workspace globs in
+`pnpm-workspace.yaml`, `package.json#workspaces`, `go.work` or `Cargo.toml`; a multi-repo list in
+`mani.yaml`; project commands in a `justfile`, `Makefile` or `Taskfile.yml`; and the prose in
+`CLAUDE.md` or `docs/<name>.md`. A hand-written inventory beats anything you infer.
+
+**Then read each package's manifest and decide.** The lock file beside it picks the install command,
+not the root of the tree. These four rules stop the common mistakes:
+
+- A `test` script of `echo no-test` means the package has **no tests**. Record `null`.
+- Prefer the non-interactive variant. `test:ci` over `test` when both exist.
+- `pre*` and `post*` npm scripts run on their own. `pretest:e2e` means `npm run test:e2e` already did that work.
+- A `Makefile` `build` is usually a container image, not a compile. Record it separately and name the variables it needs.
+
+**The e2e field needs evidence, not a command.** Open the runner config. A Playwright `webServer`
+block or a wrapper such as `run-e2e.mjs` means it starts part of its own stack. Then read the
+comments and setup files for what must already be running — cross-service dependencies are stated in
+prose and nowhere else. Record `self_provisioning`, `requires`, and the `why` that proves it.
+
+**Write `harness.json` at the worktree root.** It cannot live under `.harness/` — Step 2 made that
+tree gitignored, and this file is committed so every worktree shares it.
+
+```jsonc
+{
+  "detected": { "at": "<ISO 8601>", "files_read": ["package.json", "packages/web/playwright.config.ts"] },
+  "packages": [
+    { "name": "web", "path": "packages/web", "runner": "vitest",
+      "bootstrap": "npm ci", "build": "npm run build",
+      "lint": "npm run lint", "lint_file": "eslint {FILE}", "typecheck": "npm run typecheck",
+      "test_all": "npm test", "test_file": "npm test -- --run {FILE}",
+      "e2e": { "detected": true, "self_provisioning": true, "e2e_cmd": "node tests/e2e/run-e2e.mjs",
+               "requires": [], "why": "run-e2e.mjs starts and stops its own stack" } }
+  ]
+}
+```
+
+`{FILE}` is a literal placeholder the coder substitutes. Record `files_read` — that is what lets a
+human tell later whether the file is still true.
+
+**Done when** every package has all seven fields, and every `null` has a stated reason. A `null` you
+cannot explain is a field you did not finish.
+
+## Step 8 — Report
 
 Re-run the Step 1 block and print the result as a table: item · verdict · what it unblocks. Close with the pipeline's entry point — `/orchestrate "<task>"` — and one line per on-demand item still red, naming the skill that will degrade when it is reached (`agent-browser` red → functional-verify halts on `BLOCKED:no-agent-browser`; `claude-sessions` red → publish skips).
 

@@ -67,27 +67,30 @@ is BLOCKED until the E2E test passes and the report artifacts are written.
   and the consumer's installed copy must be rebuilt/synced from the worktree first — see
   `consumer-repo-e2e.md`.
 
-### Report artifacts (mandatory, machine-derived)
+### Report events (mandatory, machine-derived)
 
-1. **`phase-<N>-claims.json`** — see `phase-claims-format.md` for the schema and gate rules
-   (`executed > 0`, `failed = 0`, per-file `proven_by` coverage, UI claims).
-2. **`e2e-report.json`** at `.harness/<SPEC_NAME>/` (gitignored; consumed by
-   functional-verify and quality-gate), derived from the runner's machine output:
+Append these to the ledger. `references/ledger.md` holds the vocabulary.
 
-```json
-{
-  "phase": "<PHASE_N>", "timestamp": "<ISO>", "passed": 0, "failed": 0,
-  "coverage": [{ "scenario": "S12", "description": "<what was tested>", "verdict": "PASS" }],
-  "gaps": ["<what this E2E suite did NOT test — flows skipped, edge cases not covered>"]
-}
+1. **One `check` per suite you run**, carrying the runner's own machine output as `proof`:
+
+```bash
+$LEDGER add <<'JSON'
+{"stage":"coder","phase":<N>,"type":"check","kind":"tests","runner":"playwright",
+ "total":12,"passed":12,"failed":0,"proof":"phases/<N>/playwright.json"}
+JSON
 ```
 
-`gaps` is as important as `coverage` — it tells functional-verify what to target. Be honest.
+2. **One `artifact` of kind `commit`** when you commit.
+3. **One `end`** with `result` of `ok`, `failed`, or `blocked`. A `blocked` phase carries a `why`.
+
+Counts must come from a real runner invocation. The gate re-reads the `proof` file, so a
+hand-written number that disagrees with it stops the phase.
+
+Name what the suite did **not** cover in the phase's `end` event as `gaps`. That is what tells functional-verify where to look. Be honest.
 
 **Escape hatch — use sparingly.** Skip E2E only if the phase changes *no externally-observable
 behavior* (pure internal refactor, doc-only, config with no runtime effect). Migrations, new
-endpoints/jobs, and any change touching the request path do NOT qualify. Write
-`"not_applicable": true, "reason": "<why>"` and be ready to justify it.
+endpoints/jobs, and any change touching the request path do NOT qualify. Append the `end` event with `result: "skipped"` and a `why`, and be ready to justify it.
 
 ---
 
