@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan — being written…</title><!-- SLOT:title — replace the title element's text with
+  "<Feature name> · Implementation Plan", then delete this comment. (The slot comment lives
+  OUTSIDE <title> because <title> renders markup as literal text.) -->
+<style>
+/* ============================================================
+   MACHINERY — do not edit below unless a slot says so.
+   Component classes available to content:
+   .card .tag / .grid .g2 .g3 / .pill (ok|err|warn|info) / .chip
+   .steps .step / table + .tbl-scroll / details + .d-body + .cnt
+   .pipe* (numbered pipeline) / .phase* (phase cards) / .unlock
+   #matrix (the scenario table) / .x (xref)
+   ============================================================ */
+:root {
+  --bg: #faf9f7; --surface: #ffffff; --surface2: #f3f1ed; --ink: #1a1815; --ink2: #5c5850;
+  --line: #e5e1da; --accent: #0d5c4d; --accent-soft: #e3efec; --amber: #92600a; --amber-bg: #fdf3e0;
+  --red: #a33529; --red-bg: #fbeae7; --green: #1e6b3a; --green-bg: #e5f2e9; --blue: #1f4e79; --blue-bg: #e8eff6;
+  --code-bg: #22201c; --code-ink: #e8e4dc; --code-cm: #8a857a; --chip-bg: #edeae4;
+  --tip-bg: #2a2822; --tip-ink: #f2efe9;
+}
+[data-theme="dark"] {
+  --bg: #161412; --surface: #1e1c19; --surface2: #262421; --ink: #ece8e1; --ink2: #a49e93;
+  --line: #33302b; --accent: #6fbfa9; --accent-soft: #1d332d; --amber: #e0a83f; --amber-bg: #2e2415;
+  --red: #e08273; --red-bg: #33201c; --green: #7cc394; --green-bg: #1a2b1f; --blue: #85aed3; --blue-bg: #1b2733;
+  --code-bg: #111009; --code-ink: #ddd8cf; --chip-bg: #2b2925; --tip-bg: #efece5; --tip-ink: #201e1a;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+body { background: var(--bg); color: var(--ink); font: 15.5px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font: 0.86em/1.5 ui-monospace, "SF Mono", Menlo, monospace; background: var(--chip-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); color: var(--code-ink); border-radius: 10px; padding: 15px 17px; overflow-x: auto; font-size: 12.5px; line-height: 1.55; margin: 10px 0; }
+pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+pre .cm { color: var(--code-cm); }
+h1 { font-size: 28px; line-height: 1.25; letter-spacing: -0.02em; }
+h2 { font-size: 21px; letter-spacing: -0.01em; margin-bottom: 4px; }
+h3 { font-size: 16px; margin-bottom: 6px; }
+.layout { display: grid; grid-template-columns: 216px minmax(0, 1fr); max-width: 1240px; margin: 0 auto; gap: 34px; padding: 0 26px; }
+.side { position: sticky; top: 0; align-self: start; height: 100vh; padding: 26px 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+.side .brand { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; color: var(--accent); text-transform: uppercase; padding: 0 14px 14px; }
+.side nav { display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
+.side nav a { font-size: 13.5px; color: var(--ink2); padding: 7px 14px; border-radius: 0 8px 8px 0; border-left: 2px solid transparent; }
+.side nav a:hover { background: var(--surface2); color: var(--ink); text-decoration: none; }
+.side nav a.on { color: var(--accent); border-left-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.side nav .grp { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink2); padding: 14px 14px 4px; }
+.side .foot { margin-top: auto; padding: 14px; }
+.theme-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 5px 12px; font-size: 13px; cursor: pointer; width: 100%; }
+main { padding: 30px 0 60px; min-width: 0; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; gap: 0; }
+  .side { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 14px 0; }
+  .side nav { flex-direction: row; flex-wrap: wrap; }
+  .side nav .grp { display: none; }
+  .side .foot { display: none; }
+}
+.kicker { font-size: 12px; font-weight: 650; letter-spacing: 0.09em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+.lede { font-size: 16px; color: var(--ink2); max-width: 720px; margin-top: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 6px; }
+.chip { background: var(--chip-bg); border-radius: 999px; padding: 4px 13px; font-size: 12.5px; font-weight: 550; }
+.chip b { color: var(--accent); }
+.links { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 13.5px; }
+.callout { border-radius: 12px; padding: 15px 19px; margin: 24px 0; border: 1px solid; }
+.callout.warn { background: var(--amber-bg); border-color: color-mix(in srgb, var(--amber) 35%, transparent); }
+.callout.warn .ct { color: var(--amber); }
+.callout .ct { font-weight: 700; font-size: 12.5px; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; }
+.callout p { font-size: 14px; }
+section { padding: 30px 0 8px; }
+.sec-head { display: flex; align-items: baseline; gap: 13px; border-bottom: 2px solid var(--ink); padding-bottom: 9px; margin-bottom: 20px; }
+.sec-head .num { font-size: 12.5px; font-weight: 700; color: var(--accent); }
+.sec-head .sub { font-size: 13px; color: var(--ink2); margin-left: auto; text-align: right; }
+.grid { display: grid; gap: 13px; }
+.g2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.g3 { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 15px 17px; }
+.card .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; color: var(--accent); text-transform: uppercase; }
+.card h3 { margin-top: 3px; }
+.card p { font-size: 13.5px; color: var(--ink2); }
+.steps { counter-reset: st; margin: 12px 0; }
+.step { display: flex; gap: 15px; padding: 11px 0; border-bottom: 1px dashed var(--line); }
+.step:last-child { border-bottom: none; }
+.step::before { counter-increment: st; content: counter(st); flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--surface); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.step div { font-size: 14px; }
+.step b { display: block; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+th { text-align: left; font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink2); padding: 8px 10px; border-bottom: 2px solid var(--line); }
+td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+.tbl-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 4px 10px; }
+.pill { display: inline-block; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+.pill.ok { background: var(--green-bg); color: var(--green); }
+.pill.err { background: var(--red-bg); color: var(--red); }
+.pill.warn { background: var(--amber-bg); color: var(--amber); }
+.pill.info { background: var(--blue-bg); color: var(--blue); }
+details { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin: 10px 0; }
+details > summary { cursor: pointer; padding: 11px 15px; font-weight: 600; font-size: 13.5px; list-style: none; display: flex; align-items: center; gap: 10px; }
+details > summary::before { content: "+"; font-weight: 700; color: var(--accent); width: 13px; }
+details[open] > summary::before { content: "–"; }
+details > summary:hover { background: var(--surface2); border-radius: 10px; }
+details .d-body { padding: 4px 17px 15px; font-size: 13.5px; }
+details .d-body p { color: var(--ink2); margin: 6px 0; }
+/* The inset is the panel's, not the wrapper's: content written straight into a <details>,
+   with no .d-body around it, still clears the border. */
+details > :not(summary):not(.d-body) { margin-inline: 17px; max-width: calc(100% - 34px); }
+details > :not(summary):not(.d-body):last-child { margin-bottom: 13px; }
+summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-weight: 500; }
+/* #matrix — the scenario table in #tests. One row per scenario, transcribed from the phase
+   payloads per references/test-scenarios.md. Do not restyle per plan. */
+#matrix td { vertical-align: top; }
+#matrix td.lvl, #matrix td.ph { white-space: nowrap; color: var(--ink2); }
+#matrix .sc { display: block; margin-bottom: 5px; }
+#matrix .given { display: block; color: var(--ink2); font-size: 13px; }
+#matrix ul, #matrix ol { margin: 4px 0 0; padding-left: 19px; }
+#matrix ul + .given, #matrix ol + .given { margin-top: 8px; }
+#matrix li { color: var(--ink2); font-size: 13px; margin: 2px 0; }
+.pipe { display: flex; flex-direction: column; margin: 16px 0; }
+.pipe-stage { display: flex; gap: 15px; }
+.pipe-rail { display: flex; flex-direction: column; align-items: center; width: 32px; flex-shrink: 0; }
+.pipe-dot { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: var(--surface); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+.pipe-line { width: 2px; flex: 1; background: var(--line); min-height: 12px; }
+.pipe-body { padding-bottom: 18px; flex: 1; }
+.pipe-body b { font-size: 14.5px; }
+.pipe-body p { font-size: 13.5px; color: var(--ink2); margin-top: 2px; max-width: 680px; }
+.lock-note { background: var(--blue-bg); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--blue); margin-top: 8px; max-width: 680px; }
+.phase-graph { display: flex; align-items: center; flex-wrap: wrap; margin: 4px 0 22px; }
+.pg-node { background: var(--surface); border: 1.5px solid var(--accent); border-radius: 10px; padding: 7px 13px; font-size: 12.5px; font-weight: 600; text-align: center; }
+.pg-node small { display: block; font-weight: 500; color: var(--ink2); font-size: 11px; }
+.pg-arrow { color: var(--ink2); padding: 0 7px; font-size: 17px; }
+.phase { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 18px 21px; margin: 15px 0; }
+.phase-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.phase-head .pnum { font-size: 11.5px; font-weight: 800; color: var(--accent); letter-spacing: 0.06em; }
+.phase-head h3 { font-size: 17px; }
+.unlock { background: var(--accent-soft); border-radius: 8px; padding: 9px 13px; font-size: 13.5px; margin: 11px 0; }
+.unlock b { color: var(--accent); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; display: block; margin-bottom: 2px; }
+/* .impl — the implementation steps inside a phase drill-down. One <li> per step in that
+   phase's payload, same order, same titles. Do not restyle per plan. */
+.impl { counter-reset: ist; margin: 4px 0 2px; padding: 0; }
+.impl > li { list-style: none; counter-increment: ist; position: relative; margin-left: 10px; padding: 0 0 17px 28px; border-left: 2px solid var(--line); }
+.impl > li:last-child { border-left-color: transparent; padding-bottom: 2px; }
+.impl > li::before { content: counter(ist); position: absolute; left: -11px; top: -1px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--surface); font: 700 11px/20px -apple-system, sans-serif; text-align: center; }
+.impl .it { font-size: 14px; font-weight: 650; color: var(--ink); margin-bottom: 3px; }
+.impl p { font-size: 13.5px; color: var(--ink2); margin: 6px 0; max-width: 730px; }
+.impl pre { font-size: 12px; margin: 8px 0; max-width: 730px; }
+.impl .rule { background: var(--surface2); border-radius: 8px; padding: 8px 12px; margin: 9px 0 0; font-size: 13px; color: var(--ink2); max-width: 730px; }
+.impl .rule b { display: block; margin-bottom: 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+.impl .rule.trap { background: var(--amber-bg); }
+.impl .rule.trap b { color: var(--amber); }
+.impl .snip-lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin: 11px 0 0; }
+.impl .snip-lbl.new { color: var(--accent); }
+.impl .snip-lbl.cur { color: var(--ink2); }
+.impl .snip-lbl .why { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--ink2); }
+.impl .snip-lbl + pre { margin-top: 5px; }
+.impl details.media { margin: 9px 0 0; max-width: 730px; }
+.impl details.media > summary { font-size: 12.5px; padding: 8px 12px; }
+.impl details.media img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; margin-block: 2px 5px; }
+.impl details.media .cap { font-size: 12px; color: var(--ink2); margin-block: 0 9px; }
+/* .d-body is what insets a panel. A media panel written without one insets its own children,
+   so the frame clears the border either way. Both rules set margin-block only — a shorthand
+   here would reset the inline margins these two restore. */
+.impl details.media > img, .impl details.media > .cap { margin-inline: 12px; max-width: calc(100% - 24px); }
+footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10px; font-size: 12.5px; color: var(--ink2); }
+.svgd { width: 100%; height: auto; margin: 12px 0; }
+.svgd .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; rx: 8; }
+.svgd .box-new { fill: var(--accent-soft); stroke: var(--accent); }
+.svgd .box-dim { fill: var(--surface2); stroke: var(--line); }
+.svgd text { fill: var(--ink); font: 600 12px -apple-system, sans-serif; }
+.svgd .t2 { fill: var(--ink2); font-weight: 400; font-size: 10.5px; }
+.svgd .tn { fill: var(--accent); font-weight: 700; font-size: 10px; letter-spacing: 0.5px; }
+.svgd .arr { stroke: var(--ink2); stroke-width: 1.5; fill: none; marker-end: url(#ah); }
+.svgd .arr-dim { stroke: var(--line); stroke-width: 1.5; fill: none; marker-end: url(#ah); stroke-dasharray: 4 3; }
+.x { border-bottom: 1px dashed var(--accent); cursor: pointer; position: relative; font-family: ui-monospace, monospace; font-size: 0.92em; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.x:hover::after, .x.show::after {
+  content: attr(data-t); position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%);
+  background: var(--tip-bg); color: var(--tip-ink); font: 500 12px/1.5 -apple-system, sans-serif;
+  padding: 8px 11px; border-radius: 8px; width: max-content; max-width: 320px; white-space: normal;
+  z-index: 90; box-shadow: 0 4px 18px rgba(0,0,0,0.25); pointer-events: none;
+}
+.x:hover::before, .x.show::before {
+  content: ""; position: absolute; bottom: calc(100% + 1px); left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: var(--tip-bg); z-index: 91;
+}
+.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 40% { background: var(--amber-bg); } 100% { background: transparent; } }
+.slot-loading { display: flex; align-items: center; gap: 10px; color: var(--ink2); font: 500 13.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; letter-spacing: normal; text-transform: none; padding: 18px 4px; }
+.spin { width: 15px; height: 15px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.writing-pill { position: fixed; right: 18px; bottom: 18px; z-index: 95; display: flex; align-items: center; gap: 9px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; font-size: 12.5px; font-weight: 600; color: var(--ink2); box-shadow: 0 4px 18px rgba(0,0,0,0.14); }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<aside class="side">
+  <div class="brand"><!-- SLOT:brand — "<TICKET> · Plan" --></div>
+  <nav id="side-nav">
+    <!-- SLOT:nav — one <a href="#id"> per section, numbered; then a "Jump to" .grp
+         with shortcuts to decisions and the scenario table. -->
+  </nav>
+  <div class="foot"><button class="theme-btn" onclick="toggleTheme()">◐ Theme</button></div>
+</aside>
+
+<main id="main">
+  <!-- SLOT:content — the sections, in this order; omit a section with nothing to say:
+       #top          hero: kicker, h1, .lede, .chips (counts), .links (ticket, PRs, PRD)
+       (banner)      .callout.warn — ONLY if a real risk/known-gap exists; never pad
+       #problem      short problem prose + .steps primary flow
+       #requirements .grid.g2 of .card, one per acceptance criterion, id per criterion
+       #design       approach prose, .svgd system diagram, .pipe request/data flow,
+                     API surface table, decisions table (tr id per decision)
+       #phases       .phase-graph, then one .phase card per phase:
+                     goal line · .unlock ("After this lands") · details holding an
+                     ol.impl — one li per implementation step in that phase's payload,
+                     same order, same titles, carrying that step's prose, its code
+                     blocks and its .rule box. Every details opens with its summary,
+                     and the panel wraps in .d-body:
+                       <details><summary>The work <span class="cnt">4 steps</span></summary>
+                         <div class="d-body"><ol class="impl">…</ol></div></details>
+                     A step's design panel takes the same shape, captioned:
+                       <details class="media"><summary>Design — what it settles</summary>
+                         <div class="d-body"><img data-img="x.png" alt="…">
+                         <div class="cap">…</div></div></details>
+       #tests        one table (id="matrix"), no details wrapper: Scenarios · Level ·
+                     Phase, one row per scenario across the phase payloads, transcribed
+                     from their ## Test Scenarios (references/test-scenarios.md)
+       footer        one line: sources + PR links + style note
+       All prose: STE rules (skills/_shared/writing-style.md). -->
+</main>
+</div>
+
+<!-- ====================================================================
+     AGENT PAYLOAD — the markdown the coder agents receive, embedded so the
+     reviewed page and the executed plan are one artifact. One block per file.
+     data-file paths are relative to the spec dir (.harness/<name>/).
+     If a payload ever needs a literal "</script>", write "<\/script>".
+     Extracted post-approval by scripts/extract-plan.mjs.
+==================================================================== -->
+<script type="text/markdown" data-file="plan.md">
+<!-- SLOT:plan-md — full plan.md per references/plan-sections.md -->
+</script>
+<script type="text/markdown" data-file="phases/phase-1.md">
+<!-- SLOT:phase-md — one block per phase file, per references/plan-sections.md -->
+</script>
+
+<script>
+/* ============================================================
+   ENGINE — do not edit. Fill the three data objects below.
+   ============================================================ */
+function toggleTheme() {
+  const root = document.documentElement;
+  const cur = root.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : cur === 'light' ? 'dark'
+    : (matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark');
+  root.setAttribute('data-theme', next);
+}
+if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme','dark');
+
+/* SLOT:xrefs — every internal id used anywhere on the page → [tooltip text, jump-target id or ""].
+   Cover: requirement ids, decision ids, flow/edge-case ids, error codes. Scenario ids stay
+   out — they name a heading in the phase file, not a target on this page. */
+const X = {
+};
+
+/* SLOT:images — every design/mockup the steps embed, as "file.png": "data:image/png;base64,…".
+   Each file appears ONCE here however many steps use it; the engine wires it to every
+   <img data-img="file.png">. Omit the entry and that img stays blank — no other breakage. */
+const IMG = {
+};
+
+/* ---- engine: design images ----
+   Not lazy: the bytes are already in the document, so deferring buys no request. It only
+   costs — an image revealed by opening a <details> was display:none when the viewport
+   observer ran, and stays unloaded. */
+document.querySelectorAll('img[data-img]').forEach((el) => {
+  const src = IMG[el.dataset.img];
+  if (src) { el.src = src; }
+});
+
+/* ---- engine: give every <details> a <summary> ----
+   A summary-less <details> falls back to the browser's own marker: an unstyled control
+   labelled "Details" that collapses the panel behind a word naming nothing. Rather than
+   trust every panel to carry one, derive the missing ones — a phase panel from the steps
+   it holds, a design panel from the caption or the alt text. */
+document.querySelectorAll('details').forEach((d) => {
+  if (d.firstElementChild && d.firstElementChild.tagName === 'SUMMARY') return;
+  const steps = d.querySelectorAll('.impl > li').length;
+  const img = d.querySelector('img');
+  const cap = d.querySelector('.cap');
+  const label = steps ? 'The work' : (cap && cap.textContent.trim())
+    || (img && ('Design — ' + (img.alt || img.dataset.img))) || 'Details';
+  const s = document.createElement('summary');
+  s.textContent = label;
+  if (steps) {
+    const c = document.createElement('span');
+    c.className = 'cnt'; c.textContent = steps + (steps === 1 ? ' step' : ' steps');
+    s.appendChild(c);
+  }
+  d.prepend(s);
+});
+
+/* ---- engine: auto-link internal ids in prose ----
+   SLOT:xref-regex — extend the alternation to match this feature's id families.
+   Longest alternatives first. */
+const RX = /\b(D\d{1,2}|AC\d{1,2}|FL\d{1,2}|EC\d{1,2})\b/g;
+function linkify(root) {
+  const test = new RegExp(RX.source);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(n) {
+    const p = n.parentElement;
+    if (!p || p.closest('pre, script, style, .x, .cid, nav')) return NodeFilter.FILTER_REJECT;
+    return test.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+  }});
+  const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((n) => {
+    const s = n.nodeValue, frag = document.createDocumentFragment();
+    let last = 0, m; RX.lastIndex = 0;
+    while ((m = RX.exec(s))) {
+      const key = m[0];
+      if (!X[key]) continue;
+      frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+      const sp = document.createElement('span');
+      sp.className = 'x'; sp.textContent = key; sp.dataset.x = key;
+      frag.appendChild(sp); last = m.index + key.length;
+    }
+    frag.appendChild(document.createTextNode(s.slice(last)));
+    n.parentNode.replaceChild(frag, n);
+  });
+}
+linkify(document.getElementById('main'));
+
+/* ---- engine: tooltips + click-to-jump on every .x ---- */
+document.querySelectorAll('.x').forEach((sp) => {
+  const e = X[sp.dataset.x];
+  if (!e) return;
+  sp.dataset.t = e[0];
+  sp.addEventListener('click', () => {
+    if (!e[1]) return;
+    const t = document.getElementById(e[1]);
+    if (!t) return;
+    const d = t.closest('details'); if (d) d.open = true;
+    t.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash');
+  });
+});
+
+/* ---- engine: loaders while the page is still being written ----
+   Any SLOT: comment left in the body renders as a spinner; a floating pill
+   says the page updates itself. Both vanish once every slot is filled. */
+const slotWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT);
+const pendingSlots = [];
+while (slotWalker.nextNode()) {
+  if (/^\s*SLOT:/.test(slotWalker.currentNode.nodeValue)) pendingSlots.push(slotWalker.currentNode);
+}
+pendingSlots.forEach((c) => {
+  const el = document.createElement('div');
+  el.className = 'slot-loading';
+  el.innerHTML = '<span class="spin"></span><span>Still writing this part…</span>';
+  c.parentNode.insertBefore(el, c.nextSibling);
+});
+if (pendingSlots.length) {
+  const pill = document.createElement('div');
+  pill.className = 'writing-pill';
+  pill.innerHTML = '<span class="spin"></span>Plan in progress — updates automatically';
+  document.body.appendChild(pill);
+}
+
+/* ---- engine: sidebar scroll-spy ---- */
+const navLinks = [...document.querySelectorAll('#side-nav a')].filter(a => a.hash);
+const spyTargets = navLinks.map(a => document.querySelector(a.hash)).filter(Boolean);
+const spy = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    navLinks.forEach(a => a.classList.toggle('on', a.hash === '#' + e.target.id));
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+spyTargets.forEach(t => spy.observe(t));
+</script>
+</body>
+</html>

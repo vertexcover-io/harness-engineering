@@ -1,7 +1,5 @@
 {
   "stages": {
-    "brainstorm": { "skill": "my-brainstorm" },
-    "library-probe": { "skill": "my-library-probe" },
     "planning": { "skill": "my-planning" },
     "coder": { "skill": "my-implement", "model": "opus" },
     "code-review": { "skill": "strict-review" },

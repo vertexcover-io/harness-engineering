@@ -22,7 +22,7 @@ Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' <command> <args>
 - **On completion, write its report:** `node '<DAG_SCRIPT>' write-report <node> '<markdown>'`
   (formats live in `references/dashboard-report-formats.md`)
 - **Skipped stage:** `node '<DAG_SCRIPT>' set-status <node> skipped`
-- **Blocked node (e.g. LIB_SUSPECT):** `node '<DAG_SCRIPT>' set-status <node> blocked`
+- **Blocked node:** `node '<DAG_SCRIPT>' set-status <node> blocked`
 
 In `--auto` mode, skip ALL `dag-update` calls — no live dashboard in CI.
 
@@ -38,9 +38,7 @@ Bash("
   node '<DAG_SCRIPT>' add-node setup 'Setup'
   node '<DAG_SCRIPT>' add-node worktree 'Create Worktree' --parent setup
   node '<DAG_SCRIPT>' add-node baseline 'Baseline Metrics' --parent setup --depends-on worktree
-  node '<DAG_SCRIPT>' add-node brainstorm 'Brainstorm' --depends-on setup
-  node '<DAG_SCRIPT>' add-node library-probe 'Library Probe' --depends-on brainstorm
-  node '<DAG_SCRIPT>' add-node planning 'Planning' --depends-on library-probe
+  node '<DAG_SCRIPT>' add-node planning 'Design & Plan' --depends-on setup
   node '<DAG_SCRIPT>' add-node coder 'Coder' --depends-on planning
   node '<DAG_SCRIPT>' add-node code-review 'Code Review' --depends-on coder
   node '<DAG_SCRIPT>' add-node verify-finalize 'Verify & Finalize' --depends-on code-review
@@ -50,7 +48,7 @@ Bash("
 ```
 
 Store the printed `HARNESS_DIR` for all subsequent calls. Phase nodes are added as children of
-`coder` after planning (Stage 2), when phases are known:
+`coder` after planning (Stage 1), when phases are known:
 
 ```
 Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && node '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")

@@ -100,7 +100,11 @@ let PORT = preferredPort();
 const HOST = process.env.BRAINSTORM_HOST || '127.0.0.1';
 const URL_HOST = process.env.BRAINSTORM_URL_HOST || (HOST === '127.0.0.1' ? 'localhost' : HOST);
 const SESSION_DIR = process.env.BRAINSTORM_DIR || '/tmp/brainstorm';
-const CONTENT_DIR = path.join(SESSION_DIR, 'content');
+// Single-file mode: serve exactly this file (and watch it) instead of the
+// newest .html in the session's content dir. Lets a plan.html be viewed live
+// from its real location — no copying into the session dir.
+const SERVE_FILE = process.env.BRAINSTORM_FILE ? path.resolve(process.env.BRAINSTORM_FILE) : null;
+const CONTENT_DIR = SERVE_FILE ? path.dirname(SERVE_FILE) : path.join(SESSION_DIR, 'content');
 const STATE_DIR = path.join(SESSION_DIR, 'state');
 const SUPERPOWERS_VERSION = readSuperpowersVersion();
 const SUPERPOWERS_BRAND_IMAGE_URL = 'https://primeradiant.com/brand/superpowers-visual-brainstorming-logo.png';
@@ -265,6 +269,9 @@ function wrapInFrame(content) {
 }
 
 function getNewestScreen() {
+  if (SERVE_FILE) {
+    return isRegularFileInsideContentDir(SERVE_FILE) ? SERVE_FILE : null;
+  }
   const files = fs.readdirSync(CONTENT_DIR)
     .filter(f => !f.startsWith('.') && f.endsWith('.html'))
     .map(f => {
@@ -589,6 +596,7 @@ function startServer() {
 
   const watcher = fs.watch(CONTENT_DIR, (eventType, filename) => {
     if (!filename || filename.startsWith('.') || !filename.endsWith('.html')) return;
+    if (SERVE_FILE && filename !== path.basename(SERVE_FILE)) return;
 
     if (debounceTimers.has(filename)) clearTimeout(debounceTimers.get(filename));
     debounceTimers.set(filename, setTimeout(() => {

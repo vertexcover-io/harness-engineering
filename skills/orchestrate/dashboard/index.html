@@ -1125,7 +1125,7 @@
       var body = document.getElementById('modal-body');
       modalNode = node;
 
-      // Check for additional tabbed files (phases for planning, spec for brainstorm, etc.)
+      // Check for additional tabbed files (phases for planning, etc.)
       var phasesStr = node.artifacts && node.artifacts.phases;
       modalPhases = phasesStr ? phasesStr.split(',').filter(function(p) { return p.trim(); }) : [];
       modalTabsTitle = (node.artifacts && node.artifacts['tabs-title']) || 'Related Documents';
