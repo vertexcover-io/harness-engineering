@@ -64,9 +64,8 @@ The reader knows the product and is deciding whether this ships, and the contrac
 came for. Anything serving none of them gets cut however true it is. Failing scenarios earn more words than passing
 ones; that is where a reader slows down.
 
-`summary` at the top level is the Overview pane a reader lands on, in three short paragraphs: what this feature does
-in the product's terms, what was tested and how it was driven, and what the verdict means for shipping. Plain
-sentences a reader takes in at a glance — the environment detail belongs in `drivenOn` and `fields[]` beside it.
+The report opens on the first scenario; there is no prose preamble. The run's context lives in `drivenOn` and
+`fields[]`, behind the bar's run details, and the derived `verdict` is the badge in the bar.
 
 ```json
 {
@@ -259,7 +258,6 @@ sentence above passes it. `attempted` is what you actually ran, distinct approac
   reads as the diff between the two.
 - Every `capture` shows a request a dev could paste and the complete response it returned, inline — nothing about an
   exchange is left in a file for the reader to go and open.
-- `summary` opens the report with what the feature does, what was tested, and what the verdict means for shipping.
 - Every scenario has a stable `n`, a `verdict`, and a `reason`, and every behaviour the docs describe is covered. One
   you could not verify is a scenario with `NOT VERIFIED` and a reason saying what would close it; one that turned out
   not to apply is `INVALID` with why. Neither is dropped, and neither is quietly backfilled with an adjacent passing

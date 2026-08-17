@@ -25,9 +25,7 @@
      TOP LEVEL
        title       the feature, as a short phrase
        verdict     PASS | PARTIAL | FAIL, derived from coverage[] — the badge
-                   on the Overview pane
-       summary     the Overview pane a reader lands on: what this feature does,
-                   what was tested, how it was driven, what the verdict means
+                   in the top bar
        drivenOn    where you drove, as what user, against which data
        fields[]    {label,value} shown behind "Stack · ports · sinks" in the bar
        labels{}    rename a section: steps, media, frames, proofs, files,
@@ -39,7 +37,11 @@
                    scenario: the n of the scenario that reproduces it — required; its
                    expected, reason and video are what the body no longer restates
        bugsNote    the attack you most expected to land, and why it did not
-       gaps[]      what this run could not reach
+       gaps[]      {scenario,req,mechanism,attempted,wouldClose} — one per
+                   NOT VERIFIED scenario. mechanism is the blocking line,
+                   condition, credential or absent datum; attempted[] the
+                   distinct approaches you ran; wouldClose the concrete unblock.
+                   A bare string still renders, as prose with no fields.
 
      SCENARIO
        n           stable two-digit number — the scenario's identity
@@ -79,7 +81,6 @@
 <script type="application/json" id="report-data">
 {
   "title": "<feature name>",
-  "summary": "<what this feature does, in the product's terms>\n\n<what was tested and how it was driven>\n\n<what the verdict means for shipping>",
   "drivenOn": "<where you drove, as what user, against which data>",
   "fields": [
     {
@@ -163,7 +164,15 @@
   ],
   "bugsNote": "<the attack you most expected to land, and why it did not>",
   "gaps": [
-    "<what this run did not reach, and where it belongs>"
+    {
+      "scenario": "<n of the NOT VERIFIED scenario this closes over>",
+      "req": "<the requirement id it leaves uncovered>",
+      "mechanism": "<the line, condition, credential or absent datum that blocked it>",
+      "attempted": [
+        "<a distinct approach you ran, not a retry of the one above>"
+      ],
+      "wouldClose": "<the concrete thing a human or a later run can supply>"
+    }
   ]
 }
 </script>
@@ -233,6 +242,10 @@ a { color: var(--accent); }
 .bar__title {
   font-size: 14px; font-weight: 650; margin: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bar__verdict {
+  flex: none; font: 600 10.5px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase;
+  padding: 5px 8px; border: 1px solid currentColor; border-radius: 4px;
 }
 .bar__spacer { flex: 1 1 auto; min-width: 8px; }
 .bar__counts { display: flex; gap: 4px; flex: none; }
@@ -492,6 +505,11 @@ a { color: var(--accent); }
 }
 .bug__go:hover { border-color: currentColor; }
 .bug__t { font-size: 14.5px; font-weight: 650; margin: 0; }
+/* a gap is a bug's shape in the not-verified colour */
+.bug--gap { border-left-color: var(--hold); }
+.bug--gap .bug__s { color: var(--hold); }
+.bug__at { margin: 0; padding-left: 17px; flex: 1 1 240px; }
+.bug__at li { margin-bottom: 2px; }
 .empty { color: var(--fg-2); font-size: 13.5px; }
 
 /* run details popover */
@@ -582,6 +600,7 @@ code {
 
 <header class="bar">
   <h1 class="bar__title" id="b-title"></h1>
+  <span class="bar__verdict" id="b-verdict" hidden></span>
   <span class="bar__spacer"></span>
   <div class="bar__counts" id="b-counts"></div>
   <button class="bar__btn" id="b-run">Run details</button>
@@ -633,7 +652,6 @@ code {
   };
 
   const L = Object.assign({
-    overview: 'Overview',
     expected: 'Expected',
     steps: 'Steps',
     media: 'Visual proof',
@@ -651,6 +669,15 @@ code {
   /* ── bar ── */
   document.getElementById('b-title').textContent = D.title || 'Proof Report';
   document.title = 'Proof · ' + (D.title || '');
+
+  const topVerdict = D.verdict || ((D.fields || []).find(f => /verdict/i.test(f.label || '')) || {}).value;
+  if (topVerdict) {
+    const vb = document.getElementById('b-verdict');
+    const text = String(topVerdict).split(/\s[—-]\s/)[0];
+    vb.textContent = text;
+    vb.classList.add('v--' + kind(text.split(/[\s—-]/)[0]));
+    vb.hidden = false;
+  }
 
   let filter = 'all';
   const counts = document.getElementById('b-counts');
@@ -695,17 +722,8 @@ code {
 
   /* ── rail ── */
   const rail = document.getElementById('rail');
-  let current = D.summary ? 'overview' : (S.length ? 0 : 'bugs');
+  let current = S.length ? 0 : 'bugs';
   const aux = [];
-
-  if (D.summary) {
-    const b = el('button', 'item item--aux');
-    b.type = 'button';
-    b.appendChild(el('span', 'item__t', L.overview));
-    b.addEventListener('click', () => select('overview'));
-    rail.appendChild(b);
-    aux.push(['overview', b]);
-  }
 
   const hScen = el('div', 'rail__h');
   hScen.appendChild(document.createTextNode('Scenarios'));
@@ -913,22 +931,25 @@ code {
     });
   }
 
-  /* Overview — D.summary: what the feature is, what was tested, what the verdict means.
-     The pane a reader lands on when it is present. */
-  function drawOverview() {
-    pane.textContent = '';
-    const head = el('div', 'head');
-    head.appendChild(el('h2', 'head__t', D.title || L.overview));
-    const v = D.verdict || ((D.fields || []).find(f => /verdict/i.test(f.label || '')) || {}).value;
-    if (v) head.appendChild(el('span', 'head__v v--' + kind(String(v).split(/[\s—-]/)[0]), String(v).split(/\s[—-]\s/)[0]));
-    pane.appendChild(head);
-    const sec = el('div', 'sec');
-    const p = el('div', 'summary'); paras(p, D.summary); sec.appendChild(p);
-    if (D.drivenOn) {
-      sec.appendChild(el('p', 'sec__h', 'Driven on'));
-      const q = el('div', 'prose'); paras(q, D.drivenOn); sec.appendChild(q);
-    }
-    pane.appendChild(sec);
+  const prose = t => { const p = el('div', 'prose'); paras(p, t); return p; };
+
+  /* A labelled row under a bug or a gap. `body` is prose, or a node when the
+     row carries a list or a button. */
+  function metaRow(box, label, body) {
+    const r = el('div', 'bug__r');
+    r.appendChild(el('span', 'bug__rl', label));
+    r.appendChild(typeof body === 'string' ? el('span', 'bug__rb', body) : body);
+    box.appendChild(r);
+  }
+
+  /* The same row, pointing at the scenario an entry names — a button that walks
+     there, so a bug reaches its repro and a gap reaches what it left unproven. */
+  function scenarioRow(box, label, ref) {
+    const i = S.findIndex(s => String(s.n) === String(ref));
+    if (i < 0) return metaRow(box, label, 'Scenario ' + ref + ' (missing)');
+    const a = el('button', 'bug__go', 'Scenario ' + S[i].n + ' — ' + (S[i].short || S[i].title || ''));
+    a.addEventListener('click', () => select(i));
+    metaRow(box, label, a);
   }
 
   function drawBugs() {
@@ -947,24 +968,8 @@ code {
       box.appendChild(h);
       const p = el('div', 'prose'); if (b.body) paras(p, b.body);
       box.appendChild(p);
-      if (b.reachedBy) {
-        const r = el('div', 'bug__r');
-        r.appendChild(el('span', 'bug__rl', 'Reached by'));
-        r.appendChild(el('span', 'bug__rb', b.reachedBy));
-        box.appendChild(r);
-      }
-      if (b.scenario != null) {
-        const i = S.findIndex(s => String(s.n) === String(b.scenario));
-        const r = el('div', 'bug__r');
-        r.appendChild(el('span', 'bug__rl', 'Proven in'));
-        if (i < 0) r.appendChild(el('span', 'bug__rb', 'Scenario ' + b.scenario + ' (missing)'));
-        else {
-          const a = el('button', 'bug__go', 'Scenario ' + S[i].n + ' — ' + (S[i].short || S[i].title || ''));
-          a.addEventListener('click', () => select(i));
-          r.appendChild(a);
-        }
-        box.appendChild(r);
-      }
+      if (b.reachedBy) metaRow(box, 'Reached by', b.reachedBy);
+      if (b.scenario != null) scenarioRow(box, 'Proven in', b.scenario);
       sec.appendChild(box);
     });
     if (D.bugsNote) {
@@ -982,17 +987,36 @@ code {
     head.appendChild(el('span', 'head__v v--hold', GAPS.length + ' item' + (GAPS.length === 1 ? '' : 's')));
     pane.appendChild(head);
     const sec = el('div', 'sec');
-    const p = el('div', 'prose');
-    GAPS.forEach(t => paras(p, t));
-    sec.appendChild(p); pane.appendChild(sec);
+    GAPS.forEach(g => sec.appendChild(typeof g === 'string' ? prose(g) : gapBox(g)));
+    pane.appendChild(sec);
+  }
+
+  /* One gap — {scenario, req, mechanism, attempted[], wouldClose}: the cause that
+     blocked a NOT VERIFIED scenario, what was tried against it, and what unblocks
+     it. Rendered as a bug in the not-verified colour, since it reads the same way. */
+  function gapBox(g) {
+    const box = el('div', 'bug bug--gap');
+    const h = el('div', 'bug__h');
+    if (g.req) h.appendChild(el('span', 'bug__s', g.req));
+    const named = S.find(s => String(s.n) === String(g.scenario));
+    h.appendChild(el('h3', 'bug__t', (named && (named.short || named.title)) || 'Not reached'));
+    box.appendChild(h);
+    if (g.mechanism) box.appendChild(prose(g.mechanism));
+    if (g.attempted && g.attempted.length) {
+      const ul = el('ul', 'bug__at');
+      g.attempted.forEach(a => { const li = el('li'); li.innerHTML = rich(a); ul.appendChild(li); });
+      metaRow(box, 'Attempted', ul);
+    }
+    if (g.wouldClose) metaRow(box, 'Would close', g.wouldClose);
+    if (g.scenario != null) scenarioRow(box, 'Not verified in', g.scenario);
+    return box;
   }
 
   function select(id) {
     current = id;
     rows.forEach((b, i) => b.classList.toggle('is-on', i === id));
     aux.forEach(([k, b]) => b.classList.toggle('is-on', k === id));
-    if (id === 'overview') drawOverview();
-    else if (id === 'bugs') drawBugs();
+    if (id === 'bugs') drawBugs();
     else if (id === 'gaps') drawGaps();
     else drawScenario(S[id], id);
     document.querySelector('.pane').scrollTop = 0;
@@ -1177,7 +1201,7 @@ code {
   });
 
   paint();
-  select(D.summary ? 'overview' : (S.length ? 0 : 'bugs'));
+  select(S.length ? 0 : 'bugs');
 })();
 </script>
 </body>
