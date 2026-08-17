@@ -270,10 +270,13 @@ const X = {
 const IMG = {
 };
 
-/* ---- engine: design images ---- */
+/* ---- engine: design images ----
+   Not lazy: the bytes are already in the document, so deferring buys no request. It only
+   costs — an image revealed by opening a <details> was display:none when the viewport
+   observer ran, and stays unloaded. */
 document.querySelectorAll('img[data-img]').forEach((el) => {
   const src = IMG[el.dataset.img];
-  if (src) { el.src = src; el.loading = 'lazy'; }
+  if (src) { el.src = src; }
 });
 
 /* ---- engine: give every <details> a <summary> ----
