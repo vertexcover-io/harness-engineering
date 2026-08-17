@@ -1,14 +1,20 @@
 # Test Scenarios — what to test, at which level
 
 One row per requirement in plan.md's `## Test Matrix`: **requirement · level · strategy ·
-phase**. Order the rows by level — `unit` first, `qa-agent` last — so the pyramid is
-visible at a glance. Each scenario is written out in the phase file that proves it — in
+phase**, ordered by level — `unit` first, `qa-agent` last — so the pyramid is visible at a
+glance. Each scenario is written out in the phase file that proves it — in
 full, exactly once, never restated elsewhere or replaced by an id-only pointer. A flow
 provable only after every phase lands rows to plan.md's `## Acceptance`; the phase that
 completes the journey authors and runs it. Examples here use a neutral domain (user auth)
 unrelated to the feature being planned.
 
 ## Derive what to test
+
+The finished set is a **basis**: every scenario is a direction no other scenario covers, and
+together they span the behavior. Both halves bind — a row that spans nothing new is dropped
+or folded into the row that already covers it, and a gap left by folding is a missing row,
+not a saved one. The gate on each row: **name the failure only it catches.** Two rows no
+single bug can tell apart are one row.
 
 Start from what the PRD already gives — stated requirements, acceptance criteria, named
 scenarios — and cite their ids. Then add what it implies but does not say:
@@ -33,9 +39,15 @@ scenarios — and cite their ids. Then add what it implies but does not say:
   the requirement and note the gap.
 
 Before writing phase files, pair every source item (requirement, edge case, risk, named
-variant, "shall not change" clause) with the scenario id(s) covering it — as scratch work,
-never as an output section. The pairing catches what a linear read misses: the third
-variant, the enforcement negative, the plain create-then-read.
+variant, "shall not change" clause) with the scenario id(s) covering it, then read the
+pairing back the other way — as scratch work, never as an output section. Forward, it
+catches what a linear read misses: the third variant, the enforcement negative, the plain
+create-then-read. Backward, it proves the basis: a scenario pairing to nothing is dropped,
+and scenarios pairing to the same item survive only where each names a failure the others
+miss.
+
+**Red flag:** two scenarios sharing a `Given`, or one whose named failure another already
+catches. Both are one scenario.
 
 ## Behavior, not implementation
 
@@ -55,12 +67,12 @@ file in the setup is fine; the expectations assert only what an actor observes.
 
 ## Format
 
-Heading `**S<n> — <observable outcome>** · <trace ids>` — the id is globally unique across
+Heading `**SC<n> — <observable outcome>** · <trace ids>` — the id is globally unique across
 the plan; `tdd` carries it in the test title and `quality-gate` resolves it against the
 phase file. A scenario tracing to nothing is dropped, or flags a missing requirement.
 
 ```markdown
-**S3 — A weak password is rejected with the rule's error** · R2, EC1
+**SC3 — A weak password is rejected with the rule's error** · R2, EC1
 
 Given registration is attempted with a password missing a digit:
 - registration is blocked
@@ -71,7 +83,20 @@ A `Given …:` clause when state and trigger fuse into one situation; a numbered
 when setup is genuinely staged (then label the outcomes `Expected:`). A `Given` needing an
 "and" between two independent conditions wants the list — or it is two scenarios. Include
 the negative half where it matters ("edit and delete are **not** offered"). Regressions:
-`**S12 (regression) — …**`.
+`**SC12 (regression) — …**`.
+
+One `Given` is one scene: every outcome observable in it belongs to that scenario's list,
+however many facts that is. A second scenario is earned by a different starting state or a
+different trigger — never by a further fact visible in the same scene.
+
+The heading is also the reviewer-facing line: `plan.html`'s scenario table transcribes it
+verbatim. It states one observable outcome, present tense, and carries no rationale clause —
+the `Given` and the outcomes supply the why by being concrete.
+
+Transcribed into that table, each scenario becomes one `<td>`: the heading in
+`<strong class="sc">`, each `Given …:` line in `<span class="given">`, its outcomes in a
+`<ul>`. A staged setup keeps its numbering in an `<ol>` and its `Expected:` label is a
+`.given` span. A filmed scenario is the `.given` span alone.
 
 In the phase file, group the scenarios under level subsections — `### Unit` ·
 `### Integration` · `### E2E` · `### QA Agent` — including only the subsections the phase
@@ -108,6 +133,7 @@ navigation, a cross-service journey. Two checks before accepting any climb:
 **Red flag:** more than a third of rows at `e2e`. Account for every one — a real-browser
 fact keeps its row; anything else traces to a named Blocker.
 
-The strategy column makes a row reviewable before any test exists: what is faked, what is
-diffed, what is data-driven. A requirement with no row means the plan is incomplete or the
-requirement is not real — both are findings.
+The strategy column tells the coder what the scenario leaves open: what is faked, what is
+diffed, what is data-driven. It stays in the matrix — `plan.html` shows the scenarios, not
+the strategy. A requirement with no row means the plan is incomplete or the requirement is
+not real — both are findings.

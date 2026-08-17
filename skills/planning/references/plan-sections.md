@@ -46,13 +46,11 @@ meaning and write that one.
 files it must read. A line that does not change what the coder builds takes attention it needs
 elsewhere.
 
-`../_shared/writing-style.md` governs both files — for precision, not for readability.
+`../_shared/writing-style.md` governs both files.
 
 ## File references
 
-Write them as `src/services/user.ts:34 — createUser, the insert path`. The path leads. The
-clause names what is there, so the coder does not open the file to find out. Repo-relative
-always.
+One rule everywhere in the plan: `step-card.md` — *Addresses*.
 
 ## Sections are available, not required
 
@@ -140,73 +138,12 @@ are the definition of done. Content restating another section is cut.
 
 ## Implementation steps
 
-A step opens with a bold action title naming its file or files. What follows depends on what the
-step is; the shape serves the content rather than a template.
+A step is a **card**: a fixed set of parts, rendered here and again in `plan.html`'s phase
+drill-down. `step-card.md` carries the parts, their triggers, and the register — read it before
+writing the `## Implementation` section, and write to it.
 
-### What earns a step
-
-A step carries a new function's design, a new file's location, a change to an existing type or
-signature, or an algorithm whose correctness is not obvious. It states where the code goes, what
-its contract is, and — where the location or shape had a plausible alternative — what that was
-and why not.
-
-The alternative clause is one sentence when there is one, and absent when there is not. Name the
-rejected alternative. Without it the coder re-decides alone, and can pick the option you ruled
-out.
-
-A step that is only "modify X to do Y" is mechanical — the coder sees it on opening the file.
-Reduce it to a one-line note, or cut it. Steps are not a change list.
-
-### Creating a new file — contract, then logic
-
-- **Contract** — the signature or data shape it introduces, one line, mirrored in the index.
-- **Logic** — the ordered operations *including the branch and the error path*: normalize → look
-  up → reject duplicate → hash → persist → return without the secret field.
-- **Placement** — the directory, and why there rather than the obvious alternative, when there
-  was one.
-
-### Changing existing code — quote, then show
-
-Quote when the coder would otherwise build against the wrong current state: a modification
-rather than an addition, a defect that lives in the code, something non-obvious it must
-preserve, or a surrounding shape the new code has to match.
-
-Do not quote a pattern being imitated rather than edited — name it (`bull-queue.ts:1678 —
-createFlow, the parent-plus-children builder`) and let the coder read it whole. Do not quote when
-the prose already determines the change, or when orienting would take forty lines: a quote that
-long claims the change is self-contained when it is not.
-
-In the before-block, elide to the lines that matter. In the after-block, show only the changed
-lines.
-
-```markdown
-1. **Modify `src/services/user.ts:31 — createUser, the insert path`** — reject duplicates
-
-   Today:
-   ```ts
-   async function createUser(email: string, pw: string): Promise<User> {
-     const hash = await bcrypt.hash(pw, 12)
-     return db.users.insert({ email, hash })
-   }
-   ```
-   Add a `findByEmail` lookup before hashing; when it returns a row, throw `DuplicateError(email)`
-   instead of inserting:
-   ```ts
-     if (await findByEmail(email)) throw new DuplicateError(email)
-   ```
-   The happy path is unchanged. `findByEmail` rather than a unique-index catch: the constraint
-   error cannot tell which column collided.
-```
-
-**Never describe a call site in prose where the code would fit.** "Follows the pattern at
-`:1618`" sends the coder off to read and interpret; the four lines say it, and they show the size
-of the change at the same time.
-
-### Traps
-
-Some code looks safe to remove and is not: a guard that looks redundant, a flag that looks
-vestigial. Give each one line naming what breaks if the coder removes it. It is not a step; it
-is a fence.
+The card governs where things go and what they are called. It never governs how much a step says,
+or which part carries the weight.
 
 ### Test-file steps
 

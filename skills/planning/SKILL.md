@@ -26,8 +26,9 @@ standalone, derive a short kebab-case name from the topic before step 1):
 | `plan.md` + `phases/phase-N.md` | step 8, extracted from plan.html | coders, quality-gate |
 
 People read the checkpoint summary and `plan.html`. Write those per
-`../_shared/writing-style.md`. The other three are agent-facing: `design.md` skips the style
-rules; `plan.md` and the phase files keep them, for precision rather than readability.
+`../_shared/writing-style.md`. `design.md` is agent-only and skips the style rules. `plan.md`
+and the phase files keep them: their steps are transcribed into `plan.html`, so a person reads
+that prose too.
 
 **Never assume.** State a claim about the code only after one of three things: you read the
 code, the user confirmed it, or you labeled it an assumption.
@@ -216,7 +217,7 @@ After approval, phase numbers are frozen — commits and claims files reference 
 deleted phase leaves a gap; never renumber the survivors.
 
 Then derive the tests: read `references/test-scenarios.md` now and build the Test Matrix
-from it.
+from it — a basis, not a checklist.
 
 Two rules bind every step you write:
 
@@ -228,7 +229,8 @@ Two rules bind every step you write:
   `design.md` when it exists, and state the change in the step-8 summary.
 
 **Done when:** every phase has a capability title, every requirement has a matrix row, every
-scenario has exactly one home, and every file a step edits was opened.
+scenario has exactly one home and names a failure no other scenario catches, and every file
+a step edits was opened.
 
 ## Step 7 — Build plan.html
 
@@ -239,8 +241,12 @@ One authored artifact, two layers:
   `references/plan-sections.md`. The payload test: **a coder that has the PRD but not the
   codebase can follow every step without opening a file.**
 - **Human layer** — built from `scripts/plan-shell.html`, never from scratch. Contract:
-  `references/plan-html.md` (sections, xref tooltips, altitude rule, the one optional
-  widget).
+  `references/plan-html.md` (sections, xref tooltips, altitude rule).
+
+The `#phases` drill-down belongs to both: it is the payload's `## Implementation` section
+**transcribed** into HTML, part for part. `#tests` is the same move on the payloads'
+`## Test Scenarios`, per `references/test-scenarios.md`. `references/step-card.md` is the one contract for
+those parts — read it before writing either layer.
 
 Building the page takes a while — stream it so the user watches it grow instead of waiting:
 
@@ -258,7 +264,10 @@ Building the page takes a while — stream it so the user watches it grow instea
    each `SLOT:content` section in order. Insert each new section *above* the remaining
    `SLOT:content` comment and delete the comment only with the last section — that comment
    is what keeps the spinner pinned to the end of the written content.
-4. Payloads and the engine data (`X`, `CASES`, `RX`, widget) last.
+4. **Write each `phases/phase-N.md` payload before the `#phases` card and the `#tests` table
+   that render it** — you cannot transcribe a document you have not written. Payload blocks
+   never render, so this costs the stream nothing. `plan.md` and the engine data (`X`, `RX`,
+   `IMG`) last.
 
 Then self-review and fix findings inline. Each check is a lookup, not a judgment; findings
 are `[phase N, step M]: <issue>`. A failed check below blocks the gate; anything else is a
@@ -272,11 +281,19 @@ recommendation:
   builds is not parallel.
 - **Steps.** Every step states a location, a contract, or an algorithm · no step instructs
   the coder to discover something · no call site is described in prose where the changed
-  lines would fit.
+  lines would fit · every step title opens with an imperative verb naming the action · every
+  line reference is an address the coder must open, and names what is there.
 - **Coverage.** Every requirement has a matrix row · every row names a phase or an
   acceptance flow · every scenario appears exactly once across all payloads · `e2e` rows
   stay under a third of the matrix, or each excess row traces to a real-browser fact or a
   named Blocker.
+- **The transcription is complete.** Count it, per phase: `<li>` in the drill-down ==
+  numbered steps in that payload's `## Implementation`, same order, same titles · every code
+  block in a step reaches its `<li>` · every existing-code snippet carries a `.snip-lbl.cur`
+  with its reason · every step that names a design embeds it, and every `data-img` resolves
+  in `IMG` · every `<details>` opens with a `<summary>` and wraps its panel in `.d-body` ·
+  rows in `#matrix` == scenarios across all payloads, each carrying that
+  scenario's id, heading, `Given` line and outcomes word for word.
 - **The layers agree.** Every number, name, signature, and path in the human layer comes
   from a payload block · every internal id on the page has a tooltip entry · the
   above-the-fold view answers *what, why, what each phase unlocks* without a drill-down.
