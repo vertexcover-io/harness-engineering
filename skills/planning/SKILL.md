@@ -70,7 +70,13 @@ Do not split when the pieces share more than ~30% of files and ship together.
   user answers. Each returns findings inline with `file:line` pointers: what already does
   part of this, the conventions to follow, how the code runs and tests, what is fragile
   nearby.
-- **The sweep locates; you read.** Open yourself every file a decision turns on.
+- **Dispatch a design scout too when the change has a user-facing surface.** Send it with the
+  sweep, on the same fast model; read `references/design-scout.md` for the brief. It pulls the
+  designs off the ticket into `.harness/<name>/design/` and returns the `design/INDEX.md` path.
+- **The sweep locates; you read.** Open yourself every file a decision turns on. Where the scout
+  left a `design/INDEX.md`, that includes the files it names — a screen you have not looked at
+  is one you cannot write a step for. No index means no design was found, which is a fact the
+  step records.
 - When the repo holds fewer than 3 examples of the pattern this work needs, also research
   externally — prior art, known failure modes, current API facts. Findings return inline
   with source URLs.

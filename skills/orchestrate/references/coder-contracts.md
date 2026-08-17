@@ -27,6 +27,10 @@ wire protocol around it.
   feature.
 - `## Commit` — the message to use
 
+**Building a screen? Open the design first.** plan.md's `## Design References` names the file
+for it — that file is the spec. Match it. A screen you design yourself can pass every test and
+still be the wrong screen.
+
 **Carry the scenario's id in each test title** (`S12: …`) so a reviewer can trace it. The id
 is for tracing — the rest of the title still states the claim, per the `tdd` skill.
 

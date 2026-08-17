@@ -41,6 +41,7 @@ skipping" and stop.
 
 - **The feature's docs** in `.harness/<SPEC_NAME>/` — PRD, design, plan, whatever exists. Scenarios come
   from what those docs say the feature must do.
+- **The designs** plan.md's `## Design References` names — what each screen was supposed to look like.
 - **Project verification knowledge** — the app facts verification turns on (login, self-lying surfaces, toast
   duration, where a triggered email lands, shared datastores) live in the **project's own skills** and `CLAUDE.md`.
   Read them first; this skill mandates no dedicated file for them.
@@ -135,11 +136,21 @@ A scenario driving **the surface the change landed on** is then **replayed on a 
 again from its first click at an emulated phone, as its own numbered scenario in the same session. Whether this app
 is meant to work on a phone at all is a project fact like any other.
 
+**Where a design defines the screen you just drove, compare your frame against it.** Open the file plan.md's
+`## Design References` names, and read the built screen against it on four things: the layout and where each
+element sits, the order of the elements, the labels and copy, and whether every state the design draws is
+present. State the comparison in that scenario's `reason` — what matched, and what did not, in the same
+evidence-not-adjectives terms as any other claim. Basic comparison by eye is the bar. A mismatch a user would
+be wrong-footed by — a missing state, an action that isn't where it was drawn — earns a `bugs[]` entry under
+Step 4's rules, naming its actor and its origin; cosmetic drift is a note in `extra[]`. A screen with no design
+is one nobody drew, not a failure.
+
 The invariant governing the whole step: **a frame is evidence only once its assert passed and your own eyes
 confirmed it shows what you think.** Read at the moment you shoot — frames lag renders. **Done when every UI
 scenario has a `NN_<slug>` set of frames in `screenshots/` that tells its whole story, each frame backed by a
-passing assert and your own eyes; and every scenario on the surface the change landed on has a phone replay driven
-through to its closing assert, whatever that assert returned.**
+passing assert and your own eyes; every scenario whose screen a design defines carries that comparison in its
+`reason`; and every scenario on the surface the change landed on has a phone replay driven through to its
+closing assert, whatever that assert returned.**
 
 ## Step 3 — API, DB & Side-Effects: Proving What Has No Screen
 
