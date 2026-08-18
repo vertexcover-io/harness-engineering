@@ -30,9 +30,9 @@ Every file below is one hop from here. Read the one whose condition you are in �
 |------|--------------|
 | `references/config.md` | resolving which skill or model a stage runs, or honoring `orchestrate.config.json` — the stage → default-skill table, the resolution order, and the gate contracts all live here |
 | `references/orchestrate.config.example.json` | you want a worked `orchestrate.config.json` to copy |
-| `references/dag-commands.md` | running any dashboard command — the init block, stage transitions, `serve`, `finalize` |
+| `references/dag-commands.md` | running any dashboard command — the init block, stage transitions, `serve-start`, `finalize` |
 | `references/dashboard-report-formats.md` | writing the markdown body of any `write-report` call |
-| `references/stage-prompts.md` | dispatching a sub-agent (Stage 3 Coder, Stage 5 Verify & Finalize) |
+| `references/stage-prompts.md` | dispatching a sub-agent (Stage 0 Baseline, Stage 3 Coder, Stage 5 Verify & Finalize) |
 | `references/coder-contracts.md` | you need the coder stage's wire protocol — phase-file inputs, mandatory E2E, report artifacts |
 | `references/phase-claims-format.md` | reading or checking a per-phase `phase-<N>-claims.json` |
 | `references/claims-aggregation-format.md` | aggregating phase claims after Stage 3, or running the Stage 5 aggregated-claims check |
@@ -88,14 +88,17 @@ DAG commands, the init block, and the transition pattern all live in **`referenc
 
 The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs"`
 
-**Create the worktree FIRST, then start the dashboard from inside it** — `init` writes `.harness/<SPEC_NAME>/` relative to cwd, so it must run with the worktree as cwd (else the dashboard and the phase/claims files split across two checkouts). The worktree skill is the one Skill to invoke before the dashboard.
+**Create the worktree FIRST, then start the dashboard from inside it** — `init` writes `.harness/<SPEC_NAME>/` relative to cwd, so it must run with the worktree as cwd (else the dashboard and the phase/claims files split across two checkouts).
+
+Every step here is seconds of work. The minutes-long baseline is dispatched by Stage 0 and joined
+later, so nothing in initialization blocks on it.
 
 (In `--auto` mode, skip this whole step — no worktree, no dashboard.)
 
 1. Generate a spec name from the prompt: lowercase, spaces → hyphens, truncate to 30 chars — long enough to stay descriptive, short enough that the branch name and every `.harness/<SPEC_NAME>/…` path stay readable in `git branch` and on the dashboard. `"Add user auth system"` → `"add-user-auth-system"`. Then, **while cwd is still the launch directory** (before the worktree `cd`), capture the top-level session id so Stage 5 can publish artifacts against the real session: `SESSION_ID=$(basename "$(ls -t ~/.claude/projects/"$(pwd | sed 's#/#-#g')"/*.jsonl 2>/dev/null | head -1)" .jsonl 2>/dev/null)`. Store `SESSION_ID` (empty is fine — capture may be off; the verify skill then derives its own).
 2. **Create the worktree.** Use the project's own worktree skill when it has one — check `CLAUDE.md` and the available skills for one that sets up a worktree — otherwise invoke `using-git-worktrees`. Either way, `cd` into it and store `WORKTREE_PATH`, `BRANCH_NAME`.
 3. **From inside the worktree**, open `references/dag-commands.md` and run its init block verbatim — it creates every stage node, and a hand-built DAG will not match the transitions the rest of this file issues. Store the printed `HARNESS_DIR`.
-4. Start the dashboard server as a **background job**: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve", run_in_background=true)`.
+4. Start the dashboard server: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve-start")`. It detaches, so this is a plain foreground call.
 5. Record the existing worktree on the dashboard: `set-status setup running`, `write-report worktree` (path + branch), `set-status worktree done`.
 
 ---
@@ -104,7 +107,7 @@ The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}
 
 | # | Stage | Execution | Output |
 |---|-------|-----------|--------|
-| 0 | Setup | **Main conversation** | Worktree path, baseline metrics, spec artifact directory |
+| 0 | Setup | **Main conversation** (`setup`) + background sub-agent (`baseline`) | Worktree path, spec artifact directory, and — once the join resolves — baseline metrics |
 | 1 | Design & Plan | **Main conversation** | `design.md` (recorder; carries the dependency + fallback chain) · `plan.html` (review surface, gate) → extracted `plan.md` + `phases/phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-claims.json` + `e2e-report.json` |
 | 4 | Code Review | **Main conversation** | `.harness/<SPEC_NAME>/review/review.md` — per-axis findings + verdict (review only, no source edits) |
@@ -115,7 +118,7 @@ The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}
 stage → default-skill table, the resolution order, and each stage's gate contract. Resolve it
 there, then invoke it (Invariant 5).
 
-Only Stages 3 and 5 are dispatched as sub-agents via `Agent`. The rest run in the main conversation: Stage 0 sets the working directory, Stage 1 needs conversation context and explores the codebase interactively, Stage 4's skill dispatches its own reviewer personas, and Stage 6 commits.
+Stages 3 and 5 are dispatched as sub-agents via `Agent`, as is Stage 0's `baseline` half. The rest run in the main conversation: Stage 0 sets the working directory, Stage 1 needs conversation context and explores the codebase interactively, Stage 4's skill dispatches its own reviewer personas, and Stage 6 commits.
 
 **Every stage is mandatory.** The planning skill scales itself — its step 0 collapses the question loop and checkpoint for work with nothing to decide, and its own gate may route atomic work to `implement`. The orchestrator never pre-empts either call.
 
@@ -162,12 +165,24 @@ Parallelism is **graph-driven**, not file-count-driven. Under vertical slicing (
 
 Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
-1. `set-status baseline running`.
-2. **Invoke `pipeline-setup` via `Skill`** — it owns tooling detection, baseline metrics, and the spec artifact directory. Do not hand-roll any of it (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
-3. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
-4. Create the directories `pipeline-setup` does not: `.harness/<SPEC_NAME>/verification/screenshots/`, `.harness/<SPEC_NAME>/verify-staging/`, `.harness/<SPEC_NAME>/review/`, and `.harness/<SPEC_NAME>/phases/` (`reports/` already created by dashboard init). The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
-5. **Load stage config.** `orchestrate.config.json` is optional and lives at the worktree root; if it exists, `Read` its `stages` map into `STAGE_CONFIG`, else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md` — it owns every rule about that file, and none are restated here.
-6. `write-report baseline`, `set-status baseline done`, `set-status setup done`.
+1. **Invoke `pipeline-setup` via `Skill` with its `setup` branch** — it owns the spec artifact directory (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
+2. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
+3. Create the directory `pipeline-setup` does not: `.harness/<SPEC_NAME>/verify-staging/`. The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
+4. **Load stage config.** `orchestrate.config.json` is optional and lives at the worktree root; if it exists, `Read` its `stages` map into `STAGE_CONFIG`, else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md` — it owns every rule about that file, and none are restated here.
+5. `set-status setup done`, `set-status baseline running`, then **dispatch the `baseline` sub-agent** (block in `references/stage-prompts.md`) and go straight to Stage 1 without waiting for it.
+
+**The join.** The baseline runs while the developer answers Stage 1's questions, so every stage that reads `baseline.json` joins it first — before the Stage 3 coder dispatch, before the Stage 5 dispatch, and before planning's `implement` route hands off. That route is the one path where Stage 1 does not take minutes, and the only one that starts editing source while the suite may still be running against the same tree.
+
+Joining is two things, in order:
+
+1. **Wait for the baseline sub-agent to report back** if it has not already. Never predict its result.
+2. **Check the artifact, not the agent's word for it** — a returned agent may still have written nothing usable:
+
+```
+Bash("node -e \"JSON.parse(require('fs').readFileSync('.harness/<SPEC_NAME>/baseline.json','utf8')).commands||process.exit(1)\" || { echo 'BASELINE_UNUSABLE'; exit 1; }")
+```
+
+On the first successful join, `write-report baseline` and `set-status baseline done`.
 
 ### Stage 1: Design & Plan (Main Conversation)
 
@@ -284,6 +299,7 @@ This table is Invariant 3's halt set — the whole of it. Stop the pipeline and 
 | Sub-agent error | Any sub-agent fails or returns an error |
 | Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
 | Missing verification artifacts | `proof-report.html` absent → `MISSING_VERIFICATION_ARTIFACTS` |
+| Baseline unavailable | `BASELINE_UNUSABLE` — `baseline.json` is missing, unparseable, or has no `commands` block, so Stage 3 cannot resolve tooling commands |
 | Quality gate BLOCKED | Report what failed |
 | Quality gate STAGNATION | Do NOT retry — report the stagnated check, repeated error signature, need for manual intervention |
 | Library-probe BLOCKED | No viable alternative; or `BLOCKED:repeated-lib-failure` after 2 loopbacks |

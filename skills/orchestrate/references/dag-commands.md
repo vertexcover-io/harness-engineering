@@ -54,15 +54,19 @@ Store the printed `HARNESS_DIR` for all subsequent calls. Phase nodes are added 
 Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && node '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")
 ```
 
-## Start the server (background job)
+## Start the server
 
-`serve` holds its process open until `finalize` kills it via `server.pid` (or it receives
-SIGINT/SIGTERM), so it MUST be a separate, backgrounded Bash call — foreground would block the
-pipeline:
+`serve-start` launches the server as a detached system process and returns as soon as it is
+listening, printing the URL. Run it in the foreground — the server it starts is not a Claude
+background job, so it survives whichever agent started it, and `finalize` kills it via
+`server.pid`:
 
 ```
-Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve", run_in_background=true)
+Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve-start")
 ```
+
+Calling it again for a run that is already serving prints the same URL instead of starting a
+second server. Each call also reaps servers left behind by runs that have finished.
 
 ## Sub-agent dashboard updates
 

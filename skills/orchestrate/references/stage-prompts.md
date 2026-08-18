@@ -4,6 +4,7 @@
 
 - [The rule (Invariant 6)](#the-rule-invariant-6)
 - [`[PREAMBLE]` — prefix every sub-agent](#preamble--prefix-every-sub-agent)
+- [Stage 0 — Baseline](#stage-0--baseline)
 - [Stage 3 — Coder](#stage-3--coder)
 - [Stage 5 — Verify & Finalize](#stage-5--verify--finalize)
 - [What belongs in the prompt vs the skill](#what-belongs-in-the-prompt-vs-the-skill)
@@ -37,6 +38,22 @@ your regression.
 ```
 
 Nothing else is universal. Resist adding to this block.
+
+---
+
+## Stage 0 — Baseline
+
+**Skill:** `pipeline-setup` (`baseline` branch) · **Model:** `sonnet` · **Dispatch:** background, then continue to Stage 1 without waiting.
+
+The one sub-agent that does **not** take `[PREAMBLE]`: it writes `baseline.json`, so it cannot be told to read it.
+
+```
+You are working in the worktree at <WORKTREE_PATH>.
+Your working directory is <WORKTREE_PATH>.
+
+Invoke the `pipeline-setup` skill with its `baseline` branch.
+SPEC_DIR: <SPEC_DIR>
+```
 
 ---
 

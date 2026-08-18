@@ -7,6 +7,9 @@ import { run as dagRun } from "./dag-update.mjs";
 
 const BREADCRUMB = join(tmpdir(), ".claude-harness-active");
 
+// Insertion order is load-bearing: `baseline` and `planning` run concurrently, so two nodes can
+// be `running` at once. The init block adds `baseline` first, which makes the last match the one
+// that owns the question. Reorder that block and the waiting state lands on the wrong node.
 const findLastNodeWithStatus = (nodes, status) => {
   const entries = Object.entries(nodes || {});
   for (let i = entries.length - 1; i >= 0; i--) {
@@ -42,6 +45,10 @@ export const run = async (argv = []) => {
   } catch {
     return { exitCode: 0 };
   }
+
+  // The breadcrumb is a single global path that only `finalize` clears, so a crashed run leaves it
+  // pointing at a finished dag. Without this guard the next session's questions mutate that dag.
+  if (dag.meta?.outcome !== "running") return { exitCode: 0 };
 
   if (action === "pre") {
     const found = findLastNodeWithStatus(dag.nodes, "running");

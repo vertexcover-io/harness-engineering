@@ -37,16 +37,10 @@ grep -i "worktree.*director" CLAUDE.md 2>/dev/null
 
 **If preference specified:** Use it without asking.
 
-### 3. Ask User
+### 3. Default to `.worktrees/`
 
-If no directory exists and no CLAUDE.md preference:
-
-```
-No worktree directory found. Where should I create worktrees?
-1. .worktrees/ (project-local, hidden)
-2. ~/.config/superpowers/worktrees/<project>/ (global location)
-Which would you prefer?
-```
+With no directory present and no CLAUDE.md preference, create `.worktrees/` — project-local and
+hidden, the same choice priority 1 already prefers.
 
 ---
 
@@ -63,9 +57,9 @@ grep -q "^\\.worktrees/$" .gitignore || grep -q "^worktrees/$" .gitignore
 
 **If NOT in .gitignore:**
 
-Per the rule "Fix broken things immediately":
-1. Add appropriate line to .gitignore
-2. Commit the change
+1. Add the appropriate line to .gitignore
+2. Leave it unstaged and name it in what you report back — committing on the user's behalf is
+   theirs to decide
 3. Proceed with worktree creation
 
 **Why critical:** Prevents accidentally committing worktree contents to repository.
@@ -106,32 +100,15 @@ cd "$path"
 
 Check for `.env*` files (`.env`, `.env.local`, `.env.development`, etc.) in the source project root. These contain local secrets, API keys, and configuration that aren't committed to git — without them the worktree often won't run.
 
-If `.env*` files exist, ask the user how to handle them:
-
-```
-Found env files: .env, .env.local
-How should I handle these in the worktree?
-1. Copy — independent copies (edits in worktree won't affect source)
-2. Symlink — linked to source (always in sync, single source of truth)
-3. Skip — don't bring env files over
-```
-
-Then apply the chosen strategy:
+Symlink each one into the worktree. A worktree is a temporary view of the same project, so it wants
+the same secrets from the same source — an edit in either place stays true for both:
 
 ```bash
 SOURCE_ROOT=$(git rev-parse --show-toplevel)
 
-# Option 1: Copy
-for f in "$SOURCE_ROOT"/.env*; do
-  [ -f "$f" ] && cp "$f" "$path/"
-done
-
-# Option 2: Symlink
 for f in "$SOURCE_ROOT"/.env*; do
   [ -f "$f" ] && ln -s "$f" "$path/$(basename "$f")"
 done
-
-# Option 3: Skip — do nothing
 ```
 
 Skip this step entirely if no `.env*` files exist — not every project uses them.
