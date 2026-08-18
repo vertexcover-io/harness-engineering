@@ -14,6 +14,8 @@ Linux, launch with `agent-browser --args "--no-sandbox" open <url>` — without 
 sandbox!` and every later command reports a dead session. Set `AGENT_BROWSER_DEFAULT_TIMEOUT=2000` so a wait that
 will never resolve fails in 2s rather than the 30s default.
 
+The examples below leave out `--session $BROWSER_SESSION` (see Step 2); include it on every real command.
+
 The CLI ships its own guide, version-matched to the binary and authoritative on the basics — session/refs/snapshot,
 the `wait` verbs, viewports, tabs, `record`:
 

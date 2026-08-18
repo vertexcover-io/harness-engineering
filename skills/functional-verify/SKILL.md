@@ -125,7 +125,14 @@ Drive a real browser through the `agent-browser` CLI — this is where every UI 
 binary first: if `agent-browser` isn't on PATH, stop with **BLOCKED:no-agent-browser**, name the scenarios you
 couldn't prove, and print `npm i -g agent-browser && agent-browser install`.
 
-Open the UI service you started in Step 1 and hold **one session** for every scenario. The browser proves the
+Open the UI service you started in Step 1 and hold **one session** for every scenario. Two callers using the
+same session name share one browser, so name yours uniquely: `BROWSER_SESSION=<SPEC_NAME>-fv<first 8 of
+SESSION_ID>`, never plain `<SPEC_NAME>` (standalone, derive `SESSION_ID` as in Step 7). Close that name before
+your first `open` — this clears any leftover from a crashed run — and pass `--session $BROWSER_SESSION` on every
+command. Subagents and forks must not touch this session; one that truly needs a browser makes its own name
+(`$BROWSER_SESSION-h<random>`, generated once) and closes it when done.
+
+The browser proves the
 behaviour under test, not the setup that reached it — a fixture you find missing mid-walk is seeded the Step 1 way
 and the walk re-driven. Read
 `references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, and the capture loop are
@@ -267,7 +274,8 @@ never fail the verification**; both implementations are in `references/publish.m
   `SESSION_ID` (orchestrate exports it) verbatim; on a standalone run, derive it from the newest transcript under
   the cwd. Not installed / not authenticated → skip in one line.
 
-Then close the session (`agent-browser --session <SPEC_NAME> close`) and shut down the stack you started in Step 1
+Then close the session (`agent-browser --session $BROWSER_SESSION close` — helpers' `-h*` sessions too) and shut
+down the stack you started in Step 1
 the project's way — anything already running when you arrived stays running, and **never kill a server you didn't
 start**. Leave `verification/` in place, uncommitted — it is the deliverable, for a human to read. Delete the
 staging dir (`.harness/<SPEC_NAME>/verify-staging/`).
