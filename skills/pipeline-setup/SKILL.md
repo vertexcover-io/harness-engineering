@@ -5,7 +5,7 @@ description: >
   auto-detects project tooling, runs baseline metrics (typecheck, lint, test, coverage),
   derives a spec name, and creates the spec artifact directory. Returns all environment
   variables needed by downstream pipeline stages.
-argument-hint: "<TASK_CONTEXT string>"
+argument-hint: "<TASK_CONTEXT string> [setup|baseline]"
 allowed-tools: Bash, Read, Write, Glob, Grep, Skill
 user-invocable: false
 ---
@@ -20,7 +20,18 @@ Prepares the environment for a development pipeline run. This skill is invoked a
 
 ## Input
 
-The argument is `TASK_CONTEXT` — the resolved task prompt or spec content that describes what will be built.
+The first argument is `TASK_CONTEXT` — the resolved task prompt or spec content that describes what
+will be built.
+
+A second argument names one **branch** of the steps below. The two halves run at different times:
+the fast half must finish before anything else starts, while the metric runs take minutes and
+nothing needs their output until the coder stage.
+
+| Branch | Steps | Runs |
+|---|---|---|
+| `setup` | 1, 4 | synchronously, in the caller's conversation |
+| `baseline` | 2, 3, 3b, 3c | in a background sub-agent, alongside later stages |
+| _(none)_ | all of them, in order | standalone use — the whole environment in one call |
 
 ---
 
@@ -122,10 +133,16 @@ reviewers read artifacts out-of-band.
 
 Steps:
 
-1. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`)
+1. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`). Delete any `baseline.json`
+   already in `.harness/<SPEC_NAME>/` — re-running the same spec name reuses the directory, and a
+   previous run's file would satisfy the caller's join instantly with a stale toolchain.
 2. Create `.harness/<SPEC_NAME>/verification/{screenshots,traces}/`
-3. Create `.harness/<SPEC_NAME>/review/` and `.harness/<SPEC_NAME>/phases/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`)
-4. Write baseline metrics to `.harness/<SPEC_NAME>/baseline.json`:
+3. Create `.harness/<SPEC_NAME>/review/`, `.harness/<SPEC_NAME>/phases/`, and
+   `.harness/<SPEC_NAME>/design/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`).
+   The planning skill's design scout writes into `design/` during its own step 1 and creates nothing —
+   so this call is what gives those files a home inside the worktree.
+4. Write baseline metrics to `.harness/<SPEC_NAME>/baseline.json` (the `baseline` branch owns this
+   file; the `setup` branch skips it):
 
 ```json
 {

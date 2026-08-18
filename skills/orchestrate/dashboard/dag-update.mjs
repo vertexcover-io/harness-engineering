@@ -2,7 +2,7 @@
 // Port of dag-update.sh. Manages .harness/<SPEC_NAME>/dag.json with atomic,
 // lock-protected writes. Usage: dag-update.mjs <command> [args...]
 
-import { createReadStream, readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, statSync, unlinkSync, readdirSync } from "node:fs";
+import { createReadStream, readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, statSync, unlinkSync, readdirSync, openSync } from "node:fs";
 import { dirname, join, resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir, platform } from "node:os";
@@ -68,7 +68,10 @@ const withLock = async (dagFile, mutate) => {
 const dagPath = () => {
   const dir = process.env.HARNESS_DIR;
   if (!dir) die("HARNESS_DIR must be set");
-  return join(dir, "dag.json");
+  const file = join(dir, "dag.json");
+  // Without this, a transition issued before `init` mutates nothing and still reports success.
+  if (!existsSync(file)) die(`DAG_NOT_INITIALIZED: ${file}`);
+  return file;
 };
 
 // ── Commands ─────────────────────────────────────────────────────────────────
@@ -192,11 +195,85 @@ const cmdSetArtifact = async (nodeId, key, value) => {
 
 const cmdWriteReport = async (nodeId, content) => {
   if (!nodeId) die("Usage: write-report <node-id> <content>");
+  dagPath(); // fail before writing the report file, not after
   const harnessDir = process.env.HARNESS_DIR;
-  if (!harnessDir) die("HARNESS_DIR must be set");
   const rel = `reports/${nodeId}-report.md`;
   writeFileSync(join(harnessDir, rel), content ?? "");
   await cmdSetArtifact(nodeId, "report", rel);
+};
+
+// ── Detached server lifecycle ────────────────────────────────────────────────
+
+const readPidFile = (dir) => {
+  const f = join(dir, "server.pid");
+  if (!existsSync(f)) return null;
+  const pid = parseInt(readFileSync(f, "utf8").trim(), 10);
+  return Number.isFinite(pid) ? pid : null;
+};
+
+const pidAlive = (pid) => {
+  if (!Number.isFinite(pid)) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
+};
+
+const clearServerFiles = (dir) => {
+  for (const f of ["server.pid", "server.port"]) {
+    try { unlinkSync(join(dir, f)); } catch {}
+  }
+};
+
+// A detached server outlives the run that started it, so every start reaps the dead runs'
+// servers. Nothing else will: `finalize` only ever kills its own.
+const reapFinishedServers = (skipDir) => {
+  const root = join(process.cwd(), ".harness");
+  if (!existsSync(root)) return;
+  for (const d of readdirSync(root, { withFileTypes: true })) {
+    if (!d.isDirectory()) continue;
+    const dir = join(root, d.name);
+    if (resolve(dir) === resolve(skipDir)) continue;
+    const dagFile = join(dir, "dag.json");
+    if (!existsSync(dagFile)) continue;
+    let outcome;
+    try { outcome = JSON.parse(readFileSync(dagFile, "utf8"))?.meta?.outcome; } catch { continue; }
+    if (outcome === "running") continue;
+    const pid = readPidFile(dir);
+    if (pidAlive(pid)) { try { process.kill(pid); } catch {} }
+    if (pid !== null) clearServerFiles(dir);
+  }
+};
+
+const cmdServeStart = async () => {
+  const harnessDir = process.env.HARNESS_DIR;
+  if (!harnessDir) die("HARNESS_DIR must be set");
+
+  reapFinishedServers(harnessDir);
+
+  const portFile = join(harnessDir, "server.port");
+  const printUrl = () =>
+    process.stdout.write(`http://localhost:${readFileSync(portFile, "utf8").trim()}\n`);
+
+  if (pidAlive(readPidFile(harnessDir)) && existsSync(portFile)) {
+    printUrl(); // already serving this run — starting a second one would orphan the first
+    return;
+  }
+  clearServerFiles(harnessDir);
+
+  // stdio must reach a file: an inherited pipe blocks the child once the starter is reaped.
+  const log = openSync(join(harnessDir, "server.log"), "a");
+  const child = spawn(process.execPath, [join(SCRIPT_DIR, "dag-update.mjs"), "serve"], {
+    cwd: process.cwd(),
+    env: { ...process.env, HARNESS_DIR: harnessDir },
+    detached: true,
+    stdio: ["ignore", log, log],
+  });
+  child.unref();
+
+  // The port file is the contract — a detached child's stdout is not ours to read.
+  for (let i = 0; i < 50; i++) {
+    if (existsSync(portFile)) { printUrl(); return; }
+    await sleep(100);
+  }
+  die("server did not report a port within 5s — see server.log");
 };
 
 const cmdServe = async () => {
@@ -241,6 +318,7 @@ const cmdServe = async () => {
     platform === "win32" ? ["cmd", ["/c", "start", "", url]] :
     ["xdg-open", [url]];
   try {
+    if (process.env.BROWSER === "true") throw new Error("opener suppressed");
     const c = spawn(opener[0], opener[1], { stdio: "ignore", detached: true });
     c.unref(); c.on("error", () => {});
   } catch {}
@@ -343,6 +421,7 @@ const dispatch = {
   "set-artifact": cmdSetArtifact,
   "write-report": cmdWriteReport,
   serve: cmdServe,
+  "serve-start": cmdServeStart,
   finalize: cmdFinalize,
 };
 
@@ -352,7 +431,7 @@ export const run = async (argv = []) => {
   try {
     if (!handler) {
       die(
-        "Usage: dag-update.mjs <init|add-node|add-edge|set-status|set-artifact|write-report|serve|finalize> [args...]",
+        "Usage: dag-update.mjs <init|add-node|add-edge|set-status|set-artifact|write-report|serve|serve-start|finalize> [args...]",
       );
     }
     await handler(...rest);
