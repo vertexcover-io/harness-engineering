@@ -28,8 +28,14 @@ key rather than guessing which stage was meant.
 | `commit-pr` | — (Stage 6 hand-rolls the commit and PR) | PR URL |
 
 Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,7,9,10}).
-`verify-finalize` is a bundle — overriding its `skill` replaces all three sub-skills and their
-contracts.
+
+`verify-finalize` runs three skills in sequence, so one `skill` cannot stand in for the stage — set
+`skills` instead, a map from the sub-skill being replaced to its replacement. Each named replacement
+inherits that sub-skill's gate contract. `skill` on this stage is ignored (log it).
+
+```json
+"verify-finalize": { "skills": { "quality-gate": "my-gate" } }
+```
 
 `worktree` and `commit-pr` are valid keys and resolve, but neither stage dispatches a resolved skill
 yet: worktree creation runs during Initialization before this file is read, and Stage 6 hand-rolls.
@@ -43,7 +49,8 @@ all mean the same thing: use the default.** Then, per stage:
 - **skill** = `CFG.skill` → a project skill named exactly like the default (the `Skill` tool already
   prefers project/plugin over global, so no path lookup) → global default. `CFG.skill` is a skill
   **name only**; a value with `/` is ignored (log it). Log the resolved override:
-  `"Using custom skill for stage <id>: <skill-name>"`.
+  `"Using custom skill for stage <id>: <skill-name>"`. On `verify-finalize`, resolve each of the
+  stage's three `<SKILL:…>` slots through `CFG.skills` by the slot's default name instead.
 - **model** (sub-agent stages `baseline`/`coder`/`verify-finalize` only) = `CFG.model` → the
   dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model` on a
   main-conversation stage has no Agent to retarget — ignore it (log).

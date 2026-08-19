@@ -179,7 +179,7 @@ Joining is two things, in order:
 2. **Check the artifact, not the agent's word for it** — a returned agent may still have written nothing usable:
 
 ```
-Bash("node -e \"JSON.parse(require('fs').readFileSync('.harness/<SPEC_NAME>/baseline.json','utf8')).timestamp||process.exit(1)\" || { echo 'BASELINE_UNUSABLE'; exit 1; }")
+Bash("node -e \"const b=JSON.parse(require('fs').readFileSync('.harness/<SPEC_NAME>/baseline.json','utf8'));if(!b.timestamp||['type_check','lint','test','coverage'].some(k=>!(k in b)))process.exit(1)\" || { echo 'BASELINE_UNUSABLE'; exit 1; }")
 ```
 
 On the first successful join, `write-report baseline` and `set-status baseline done`.

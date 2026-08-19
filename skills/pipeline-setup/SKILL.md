@@ -29,8 +29,8 @@ nothing needs their output until the coder stage.
 
 | Branch | Steps | Runs |
 |---|---|---|
-| `setup` | 1, 3 | synchronously, in the caller's conversation |
-| `baseline` | 2 | in a background sub-agent, alongside later stages |
+| `setup` | 1, 2 | synchronously, in the caller's conversation |
+| `baseline` | 3 | in a background sub-agent, alongside later stages |
 | _(none)_ | all of them, in order | standalone use — the whole environment in one call |
 
 ---
@@ -50,22 +50,7 @@ the available skills for one that sets up a worktree — otherwise invoke `using
 
 Store: `WORKTREE_PATH`, `BRANCH_NAME`
 
-### 2. Run Baseline Metrics
-
-Commands come from `orchestrate.config.json` at the **repo root** — `typecheck`, `lint`, and
-`coverage_all` where there is one, else `test_all`, scoped to the package the run names. Run what it
-names; nothing here discovers a runner.
-
-**No config, no run.** When the file does not exist, halt and tell the caller to run `setup-harness`.
-
-**A command that does not resolve is a config error, not a metric.** Exit 127, a missing script, an
-uninstalled binary — halt, name the command and its package, and say the config is stale. A command
-that ran and came back red is the opposite: that is the baseline, and it records normally.
-
-Record per tool the exit code and the counts it reports — type errors, lint warnings, tests
-passed/failed/skipped, coverage percent. A tool the config does not name records `null`.
-
-### 3. Create the Feature Directory
+### 2. Create the Feature Directory
 
 One directory holds everything — `.harness/<SPEC_NAME>/` (design.md, plan.html, plan.md, phases/,
 baseline.json, manifest.json, e2e-report.json, gate-report-*.md, review/,
@@ -82,25 +67,7 @@ Steps:
    `.harness/<SPEC_NAME>/design/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`).
    The planning skill's design scout writes into `design/` during its own step 1 and creates nothing —
    so this call is what gives those files a home inside the worktree.
-4. Write baseline metrics to `.harness/<SPEC_NAME>/baseline.json` (the `baseline` branch owns this
-   file; the `setup` branch skips it):
-
-```json
-{
-  "type_check": { "exit": 0, "errors": 0 },
-  "lint": { "exit": 0, "warnings": 3 },
-  "test": { "exit": 0, "passed": 42, "failed": 0, "skipped": 2 },
-  "coverage": { "percent": 85.5 },
-  "timestamp": "2026-03-13T..."
-}
-```
-
-This file is **measurements only** — what the tree scored on this run. The commands that produced
-them stay in `orchestrate.config.json`; nothing copies them here, and each downstream stage reads
-whichever file owns what it needs. Record `null` for a tool that did not run rather than omitting
-its key.
-
-5. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
+4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
 
 ```json
 {
@@ -116,6 +83,35 @@ its key.
 Downstream stages append `stages.<stage_name> = { started_at, completed_at, outcome }` entries.
 
 Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
+
+### 3. Run Baseline Metrics
+
+Commands come from `orchestrate.config.json` at the **repo root** — `typecheck`, `lint`, and
+`coverage_all` where there is one, else `test_all`, scoped to the package the run names. Run what it
+names; nothing here discovers a runner.
+
+**No config, no run.** When the file does not exist, halt and tell the caller to run `setup-harness`.
+
+**A command that does not resolve is a config error, not a metric.** Exit 127, a missing script, an
+uninstalled binary — halt, name the command and its package, and say the config is stale. A command
+that ran and came back red is the opposite: that is the baseline, and it records normally.
+
+Record per tool the exit code and the counts it reports, then write the lot to
+`.harness/<SPEC_NAME>/baseline.json` — this step owns that file:
+
+```json
+{
+  "type_check": { "exit": 0, "errors": 0 },
+  "lint": { "exit": 0, "warnings": 3 },
+  "test": { "exit": 0, "passed": 42, "failed": 0, "skipped": 2 },
+  "coverage": { "percent": 85.5 },
+  "timestamp": "2026-03-13T..."
+}
+```
+
+All five keys, every time: a tool the config does not name records `null` rather than being omitted,
+because the caller's join checks for them. Measurements only — the commands that produced them stay
+in `orchestrate.config.json` and are never copied here.
 
 ---
 
