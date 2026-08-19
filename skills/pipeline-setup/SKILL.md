@@ -1,10 +1,10 @@
 ---
 name: pipeline-setup
 description: >
-  Sets up the development pipeline environment. Creates a git worktree,
-  auto-detects project tooling, runs baseline metrics (typecheck, lint, test, coverage),
-  derives a spec name, and creates the spec artifact directory. Returns all environment
-  variables needed by downstream pipeline stages.
+  Sets up the development pipeline environment. Creates a git worktree, runs the baseline
+  metrics (typecheck, lint, test, coverage) using the commands `orchestrate.config.json`
+  declares, derives a spec name, and creates the spec artifact directory. Returns all
+  environment variables needed by downstream pipeline stages.
 argument-hint: "<TASK_CONTEXT string> [setup|baseline]"
 allowed-tools: Bash, Read, Write, Glob, Grep, Skill
 user-invocable: false
@@ -29,8 +29,8 @@ nothing needs their output until the coder stage.
 
 | Branch | Steps | Runs |
 |---|---|---|
-| `setup` | 1, 4 | synchronously, in the caller's conversation |
-| `baseline` | 2, 3, 3b, 3c | in a background sub-agent, alongside later stages |
+| `setup` | 1, 3 | synchronously, in the caller's conversation |
+| `baseline` | 2 | in a background sub-agent, alongside later stages |
 | _(none)_ | all of them, in order | standalone use — the whole environment in one call |
 
 ---
@@ -50,81 +50,22 @@ the available skills for one that sets up a worktree — otherwise invoke `using
 
 Store: `WORKTREE_PATH`, `BRANCH_NAME`
 
-### 2. Auto-Detect Project Tooling
+### 2. Run Baseline Metrics
 
-Detect available tooling by checking (in order):
-1. `CLAUDE.md` for any documented tooling commands — **this takes priority over defaults**
-2. `package.json` → Node.js project (npm/pnpm/yarn)
-3. `pyproject.toml` / `setup.py` → Python project
-4. `go.mod` → Go project
-5. `Cargo.toml` → Rust project
+Commands come from `orchestrate.config.json` at the **repo root** — `typecheck`, `lint`, and
+`coverage_all` where there is one, else `test_all`, scoped to the package the run names. Run what it
+names; nothing here discovers a runner.
 
-### 3. Run Baseline Metrics
+**No config, no run.** When the file does not exist, halt and tell the caller to run `setup-harness`.
 
-Run each detected tool and record results:
-- **Type checker** (tsc, mypy, etc.)
-- **Linter** (eslint, ruff, etc.)
-- **Test suite** (jest, pytest, go test, etc.)
-- **Coverage** (from test runner output)
+**A command that does not resolve is a config error, not a metric.** Exit 127, a missing script, an
+uninstalled binary — halt, name the command and its package, and say the config is stale. A command
+that ran and came back red is the opposite: that is the baseline, and it records normally.
 
-If a tool is not detected, record `null` for that key — do not fail on missing tooling.
+Record per tool the exit code and the counts it reports — type errors, lint warnings, tests
+passed/failed/skipped, coverage percent. A tool the config does not name records `null`.
 
-### 3b. E2E Infrastructure Detection
-
-Detect e2e test infrastructure without running anything:
-
-1. **Compose files** — check for `compose.yml`, `docker-compose.yml`, `compose.yaml`
-2. **E2E test frameworks** — scan for Playwright config (`playwright.config.*`), vitest e2e projects (vitest config with `e2e` in test include patterns), Cypress config
-3. **Infra scripts** — read `package.json` (root and per-package) for scripts containing `infra`, `docker`, `compose`, `db:migrate`, `db:setup`
-4. **Dev server command** — identify the command that starts the application (commonly `dev`, `start`, `serve` scripts)
-
-Record in baseline.json alongside the other metrics:
-
-```json
-{
-  "e2e": {
-    "detected": true,
-    "infra_up_cmd": "<script that starts backing services>",
-    "infra_down_cmd": "<script that stops backing services>",
-    "dev_cmd": "<script that starts the app>",
-    "e2e_cmd": "<script that runs e2e tests>",
-    "self_provisioning": true,
-    "emits_e2e_report": true,
-    "frameworks": ["playwright", "vitest-e2e"]
-  }
-}
-```
-
-- **`self_provisioning`** — `true` if `e2e_cmd` brings up its own infra + app on its own ports and tears them down (the hermetic pattern in `testing/references/hermetic-e2e.md`; signals: a wrapper like `run-e2e.mjs`, a Playwright `webServer` block, ephemeral-port allocation). When `true`, downstream stages run `e2e_cmd` directly and must **not** also run `infra_up_cmd` or hardcode dev ports. When `false`, the suite assumes a pre-started stack on fixed ports — the setup that drifts and silently rots; flag it so the coder/verify stages know they own bring-up.
-- **`emits_e2e_report`** — `true` if the runner writes `e2e-report.json` itself (vs. the coder generating it from the runner's machine output).
-
-If no e2e infrastructure is found, record `"e2e": { "detected": false }`. Do not fail — not every project has e2e tests.
-
-### 3c. Classify Test Runner + Derive Scoped Commands
-
-Downstream coders re-run tests on every RED/GREEN iteration. If they only get a whole-package
-command they default to running the entire suite (slow) or guess the wrong file-filter flag. Record
-the runner and a **single-file** command so each iteration stays scoped.
-
-1. Classify the unit-test **runner** from the package's `test`/`test:unit` script (and config files):
-   `vitest` | `jest` | `node-test` (`node --test`) | `pytest` | `go` | `cargo` | `unknown`.
-2. Emit the runner-correct single-file syntax into `commands.test_file` (with a literal `{FILE}`
-   placeholder the coder substitutes):
-
-   | runner | `test_file` template | scoping? |
-   |--------|----------------------|----------|
-   | vitest | `<test_all> -- --run {FILE}` | yes |
-   | jest | `<test_all> --testPathPattern={FILE}` | yes |
-   | node-test | `node --test {FILE}` | yes |
-   | pytest | `pytest {FILE}` | yes |
-   | go | `go test ./$(dirname {FILE})/...` (scopes by package) | yes |
-   | cargo | `<test_all>` (cargo filters by name, not file) | no |
-   | unknown | `<test_all>` | no |
-
-3. Derive `lint_file` the same way when the linter supports a path arg (e.g. `eslint {FILE}`,
-   `ruff check {FILE}`); else `null`.
-
-### 4. Create the Feature Directory
+### 3. Create the Feature Directory
 
 One directory holds everything — `.harness/<SPEC_NAME>/` (design.md, plan.html, plan.md, phases/,
 baseline.json, manifest.json, e2e-report.json, gate-report-*.md, review/,
@@ -150,34 +91,14 @@ Steps:
   "lint": { "exit": 0, "warnings": 3 },
   "test": { "exit": 0, "passed": 42, "failed": 0, "skipped": 2 },
   "coverage": { "percent": 85.5 },
-  "commands": {
-    "runner": "vitest",
-    "monorepo": "turborepo",
-    "runner_supports_file_scoping": true,
-    "typecheck": "pnpm typecheck",
-    "lint": "pnpm eslint .",
-    "lint_file": "pnpm eslint {FILE}",
-    "build": "pnpm build",
-    "test_all": "pnpm vitest run",
-    "test_file": "pnpm vitest run -- --run {FILE}",
-    "coverage_all": "pnpm vitest run --coverage",
-    "test_changed": "turbo run test:unit lint typecheck --filter='...[{BASE}]'"
-  },
   "timestamp": "2026-03-13T..."
 }
 ```
 
-`{FILE}`/`{BASE}` are literal placeholders downstream stages substitute (test path; base ref like the
-merge-base or `<BASE_BRANCH>`). Set any undetected command to `null`. When `runner_supports_file_scoping`
-is false, set `test_file` equal to `test_all`. The existing `type_check`/`lint`/`test`/`coverage` result
-keys are unchanged — `commands` is additive.
-
-- **`coverage_all`** runs the suite once **with coverage** — quality-gate uses it for both its test and
-  coverage checks instead of running the suite twice.
-- **`monorepo` + `test_changed`** let downstream gates run only **changed packages and their dependents**
-  (turbo's `...[base]` graph) rather than the whole repo; unchanged packages are cache hits. Set
-  `monorepo`/`test_changed` to `null` for single-package repos, where the whole-project commands already
-  cover everything.
+This file is **measurements only** — what the tree scored on this run. The commands that produced
+them stay in `orchestrate.config.json`; nothing copies them here, and each downstream stage reads
+whichever file owns what it needs. Record `null` for a tool that did not run rather than omitting
+its key.
 
 5. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
 

@@ -1,9 +1,42 @@
 {
   "stages": {
+    "setup": {},
+    "worktree": {},
+    "baseline": {},
     "planning": { "skill": "my-planning" },
     "coder": { "skill": "my-implement", "model": "opus" },
     "code-review": { "skill": "strict-review" },
-    "quality-gate": { "skill": "my-quality-gate" },
-    "verify-finalize": { "model": "haiku" }
+    "verify-finalize": { "model": "haiku" },
+    "commit-pr": {}
+  },
+
+  "environments": {
+    "default": "local",
+    "local": "scripts/stack-local.sh",
+    "remote": "scripts/stack-remote.sh"
+  },
+
+  "commands": {
+    "typecheck": "pnpm typecheck",
+    "lint": "pnpm eslint .",
+    "lint_file": "pnpm eslint {FILE}",
+    "build": "pnpm build",
+    "test_all": "pnpm vitest run",
+    "test_file": "pnpm vitest run {FILE}",
+    "coverage_all": "pnpm vitest run --coverage",
+    "test_changed": "turbo run test lint typecheck --filter='...[{BASE}]'"
+  },
+
+  "packages": {
+    "api": {
+      "path": "packages/api",
+      "runner": "vitest",
+      "bootstrap": "pnpm install",
+      "commands": {
+        "build": "pnpm --filter api build",
+        "test_all": "pnpm --filter api test",
+        "test_file": "pnpm --filter api test {FILE}"
+      }
+    }
   }
 }

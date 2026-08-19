@@ -17,10 +17,10 @@ The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` a
 ### Toolchain
 | Tool | Status | Command |
 |------|--------|---------|
-| Type Checker | DETECTED | tsc --noEmit |
-| Linter | DETECTED | eslint . |
-| Test Suite | DETECTED | npm test |
-| Coverage | DETECTED | vitest --coverage |
+| Type Checker | DECLARED | tsc --noEmit |
+| Linter | DECLARED | eslint . |
+| Test Suite | DECLARED | npm test |
+| Coverage | DECLARED | vitest --coverage |
 
 ### Results
 | # | Check | Baseline | Current | Verdict |

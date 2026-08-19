@@ -1,6 +1,6 @@
 ---
 name: quality-gate
-description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads baseline metrics from .harness/<SPEC_NAME>/baseline.json."
+description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads the project's commands from orchestrate.config.json and its baseline metrics from .harness/<SPEC_NAME>/baseline.json."
 user-invocable: false
 ---
 
@@ -29,14 +29,19 @@ the report template, and the state-snapshot commands live in `references/gate-re
 
 ---
 
-## Tooling detection & baseline
+## Commands & baseline
 
-Detect the project's toolchain (type / lint / test / coverage) and capture starting metrics to
-`baseline.json` per `references/tooling-detection.md`. Each tool resolves to one of three states:
+Commands come from `orchestrate.config.json` at the repo root; `baseline.json` holds what the tree
+scored before this run's work. Each tool resolves to one of three states:
 
-- `DETECTED` — tool found, command determined.
-- `NOT_APPLICABLE` — justified skip (e.g. all changed files are `.md`). Must state the justification.
-- `MISSING` — tool absent for a project with source files → **BLOCKED verdict**.
+- `DECLARED` — the config names a command for it.
+- `NOT_APPLICABLE` — justified skip (e.g. all changed files are `.md`, or the config names no such command). Must state the justification.
+- `MISSING` — the config names a command that does not resolve → **BLOCKED verdict**; the config is stale, not the code.
+
+Where the config sets `commands.monorepo` (turborepo/nx), run typecheck/lint/test through
+`commands.test_changed` with `<BASE_BRANCH>` substituted for `{BASE}` — turbo's `...[base]` filter
+includes downstream dependents, so an affected package is still caught while unchanged ones become
+cache hits.
 
 ---
 
@@ -58,12 +63,14 @@ Detect the project's toolchain (type / lint / test / coverage) and capture start
 
 ### Check 3: Test Suite + Behavior Coverage (ONE run, feeds both Check 3 and Check 4)
 
-- Run the **unit** suite **with coverage enabled** in a SINGLE invocation — use `baseline.json`'s
+- Run the **unit** suite **with coverage enabled** in a SINGLE invocation — use the config's
   `commands.coverage_all` (e.g. `vitest run --coverage`, `pytest --cov`, `go test -cover ./...`).
   This is the unit suite only — it must **not** invoke the e2e suite (`e2e.e2e_cmd`), which the coder
   already ran; Check 9 reads that run's report, it is not re-run here.
   Coverage runs the tests, so a plain test run followed by a separate coverage run executes the whole
   suite twice — do NOT do that. This one invocation feeds both Check 3 (pass/fail) and Check 4 (coverage).
+  Where the config names no `coverage_all`, run `test_all` instead and mark Check 4 `NOT_APPLICABLE`
+  — "the project declares no coverage command". A project without coverage tooling is not a block.
 - **Pass:** Exit code 0
 - **Fail:** Non-zero exit code
 - Test count is NOT compared — consolidation may legitimately reduce it.
@@ -124,7 +131,7 @@ human-observable properties are functional-verify's job, not the gate's.
 This check **only reads** the coder's e2e artifacts — it does not launch a browser or re-run the e2e suite. The suite ran once, during coding. It reads two files: `e2e-report.json` (the raw run summary) and `claims.json` (the aggregated claim ledger).
 
 - Read `.harness/<SPEC_NAME>/e2e-report.json`
-- If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found". Note: a hermetic runner (`e2e.self_provisioning` in baseline) should **emit this file itself** from the framework's machine output (e.g. Playwright's JSON reporter) — a `failed`/`coverage`/`timestamp` derived from the actual run, not hand-authored. A report whose numbers can't be traced to a runner invocation is not evidence.
+- If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found". Note: a hermetic runner (`e2e.self_provisioning` in the config) should **emit this file itself** from the framework's machine output (e.g. Playwright's JSON reporter) — a `failed`/`coverage`/`timestamp` derived from the actual run, not hand-authored. A report whose numbers can't be traced to a runner invocation is not evidence.
 - If `not_applicable: true` → `NOT_APPLICABLE` with the reason from the file
 - If file exists, verify:
   1. `failed` count is 0 — any E2E failures during coding are a hard block
@@ -148,7 +155,7 @@ Detects tautological / written-to-pass tests — the only check that proves test
    - Invert a boolean condition (`if (x)` → `if (!x)`)
    - Replace a return value with a constant
    - Introduce an off-by-one (`<=` → `<`, `+ 1` removed)
-3. Run the scoped test(s) for that behavior (`commands.test_file` with the relevant test file).
+3. Run the scoped test(s) for that behavior (the config's `commands.test_file`, substituting the relevant test file for `{FILE}`).
 4. **Killed** (at least one test fails) → revert and continue. **Survived** (all tests still pass) →
    the behavior's test verifies nothing → **BLOCKED**, naming the file, behavior ID, and surviving mutation.
 5. Revert after EVERY mutation: `git checkout -- <file>`, then verify `git diff --quiet` before the

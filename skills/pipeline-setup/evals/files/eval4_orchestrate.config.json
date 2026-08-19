@@ -1,0 +1,18 @@
+{
+  "stages": {
+    "setup": {},
+    "worktree": {},
+    "baseline": {},
+    "planning": {},
+    "coder": {},
+    "code-review": {},
+    "verify-finalize": {},
+    "commit-pr": {}
+  },
+  "commands": {
+    "typecheck": "npm run typecheck:strict",
+    "lint": "npm run lint",
+    "test_all": "npm test",
+    "test_file": "npm test -- {FILE}"
+  }
+}

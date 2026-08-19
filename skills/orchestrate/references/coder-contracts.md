@@ -37,10 +37,14 @@ is for tracing — the rest of the title still states the claim, per the `tdd` s
 
 ## Tooling commands
 
-Your preamble carries a `## Tooling commands` block: use the scoped `test_file` / `lint_file`
-(substitute `{FILE}`) while iterating, and run the full `test_all` / `lint` **once** each, only
-to confirm green before declaring the phase done. Don't restructure working tests to satisfy a
-strict lint rule on test files — that's the project's lint-config concern.
+From `orchestrate.config.json` at the repo root, plus the `packages` entry your dispatch named.
+
+- **Iterating:** `test_file` / `lint_file`, the test path substituted for `{FILE}`.
+- **Before declaring the phase done:** `test_all` / `lint`, once each.
+- **Not in the config:** a check this project does not have. Skip it.
+
+Don't restructure working tests to satisfy a strict lint rule on test files — that's the project's
+lint-config concern.
 
 ---
 

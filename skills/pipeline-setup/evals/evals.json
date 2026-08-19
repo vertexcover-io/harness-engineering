@@ -5,69 +5,104 @@
       "id": 1,
       "name": "node-project-full-setup",
       "prompt": "Set up the pipeline for this task: Add a rate limiter middleware to the Express API that limits each IP to 100 requests per 15-minute window.",
-      "expected_output": "Worktree created, Node.js tooling detected from package.json, baseline metrics recorded in docs/spec/add-rate-limiter-middleware/baseline.json, all environment variables returned",
+      "expected_output": "Worktree created, commands read from orchestrate.config.json, baseline metrics recorded in .harness/add-rate-limiter-middleware/baseline.json, all environment variables returned",
       "files": [],
       "expectations": [
         "Invokes the using-git-worktrees skill via the Skill tool to create a worktree",
         "Stores and reports WORKTREE_PATH as an absolute path",
         "Stores and reports BRANCH_NAME for the worktree branch",
-        "Checks CLAUDE.md for documented tooling commands before falling back to defaults",
-        "Detects Node.js project tooling from package.json",
-        "Runs baseline type checker, linter, test suite, and coverage commands",
-        "Records null for any metric tool that is not detected rather than failing",
-        "Creates docs/spec/<SPEC_NAME>/ directory with a slugified spec name derived from the task",
+        "Reads orchestrate.config.json from the repo root to get the commands to run",
+        "Runs the typecheck, lint, and test commands the config names and records their exit codes",
+        "Records null for any metric whose command the config does not name, rather than failing",
+        "Creates .harness/<SPEC_NAME>/ directory with a slugified spec name derived from the task",
         "Writes baseline.json with type_check, lint, test, coverage, and timestamp keys",
         "Returns all five output variables: WORKTREE_PATH, BRANCH_NAME, SPEC_NAME, SPEC_DIR, BASELINE_PATH"
       ],
       "anti_expectations": [
         "Does not skip creating a git worktree and work directly on the main branch",
-        "Does not fail or abort when a tooling command (typecheck, lint, test) is not available",
-        "Does not hardcode tooling commands without checking CLAUDE.md first"
+        "Does not walk package.json, pyproject.toml, or any manifest to discover which commands to run",
+        "Does not write a commands block into baseline.json",
+        "Does not guess a file-filter flag or classify the test runner itself"
       ]
     },
     {
       "id": 2,
       "name": "python-project-baseline-metrics",
       "prompt": "Set up the pipeline environment for: Refactor the database connection pool to support async connections with configurable pool size.",
-      "expected_output": "Worktree created, Python tooling detected from pyproject.toml, baseline metrics captured including mypy/ruff/pytest results, spec directory created at docs/spec/refactor-db-connection-pool/",
+      "expected_output": "Worktree created, commands taken from orchestrate.config.json, baseline metrics captured from those commands, spec directory created at .harness/refactor-db-connection-pool/",
       "files": [],
       "expectations": [
         "Invokes the using-git-worktrees skill to create an isolated worktree",
         "Changes directory into the worktree after creation",
-        "Detects Python project by checking for pyproject.toml or setup.py",
-        "Runs mypy or equivalent type checker and records exit code and error count",
-        "Runs ruff or equivalent linter and records exit code and warning count",
-        "Runs pytest or equivalent test runner and records passed, failed, and skipped counts",
-        "Captures coverage percentage from test runner output",
+        "Reads orchestrate.config.json rather than inspecting the project to identify it as Python",
+        "Runs the typecheck command the config names and records exit code and error count",
+        "Runs the lint command the config names and records exit code and warning count",
+        "Runs the test command the config names and records passed, failed, and skipped counts",
+        "Captures coverage percentage from the coverage command the config names, when it names one",
         "Derives a slugified SPEC_NAME from the task description (e.g., refactor-db-connection-pool)",
         "Writes baseline.json with a timestamp field in ISO format"
       ],
       "anti_expectations": [
-        "Does not assume Node.js tooling when pyproject.toml or setup.py is present",
-        "Does not skip baseline metric collection for any detected tool",
+        "Does not infer the toolchain from pyproject.toml, setup.py, or any other manifest",
+        "Does not substitute a default command such as mypy or pytest when the config names a different one",
         "Does not create the spec directory before the worktree is set up"
       ]
     },
     {
       "id": 3,
-      "name": "missing-tooling-graceful-handling",
+      "name": "partial-config-graceful-handling",
       "prompt": "Set up pipeline for: Add a webhook endpoint that validates GitHub signatures and forwards events to our internal queue.",
-      "expected_output": "Worktree created, tooling auto-detected with nulls for missing tools, baseline.json written with null entries where tools are unavailable, all output variables populated",
+      "expected_output": "Worktree created, only the commands the config names are run, baseline.json written with null entries for the rest, all output variables populated",
       "files": [],
       "expectations": [
         "Announces 'Setting up pipeline environment.' at the start",
         "Invokes using-git-worktrees skill before any other operations",
-        "Checks tooling detection in the documented priority order: CLAUDE.md first, then package.json, pyproject.toml, go.mod, Cargo.toml",
-        "Records null for type_check, lint, test, or coverage keys when the corresponding tool is not detected",
-        "Does not fail or exit early when one or more baseline metric commands are missing",
-        "Creates the docs/spec/ directory structure even when some tooling is unavailable",
-        "Baseline.json contains all required keys (type_check, lint, test, coverage, timestamp) regardless of which tools were detected",
-        "Returns SPEC_DIR as the path to docs/spec/<SPEC_NAME>/"
+        "Records null for type_check, lint, test, or coverage keys when the config names no command for them",
+        "Does not fail or exit early when the config names commands for only some of the four tools",
+        "Creates the .harness/ directory structure even when the config is partial",
+        "Baseline.json contains all required keys (type_check, lint, test, coverage, timestamp) regardless of which commands the config named",
+        "Returns SPEC_DIR as the path to .harness/<SPEC_NAME>/"
       ],
       "anti_expectations": [
-        "Does not abort the pipeline when a tool is missing or a metric command returns an error",
-        "Does not omit keys from baseline.json for undetected tools instead of recording null",
-        "Does not skip tooling detection when some tools are missing"
+        "Does not abort when the config omits a command for one of the four tools",
+        "Does not omit keys from baseline.json instead of recording null",
+        "Does not fall back to detecting a command the config left out"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "stale-config-halts-as-config-error",
+      "prompt": "Set up the pipeline for: Tighten the input validation on the signup endpoint.",
+      "expected_output": "Stage 0 halts naming the command that did not resolve and says the config needs updating; no baseline.json recording it as a failing suite",
+      "files": ["skills/pipeline-setup/evals/files/eval4_orchestrate.config.json"],
+      "expectations": [
+        "Reads orchestrate.config.json and runs the commands it names",
+        "Detects that 'npm run typecheck:strict' does not resolve — the script does not exist",
+        "Halts rather than continuing, and names the command that failed to resolve",
+        "States that orchestrate.config.json is stale and needs updating",
+        "Distinguishes a shell-level failure (missing script, exit 127) from a suite that ran and came back red"
+      ],
+      "anti_expectations": [
+        "Does not record the unresolved command as type_check with a non-zero exit in baseline.json",
+        "Does not silently skip the command and continue with a partial baseline",
+        "Does not fall back to detecting a replacement typecheck command"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "missing-config-halts",
+      "prompt": "Set up the pipeline for: Add pagination to the orders list endpoint.",
+      "expected_output": "Halts because orchestrate.config.json does not exist, and tells the user to run setup-harness",
+      "files": [],
+      "expectations": [
+        "Looks for orchestrate.config.json at the repo root",
+        "Halts when the file does not exist",
+        "Names setup-harness as the skill that writes the file"
+      ],
+      "anti_expectations": [
+        "Does not fall back to auto-detecting commands from package.json or any other manifest",
+        "Does not write a baseline.json with all-null metrics and continue",
+        "Does not author orchestrate.config.json itself as part of this run"
       ]
     }
   ]
