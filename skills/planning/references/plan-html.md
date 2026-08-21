@@ -37,6 +37,11 @@ the coder gets.
 
 The shell's `SLOT:content` comment lists the section order. Rules the slots don't carry:
 
+- **Hero `.links`** — the ticket, PRs and PRD, then one last item recording what produced this
+  run: `harness <version> · andromeda <branch@sha> · session <id>`. Plain text, not a link.
+  Generate it with `node --experimental-strip-types ../_shared/collect-run-info.ts` and paste the
+  line verbatim — the session id is printed in full because a truncated one is a lookup the reader
+  has to reconstruct. The script drops any value it cannot read, so a short line is a valid state.
 - **Banner** (`.callout.warn`) — only when a real known-gap or risk exists. State what is
   unverified, why, and what fixes it. Never pad; no banner is a valid state.
 - **Requirements** — one card per acceptance criterion, `id` on each so xrefs can jump to it.

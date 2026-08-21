@@ -266,9 +266,11 @@ Building the page takes a while — stream it so the user watches it grow instea
    start, build the file anyway and present it as a `file://` link — never block on the
    viewer.
 2. **Copy the shell** to `.harness/<name>/plan.html`. Unfilled slots render as spinners.
-3. **Fill top-down, one save per section**: title, brand, nav, and the hero first; then
-   each `SLOT:content` section in order. Insert each new section *above* the remaining
-   `SLOT:content` comment and delete the comment only with the last section — that comment
+3. **Fill top-down, one save per section**: title, brand, nav, and the hero first — the hero's
+   `.links` ends with the run-info line, so run
+   `node --experimental-strip-types <skill-dir>/../_shared/collect-run-info.ts` and paste its
+   output there. Then fill each `SLOT:content` section in order. Insert each new section *above*
+   the remaining `SLOT:content` comment and delete the comment only with the last section — that comment
    is what keeps the spinner pinned to the end of the written content.
 4. **Write each `phases/phase-N.md` payload before the `#phases` card and the `#tests` table
    that render it** — you cannot transcribe a document you have not written. Payload blocks

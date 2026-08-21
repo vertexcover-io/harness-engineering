@@ -67,7 +67,10 @@ Steps:
    `.harness/<SPEC_NAME>/design/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`).
    The planning skill's design scout writes into `design/` during its own step 1 and creates nothing —
    so this call is what gives those files a home inside the worktree.
-4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`:
+4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`. Fill `run_info` from
+   `node --experimental-strip-types <plugin-root>/skills/_shared/collect-run-info.ts --json`,
+   verbatim — it records what produced this run, and any value it could not read comes back
+   `null`:
 
 ```json
 {
@@ -75,6 +78,7 @@ Steps:
   "branch": "<BRANCH_NAME>",
   "worktree": "<WORKTREE_PATH>",
   "started_at": "<ISO8601>",
+  "run_info": { "harness": "1.29.0", "andromeda": "master@a2bd8cc", "session": "<uuid>" },
   "pr_number": null,
   "stages": {}
 }
