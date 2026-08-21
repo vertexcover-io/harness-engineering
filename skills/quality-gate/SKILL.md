@@ -1,6 +1,6 @@
 ---
 name: quality-gate
-description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads baseline metrics from .harness/<SPEC_NAME>/baseline.json."
+description: "Post-stage verification with hard pass/fail thresholds. Every claim backed by verbatim command output — no check may be silently absent, skipped, or weakened. Runs after TDD, refactor, and before PR. Reads each package's commands from orchestrate.config.json and its baseline metrics from .harness/<SPEC_NAME>/baseline.json."
 user-invocable: false
 ---
 
@@ -10,6 +10,8 @@ This is the gate between "the coder says it's done" and "the feature ships." Eve
 
 **Announce at start:** "Running quality gate checks against baseline metrics."
 
+**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+
 ---
 
 ## Inputs
@@ -18,6 +20,8 @@ The quality gate receives these parameters from the orchestrator:
 
 - **Feature dir:** `.harness/<SPEC_NAME>/` (gitignored — baseline.json, e2e-report.json, claims.json, gate reports)
 - **Stage:** `post-tdd` (the gate runs once, after the TDD stage, before commit)
+- **`PACKAGES`:** the `orchestrate.config.json` package keys this run touches. Invoked by hand
+  without it, take the packages the changed files sit under.
 
 ---
 
@@ -29,14 +33,19 @@ the report template, and the state-snapshot commands live in `references/gate-re
 
 ---
 
-## Tooling detection & baseline
+## Commands & baseline
 
-Detect the project's toolchain (type / lint / test / coverage) and capture starting metrics to
-`baseline.json` per `references/tooling-detection.md`. Each tool resolves to one of three states:
+**Every check below runs once per package in `PACKAGES`**, and the row's verdict is the union: one
+package failing fails the check. Commands resolve by the rule in
+`skills/orchestrate/references/config.md`, which owns it. `baseline.json` holds what those same
+packages scored before this run's work; a package with no baseline entry is **BLOCKED**, never a
+zero.
 
-- `DETECTED` — tool found, command determined.
-- `NOT_APPLICABLE` — justified skip (e.g. all changed files are `.md`). Must state the justification.
-- `MISSING` — tool absent for a project with source files → **BLOCKED verdict**.
+Each tool resolves to one of three states:
+
+- `DECLARED` — the config names a command for it.
+- `NOT_APPLICABLE` — justified skip: the config names no such command for this package, or all its changed files are `.md`. Name the package and the reason.
+- `MISSING` — the config names a command that does not resolve → **BLOCKED verdict**; the config is stale, not the code.
 
 ---
 
@@ -44,38 +53,40 @@ Detect the project's toolchain (type / lint / test / coverage) and capture start
 
 ### Check 1: Type Checker
 
-- Run the detected type check command
+- Run each package's `typecheck`
 - **Pass:** Exit code 0
 - **Fail:** Non-zero exit code
-- Report: exit code, error count, specific errors
+- Report: per package, exit code, error count, specific errors
 
 ### Check 2: Linter
 
-- Run the detected lint command
-- **Pass:** Exit code 0 OR no new warnings compared to baseline
+- Run each package's `lint`
+- **Pass:** Exit code 0 OR no new warnings compared to that package's baseline
 - **Fail:** New warnings introduced (count > baseline)
-- Report: exit code, warning count, delta from baseline
+- Report: per package, exit code, warning count, delta from baseline
 
 ### Check 3: Test Suite + Behavior Coverage (ONE run, feeds both Check 3 and Check 4)
 
-- Run the **unit** suite **with coverage enabled** in a SINGLE invocation — use `baseline.json`'s
-  `commands.coverage_all` (e.g. `vitest run --coverage`, `pytest --cov`, `go test -cover ./...`).
-  This is the unit suite only — it must **not** invoke the e2e suite (`e2e.e2e_cmd`), which the coder
-  already ran; Check 9 reads that run's report, it is not re-run here.
-  Coverage runs the tests, so a plain test run followed by a separate coverage run executes the whole
-  suite twice — do NOT do that. This one invocation feeds both Check 3 (pass/fail) and Check 4 (coverage).
+- Where the package declares `coverage_all`, run it: one invocation of the **unit** suite with
+  coverage enabled, feeding both Check 3 (pass/fail) and Check 4 (coverage). Coverage runs the tests,
+  so a plain test run followed by a separate coverage run executes the whole suite twice — do NOT do
+  that.
+- Where it does not, run `test_all` and mark Check 4 `NOT_APPLICABLE` for that package: "declares no
+  coverage command". A package without coverage tooling is not a block.
+- Either way this is the unit suite only: it must **not** invoke the package's `e2e` command, which
+  the coder already ran.
 - **Pass:** Exit code 0
 - **Fail:** Non-zero exit code
 - Test count is NOT compared — consolidation may legitimately reduce it.
-- Report: exit code, pass/fail/skip counts
+- Report: per package, exit code, pass/fail/skip counts
 
 ### Check 4: Coverage (diagnostic only — parsed from the Check 3 run, do NOT re-run the suite)
 
 - Parse the coverage percentage from the Check 3 run's output. Do not invoke the suite again.
 - **Report only — this check never fails.** Line coverage is a diagnostic, not a gate.
 - On a drop vs baseline, emit an INFO line: "Coverage dropped X% → what behavior is missing from the matrix?"
-- No coverage tool detected → INFO note, not BLOCKED
-- Report: coverage percentage, delta from baseline, verdict INFO
+- No package declares `coverage_all` → INFO note, not BLOCKED
+- Report: per package, coverage percentage, delta from baseline, verdict INFO
 
 ### Check 5 — removed
 
@@ -124,7 +135,8 @@ human-observable properties are functional-verify's job, not the gate's.
 This check **only reads** the coder's e2e artifacts — it does not launch a browser or re-run the e2e suite. The suite ran once, during coding. It reads two files: `e2e-report.json` (the raw run summary) and `claims.json` (the aggregated claim ledger).
 
 - Read `.harness/<SPEC_NAME>/e2e-report.json`
-- If file does not exist and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found". Note: a hermetic runner (`e2e.self_provisioning` in baseline) should **emit this file itself** from the framework's machine output (e.g. Playwright's JSON reporter) — a `failed`/`coverage`/`timestamp` derived from the actual run, not hand-authored. A report whose numbers can't be traced to a runner invocation is not evidence.
+- If no package in `PACKAGES` declares an `e2e` command → `NOT_APPLICABLE`, naming them: the project has no e2e leg.
+- If a package declares `e2e`, the file does not exist, and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found". The runner should **emit this file itself** from its machine output (e.g. Playwright's JSON reporter) — a `failed`/`coverage`/`timestamp` derived from the actual run, not hand-authored. A report whose numbers can't be traced to a runner invocation is not evidence.
 - If `not_applicable: true` → `NOT_APPLICABLE` with the reason from the file
 - If file exists, verify:
   1. `failed` count is 0 — any E2E failures during coding are a hard block
@@ -148,7 +160,9 @@ Detects tautological / written-to-pass tests — the only check that proves test
    - Invert a boolean condition (`if (x)` → `if (!x)`)
    - Replace a return value with a constant
    - Introduce an off-by-one (`<=` → `<`, `+ 1` removed)
-3. Run the scoped test(s) for that behavior (`commands.test_file` with the relevant test file).
+3. Run the scoped test(s) for that behavior — the owning package's `test_file`, the relevant test
+   file substituted for `{FILE}`. Unscoped (no `{FILE}`), read the behavior's own test line rather
+   than the exit code.
 4. **Killed** (at least one test fails) → revert and continue. **Survived** (all tests still pass) →
    the behavior's test verifies nothing → **BLOCKED**, naming the file, behavior ID, and surviving mutation.
 5. Revert after EVERY mutation: `git checkout -- <file>`, then verify `git diff --quiet` before the
@@ -183,7 +197,7 @@ greps — always emit them.
 
 Binary verdicts — no WARN tier:
 
-- **`PASS`** — all mandatory checks pass (Checks 1-3, 6, 7, and 10, plus Check 9 when e2e is detected; Check 4 is diagnostic and never blocks)
+- **`PASS`** — all mandatory checks pass **in every package in `PACKAGES`** (Checks 1-3, 6, 7, and 10, plus Check 9 where a package declares `e2e`; Check 4 is diagnostic and never blocks)
 - **`BLOCKED`** — any mandatory check fails (with specific reasons listed)
 - **`STAGNATION`** — same check failed 3 consecutive times across gate runs (special signal: stop entirely, don't retry)
 

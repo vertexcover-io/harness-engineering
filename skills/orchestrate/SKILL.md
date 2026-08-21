@@ -28,7 +28,7 @@ Every file below is one hop from here. Read the one whose condition you are in �
 
 | File | Read it when |
 |------|--------------|
-| `references/config.md` | resolving which skill or model a stage runs, or honoring `orchestrate.config.json` — the stage → default-skill table, the resolution order, and the gate contracts all live here |
+| `references/config.md` | anything to do with `orchestrate.config.json` — which skill or model a stage runs, the stage ids, the resolution order, and the gate contracts all live here. That one file also carries this project's commands and environments; read the config itself for those |
 | `references/orchestrate.config.example.json` | you want a worked `orchestrate.config.json` to copy |
 | `references/dag-commands.md` | running any dashboard command — the init block, stage transitions, `serve-start`, `finalize` |
 | `references/dashboard-report-formats.md` | writing the markdown body of any `write-report` call |
@@ -128,7 +128,7 @@ Stages 3 and 5 are dispatched as sub-agents via `Agent`, as is Stage 0's `baseli
 
 **Waiting status:** a PreToolUse/PostToolUse hook sets the running node to `waiting` before any `AskUserQuestion` and back to `running` after — no manual dag-update needed.
 
-**Sub-agent prompts:** every sub-agent prompt starts with `[PREAMBLE]` (worktree path + a pointer to `baseline.json` for tooling commands), then names the stage's resolved skill and passes this run's variables. **Before dispatching any sub-agent, read that stage's dispatch block in `references/stage-prompts.md` and build the prompt from it** — and per Invariant 6, do not add to it what a skill already says.
+**Sub-agent prompts:** every sub-agent prompt starts with `[PREAMBLE]` (worktree path + a pointer to `orchestrate.config.json` for commands and to `baseline.json` for the results a regression is measured against), then names the stage's resolved skill and passes this run's variables. **Before dispatching any sub-agent, read that stage's dispatch block in `references/stage-prompts.md` and build the prompt from it** — and per Invariant 6, do not add to it what a skill already says.
 
 **DAG transitions:** `set-status running` before each stage, `done` after, `write-report` on completion. **Take every invocation verbatim from `references/dag-commands.md`** — read it before the first transition; a mistyped command silently writes nothing. Report bodies follow `references/dashboard-report-formats.md`.
 
@@ -168,7 +168,11 @@ Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `-
 1. **Invoke `pipeline-setup` via `Skill` with its `setup` branch** — it owns the spec artifact directory (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
 2. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
 3. Create the directory `pipeline-setup` does not: `.harness/<SPEC_NAME>/verify-staging/`. The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
-4. **Load stage config.** `orchestrate.config.json` is optional and lives at the worktree root; if it exists, `Read` its `stages` map into `STAGE_CONFIG`, else `STAGE_CONFIG = {}`. Resolve `skill`/`model`/`disabled` per stage from `references/config.md` — it owns every rule about that file, and none are restated here.
+4. **Load the config.** `orchestrate.config.json` lives at the repo root and is tracked, so it is in the worktree too. `Read` it and store it as `CONFIG`; resolve each stage's `skill`/`model` from `references/config.md`, which owns every rule about that file and none are restated here. A missing file is a halt, not a default — `pipeline-setup` reports it and names `setup-harness`.
+
+   Resolve two more values here, once, and pass both in every dispatch that runs a command. No stage can infer either, and resolving them per stage is how the verify stage ends up on a different stack than the coder's e2e:
+   - `PACKAGES` — the `packages` keys this run touches, from the task's repos or the worktree set.
+   - `ENVIRONMENT` — the `environments` key this run drives, from the request, else `environments.default`.
 5. `set-status setup done`, `set-status baseline running`, then **dispatch the `baseline` sub-agent** (block in `references/stage-prompts.md`) and go straight to Stage 1 without waiting for it.
 
 **The join.** The baseline runs while the developer answers Stage 1's questions, so every stage that reads `baseline.json` joins it first — before the Stage 3 coder dispatch, before the Stage 5 dispatch, and before planning's `implement` route hands off. That route is the one path where Stage 1 does not take minutes, and the only one that starts editing source while the suite may still be running against the same tree.
@@ -179,7 +183,7 @@ Joining is two things, in order:
 2. **Check the artifact, not the agent's word for it** — a returned agent may still have written nothing usable:
 
 ```
-Bash("node -e \"JSON.parse(require('fs').readFileSync('.harness/<SPEC_NAME>/baseline.json','utf8')).commands||process.exit(1)\" || { echo 'BASELINE_UNUSABLE'; exit 1; }")
+Bash("node -e \"const b=JSON.parse(require('fs').readFileSync('.harness/<SPEC_NAME>/baseline.json','utf8'));const pkgs='<PACKAGES>'.split(',').filter(Boolean);if(!b.timestamp||!pkgs.length||pkgs.some(p=>!b[p]||['type_check','lint','test','coverage'].some(k=>!(k in b[p]))))process.exit(1)\" || { echo 'BASELINE_UNUSABLE'; exit 1; }")
 ```
 
 On the first successful join, `write-report baseline` and `set-status baseline done`.
@@ -299,7 +303,10 @@ This table is Invariant 3's halt set — the whole of it. Stop the pipeline and 
 | Sub-agent error | Any sub-agent fails or returns an error |
 | Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
 | Missing verification artifacts | `proof-report.html` absent → `MISSING_VERIFICATION_ARTIFACTS` |
-| Baseline unavailable | `BASELINE_UNUSABLE` — `baseline.json` is missing, unparseable, or has no `commands` block, so Stage 3 cannot resolve tooling commands |
+| Config missing | `orchestrate.config.json` is absent from the repo root — report it and name `setup-harness`, which writes it. Never fall back to discovering commands |
+| Package not in config | a `PACKAGES` entry `CONFIG.packages` does not carry — halt and name `setup-harness`, which adds it. Every stage after this one would otherwise guess its commands |
+| Config stale | A command the config names does not resolve (exit 127, missing script, binary not installed) — report the command, the package it came from, and that the config needs updating |
+| Baseline unavailable | `BASELINE_UNUSABLE` — `baseline.json` is missing, unparseable, or carries no metrics, so no later stage can tell a regression from a suite that was already red |
 | Quality gate BLOCKED | Report what failed |
 | Quality gate STAGNATION | Do NOT retry — report the stagnated check, repeated error signature, need for manual intervention |
 | Library-probe BLOCKED | No viable alternative; or `BLOCKED:repeated-lib-failure` after 2 loopbacks |

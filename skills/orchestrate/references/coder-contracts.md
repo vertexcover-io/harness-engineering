@@ -37,10 +37,16 @@ is for tracing — the rest of the title still states the claim, per the `tdd` s
 
 ## Tooling commands
 
-Your preamble carries a `## Tooling commands` block: use the scoped `test_file` / `lint_file`
-(substitute `{FILE}`) while iterating, and run the full `test_all` / `lint` **once** each, only
-to confirm green before declaring the phase done. Don't restructure working tests to satisfy a
-strict lint rule on test files — that's the project's lint-config concern.
+From `orchestrate.config.json` at the repo root, plus the `packages` entry your dispatch named.
+`references/config.md` owns how a key resolves and what an absent one means.
+
+- **Iterating:** `test_file` / `lint_file`, the test path substituted for `{FILE}`.
+- **Before declaring the phase done:** `test_all` / `lint`, once each.
+- **E2E leg:** the package's `e2e` command.
+- **Not in the config:** a check this project does not have. Skip it.
+
+Don't restructure working tests to satisfy a strict lint rule on test files — that's the project's
+lint-config concern.
 
 ---
 
@@ -54,8 +60,9 @@ is BLOCKED until the E2E test passes and the report artifacts are written.
   `.spec.ts` without running it = BLOCKED. Counts must come from a real runner invocation,
   never hand-authored.
 - **The environment is the first task of the phase, not a blocker.** A stack that won't start,
-  an unsynced consumer build, a service that's down — read the project's testing contract
-  (CLAUDE.md's testing/e2e section, a setup script) and bring it up. Only after that setup
+  an unsynced consumer build, a service that's down — bring it up with the `environments` entry
+  your `ENVIRONMENT` names, else the project's testing contract (CLAUDE.md's testing/e2e
+  section, a setup script). Only after that setup
   still can't run — a genuinely missing test hook, a build with no documented sync path — is
   the phase **BLOCKED, not done**: name the scenario and the concrete reason, return control.
 - **Confirm the behavior under test is enabled in this environment.** If it sits behind an env
@@ -108,8 +115,8 @@ observed to pass at its assigned altitude** (Unit / API / E2E).
 - Intentionally untested (no defect-detection value): getters/setters, pass-through wrappers,
   framework behavior, generated code.
 
-**Runner-less producer repos.** A phase may create an artifact in a repo with no test runner
-(`"test": "echo no-test"` — raw JSON/config or types-only). Never invent a runner there: the
+**Runner-less producer repos.** A phase may create an artifact in a package that declares no
+`test_all` — raw JSON/config or types-only. Never invent a runner there: the
 proving scenario lives in the **consumer** phase that imports the artifact. Coverage of that
 artifact is the consumer's scenario, not an uncovered-file gap. See `consumer-repo-e2e.md` for
 the same shape one altitude up.

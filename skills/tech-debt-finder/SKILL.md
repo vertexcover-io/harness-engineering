@@ -23,6 +23,8 @@ Scans the codebase for architectural and code-level technical debt, producing a 
 
 **Announce at start:** "Using tech-debt-finder to scan for technical debt..."
 
+**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+
 ---
 
 ## Configuration
@@ -43,14 +45,20 @@ Parse `$ARGUMENTS`:
 - If empty or `full`, scan from repo root
 - Exclude: `node_modules/`, `.venv/`, `__pycache__/`, `build/`, `dist/`, `.git/`
 
-**Detect languages in scope** and classify coverage (drives Step 2 and the report label):
+**`orchestrate.config.json` already lists the units**: `packages.<PKG>.path` gives each one's scope
+and `packages.<PKG>.runner` its language. A path in `$ARGUMENTS` narrows that list, it does not
+replace it.
 
-- **Python** (`pyproject.toml`, `setup.py`, or `*.py` files) → deterministic backend = radon
-  (+ pip-audit). Identify all Python packages.
-- **TS/JS** (`package.json`, `tsconfig.json`, or `*.ts/*.tsx/*.js/*.jsx/*.mjs/*.cjs`) →
-  deterministic backend = **fallow**.
+**Classify each unit's coverage** (drives Step 2 and the report label). The config names no analysis
+tool, so that choice stays here:
+
+- **Python** → deterministic backend = radon (+ pip-audit).
+- **TS/JS** → deterministic backend = **fallow**.
 - **Other** (Go, Rust, Java, Ruby, C#, …) → no deterministic backend; the language-agnostic
   LLM pattern scanner (Agent C) runs best-effort.
+
+With no config, fall back to file extensions and manifests in scope, and label the scope inferred in
+the report.
 
 **Do NOT hard-stop just because there are no Python files** (this is the F9 behavior). Stop
 ONLY when the scope is empty or does not exist. Track three coverage buckets for the report:

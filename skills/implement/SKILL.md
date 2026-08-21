@@ -5,6 +5,8 @@ description: Implement a plan, a phase file, or a described change by coding tes
 
 Implement the work described in the phase file, the plan, or the user's request.
 
+**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+
 Use the `tdd` skill for every change — one behavior at a time, test first, at agreed seams.
 Load `code-quality` before writing anything: it governs how the code reads.
 

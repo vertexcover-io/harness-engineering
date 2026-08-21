@@ -31,10 +31,10 @@ are tabled in `config.md`.
 You are working in the worktree at <WORKTREE_PATH>.
 Your working directory is <WORKTREE_PATH>.
 
-Tooling commands for this repo are in <HARNESS_DIR>/baseline.json (`commands`). Read it and use
-those exact invocations — do not rediscover the runner or guess a file-filter flag. The baseline
-`results` there are what "no new failures" is measured against; a suite that is already red is not
-your regression.
+What this repo builds, lints and tests with is declared in orchestrate.config.json at the repo
+root. Read it and use those exact invocations — do not rediscover the runner or guess a
+file-filter flag. Separately, the results in <HARNESS_DIR>/baseline.json are what "no new
+failures" is measured against; a suite that was already red is not your regression.
 ```
 
 Nothing else is universal. Resist adding to this block.
@@ -45,7 +45,7 @@ Nothing else is universal. Resist adding to this block.
 
 **Skill:** `pipeline-setup` (`baseline` branch) · **Model:** `sonnet` · **Dispatch:** background, then continue to Stage 1 without waiting.
 
-The one sub-agent that does **not** take `[PREAMBLE]`: it writes `baseline.json`, so it cannot be told to read it.
+The one sub-agent that does **not** take `[PREAMBLE]`: it writes `baseline.json`, so it cannot be pointed at the results in it. It reads `orchestrate.config.json` for its commands like every other stage — that is in the skill, not this prompt.
 
 ```
 You are working in the worktree at <WORKTREE_PATH>.
@@ -53,6 +53,7 @@ Your working directory is <WORKTREE_PATH>.
 
 Invoke the `pipeline-setup` skill with its `baseline` branch.
 SPEC_DIR: <SPEC_DIR>
+PACKAGES: <PACKAGES>
 ```
 
 ---
@@ -76,6 +77,8 @@ contracts shape the whole phase; an agent that explores first is working before 
   `.harness/<SPEC_NAME>/plan.md` (extracted from plan.html), phase file
   `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
 - Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
+- The `PACKAGES` entry this phase's work sits under, and `ENVIRONMENT` — no phase file says which
+  unit or which stack it belongs to
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
 
 **Then, verbatim — how to orient in this run:**
@@ -106,6 +109,7 @@ Tell the agent to run them in order and stop on the first failure.
   `.harness/<SPEC_NAME>/verification/`
 - Baseline `.harness/<SPEC_NAME>/baseline.json`, harness dir
   `.harness/<SPEC_NAME>/`, stage `post-tdd`, spec name `<SPEC_NAME>`
+- `PACKAGES: <PACKAGES>`, `ENVIRONMENT: <ENVIRONMENT>`
 - Artifact-publish session id: tell the agent to `export SESSION_ID=<SESSION_ID>` before running
   `<SKILL:functional-verify>`, so its publish steps target the real top-level session instead of
   deriving it from the worktree cwd (which encodes to the wrong transcript directory). If

@@ -1,55 +1,101 @@
-# Per-stage Config: `orchestrate.config.json`
+# `orchestrate.config.json`
 
-Optional file at the **repo root**, read once during Stage 0. Its `stages` map keys each stage to
-`{ skill?, model?, disabled? }` — every field independent. Keys are stage IDs (`coder`) or the
-stage's default skill name (`implement`) — both resolve the same stage. A worked example lives in
-`references/orchestrate.config.example.json`.
+Required, at the **repo root**, committed. Being tracked, it is present at the worktree root
+too — either path reads the same content. Orchestrate reads it once during Stage 0 and passes the
+result forward. A worked example lives in `references/orchestrate.config.example.json`.
+
+One file carries three things: this project's **stage overrides**, its **commands**, and its
+**environments**. It is self-describing — read it directly. Nothing here restates what its keys
+mean, and a command it does not name is a command there is nothing to run for.
+
+Does NOT apply to `orchestrate` itself (no recursive override).
+
+## Stage overrides
+
+`stages` keys are **exactly** the DAG node ids created by the init block in
+`references/dag-commands.md`. No other spelling resolves; log a warning and ignore an unrecognised
+key rather than guessing which stage was meant.
+
+| Stage id | Default skill | Gate contract (gated stages only) |
+|----------|---------------|------------------------------------|
+| `setup` | `pipeline-setup` (`setup` branch) | spec artifact directory + `manifest.json` |
+| `worktree` | the project's own worktree skill, else `using-git-worktrees` | — |
+| `baseline` | `pipeline-setup` (`baseline` branch) | `baseline.json` |
+| `planning` | `planning` | `plan.html` + extracted `plan.md`/`phases/` (or the `implement` route) |
+| `coder` | `implement` | phase `…-claims.json` (`executed>0`, `failed=0`) |
+| `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
+| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
+| `commit-pr` | — (Stage 6 hand-rolls the commit and PR) | PR URL |
+
+Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,7,9,10}).
+
+`verify-finalize` runs three skills in sequence, so one `skill` cannot stand in for the stage — set
+`skills` instead, a map from the sub-skill being replaced to its replacement. Each named replacement
+inherits that sub-skill's gate contract. `skill` on this stage is ignored (log it).
 
 ```json
-{
-  "stages": {
-    "coder":           { "skill": "my-implement", "model": "opus" },
-    "code-review":     { "skill": "my-code-review" },
-    "quality-gate":    { "skill": "my-quality-gate" },
-    "planning":        { "skill": "my-planning" },
-    "verify-finalize": { "model": "haiku" }
-  }
-}
+"verify-finalize": { "skills": { "quality-gate": "my-gate" } }
 ```
 
-Look the entry up by stage ID, then by default skill name; call the match `CFG`. Then, per stage:
+`worktree` and `commit-pr` are valid keys and resolve, but neither stage dispatches a resolved skill
+yet: worktree creation runs during Initialization before this file is read, and Stage 6 hand-rolls.
+An override on either is recorded and logged, not yet honoured.
+
+## Resolving a stage
+
+Look the entry up by stage id; call it `CFG`. An **absent key, an empty object, and an empty string
+all mean the same thing: use the default.** Then, per stage:
 
 - **skill** = `CFG.skill` → a project skill named exactly like the default (the `Skill` tool already
   prefers project/plugin over global, so no path lookup) → global default. `CFG.skill` is a skill
   **name only**; a value with `/` is ignored (log it). Log the resolved override:
-  `"Using custom skill for stage <id>: <skill-name>"`.
-- **model** (sub-agent stages `coder`/`verify-finalize` only) = `CFG.model` → the
+  `"Using custom skill for stage <id>: <skill-name>"`. On `verify-finalize`, resolve each of the
+  stage's three `<SKILL:…>` slots through `CFG.skills` by the slot's default name instead.
+- **model** (sub-agent stages `baseline`/`coder`/`verify-finalize` only) = `CFG.model` → the
   dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model` on a
   main-conversation stage has no Agent to retarget — ignore it (log).
 - **disabled** = every stage is mandatory, so `disabled` is always rejected
   (`"Cannot disable mandatory stage <id> — ignoring"`). Planning scales itself — its step 0 collapses
   the question loop for trivial work, and its own gate is the only route to `implement`.
 
-Does NOT apply to `orchestrate` itself (no recursive override).
+## Commands
 
-## Stages, default skills, and gate contracts
+Every runnable command lives under a `commands` map — the root one, or a package's — and nowhere
+else. `bootstrap`, `e2e` and the rest are keys in it, not siblings of it, and a command is a plain
+string: whatever an e2e run needs to be up is the runner config's business, not this file's. **A
+command the project lacks is omitted**, and an older config may carry it as `null` instead.
+
+### Resolving a command
+
+Given a key and the package the run named (`PACKAGES`, resolved in Stage 0):
+
+1. `packages.<PKG>.commands.<key>`, then root `commands.<key>`. Stop there.
+2. **Absent or `null` means this project has no such command.** Report `NOT_APPLICABLE` naming the
+   package and the key. Never substitute a neighbouring key, and never go looking for a runner.
+3. **Declared but unresolvable** — exit 127, a missing script — means the config is stale, not the
+   code: halt/BLOCKED naming the command. A command that ran and came back red is a result.
+
+`packages.<PKG>.path` is the working directory. `packages.<PKG>.runner` is the only tool name a
+skill may hold, and only to parse that runner's output, never to build a command.
+
+**Placeholders.** `{NAME...}` takes zero or more values, and `[...]` is a segment to include only
+when the run asks for what it carries. **A `test_file` without `{FILE}` runs the whole suite** — its
+caller reads the named test's line, not the exit code.
+
+## Environments
+
+**This project names its own stack steps.** Read the entry for the environment you are using and
+run the steps it declares, resolving each as above. Where one declares no readiness step, poll its
+status step instead.
+
+## Custom skills
 
 A custom skill is invoked with the **same arguments** the default would get (see each dispatch block
 in `references/stage-prompts.md`) and, for **gated** stages, MUST emit the same verdict
 markers/artifacts so orchestrate can parse the result — a missing verdict is treated as a stage
 FAILURE/BLOCKED.
 
-| Stage ID | Default skill | Gate contract (gated stages only) |
-|----------|---------------|------------------------------------|
-| `setup` | `pipeline-setup` | `baseline.json` |
-| `planning` | `planning` | `plan.html` + extracted `plan.md`/`phases/` (or the `implement` route) |
-| `coder` | `implement` | phase `…-claims.json` (`executed>0`, `failed=0`) |
-| `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
-| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
+## When the file is missing
 
-Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,7,9,10}).
-`verify-finalize` is a bundle — overriding its `skill` replaces all three sub-skills and their
-contracts; override `quality-gate` (etc.) to swap just one.
-
-Worktree creation is not in this table: it runs during Initialization, before this file is read. It
-takes the project's own worktree skill when there is one, and `using-git-worktrees` otherwise.
+Stage 0 halts and tells the user to run `setup-harness`, which writes it. There is no run-time
+fallback: detection would put a different toolchain behind the same spec name on the next run.

@@ -4,8 +4,8 @@
     {
       "id": 1,
       "name": "post-tdd-gate-typescript-project",
-      "prompt": "Run the quality gate for post-tdd stage. The spec is 'add-search-feature' and the baseline is at docs/spec/add-search-feature/baseline.json. This is a TypeScript project using Vitest for testing.",
-      "expected_output": "A gate report written to docs/spec/add-search-feature/gate-report-post-tdd-001.md with all post-tdd checks (including the behavior-coverage check, the diagnostic coverage report, and the mutation spot-check), verbatim command output for each, and a final PASS or BLOCKED verdict with machine-parseable markers.",
+      "prompt": "Run the quality gate for post-tdd stage. The spec is 'add-search-feature' and the baseline is at .harness/add-search-feature/baseline.json. This is a TypeScript project using Vitest for testing.",
+      "expected_output": "A gate report written to .harness/add-search-feature/gate-report-post-tdd-001.md with all post-tdd checks (including the behavior-coverage check, the diagnostic coverage report, and the mutation spot-check), verbatim command output for each, and a final PASS or BLOCKED verdict with machine-parseable markers.",
       "files": [],
       "expectations": [
         "Announces 'Running quality gate checks against baseline metrics' at the start",
@@ -16,7 +16,7 @@
         "Coverage (Check 4) is reported as a diagnostic INFO — it never produces a FAIL verdict on its own",
         "Check 8 (smoke test) is attempted or noted as 'No smoke test defined'",
         "Reads baseline.json and compares current results against baseline values",
-        "Gate report is written to docs/spec/add-search-feature/gate-report-post-tdd-001.md",
+        "Gate report is written to .harness/add-search-feature/gate-report-post-tdd-001.md",
         "Report contains machine-parseable markers: <!-- QG:VERDICT:PASS --> or <!-- QG:VERDICT:BLOCKED --> and <!-- QG:CHECK:N:PASS --> or <!-- QG:CHECK:N:BLOCKED --> for each check"
       ],
       "anti_expectations": [
@@ -30,15 +30,15 @@
     {
       "id": 2,
       "name": "post-tdd-gate-test-consolidation",
-      "prompt": "Run the quality gate for post-tdd stage, spec 'refactor-auth-module'. The baseline is at docs/spec/refactor-auth-module/baseline.json. Previous baseline shows 42 passing tests; the coder consolidated several near-duplicate tests into parameterized tables, so the current run has 38 tests with every spec matrix row's named test still passing. The project is a Python project with pytest and mypy.",
+      "prompt": "Run the quality gate for post-tdd stage, spec 'refactor-auth-module'. The baseline is at .harness/refactor-auth-module/baseline.json. Previous baseline shows 42 passing tests; the coder consolidated several near-duplicate tests into parameterized tables, so the current run has 38 tests with every spec matrix row's named test still passing. The project is a Python project with pytest and mypy.",
       "expected_output": "A gate report running all post-tdd checks. If any spec matrix row's named test is missing or failing, the verdict is BLOCKED; a lower test count alone (e.g., tests consolidated into parameterized tables) is not a failure.",
       "files": [],
       "expectations": [
         "Verifies behavior coverage by reading the spec matrix's Test Name column and grepping for each named test; flags BLOCKED only when a matrix row's named test is missing or failing, not when raw test count drops",
-        "Auto-detects Python tooling: mypy for type checking, ruff or equivalent for lint, pytest for tests",
-        "Uses three-tier detection classification: DETECTED, NOT_APPLICABLE, or MISSING for each tool",
+        "Takes each package's typecheck, lint, and test commands from orchestrate.config.json rather than inferring them from the project",
+        "Uses three-tier classification: DECLARED, NOT_APPLICABLE, or MISSING for each tool",
         "If a tool is MISSING for a project with source files, reports BLOCKED verdict",
-        "Includes the Toolchain table showing detected status and command for each tool"
+        "Includes the Toolchain table showing status and command for each tool, one row per package"
       ],
       "anti_expectations": [
         "Does not mark a tool as NOT_APPLICABLE without providing a justification",
@@ -49,7 +49,7 @@
     {
       "id": 3,
       "name": "post-tdd-gate-stagnation-detection",
-      "prompt": "Run the quality gate for post-tdd stage, spec 'fix-payment-flow'. Baseline is at docs/spec/fix-payment-flow/baseline.json. There are already two previous gate reports in the spec directory: gate-report-post-tdd-001.md and gate-report-post-tdd-002.md, both showing the linter check failing with 'Unexpected any. Specify a different type' on line 45 of src/payments.ts. This is the third consecutive run with this same linter failure.",
+      "prompt": "Run the quality gate for post-tdd stage, spec 'fix-payment-flow'. Baseline is at .harness/fix-payment-flow/baseline.json. There are already two previous gate reports in the spec directory: gate-report-post-tdd-001.md and gate-report-post-tdd-002.md, both showing the linter check failing with 'Unexpected any. Specify a different type' on line 45 of src/payments.ts. This is the third consecutive run with this same linter failure.",
       "expected_output": "A gate report that detects stagnation on the linter check (same error 3 consecutive times) and reports STAGNATION, halting the pipeline rather than retrying.",
       "files": [],
       "expectations": [

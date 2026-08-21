@@ -12,6 +12,8 @@ description: >
 
 Every line of production code is written in response to a failing test.
 
+**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+
 **Project overrides.** Read `$ARGUMENTS` if it names a file, else
 `.claude/harness/tdd-reference.md` if it exists. Either outranks the defaults below on conflict.
 
@@ -39,8 +41,12 @@ instead of every incidental edge.
 
 ## RED — write the failing test first
 
-Write one minimal test describing the behavior you want. Run only that test's file. Watch it
-**fail** — not error — with a message that matches, because the feature is missing.
+Write one minimal test describing the behavior you want. Run only that test's file — the package's
+`test_file`, per `skills/orchestrate/references/config.md`. Watch it **fail** — not error — with a
+message that matches, because the feature is missing.
+
+**Where that command carries no `{FILE}`, it runs the whole suite** — read your new test's own line.
+A suite that was already green makes the exit code say nothing about the test you just wrote.
 
 - One behavior per test; real code, not mocks (unless a boundary demands it)
 - **The title states the claim, not the topic.** Name the concrete input and expected outcome
@@ -78,8 +84,11 @@ no refactoring other code, no anticipating future needs.
 **Using unfamiliar APIs?** Look up current documentation (context7 or web search) before
 writing the implementation — don't guess signatures from memory.
 
-Re-run the affected test file and confirm it passes. Run the full suite **once**, only when the
-task's behaviors are all green — not after every iteration.
+Re-run the affected test file and confirm it passes. Run the full suite — the package's `test_all` —
+**once**, only when the task's behaviors are all green, not after every iteration.
+
+**A package declaring no `test_all` has no runner.** Its artifact is proven by the scenario in the
+package that consumes it (`skills/orchestrate/references/coder-contracts.md`).
 
 **Test still fails?** Fix the implementation, not the test. **Other tests broke?** Fix them now.
 
