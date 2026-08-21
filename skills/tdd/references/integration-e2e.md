@@ -22,15 +22,15 @@ Same behavioral principles as unit tests, plus an analysis phase for real infras
 - What is the contract at each boundary? (request/response shapes, status codes, error formats)
 - Which boundaries can use real implementations? Which need fakes?
 
-**2. Design** — For each boundary, present the user with the isolation options and let them choose:
+**2. Design** — For each boundary, pick the isolation the project already supports:
 - **Use real:** in-memory databases, embedded servers, Testcontainers, or the actual service (e.g., a local dev server, staging API)
 - **Use fakes:** in-memory implementations that preserve behavior (e.g., a fake repository that stores in a dict/map)
 - **Use stubs at the network level:** MSW, WireMock, or similar HTTP-level interception (not module-level mocking)
 
 **Where `orchestrate.config.json` declares `environments`, that choice is already made**: the run's
-`ENVIRONMENT` names which stack these tests run against, and its keys are how you reach it. Ask only
-about boundaries no environment covers — a third-party API, a payment processor — and only when the
-config names no environment at all.
+`ENVIRONMENT` names which stack these tests run against, and its keys are how you reach it. For a
+boundary no environment covers — a third-party API, a payment processor — follow whatever the codebase
+already does for that service; where it does nothing, stub at the network level.
 
 **3. Write** — One behavior per test, named for it.
 
@@ -63,16 +63,16 @@ Integration tests catch bugs that live *between* components; mocking the databas
 - **Embedded services:** Redis in test mode, LocalStack for AWS services, MinIO for S3
 - **Testcontainers:** Spin up real Docker containers (Postgres, Redis, Kafka) for the test run, tear them down after
 
-**2. Ask the user how to handle external services.**
+**2. Handle external services at the network boundary.**
 
-For services outside your codebase (third-party APIs, payment processors, partner services), there are multiple valid strategies. Present them to the user and let them choose:
+For services outside your codebase (third-party APIs, payment processors, partner services), pick by what the project already has:
 
 - **Hit the real service** — if a sandbox/staging environment exists and is fast and reliable, this gives the highest confidence. Good for: payment processor test modes, local dev servers, services with official test environments.
 - **Fake at the network level** — intercept HTTP calls and return controlled responses. Your code still executes the full request path (serialization, headers, error handling), which is more realistic than module-level mocking. Tools: MSW, WireMock, `responses` (Python), `nock` (Node), `httptest` (Go).
 - **Use a local substitute** — run a local version of the service (LocalStack for AWS, MinIO for S3, a Docker image of the service). Good for services you need to test write behavior against.
 
-Example conversation:
-> "This code calls the Stripe API for payment processing. We have a few options for testing: (1) use Stripe's test mode with test API keys — highest confidence but requires network access, (2) fake the HTTP calls with MSW/WireMock — fast, deterministic, no network needed, (3) if there's an existing mock/stub pattern in the codebase, we can follow that. Which approach fits your setup?"
+An existing mock or stub pattern in the codebase settles it. Failing that, credentials for a sandbox
+already in the test config point at the real service, and everything else fakes at the network level.
 
 Whatever the strategy, avoid module-level mocking (e.g., `jest.mock('stripe')`) — it skips the HTTP layer entirely and hides serialization bugs, header issues, and error handling problems.
 
