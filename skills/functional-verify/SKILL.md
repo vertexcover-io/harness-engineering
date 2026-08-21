@@ -94,46 +94,32 @@ a filename alone what was tested and where it belongs.
 
 ## Step 1 — Get a Stack
 
-Verification runs against a **stack** — the app actually running.
+**Where `orchestrate.config.json` carries an `environments` block, it declares how this project starts.** Run the
+steps the run's `ENVIRONMENT` names — `skills/orchestrate/references/config.md` owns how each key resolves.
+**With no block**, bring-up belongs to the project's **stack skill** (among its own skills, or one `CLAUDE.md`
+names), else to the codebase. Follow that skill for procedure, never for proof: the evidence bar here does not move
+to match a project's conventions.
 
-**Where `orchestrate.config.json` carries an `environments` block, it declares how this project starts.** Read the
-entry for the run's `ENVIRONMENT`, else `environments.default`, and run the steps it declares.
-`skills/orchestrate/references/config.md` owns how a key resolves and what an absent one means.
+**Take the base URL from the entry's own command** and hold it for the session — a URL assembled from an assumed
+port is the wrong stack.
 
-Seed and authenticate before the first walk rather than mid-walk. **Take the base URL from the entry's own
-command** and hold it for the rest of this session: a URL you assembled from an assumed port is the wrong stack.
+**Step 1 is done when the route you came to drive returns the page you expect**, every service a scenario needs is
+up — including the sink a side effect lands in, often a separate service the stack-up does not launch — and two
+questions no config key expresses are answered:
 
-What the config cannot express, the project's **stack skill** still owns: what the stack shares, how a surface lies
-about its own state, where a side effect lands. Look for one among the project's own skills (`.claude/skills/`) and
-any that `CLAUDE.md` names, and read it alongside the config.
-
-**With no `environments` block**, the stack skill owns bring-up entirely, and with no stack skill either, work the
-procedure out from the codebase — a `just`/`make` target, a compose file, a `dev` or `start` script — then confirm
-the stack is up by fetching the route you came to drive and checking it returns the page you expect. Follow that
-skill for procedure, but not for what counts as proof: the evidence bar in this skill does not change to match a
-project's conventions.
-
-Two things no key expresses, each expensive to discover halfway through a walk. Settle them from the project's
-docs or its code before driving anything:
-
-1. **What this stack shares** with other runs, and what is isolated.
+1. **What this stack shares** with parallel runs, and what is isolated.
 2. **Where each out-of-band effect lands** — email, queue, webhook — and how to read that sink.
 
-**Start every service a scenario needs before you drive that scenario**, including the sink a side effect lands in,
-which is often a separate service the normal stack-up does not launch. If you genuinely cannot start something,
-exit **BLOCKED:no-infra** and name the service and what you tried. If startup fails, read the log the project names
-and stop.
+Both belong to the stack skill, and both are expensive to discover halfway through a walk. If a service genuinely
+will not start, exit **BLOCKED:no-infra** naming it and what you tried.
 
-**Building the test data is part of the job.** A scenario's fixtures exist before that scenario is driven. Beyond
-what the environment's seed step covers, write them **through the product's own API** — the one path that also populates every index, cache and search layer the product later reads through.
-Where the API cannot express what you need and the datastore is directly reachable, write it there instead. Missing
-test data is a task, not a blocker.
-
-**Give every fixture a unique name and touch only what you created**, since a shared datastore makes a careless
-write someone else's problem; remove yours at cleanup (Step 7). A seeded record stands in for something the real
-source would have produced, so its shape and values must be ones that source could actually emit — a plausible
-address where a provider would return one, a real plan where the product would have written one. A value invented
-to see what breaks tests the datastore, not the feature.
+**A scenario's fixtures exist before it is driven**, seeded and authenticated ahead of the first walk. Beyond what
+the environment's `seed` step covers, write them **through the product's own API** — the one path that also
+populates every index, cache and search layer the product later reads through — dropping to the datastore only
+where the API cannot express what you need. Name each uniquely and touch only what you created, since a shared
+datastore makes a careless write someone else's problem; remove yours at cleanup (Step 7). A seeded record stands
+in for what the real source would have produced, so a value invented to see what breaks tests the datastore, not
+the feature.
 
 ## Step 2 — UI Verification: Film the Whole Life of the Scenario
 
