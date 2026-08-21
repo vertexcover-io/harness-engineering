@@ -11,8 +11,9 @@ the way — is knowledge the project owns, held in its own skills and `CLAUDE.md
 
 Use the binary directly (`npx` routes through Node instead of the Rust client and pays that cost on every call). On
 Linux, launch with `agent-browser --args "--no-sandbox" open <url>` — without it Chrome dies on `No usable
-sandbox!` and every later command reports a dead session. Set `AGENT_BROWSER_DEFAULT_TIMEOUT=2000` so a wait that
-will never resolve fails in 2s rather than the 30s default.
+sandbox!` and every later command reports a dead session. Set `AGENT_BROWSER_DEFAULT_TIMEOUT` so a wait that will
+never resolve fails fast rather than at the 30s default — `2000` against a local stack, and higher where the stack
+is across a network, since a budget tuned for loopback turns latency into phantom failures.
 
 The CLI ships its own guide, version-matched to the binary and authoritative on the basics — session/refs/snapshot,
 the `wait` verbs, viewports, tabs, `record`:

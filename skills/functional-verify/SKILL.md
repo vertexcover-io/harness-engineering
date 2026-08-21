@@ -13,6 +13,8 @@ user-invocable: true
 
 # Functional Verify: The Gate
 
+**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+
 ## Your Contract
 
 You are the gate between "tests are green" and "feature is done". A behaviour reachable through a form, page, or
@@ -42,9 +44,12 @@ skipping" and stop.
 - **The feature's docs** in `.harness/<SPEC_NAME>/` — PRD, design, plan, whatever exists. Scenarios come
   from what those docs say the feature must do.
 - **The designs** plan.md's `## Design References` names — what each screen was supposed to look like.
-- **Project verification knowledge** — the app facts verification turns on (login, self-lying surfaces, toast
-  duration, where a triggered email lands, shared datastores) live in the **project's own skills** and `CLAUDE.md`.
-  Read them first; this skill mandates no dedicated file for them.
+- **`orchestrate.config.json`'s `environments` block and the run's `ENVIRONMENT`** — how the stack starts, seeds
+  and authenticates. Step 1 works its keys.
+- **The project's stack skill** — the app facts verification turns on that no key carries (self-lying surfaces,
+  toast duration, where a triggered email lands, what the stack shares). This lives in the **project's own skills**
+  and `CLAUDE.md`. This skill mandates no dedicated file for it — only that Step 1's two unknowns come back
+  answered.
 - **A level allocation is not a scope limit.** Where a doc assigns requirements to test levels — a test matrix, a
   "proven at unit level" column, a phase file claiming a scenario — it tells you where *tests* live. Read it for
   what the feature must do, and take your scope from *Scope* below. Passing unit and integration tests are the
@@ -87,34 +92,48 @@ a filename alone what was tested and where it belongs.
 - Report links are **report-relative** — the report sits in `verification/`, so its video is `NN_<slug>.mp4` and its
   frames are under `screenshots/`.
 
-## Step 1 — Start Infrastructure
+## Step 1 — Get a Stack
 
-Bring the app up the project's documented way. Look first for a **custom skill that starts the services / infra /
-stack** (one its `CLAUDE.md` names); if none exists, derive the procedure from `CLAUDE.md` and the codebase — a
-`just`/`make` target, a compose file, a `dev`/`start` script.
+Verification runs against a **stack** — the app actually running.
 
-**Start every service a scenario needs before you drive that scenario** — the backend the feature calls, and any
-sink a side effect lands in: a queue board, a mail viewer. That sink may be a **separate service the normal stack-up
-doesn't launch** (a project fact); an email is proven by screenshotting the message in its viewer, so the mail
-viewer is infrastructure, not an optional extra. If you genuinely cannot start something, exit
-**BLOCKED:no-infra**: name the service and what you tried.
+**Where `orchestrate.config.json` carries an `environments` block, it declares how this project starts.** Read the
+entry for the run's `ENVIRONMENT`, else `environments.default`, and run the steps it declares.
+`skills/orchestrate/references/config.md` owns how a key resolves and what an absent one means.
 
-**Always start your own instance.** If a service already looks up on its usual port, leave it alone and start fresh
-on a free port you allocate — a running server is likely another worktree's. You start it, so you tear it down
-(Step 7). Hold the URLs you started on for the rest of this session.
+Seed and authenticate before the first walk rather than mid-walk. **Take the base URL from the entry's own
+command** and hold it for the rest of this session: a URL you assembled from an assumed port is the wrong stack.
 
-**Infrastructure includes state, and building it is your job.** Seeding records, creating accounts, provisioning a
-plan, aging a timestamp, populating a lookup the feature reads — **a scenario's fixtures are seeded into the
-datastore before that scenario is driven**, written straight in, through the product's own API only where a single
-write can't reproduce what it stores. Absent test data is a task, not a blocker. You created it, so you remove it (Step 7); never mutate or delete a
-record you did not create.
+What the config cannot express, the project's **stack skill** still owns: what the stack shares, how a surface lies
+about its own state, where a side effect lands. Look for one among the project's own skills (`.claude/skills/`) and
+any that `CLAUDE.md` names, and read it alongside the config.
 
-A seeded record **stands in for what the real source would produce**, so its shape and values must be ones that
-source can actually emit — a plausible address where a provider would return one, a real plan where the product
-would have written one. A value invented to see what breaks tests the datastore, not the feature.
+**With no `environments` block**, the stack skill owns bring-up entirely, and with no stack skill either, work the
+procedure out from the codebase — a `just`/`make` target, a compose file, a `dev` or `start` script — then confirm
+the stack is up by fetching the route you came to drive and checking it returns the page you expect. Follow that
+skill for procedure, but not for what counts as proof: the evidence bar in this skill does not change to match a
+project's conventions.
 
-Confirm the stack by fetching the actual route you came to drive and checking it returns the page you expect. If
-startup fails, read the named log and stop.
+Two things no key expresses, each expensive to discover halfway through a walk. Settle them from the project's
+docs or its code before driving anything:
+
+1. **What this stack shares** with other runs, and what is isolated.
+2. **Where each out-of-band effect lands** — email, queue, webhook — and how to read that sink.
+
+**Start every service a scenario needs before you drive that scenario**, including the sink a side effect lands in,
+which is often a separate service the normal stack-up does not launch. If you genuinely cannot start something,
+exit **BLOCKED:no-infra** and name the service and what you tried. If startup fails, read the log the project names
+and stop.
+
+**Building the test data is part of the job.** A scenario's fixtures exist before that scenario is driven. Beyond
+what the environment's seed step covers, write them **through the product's own API** — the one path that also populates every index, cache and search layer the product later reads through.
+Where the API cannot express what you need and the datastore is directly reachable, write it there instead. Missing
+test data is a task, not a blocker.
+
+**Give every fixture a unique name and touch only what you created**, since a shared datastore makes a careless
+write someone else's problem; remove yours at cleanup (Step 7). A seeded record stands in for something the real
+source would have produced, so its shape and values must be ones that source could actually emit — a plausible
+address where a provider would return one, a real plan where the product would have written one. A value invented
+to see what breaks tests the datastore, not the feature.
 
 ## Step 2 — UI Verification: Film the Whole Life of the Scenario
 
@@ -126,9 +145,8 @@ Drive a real browser through the `agent-browser` CLI — this is where every UI 
 binary first: if `agent-browser` isn't on PATH, stop with **BLOCKED:no-agent-browser**, name the scenarios you
 couldn't prove, and print `npm i -g agent-browser && agent-browser install`.
 
-Open the UI service you started in Step 1 and hold **one session** for every scenario. The browser proves the
-behaviour under test, not the setup that reached it — a fixture you find missing mid-walk is seeded the Step 1 way
-and the walk re-driven. Read
+Open the stack's UI URL and hold **one session** for every scenario. The browser proves the behaviour under test, not the setup that reached
+it — a fixture you find missing mid-walk is seeded the Step 1 way and the walk re-driven. Read
 `references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, and the capture loop are
 all there.
 
@@ -161,24 +179,25 @@ under test never ran.
 
 Run curl with `-w '\n%{http_code}'` and keep the **verbatim exchange**, which a dev re-runs to check you: it goes
 **inline and whole** into a `proofs[]` entry (shape in `references/writing-the-report.md`) rather than into a file.
-Record the verdict by exact-matching the expected response the design or plan describes. For a db check, query the
-database (an MCP tool, else the connection string from the stack you started in Step 1) and keep that exchange the
-same way.
+Record the verdict by exact-matching the expected response the design or plan describes. Read the written state back
+through the product's own API and quote the fields; where the database is directly reachable (an MCP tool, else the
+connection string the stack exposes), quote the stored row too and keep that exchange the same way.
 
 **A triggered side effect is a claim too.** When a walk fires something out of band — email, SMS, webhook,
-delivered file — prove it at its sink (a project fact) with a **hard deadline** on the poll:
+delivered file — prove it at its sink, which the stack skill names, with a **hard deadline** on the poll:
 
 - **Email** — open the mail viewer and screenshot the received message, the same filmable evidence Step 2 produces.
   Its frames carry the scenario's `NN_<slug>` prefix like any other.
-- **A job queue (BullMQ/Bull)** — drive the bull-board and screenshot the queue and the job. Genuinely try to bring
-  the board up; it may be a separate service you started in Step 1. If it truly can't come up, capture Redis or the
-  logs instead and say in the scenario what the board was and what you tried. The technique and its false-negative
-  traps are in `references/queue-dashboard.md`.
+- **A job queue** — read the job out of the queue's own storage and keep that exchange **inline and whole** in a
+  `proofs[]` entry, dated by the log line the worker wrote picking it up. Where that storage is, how the queues are
+  named and which log holds the worker are project facts the stack skill names. **An empty read is not a pass** — a
+  state holding no jobs and a queue that never existed come back as the same nothing, so establish the queue is
+  there before believing any count off it.
 - **Webhooks and delivered files** — keep the artifact as `verification/NN_<slug>.<ext>`, listed in the scenario's
   `artifacts[]`.
 
-When the project says the effect is deliberately neutralized here, prove the enqueue instead and say so. When it
-documents no sink for an effect the feature clearly produces, the scenario is `NOT VERIFIED`.
+When the project says the effect is deliberately neutralized here, prove the enqueue instead and say so. When this
+stack has no sink for an effect the feature clearly produces, the scenario is `NOT VERIFIED` naming that sink.
 
 ## Step 4 — Adversarial Pass (MANDATORY — Role Swap)
 
@@ -210,9 +229,9 @@ or cache · status accuracy on cancellations, timeouts, and partial failures (th
 · permissions — the same action as another role, an expired session, a missing token, since the UI's rules are not
 the API's · concurrency: two writers, read-during-write, lock conflicts.
 
-Find out what the stack shares before writing concurrency or stale-data scenarios — worktrees commonly get their own
-ports while sharing one database and search index, which is what makes those scenarios honest rather than
-theoretical. Name fixtures uniquely regardless.
+What the stack shares is what makes concurrency and stale-data scenarios honest rather than
+theoretical — parallel runs commonly get their own processes and ports while sharing one database and search index.
+Name fixtures uniquely regardless.
 
 Drive probes exactly as in Step 2 — same session, same `NN_<slug>` prefix, same frames, same Read; a probe with no
 screen follows Step 3. Then route each result by **provenance**:
@@ -261,8 +280,10 @@ holds.**
 
 Then **report back to whoever dispatched you** — everything the report excludes belongs here: the derived verdict
 and the verdict per scenario; whether the feature works; every bug and what needs a decision rather than a fix; the
-`verification/` path and its videos; and **the environment findings** — every config value that was wrong, service
-that would not boot, datastore that lied, fixture you had to build, command that was documented and gone. Write
+`verification/` path and its videos; **the stack you drove** — how it was brought up and at which commit, so a
+reader knows exactly which code this verdict covers; and **the environment findings** — every config value that was
+wrong, service that would not boot, datastore that lied, fixture you had to build, command that was documented and
+gone. Write
 those as durable facts a later run can act on, not as an account of your afternoon: without them the next
 verification pays the same cost from scratch.
 
@@ -279,7 +300,9 @@ never fail the verification**; both implementations are in `references/publish.m
   `SESSION_ID` (orchestrate exports it) verbatim; on a standalone run, derive it from the newest transcript under
   the cwd. Not installed / not authenticated → skip in one line.
 
-Then close the session (`agent-browser --session <SPEC_NAME> close`) and shut down the stack you started in Step 1
-the project's way — anything already running when you arrived stays running, and **never kill a server you didn't
-start**. Leave `verification/` in place, uncommitted — it is the deliverable, for a human to read. Delete the
-staging dir (`.harness/<SPEC_NAME>/verify-staging/`).
+Then close the session (`agent-browser --session <SPEC_NAME> close`), remove the fixtures you created, and
+**release the stack**: the teardown step of the environment you brought up, else the way the stack skill says.
+Anything already running when you arrived stays running, and **release only what you brought up**.
+
+Leave `verification/` in place, uncommitted — it is the deliverable, for a human to read. Delete the staging dir
+(`.harness/<SPEC_NAME>/verify-staging/`).

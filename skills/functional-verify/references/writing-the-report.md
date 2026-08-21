@@ -267,10 +267,10 @@ sentence above passes it. `attempted` is what you actually ran, distinct approac
   one. Where that observation is mechanism rather than surface, it is a `proofs[]` entry, written once.
 - Every UI scenario names its `video`, every path is report-relative, and every file named in `artifacts[]` exists
   beside the report under the same `NN_<slug>` prefix. No frame or file resolves to a broken link.
-- Every side-effect scenario carries the right receipt: an **email** shows the mail-viewer frames and its video; a
-  **job-queue** scenario shows a bull-board frame (queue card + job), or — only when the board couldn't be brought
-  up — a log/Redis capture with a note saying why; a **webhook or delivered file** lists its captured artifact
-  (`NN_<slug>.<ext>`).
+- Every side-effect scenario carries the receipt its sink produces: an **email** shows the mail-viewer frames and
+  its video; a **job-queue** scenario quotes the read from the queue's storage, naming the queue, the job id and the
+  state it was found in; a **webhook or delivered file** lists its captured
+  artifact (`NN_<slug>.<ext>`). An effect this stack has no sink for is `NOT VERIFIED` with that sink named.
 - Things this skill genuinely cannot reach (touch-hold gestures, real-device sensors, visual diffs against last
   week's build) are scenarios too, marked `NOT VERIFIED`.
 - No internal ids appear anywhere — the plain sequential `n` values are the only identifiers a reader needs. Nothing

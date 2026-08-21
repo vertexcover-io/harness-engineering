@@ -27,7 +27,10 @@ Same behavioral principles as unit tests, plus an analysis phase for real infras
 - **Use fakes:** in-memory implementations that preserve behavior (e.g., a fake repository that stores in a dict/map)
 - **Use stubs at the network level:** MSW, WireMock, or similar HTTP-level interception (not module-level mocking)
 
-The choice depends on the user's context — they may have a local instance running, a sandbox environment, or prefer to hit the real service for confidence. Ask before assuming.
+**Where `orchestrate.config.json` declares `environments`, that choice is already made**: the run's
+`ENVIRONMENT` names which stack these tests run against, and its keys are how you reach it. Ask only
+about boundaries no environment covers — a third-party API, a payment processor — and only when the
+config names no environment at all.
 
 **3. Write** — One behavior per test, named for it.
 
