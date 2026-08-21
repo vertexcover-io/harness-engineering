@@ -123,38 +123,35 @@ the feature.
 
 ## Step 2 — UI Verification: Film the Whole Life of the Scenario
 
-Read the feature's docs and **take a scenario from each behaviour they say the feature must have**. Where a doc
-hands you an outcome without a walk, work out the walk yourself. Number and name each one as in *Output Layout*
-before you capture anything.
+**Cover the feature in the fewest complete flows that reach every behaviour its docs claim.** A flow is one user's
+journey end to end — prefer one crossing five behaviours to five scenarios proving one each. A behaviour no flow
+reaches gets its own scenario. Number and name each as in *Output Layout* before you capture anything.
 
-Drive a real browser through the `agent-browser` CLI — this is where every UI scenario is proven live. Check the
-binary first: if `agent-browser` isn't on PATH, stop with **BLOCKED:no-agent-browser**, name the scenarios you
-couldn't prove, and print `npm i -g agent-browser && agent-browser install`.
+Drive a real browser through the `agent-browser` CLI — this is where every UI scenario is proven live. If the binary
+isn't on PATH, stop with **BLOCKED:no-agent-browser**, name the scenarios you couldn't prove, and print
+`npm i -g agent-browser && agent-browser install`.
 
-Open the stack's UI URL and hold **one session** for every scenario. The browser proves the behaviour under test, not the setup that reached
-it — a fixture you find missing mid-walk is seeded the Step 1 way and the walk re-driven. Read
-`references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, and the capture loop are
-all there.
+Open the stack's UI URL and hold **one session** for every scenario. The browser proves the behaviour under test,
+not the setup that reached it — a fixture you find missing mid-walk is seeded the Step 1 way and the walk
+re-driven. Read `references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, the
+capture loop and the phone replay are all there.
 
-A scenario driving **the surface the change landed on** is then **replayed on a phone** — the same walk driven
-again from its first click at an emulated phone, as its own numbered scenario in the same session. Whether this app
-is meant to work on a phone at all is a project fact like any other.
+**Every flow on the surface the change landed on is replayed on a phone**, as its own numbered scenario in the same
+session. Whether this app is meant to work on a phone at all is a project fact like any other.
 
 **Where a design defines the screen you just drove, compare your frame against it.** Open the file plan.md's
-`## Design References` names, and read the built screen against it on four things: the layout and where each
-element sits, the order of the elements, the labels and copy, and whether every state the design draws is
-present. State the comparison in that scenario's `reason` — what matched, and what did not, in the same
-evidence-not-adjectives terms as any other claim. Basic comparison by eye is the bar. A mismatch a user would
-be wrong-footed by — a missing state, an action that isn't where it was drawn — earns a `bugs[]` entry under
-Step 4's rules, naming its actor and its origin; cosmetic drift is a note in `extra[]`. A screen with no design
-is one nobody drew, not a failure.
+`## Design References` names and read the built screen against it on where each element sits and in what order, the
+labels and copy, and whether every state the design draws is present. Basic comparison by eye is the bar. State
+what matched and what did not in that scenario's `reason`, in the same evidence-not-adjectives terms as any other
+claim. A mismatch a user would be wrong-footed by — a missing state, an action that isn't where it was drawn — is a
+bug and routes through Step 4; cosmetic drift is a note in `extra[]`. A screen nobody drew is not a failure.
 
 The invariant governing the whole step: **a frame is evidence only once its assert passed and your own eyes
-confirmed it shows what you think.** Read at the moment you shoot — frames lag renders. **Done when every UI
-scenario has a `NN_<slug>` set of frames in `screenshots/` that tells its whole story, each frame backed by a
-passing assert and your own eyes; every scenario whose screen a design defines carries that comparison in its
-`reason`; and every scenario on the surface the change landed on has a phone replay driven through to its
-closing assert, whatever that assert returned.**
+confirmed it shows what you think.** Read at the moment you shoot — frames lag renders. **Done when every behaviour
+the docs claim is reached by some flow; every UI scenario has a `NN_<slug>` set of frames in `screenshots/` that
+tells its whole story, each frame backed by a passing assert and your own eyes; every scenario whose screen a design
+defines carries that comparison in its `reason`; and every flow on the surface the change landed on has a phone
+replay driven through to its closing assert, whatever that assert returned.**
 
 ## Step 3 — API, DB & Side-Effects: Proving What Has No Screen
 

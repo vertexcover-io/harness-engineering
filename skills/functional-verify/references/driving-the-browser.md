@@ -95,10 +95,9 @@ believe you, so shoot whatever the flow needs end to end: the seeded preconditio
 step, the intermediate render that explains why the next click works, the toast that confirms it. Every step earns
 at least one frame, many earn more — a scenario with more *promoted* frames than steps is doing it right.
 
-**Capture to staging, promote only what you verified.** A frame is evidence once its assert passed *and* your own
-eyes confirmed it. Shoot into `.harness/<SPEC_NAME>/verify-staging/` — scratch, a sibling of `verification/` and
-never part of it — and move a frame into `screenshots/` only once it earns its place. Re-takes, dead ends, and
-missed clicks stay in staging and are discarded at cleanup.
+**Capture to staging, promote only what you verified.** Shoot into `.harness/<SPEC_NAME>/verify-staging/` — scratch,
+a sibling of `verification/` and never part of it — and move a frame into `screenshots/` only once it earns its
+place. Re-takes, dead ends, and missed clicks stay in staging and are discarded at cleanup.
 
 For every action, run one batch that acts, asserts, and captures **to staging**:
 
@@ -181,6 +180,3 @@ The replay carries a verdict, so the walk answers the same question it answered 
 
 A replay that fails is a `Failure` scenario and a `bugs[]` entry like any other, and its `reachedBy` writes itself:
 the user on that device, and the surface they touched.
-
-**Done when every scenario has a `NN_<slug>` set of promoted frames in `screenshots/` telling its whole story, each
-one backed by a passing assert and your own eyes.**
