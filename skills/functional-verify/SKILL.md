@@ -182,69 +182,53 @@ stack has no sink for an effect the feature clearly produces, the scenario is `N
 
 ## Step 4 — Adversarial Pass (MANDATORY — Role Swap)
 
-> **STOP. You are no longer the verifier — you are the critic.** You are graded on bugs discovered, not agreement
-> with the prior verdicts.
+> **STOP. You are the critic now, not the verifier.** You are graded on defects found, not on agreeing with the
+> verdicts above.
 
-**Write the attack scenarios from the feature you just watched being built.** You spent a whole pass inside it: you
-know which surfaces are fragile, what state it carries between screens, and what the happy path stepped around.
-Those observations are the source — the regressions and critical paths this particular build implies. Re-read the
-design and plan for what the feature touches beyond what you drove, and leave your draft report closed; it biases
-you toward what you already wrote.
+**The attack list comes from the walks you just drove**: the errors and warnings you passed over, the state the
+feature carries between screens, and the branches the happy path never entered. Re-read the design and plan for
+what the change touches beyond what you drove, including the rest of the surface it landed on — one new field on a
+settings page puts every other field on that page in scope. Leave your draft report closed while you write the
+list; it anchors you to what you already concluded.
 
 **Attacks come from actors, not from fields.** Before writing probes, list the surfaces this feature reads and mark
-each with who can write it: the user, another tenant, an operator, a third-party system, or the product itself.
-Probes come from the first three, and from the fourth only through its **real** failure modes — unreachable, slow,
-timing out, 500, not-found, a field absent, a record stale. Read the integration's own contract to decide what that
-service can actually emit.
+each one with who can write it:
 
-A value only a third-party system writes is attacked by making that system behave badly in a way it can, never by
-writing into its store a value it would never return. The same holds for any field the product populates from
-somewhere else — a derived total, a computed status, an id it issues.
+- **The user, another tenant, or an operator.** These write through the product's own interfaces, so anything they
+  can enter is fair game for a probe.
+- **A third-party system** — a payment provider, a webhook sender, a sync job. Attack it only by making it behave
+  badly in a way it actually can: unreachable, slow, timing out, 500, not-found, a field absent, a record stale.
+  Read that integration's contract to decide which of those it can emit. Writing a value into its store that it
+  would never return proves nothing, because no actor can produce that state.
+- **The product itself** — a derived total, a computed status, an id it issues. No actor writes these directly, so
+  attack them through the inputs they are derived from and check the result.
 
-Attack surfaces worth a scenario each, where they apply: boundary and malformed values **in the fields an actor
-fills** — empty, max-length+1, wrong type, unicode, `<script>`, negative, far-future dates, entered where the
-product accepts them · interrupted sequences (cancel mid-flow, double-submit,
-back-during-save, reload, two tabs on one form) · the rest of the surface the change landed on — one new field on a
-settings page means exercising every other field there · error recovery, and whether state is left stale in UI, DB,
-or cache · status accuracy on cancellations, timeouts, and partial failures (the classic: a "Saved" toast on a 500)
-· permissions — the same action as another role, an expired session, a missing token, since the UI's rules are not
-the API's · concurrency: two writers, read-during-write, lock conflicts.
+Drive probes exactly as in Step 2, same session and same `NN_<slug>` prefix; a probe with no screen follows
+Step 3. Route each result by provenance:
 
-What the stack shares is what makes concurrency and stale-data scenarios honest rather than
-theoretical — parallel runs commonly get their own processes and ports while sharing one database and search index.
-Name fixtures uniquely regardless.
-
-Drive probes exactly as in Step 2 — same session, same `NN_<slug>` prefix, same frames, same Read; a probe with no
-screen follows Step 3. Then route each result by **provenance**:
-
-- It probed a behaviour the docs describe — a boundary on a validation rule, an error path. That is evidence for
-  **that scenario**, not a scenario of its own. **Expect most probes to land here.**
-- It probed something nobody asked about and found a real bug — its own scenario, and an entry in `bugs[]`. Before
-  writing that entry, settle two things about it. **Who reached it**: name the actor and the surface they used, in
-  one sentence. If the only route was writing a value into a store the product fills from somewhere else, there is
-  no actor to name — it is a corrupted database, not a defect, and it belongs in `extra[]` as a note on what the
-  feature trusts, or nowhere. **Where it came from**: run `git blame` and `git diff` on the lines that decide the
-  behaviour and say whether this change introduced it, or it predates the change, or it predates the change and
-  this work made its consequences worse. A maintainer's first question is whether to revert; answer it in the
-  report rather than in their head.
-- It probed something nobody asked about and the feature held — it appears only in the sentence naming your best
-  attack.
+- **It probed a behaviour the docs describe** — a boundary on a validation rule, an error path. Evidence for
+  **that scenario**, not a scenario of its own. Most probes land here.
+- **It found a defect nobody asked about** — its own scenario, plus a `bugs[]` entry naming the actor who reached
+  it and the surface they used, and stating whether this change introduced it, predates it, or predates it and got
+  worse here. Run `git blame` and `git diff` on the lines that decide the behaviour: a maintainer's first question
+  is whether to revert. If no actor can be named, the state is unreachable in production and belongs in `extra[]`
+  as a note on what the feature trusts.
+- **It found nothing** — it appears only in the sentence naming your best attack.
 
 A rejection you provoked is the feature working: a 400 on bad input is evidence for whichever scenario owns that
-rule. A behaviour the docs deliberately exclude is expected, not a bug — though it still needs a decision if another
-artifact of the same feature contradicts it.
+rule, and a behaviour the docs deliberately exclude is expected rather than broken.
 
-**Then turn on your own gaps.** Every scenario you are about to mark `NOT VERIFIED` is a claim, and it gets
-attacked like one: what would make it reachable, and is the cause you wrote the real one or the first wall you hit?
-Read the blocking code path until you can name the line, the condition, the missing credential, or the absent
-datum. "The gate didn't fire" is a symptom; "condition X at `file:line` requires Y, which this environment has no
-way to supply" is a cause. A gap that survives this is real. One that doesn't was an early stop — go verify it.
+**Apply the same pass to your own gaps.** Every scenario you are about to mark `NOT VERIFIED` is a claim and gets
+attacked like one. Read the blocking code path until you can name the line. "The gate didn't fire" is a symptom;
+"condition X at `file:line` requires Y, which this environment cannot supply" is a cause. A gap that survives is
+real; one that does not was an early stop, so go verify it.
 
-**Name the attack you most expected to land and say why it didn't.** And **film every bug by re-running its
-repro** — you can't capture a bug prospectively, so once a probe lands, write its steps and drive them again as its
-own scenario, filming the whole thing. **Done when every bug has an entry that reproduces from its own steps, names
-the actor who reached it and whether this change introduced it; and every `NOT VERIFIED` has been attacked and
-names its blocking mechanism.**
+**Film every bug by re-running its repro**: a bug cannot be captured before it is found, so once a probe lands,
+write its steps and drive them again as its own scenario. **Name the attack you most expected to land and say why
+it did not.**
+
+**Done when every bug reproduces from its own steps, names the actor who reached it and whether this change
+introduced it, and carries its film; and every `NOT VERIFIED` names the line that blocks it.**
 
 ## Step 5 — Build the Videos
 
