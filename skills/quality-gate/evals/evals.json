@@ -35,10 +35,10 @@
       "files": [],
       "expectations": [
         "Verifies behavior coverage by reading the spec matrix's Test Name column and grepping for each named test; flags BLOCKED only when a matrix row's named test is missing or failing, not when raw test count drops",
-        "Takes the typecheck, lint, and test commands from orchestrate.config.json rather than inferring them from the project",
+        "Takes each package's typecheck, lint, and test commands from orchestrate.config.json rather than inferring them from the project",
         "Uses three-tier classification: DECLARED, NOT_APPLICABLE, or MISSING for each tool",
         "If a tool is MISSING for a project with source files, reports BLOCKED verdict",
-        "Includes the Toolchain table showing status and command for each tool"
+        "Includes the Toolchain table showing status and command for each tool, one row per package"
       ],
       "anti_expectations": [
         "Does not mark a tool as NOT_APPLICABLE without providing a justification",

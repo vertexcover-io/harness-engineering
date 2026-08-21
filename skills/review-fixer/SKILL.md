@@ -109,17 +109,14 @@ If no ORCHESTRATE items exist, skip this phase.
 
 ### Phase 3: Quality Gate
 
-After all fixes are applied:
-1. Auto-detect project tooling (look for package.json, pyproject.toml, Makefile, etc.)
-2. Run available checks:
-   - **Typecheck:** `tsc --noEmit` / `mypy` / `pyright` (based on project)
-   - **Lint:** `eslint` / `ruff` / project linter
-   - **Tests:** `npm test` / `pytest` / project test command
-3. If any check fails:
-   - Attempt to fix (max 3 attempts per check)
-   - If still failing after 3 attempts, record as failed
-4. If no project tooling is detected, skip the quality gate and note "No tooling detected — quality gate skipped" in the summary
-5. Track results: `{typecheck: pass/fail/skipped, lint: pass/fail/skipped, tests: pass/fail/skipped}`
+After all fixes are applied, invoke the `quality-gate` skill over the packages the fixes touched. It owns which
+checks run and how each command resolves; this phase adds no checks of its own.
+
+1. If the gate returns BLOCKED, attempt a fix and re-run it (max 3 attempts per failing check). Still failing after
+   three, record it as failed.
+2. If `orchestrate.config.json` is missing, skip the gate and note "No config — quality gate skipped, run
+   setup-harness" in the summary.
+3. Track results: the gate's verdict plus its per-check rows.
 
 ### Phase 4: Commit & Push
 
@@ -173,9 +170,7 @@ Addressed feedback from @<REVIEWER>'s review.
 | ... | ... | ... |
 
 ### Verification
-- Typecheck: <pass/fail/skipped>
-- Lint: <pass/fail/skipped>
-- Tests: <pass/fail/skipped> (<count>)
+<the quality gate's verdict and its per-check rows>
 
 Commit: \`<SHA>\`"
 ```

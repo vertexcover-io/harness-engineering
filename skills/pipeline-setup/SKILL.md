@@ -16,12 +16,16 @@ Prepares the environment for a development pipeline run. This skill is invoked a
 
 **Announce at start:** "Setting up pipeline environment."
 
+**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+
 ---
 
 ## Input
 
 The first argument is `TASK_CONTEXT` — the resolved task prompt or spec content that describes what
-will be built.
+will be built. The caller also passes `PACKAGES`, the `orchestrate.config.json` package keys this run
+touches; every command below runs once per entry, or once against the root `commands` map when the
+caller passes none.
 
 A second argument names one **branch** of the steps below. The two halves run at different times:
 the fast half must finish before anything else starts, while the metric runs take minutes and
@@ -47,6 +51,9 @@ would split the run's artifacts across two checkouts.
 Otherwise create one: use the project's own worktree skill when it has one — check `CLAUDE.md` and
 the available skills for one that sets up a worktree — otherwise invoke `using-git-worktrees`. Then
 `cd` into the worktree.
+
+Either way, run each package's `bootstrap` before anything else: a worktree shares git objects but
+not installed dependencies.
 
 Store: `WORKTREE_PATH`, `BRANCH_NAME`
 
@@ -86,32 +93,34 @@ Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANI
 
 ### 3. Run Baseline Metrics
 
-Commands come from `orchestrate.config.json` at the **repo root** — `typecheck`, `lint`, and
-`coverage_all` where there is one, else `test_all`, scoped to the package the run names. Run what it
-names; nothing here discovers a runner.
+**Once per package in `PACKAGES`**: `typecheck`, `lint`, then `coverage_all` where the package
+declares one, else `test_all`. Resolve each by the rule in
+`skills/orchestrate/references/config.md`, which owns it.
 
 **No config, no run.** When the file does not exist, halt and tell the caller to run `setup-harness`.
 
-**A command that does not resolve is a config error, not a metric.** Exit 127, a missing script, an
-uninstalled binary — halt, name the command and its package, and say the config is stale. A command
-that ran and came back red is the opposite: that is the baseline, and it records normally.
+**A stale command halts rather than records** — there is no metric to write for a command that never
+ran. A red one records: that is the baseline.
 
 Record per tool the exit code and the counts it reports, then write the lot to
 `.harness/<SPEC_NAME>/baseline.json` — this step owns that file:
 
 ```json
 {
-  "type_check": { "exit": 0, "errors": 0 },
-  "lint": { "exit": 0, "warnings": 3 },
-  "test": { "exit": 0, "passed": 42, "failed": 0, "skipped": 2 },
-  "coverage": { "percent": 85.5 },
+  "<package>": {
+    "type_check": { "exit": 0, "errors": 0 },
+    "lint": { "exit": 0, "warnings": 3 },
+    "test": { "exit": 0, "passed": 42, "failed": 0, "skipped": 2 },
+    "coverage": { "percent": 85.5 }
+  },
   "timestamp": "2026-03-13T..."
 }
 ```
 
-All five keys, every time: a tool the config does not name records `null` rather than being omitted,
-because the caller's join checks for them. Measurements only — the commands that produced them stay
-in `orchestrate.config.json` and are never copied here.
+One entry per package in `PACKAGES`, and all four keys inside every entry: a tool the config does
+not name records `null` rather than being omitted, because the caller's join checks for them.
+Measurements only — the commands that produced them stay in `orchestrate.config.json` and are never
+copied here.
 
 ---
 

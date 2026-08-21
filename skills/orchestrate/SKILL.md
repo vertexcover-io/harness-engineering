@@ -169,6 +169,10 @@ Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `-
 2. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
 3. Create the directory `pipeline-setup` does not: `.harness/<SPEC_NAME>/verify-staging/`. The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
 4. **Load the config.** `orchestrate.config.json` lives at the repo root and is tracked, so it is in the worktree too. `Read` it and store it as `CONFIG`; resolve each stage's `skill`/`model` from `references/config.md`, which owns every rule about that file and none are restated here. A missing file is a halt, not a default — `pipeline-setup` reports it and names `setup-harness`.
+
+   Resolve two more values here, once, and pass both in every dispatch that runs a command. No stage can infer either, and resolving them per stage is how the verify stage ends up on a different stack than the coder's e2e:
+   - `PACKAGES` — the `packages` keys this run touches, from the task's repos or the worktree set.
+   - `ENVIRONMENT` — the `environments` key this run drives, from the request, else `environments.default`.
 5. `set-status setup done`, `set-status baseline running`, then **dispatch the `baseline` sub-agent** (block in `references/stage-prompts.md`) and go straight to Stage 1 without waiting for it.
 
 **The join.** The baseline runs while the developer answers Stage 1's questions, so every stage that reads `baseline.json` joins it first — before the Stage 3 coder dispatch, before the Stage 5 dispatch, and before planning's `implement` route hands off. That route is the one path where Stage 1 does not take minutes, and the only one that starts editing source while the suite may still be running against the same tree.
@@ -179,7 +183,7 @@ Joining is two things, in order:
 2. **Check the artifact, not the agent's word for it** — a returned agent may still have written nothing usable:
 
 ```
-Bash("node -e \"const b=JSON.parse(require('fs').readFileSync('.harness/<SPEC_NAME>/baseline.json','utf8'));if(!b.timestamp||['type_check','lint','test','coverage'].some(k=>!(k in b)))process.exit(1)\" || { echo 'BASELINE_UNUSABLE'; exit 1; }")
+Bash("node -e \"const b=JSON.parse(require('fs').readFileSync('.harness/<SPEC_NAME>/baseline.json','utf8'));const pkgs='<PACKAGES>'.split(',').filter(Boolean);if(!b.timestamp||!pkgs.length||pkgs.some(p=>!b[p]||['type_check','lint','test','coverage'].some(k=>!(k in b[p]))))process.exit(1)\" || { echo 'BASELINE_UNUSABLE'; exit 1; }")
 ```
 
 On the first successful join, `write-report baseline` and `set-status baseline done`.
@@ -300,6 +304,7 @@ This table is Invariant 3's halt set — the whole of it. Stop the pipeline and 
 | Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
 | Missing verification artifacts | `proof-report.html` absent → `MISSING_VERIFICATION_ARTIFACTS` |
 | Config missing | `orchestrate.config.json` is absent from the repo root — report it and name `setup-harness`, which writes it. Never fall back to discovering commands |
+| Package not in config | a `PACKAGES` entry `CONFIG.packages` does not carry — halt and name `setup-harness`, which adds it. Every stage after this one would otherwise guess its commands |
 | Config stale | A command the config names does not resolve (exit 127, missing script, binary not installed) — report the command, the package it came from, and that the config needs updating |
 | Baseline unavailable | `BASELINE_UNUSABLE` — `baseline.json` is missing, unparseable, or carries no metrics, so no later stage can tell a regression from a suite that was already red |
 | Quality gate BLOCKED | Report what failed |

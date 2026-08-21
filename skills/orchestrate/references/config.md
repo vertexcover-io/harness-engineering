@@ -41,7 +41,7 @@ inherits that sub-skill's gate contract. `skill` on this stage is ignored (log i
 yet: worktree creation runs during Initialization before this file is read, and Stage 6 hand-rolls.
 An override on either is recorded and logged, not yet honoured.
 
-## Resolution
+## Resolving a stage
 
 Look the entry up by stage id; call it `CFG`. An **absent key, an empty object, and an empty string
 all mean the same thing: use the default.** Then, per stage:
@@ -57,6 +57,36 @@ all mean the same thing: use the default.** Then, per stage:
 - **disabled** = every stage is mandatory, so `disabled` is always rejected
   (`"Cannot disable mandatory stage <id> — ignoring"`). Planning scales itself — its step 0 collapses
   the question loop for trivial work, and its own gate is the only route to `implement`.
+
+## Commands
+
+Every runnable command lives under a `commands` map — the root one, or a package's — and nowhere
+else. `bootstrap`, `e2e` and the rest are keys in it, not siblings of it, and a command is a plain
+string: whatever an e2e run needs to be up is the runner config's business, not this file's. **A
+command the project lacks is omitted**, and an older config may carry it as `null` instead.
+
+### Resolving a command
+
+Given a key and the package the run named (`PACKAGES`, resolved in Stage 0):
+
+1. `packages.<PKG>.commands.<key>`, then root `commands.<key>`. Stop there.
+2. **Absent or `null` means this project has no such command.** Report `NOT_APPLICABLE` naming the
+   package and the key. Never substitute a neighbouring key, and never go looking for a runner.
+3. **Declared but unresolvable** — exit 127, a missing script — means the config is stale, not the
+   code: halt/BLOCKED naming the command. A command that ran and came back red is a result.
+
+`packages.<PKG>.path` is the working directory. `packages.<PKG>.runner` is the only tool name a
+skill may hold, and only to parse that runner's output, never to build a command.
+
+**Placeholders.** `{NAME...}` takes zero or more values, and `[...]` is a segment to include only
+when the run asks for what it carries. **A `test_file` without `{FILE}` runs the whole suite** — its
+caller reads the named test's line, not the exit code.
+
+## Environments
+
+**This project names its own stack steps.** Read the entry for the environment you are using and
+run the steps it declares, resolving each as above. Where one declares no readiness step, poll its
+status step instead.
 
 ## Custom skills
 

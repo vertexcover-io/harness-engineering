@@ -13,6 +13,8 @@ Git worktrees create isolated workspaces sharing the same repository, allowing w
 
 **Announce at start:** "I'm using the using-git-worktrees skill to set up an isolated workspace."
 
+**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+
 ---
 
 ## Directory Selection Process
@@ -115,40 +117,14 @@ Skip this step entirely if no `.env*` files exist — not every project uses the
 
 ### 4. Run Project Setup
 
-Auto-detect and run appropriate setup. Run install commands with flags that skip unnecessary work where possible:
+Worktrees share git objects but not installed dependencies, so install them here: the `bootstrap` command of each
+package the caller named, resolved per `skills/orchestrate/references/config.md`.
 
-```bash
-# Node.js — prefer ci for speed in worktrees (skips package resolution)
-if [ -f package-lock.json ]; then npm ci
-elif [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile
-elif [ -f yarn.lock ]; then yarn install --frozen-lockfile
-elif [ -f package.json ]; then npm install
-fi
-
-# Rust — fetch deps only, skip full compilation
-if [ -f Cargo.toml ]; then cargo fetch; fi
-
-# Python
-if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-if [ -f pyproject.toml ]; then poetry install; fi
-
-# Go
-if [ -f go.mod ]; then go mod download; fi
-```
-
-Why these flags matter: worktrees share git objects but not `node_modules` or build artifacts. `npm ci` / `--frozen-lockfile` is faster than `npm install` because it skips dependency resolution and installs directly from the lockfile. `cargo fetch` downloads crates without compiling — the first `cargo build` or `cargo test` in the next step will compile, but fetching upfront keeps setup and verification as distinct steps.
+**With no config:** install by the lockfile the project ships, then report that you guessed and name `setup-harness`.
 
 ### 5. Verify Clean Baseline
 
-Run tests to ensure worktree starts clean:
-
-```bash
-# Examples - use project-appropriate command
-npm test
-cargo test
-pytest
-go test ./...
-```
+Run each package's `test_all` to confirm the worktree starts clean.
 
 **If tests fail:** Report failures, ask whether to proceed or investigate.
 
@@ -175,9 +151,8 @@ Ready to implement <feature>
 | Directory not in .gitignore | Add it immediately + commit |
 | `.env*` files in source root | Ask: copy, symlink, or skip |
 | No `.env*` files | Skip silently |
-| Lockfile exists | Use `ci`/`--frozen-lockfile` for speed |
 | Tests fail during baseline | Report failures + ask |
-| No package.json/Cargo.toml | Skip dependency install |
+| Package declares no `bootstrap` or `test_all` | Skip that step, say so |
 
 ---
 
@@ -196,8 +171,8 @@ Ready to implement <feature>
 - **Fix:** Report failures, get explicit permission to proceed
 
 **Hardcoding setup commands**
-- **Problem:** Breaks on projects using different tools
-- **Fix:** Auto-detect from project files (package.json, etc.)
+- **Problem:** Breaks on projects using different tools, and puts a different toolchain behind the same branch next run
+- **Fix:** Run what `orchestrate.config.json` declares
 
 ---
 
@@ -210,8 +185,8 @@ You: I'm using the using-git-worktrees skill to set up an isolated workspace.
 [Create worktree: git worktree add .worktrees/auth -b feature/auth]
 [Found .env, .env.local — user chose symlink]
 [Symlinked .env, .env.local → .worktrees/auth/]
-[Run npm ci]
-[Run npm test - 47 passing]
+[Run the package's bootstrap]
+[Run the package's test_all - 47 passing]
 
 Worktree ready at /Users/jesse/myproject/.worktrees/auth
 Symlinked 2 env files (.env, .env.local)
@@ -233,7 +208,7 @@ Ready to implement auth feature
 **Always:**
 - Follow directory priority: existing > CLAUDE.md > ask
 - Verify .gitignore for project-local
-- Auto-detect and run project setup
+- Run the setup the config declares
 - Verify clean test baseline
 
 ---

@@ -19,6 +19,8 @@ Note: `$ARGUMENTS` is reserved for scan scope (path or blank for full scan), not
 
 # Doc Quality Guard
 
+**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+
 Audits documentation for **accuracy** (code-doc sync, staleness) and **tone** (AI slop), then generates a fix spec and hands off to `/orchestrate`.
 
 **Announce at start:** "Using doc-quality-guard to audit documentation..."
@@ -49,11 +51,14 @@ Launch **up to 4 agents in parallel** (Claude Code: `Agent` tool; Codex: invoke 
 
 **Agent Assignment:**
 
+Source scope comes from `orchestrate.config.json`: `packages.<PKG>.path` is where a package's code
+lives. Where the repo has no config, resolve it from the doc's own subject.
+
 | Agent | Doc Scope | Source Code to Cross-Reference |
 |-------|-----------|-------------------------------|
-| **A: Providers** | `docs/providers/` | `packages/tarash-gateway/src/tarash/tarash_gateway/providers/` |
-| **B: Guides + Getting Started** | `docs/guides/`, `docs/getting-started/` | `packages/tarash-gateway/src/tarash/tarash_gateway/` (public API surface) |
-| **C: API Reference** | `docs/api-reference/` | `packages/tarash-gateway/src/tarash/tarash_gateway/` (all exports, models, exceptions) |
+| **A: Per-subject docs** | a `docs/<subject>/` tree with one file per implementation (providers, adapters, plugins) | the matching subdirectory under the owning package's `path` |
+| **B: Guides + Getting Started** | `docs/guides/`, `docs/getting-started/` | the owning package's public API surface |
+| **C: API Reference** | `docs/api-reference/` | the owning package's exports, models and exceptions |
 | **D: READMEs + Top-level** | `README.md`, `docs/index.md`, `packages/*/README.md` | Entire repo (links, feature claims, install instructions) |
 
 **Each agent prompt must include:**

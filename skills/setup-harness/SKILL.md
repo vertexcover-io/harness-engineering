@@ -109,8 +109,12 @@ Fill it from `CLAUDE.md` first, then the manifest (`package.json`, `pyproject.to
 does not scope, `test_file` equals `test_all` — a wrapper that swallows a trailing argument counts as
 not scoping.
 
-**Omit a command the project lacks rather than nulling it.** functional-verify's Step 1 owns what an
-`environments` script must do.
+**Omit a command the project lacks rather than nulling it**, `test_file` excepted: the table above
+writes the unscoped command rather than dropping the key.
+
+**Declare every `environments` step the project has a command for**, each key named for what its
+step does. Seeding and authentication usually exist as scripts and go undeclared, and each one
+omitted is prose a verification run rediscovers by hand.
 
 **Print what you wrote and name anything you guessed** — this file is committed, so a wrong command
 here is wrong on every run after.

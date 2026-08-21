@@ -15,7 +15,7 @@
         "Runs the typecheck, lint, and test commands the config names and records their exit codes",
         "Records null for any metric whose command the config does not name, rather than failing",
         "Creates .harness/<SPEC_NAME>/ directory with a slugified spec name derived from the task",
-        "Writes baseline.json with type_check, lint, test, coverage, and timestamp keys",
+        "Writes baseline.json keyed by package, each entry carrying type_check, lint, test, and coverage, plus a top-level timestamp",
         "Returns all five output variables: WORKTREE_PATH, BRANCH_NAME, SPEC_NAME, SPEC_DIR, BASELINE_PATH"
       ],
       "anti_expectations": [

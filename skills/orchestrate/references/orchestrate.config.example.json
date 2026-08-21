@@ -12,8 +12,25 @@
 
   "environments": {
     "default": "local",
-    "local": "scripts/stack-local.sh",
-    "remote": "scripts/stack-remote.sh"
+    "local": {
+      "stack_up": "scripts/stack.sh up {BRANCH} {SERVICE...} [--seed-demo]",
+      "stack_status": "scripts/stack.sh status {BRANCH}",
+      "stack_urls": "scripts/stack.sh urls {BRANCH}",
+      "stack_down": "scripts/stack.sh down {BRANCH}",
+      "service_port": "scripts/stack.sh port {SERVICE} {BRANCH}",
+      "seed": "pnpm seed --branch {BRANCH}",
+      "auth": "pnpm auth --branch {BRANCH}"
+    },
+    "remote": {
+      "stack_up": "scripts/ref.sh up --branch {BRANCH} {REPO...}",
+      "stack_wait": "scripts/ref.sh wait --branch {BRANCH} --timeout 40m",
+      "stack_status": "scripts/ref.sh status --branch {BRANCH} --json",
+      "stack_urls": "scripts/ref.sh urls --branch {BRANCH} --json",
+      "stack_list": "scripts/ref.sh list --json",
+      "stack_down": "scripts/ref.sh down --branch {BRANCH}",
+      "seed": "pnpm seed --ref --branch {BRANCH}",
+      "auth": "pnpm auth --branch {BRANCH}"
+    }
   },
 
   "commands": {
@@ -23,19 +40,27 @@
     "build": "pnpm build",
     "test_all": "pnpm vitest run",
     "test_file": "pnpm vitest run {FILE}",
-    "coverage_all": "pnpm vitest run --coverage",
-    "test_changed": "turbo run test lint typecheck --filter='...[{BASE}]'"
+    "coverage_all": "pnpm vitest run --coverage"
   },
 
   "packages": {
     "api": {
       "path": "packages/api",
       "runner": "vitest",
-      "bootstrap": "pnpm install",
       "commands": {
+        "bootstrap": "pnpm install",
         "build": "pnpm --filter api build",
         "test_all": "pnpm --filter api test",
-        "test_file": "pnpm --filter api test {FILE}"
+        "test_file": "pnpm --filter api test {FILE}",
+        "coverage_all": "pnpm --filter api test --coverage",
+        "e2e": "pnpm --filter api test:e2e"
+      }
+    },
+    "schemas": {
+      "path": "packages/schemas",
+      "commands": {
+        "bootstrap": "pnpm install",
+        "build": "pnpm --filter schemas build"
       }
     }
   }

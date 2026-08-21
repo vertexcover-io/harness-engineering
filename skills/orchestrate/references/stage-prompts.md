@@ -53,6 +53,7 @@ Your working directory is <WORKTREE_PATH>.
 
 Invoke the `pipeline-setup` skill with its `baseline` branch.
 SPEC_DIR: <SPEC_DIR>
+PACKAGES: <PACKAGES>
 ```
 
 ---
@@ -76,8 +77,8 @@ contracts shape the whole phase; an agent that explores first is working before 
   `.harness/<SPEC_NAME>/plan.md` (extracted from plan.html), phase file
   `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
 - Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
-- The `packages` key this phase's work sits under, when the config has a `packages` block — the
-  coder reads its commands from there and cannot infer which unit a phase belongs to
+- The `PACKAGES` entry this phase's work sits under, and `ENVIRONMENT` — no phase file says which
+  unit or which stack it belongs to
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
 
 **Then, verbatim — how to orient in this run:**
@@ -108,6 +109,7 @@ Tell the agent to run them in order and stop on the first failure.
   `.harness/<SPEC_NAME>/verification/`
 - Baseline `.harness/<SPEC_NAME>/baseline.json`, harness dir
   `.harness/<SPEC_NAME>/`, stage `post-tdd`, spec name `<SPEC_NAME>`
+- `PACKAGES: <PACKAGES>`, `ENVIRONMENT: <ENVIRONMENT>`
 - Artifact-publish session id: tell the agent to `export SESSION_ID=<SESSION_ID>` before running
   `<SKILL:functional-verify>`, so its publish steps target the real top-level session instead of
   deriving it from the worktree cwd (which encodes to the wrong transcript directory). If

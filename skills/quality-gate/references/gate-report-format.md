@@ -15,20 +15,25 @@ The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` a
 **Diff:** <N files changed, M insertions, K deletions>
 
 ### Toolchain
-| Tool | Status | Command |
-|------|--------|---------|
-| Type Checker | DECLARED | tsc --noEmit |
-| Linter | DECLARED | eslint . |
-| Test Suite | DECLARED | npm test |
-| Coverage | DECLARED | vitest --coverage |
+One row per package in `PACKAGES` per tool. `Command` is copied from the config, never composed here.
+
+| Package | Tool | Status | Command |
+|---------|------|--------|---------|
+| web | Type Checker | DECLARED | \<its `typecheck`\> |
+| web | Linter | DECLARED | \<its `lint`\> |
+| web | Test Suite | DECLARED | \<its `test_all`\> |
+| web | Coverage | NOT_APPLICABLE | declares no `coverage_all` |
+| api | Type Checker | DECLARED | \<its `typecheck`\> |
 
 ### Results
+One row per check, the verdict being the union across packages. Name the failing package in `Current`.
+
 | # | Check | Baseline | Current | Verdict |
 |---|-------|----------|---------|---------|
-| 1 | Type Checker | exit=0, errors=0 | exit=0, errors=0 | PASS |
+| 1 | Type Checker | exit=0, errors=0 | exit=0, errors=0 (web, api) | PASS |
 | 2 | Linter | exit=0, warnings=3 | exit=0, warnings=3 | PASS |
 | 3 | Test Suite + Behavior Coverage | exit=0, 42 passed | exit=0, 38 passed, 12/12 matrix IDs covered | PASS |
-| 4 | Coverage (diagnostic) | 85.5% | 87.3% (+1.8%) | INFO |
+| 4 | Coverage (diagnostic) | 85.5% | 87.3% (+1.8%) (api; web NOT_APPLICABLE) | INFO |
 | 6 | Plan Compliance | — | 5/5 items verified | PASS |
 | 7 | Comment Audit | — | 0 new ignore directives · 3 comments removed | PASS |
 | 9 | E2E Tests | — | 12 passed, 0 failed | PASS |
@@ -39,15 +44,17 @@ The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` a
 
 ### Evidence
 
-#### Check 1: Type Checker
+One block per package per check; the marker carries the check's union verdict.
+
+#### Check 1: Type Checker — package `web`
 <!-- QG:CHECK:1:PASS -->
-**Command:** `tsc --noEmit 2>&1; echo "EXIT_CODE=$?"`
+**Command:** the package's `typecheck`, run as `<command> 2>&1; echo "EXIT_CODE=$?"`
 **Exit code:** 0
 **Summary:** 0 errors
 
-#### Check 2: Linter
+#### Check 2: Linter — package `web`
 <!-- QG:CHECK:2:PASS -->
-**Command:** `eslint . 2>&1; echo "EXIT_CODE=$?"`
+**Command:** the package's `lint`, run the same way
 **Exit code:** 0
 **Summary:** 0 new warnings (baseline: 3, current: 3)
 
@@ -55,7 +62,7 @@ The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` a
 
 #### Check 4: Coverage (diagnostic example)
 <!-- QG:CHECK:4:INFO -->
-**Command:** parsed from Check 3 run (`pytest --cov`)
+**Command:** parsed from the Check 3 run (the package's `coverage_all`)
 **Summary:** 78.2% (baseline: 85.5%, -7.3%)
 **INFO:** Coverage dropped 7.3% → what behavior is missing from the matrix? (never blocks on its own)
 
