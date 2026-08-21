@@ -11,8 +11,9 @@ the way — is knowledge the project owns, held in its own skills and `CLAUDE.md
 
 Use the binary directly (`npx` routes through Node instead of the Rust client and pays that cost on every call). On
 Linux, launch with `agent-browser --args "--no-sandbox" open <url>` — without it Chrome dies on `No usable
-sandbox!` and every later command reports a dead session. Set `AGENT_BROWSER_DEFAULT_TIMEOUT=2000` so a wait that
-will never resolve fails in 2s rather than the 30s default.
+sandbox!` and every later command reports a dead session. Set `AGENT_BROWSER_DEFAULT_TIMEOUT` so a wait that will
+never resolve fails fast rather than at the 30s default — `2000` against a local stack, and higher where the stack
+is across a network, since a budget tuned for loopback turns latency into phantom failures.
 
 The CLI ships its own guide, version-matched to the binary and authoritative on the basics — session/refs/snapshot,
 the `wait` verbs, viewports, tabs, `record`:
@@ -94,10 +95,9 @@ believe you, so shoot whatever the flow needs end to end: the seeded preconditio
 step, the intermediate render that explains why the next click works, the toast that confirms it. Every step earns
 at least one frame, many earn more — a scenario with more *promoted* frames than steps is doing it right.
 
-**Capture to staging, promote only what you verified.** A frame is evidence once its assert passed *and* your own
-eyes confirmed it. Shoot into `.harness/<SPEC_NAME>/verify-staging/` — scratch, a sibling of `verification/` and
-never part of it — and move a frame into `screenshots/` only once it earns its place. Re-takes, dead ends, and
-missed clicks stay in staging and are discarded at cleanup.
+**Capture to staging, promote only what you verified.** Shoot into `.harness/<SPEC_NAME>/verify-staging/` — scratch,
+a sibling of `verification/` and never part of it — and move a frame into `screenshots/` only once it earns its
+place. Re-takes, dead ends, and missed clicks stay in staging and are discarded at cleanup.
 
 For every action, run one batch that acts, asserts, and captures **to staging**:
 
@@ -180,6 +180,3 @@ The replay carries a verdict, so the walk answers the same question it answered 
 
 A replay that fails is a `Failure` scenario and a `bugs[]` entry like any other, and its `reachedBy` writes itself:
 the user on that device, and the surface they touched.
-
-**Done when every scenario has a `NN_<slug>` set of promoted frames in `screenshots/` telling its whole story, each
-one backed by a passing assert and your own eyes.**

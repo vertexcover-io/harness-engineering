@@ -18,7 +18,13 @@
 
 ## How to figure out the bring-up (don't assume a stack)
 
-Derive every command from the repository. Answer these from the project, in order:
+**Where `orchestrate.config.json` carries an `environments` block, this is already declared** and
+deriving it again is the wrong move: read the entry for the run's `ENVIRONMENT` and run the steps it
+declares, with the package's `e2e` command against them. The invariants above still bind — they are
+what a declared stack must satisfy.
+
+With no such block, derive every command from the repository. Answer these from the project, in
+order:
 
 1. **What backing services does the app need?** Read the connection-string env keys (`*_URL`, `*_DSN`, `*_HOST`/`*_PORT`) in `.env*`/config, the service list in any compose/manifest file, and the clients the app imports. That set *is* your infra (DB, cache, queue, object store…).
 2. **How does the project already start them?** Look for, and prefer, the project's own mechanism: a compose/orchestration file, an `infra`/`dev`/`db:setup` script, a Makefile target, an in-test Testcontainers/embedded-server setup. Reuse it — don't reinvent.
