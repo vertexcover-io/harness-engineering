@@ -140,18 +140,16 @@ capture loop and the phone replay are all there.
 session. Whether this app is meant to work on a phone at all is a project fact like any other.
 
 **Where a design defines the screen you just drove, compare your frame against it.** Open the file plan.md's
-`## Design References` names and read the built screen against it on where each element sits and in what order, the
-labels and copy, and whether every state the design draws is present. Basic comparison by eye is the bar. State
-what matched and what did not in that scenario's `reason`, in the same evidence-not-adjectives terms as any other
-claim. A mismatch a user would be wrong-footed by — a missing state, an action that isn't where it was drawn — is a
-bug and routes through Step 4; cosmetic drift is a note in `extra[]`. A screen nobody drew is not a failure.
+`## Design References` names and read the built screen against it on placement and order, labels and copy, and
+every state the design draws. Comparison by eye is the bar; state what matched and what did not in that scenario's
+`reason`. A mismatch a user would be wrong-footed by is a bug and routes through Step 4; cosmetic drift is a note
+in `extra[]`. A screen nobody drew is not a failure.
 
-The invariant governing the whole step: **a frame is evidence only once its assert passed and your own eyes
-confirmed it shows what you think.** Read at the moment you shoot — frames lag renders. **Done when every behaviour
-the docs claim is reached by some flow; every UI scenario has a `NN_<slug>` set of frames in `screenshots/` that
-tells its whole story, each frame backed by a passing assert and your own eyes; every scenario whose screen a design
-defines carries that comparison in its `reason`; and every flow on the surface the change landed on has a phone
-replay driven through to its closing assert, whatever that assert returned.**
+**A frame is evidence only once its assert passed and your own eyes confirmed it shows what you think** — read at
+the moment you shoot, since frames lag renders. **Done when every behaviour the docs claim is reached by some flow;
+every UI scenario's `NN_<slug>` frames in `screenshots/` tell its whole story; every screen a design defines
+carries its comparison in `reason`; and every flow on the surface the change landed on has a phone replay driven
+to its closing assert, whatever it returned.**
 
 ## Step 3 — API, DB & Side-Effects: Proving What Has No Screen
 
