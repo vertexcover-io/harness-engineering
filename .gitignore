@@ -8,3 +8,5 @@ dev-docs
 .harness/*
 !.harness/knowledge/
 !.harness/README.md
+.env
+.env.harness

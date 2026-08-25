@@ -4,8 +4,8 @@ Required, at the **repo root**, committed. Being tracked, it is present at the w
 too — either path reads the same content. Orchestrate reads it once during Stage 0 and passes the
 result forward. A worked example lives in `references/orchestrate.config.example.json`.
 
-One file carries three things: this project's **stage overrides**, its **commands**, and its
-**environments**. It is self-describing — read it directly. Nothing here restates what its keys
+One file carries four things: this project's **stage overrides**, its **commands**, its
+**environments**, and its **notifier**. It is self-describing — read it directly. Nothing here restates what its keys
 mean, and a command it does not name is a command there is nothing to run for.
 
 Does NOT apply to `orchestrate` itself (no recursive override).
@@ -94,6 +94,23 @@ A custom skill is invoked with the **same arguments** the default would get (see
 in `references/stage-prompts.md`) and, for **gated** stages, MUST emit the same verdict
 markers/artifacts so orchestrate can parse the result — a missing verdict is treated as a stage
 FAILURE/BLOCKED.
+
+## Notifier
+
+Optional. Absent, or `enabled: false`, and the pipeline sends nothing.
+
+```json
+"notifier": { "enabled": true, "provider": "slack" }
+```
+
+`provider` names one entry in the provider table in `skills/_shared/notify.ts`. No credential belongs
+in this file, because it is committed — each provider reads its own keys from the environment, or
+from `.env` at the main repo root.
+
+`run-started` is the one strict gate: it exits non-zero, and Stage 0 halts on it. Every later event
+fails soft to stderr, so a provider outage never interrupts a run.
+
+`orchestrate/SKILL.md` owns which event fires where.
 
 ## When the file is missing
 
