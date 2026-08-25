@@ -2,7 +2,8 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 
 const EVENTS = [
@@ -241,14 +242,14 @@ export const main = async (
   return 0;
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (fileURLToPath(import.meta.url) === resolve(process.argv[1] ?? "")) {
   const argv = process.argv.slice(2);
   let strict = true;
   try {
     strict = parseArgs(argv).event === "run-started";
-    process.exit(await main(argv));
+    process.exitCode = await main(argv);
   } catch (err) {
     process.stderr.write(`notify: ${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(strict ? 1 : 0);
+    process.exitCode = strict ? 1 : 0;
   }
 }
