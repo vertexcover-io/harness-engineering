@@ -7,12 +7,8 @@ missing config, a missing key, or an empty string means no extension — proceed
 warning. A key that points to a file that does not exist: log one line naming the path and
 proceed — a stale config is not a halt.
 
-**May do:** add steps, add inputs to read, add constraints, name project skills to invoke
-(via `Skill`) and where in the flow to invoke them.
-
-**May not do:** skip or auto-approve a gate or user touchpoint, remove a `Done when` line,
-change an artifact contract (file names, verdict markers, paths), or disable a step. When the
-doc and the skill disagree, the skill wins.
+It cannot skip a gate or user touchpoint, or change an artifact contract (file names, paths,
+verdict markers).
 
 **Writing one:** keep it short and imperative, one instruction per line, and name the step it
 attaches to (e.g. "before step 1"). Example, a multi-repo project's `planning` extension:
