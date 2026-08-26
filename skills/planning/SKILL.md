@@ -36,8 +36,9 @@ code, the user confirmed it, or you labeled it an assumption.
 **`--auto`** means orchestrate runs unattended; the flag arrives in the dispatch prompt. Each
 touchpoint below states its `--auto` behavior.
 
-This skill has an extension point: a project can add steps or name project skills to invoke
-via `orchestrate.config.json`. See `../_shared/extensions.md` for the contract.
+**Before step 0, read `../_shared/extensions.md` and do what it says.** When the repo-root
+`orchestrate.config.json` names `extensions.planning`, that doc's instructions bind every step
+below.
 
 ## Step 0 — Scale the work
 
