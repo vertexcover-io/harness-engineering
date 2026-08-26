@@ -9,11 +9,3 @@ proceed — a stale config is not a halt.
 
 The doc cannot skip a gate or user touchpoint, or change an artifact contract (file names, paths,
 verdict markers).
-
-**Writing one:** keep it short and imperative, one instruction per line, and name the step it
-attaches to (e.g. "before step 1"). Example, a multi-repo project's `planning` extension:
-
-```
-Before the step-1 code sweep, invoke the `repo-lookup` skill via `Skill` with the task text.
-Dispatch one Explore agent per repo it returns, in that repo's path.
-```
