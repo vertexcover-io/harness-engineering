@@ -91,25 +91,14 @@ status step instead.
 
 ## Extensions
 
-`extensions` is a map from **skill name** to a path, relative to the repo root, of a markdown
-doc that skill reads and follows:
+`extensions` maps a **skill name** (not a stage id) to a repo-relative markdown doc that skill
+reads and follows. Contract: `skills/_shared/extensions.md`. Each skill resolves its own entry;
+orchestrate passes nothing extra. Replace a skill (`stages.<id>.skill`) for a different flow;
+extend it for the same flow with project instructions.
 
 ```json
-"extensions": {
-  "planning": "harness/planning.md"
-}
+"extensions": { "planning": "harness/planning.md" }
 ```
-
-It is keyed by skill name, not stage id — `verify-finalize` runs three skills, and skills like
-`implement` also run standalone. The contract for what an extension doc may say lives in
-`skills/_shared/extensions.md`; each skill that supports one names that file as its extension
-point.
-
-Orchestrate itself does not read `extensions` — each skill resolves its own entry — so the
-orchestrator passes nothing extra in dispatch prompts.
-
-Use `stages.<id>.skill` to replace a skill when the project needs a different flow. Use
-`extensions` to keep the same flow with extra project instructions.
 
 ## Custom skills
 
