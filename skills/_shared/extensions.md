@@ -7,7 +7,7 @@ missing config, a missing key, or an empty string means no extension — proceed
 warning. A key that points to a file that does not exist: log one line naming the path and
 proceed — a stale config is not a halt.
 
-It cannot skip a gate or user touchpoint, or change an artifact contract (file names, paths,
+The doc cannot skip a gate or user touchpoint, or change an artifact contract (file names, paths,
 verdict markers).
 
 **Writing one:** keep it short and imperative, one instruction per line, and name the step it
