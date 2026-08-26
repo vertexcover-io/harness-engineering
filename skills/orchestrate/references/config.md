@@ -4,9 +4,10 @@ Required, at the **repo root**, committed. Being tracked, it is present at the w
 too — either path reads the same content. Orchestrate reads it once during Stage 0 and passes the
 result forward. A worked example lives in `references/orchestrate.config.example.json`.
 
-One file carries three things: this project's **stage overrides**, its **commands**, and its
-**environments**. It is self-describing — read it directly. Nothing here restates what its keys
-mean, and a command it does not name is a command there is nothing to run for.
+One file carries four things: this project's **stage overrides**, its **commands**, its
+**environments**, and its **extensions**. It is self-describing — read it directly. Nothing
+here restates what its keys mean, and a command it does not name is a command there is
+nothing to run for.
 
 Does NOT apply to `orchestrate` itself (no recursive override).
 
@@ -87,6 +88,28 @@ caller reads the named test's line, not the exit code.
 **This project names its own stack steps.** Read the entry for the environment you are using and
 run the steps it declares, resolving each as above. Where one declares no readiness step, poll its
 status step instead.
+
+## Extensions
+
+`extensions` is a map from **skill name** to a path, relative to the repo root, of a markdown
+doc that skill reads and follows:
+
+```json
+"extensions": {
+  "planning": "harness/planning.md"
+}
+```
+
+It is keyed by skill name, not stage id — `verify-finalize` runs three skills, and skills like
+`implement` also run standalone. The contract for what an extension doc may say lives in
+`skills/_shared/extensions.md`; each skill that supports one names that file as its extension
+point.
+
+Orchestrate itself does not read `extensions` — each skill resolves its own entry — so the
+orchestrator passes nothing extra in dispatch prompts.
+
+Use `stages.<id>.skill` to replace a skill when the project needs a different flow. Use
+`extensions` to keep the same flow with extra project instructions.
 
 ## Custom skills
 
