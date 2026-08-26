@@ -30,6 +30,8 @@ export type Message = {
   readonly title: string;
   readonly body: string;
   readonly threadRef: string | null;
+  /** Address the message to a person. True for the events a human must act on. */
+  readonly mention: boolean;
 };
 
 export type Provider = {
@@ -153,14 +155,18 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
 
   const token = need("SLACK_BOT_TOKEN");
   const channel = need("SLACK_CHANNEL_ID");
+  const memberId = need("SLACK_MEMBER_ID");
   const thread = (msg: Message): Record<string, string> =>
     msg.threadRef === null ? {} : { thread_ts: msg.threadRef };
+  // Outside the bold marker: Slack renders `<@ID>` as a name, and bold-wrapping it reads as shouting.
+  const heading = (msg: Message): string =>
+    msg.mention ? `<@${memberId}> *${msg.title}*` : `*${msg.title}*`;
 
   return {
     send: async (msg) => {
       const res = await slackPost(token, "chat.postMessage", {
         channel,
-        text: `*${msg.title}*\n${msg.body}`,
+        text: `${heading(msg)}\n${msg.body}`,
         ...thread(msg),
       });
       return typeof res["ts"] === "string" ? res["ts"] : null;
@@ -203,6 +209,15 @@ export const resolveProvider = (config: Config): Provider => {
   return factory(config.secrets);
 };
 
+// The events a person is expected to act on. Stage traffic stays unaddressed, so a run of
+// six stages does not notify anybody six times over.
+const MENTIONED: ReadonlySet<NotifyEvent> = new Set([
+  "run-started",
+  "question-pending",
+  "run-interrupted",
+  "run-completed",
+]);
+
 export const formatMessage = (args: Args): Message => {
   const spec = args.title ?? "harness";
   const stage = args.stage ?? "unknown";
@@ -217,7 +232,12 @@ export const formatMessage = (args: Args): Message => {
     case "run-completed":    title = `Run complete: ${spec}`; break;
   }
 
-  return { title, body: args.body ?? "", threadRef: args.thread };
+  return {
+    title,
+    body: args.body ?? "",
+    threadRef: args.thread,
+    mention: MENTIONED.has(args.event),
+  };
 };
 
 export const main = async (
