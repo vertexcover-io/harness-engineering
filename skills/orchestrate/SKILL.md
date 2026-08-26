@@ -149,12 +149,15 @@ The first command prints a thread reference. Store it as `<THREAD>`, then add
 A person outside the team reads these messages. Write each `--body` in plain words. Say what
 happened and what it means. Do not paste a verdict code, a raw metric, or a stage report.
 
+`run-started`'s ticket URL comes from `TASK_CONTEXT`; drop the ` : <ticket URL>` suffix when the task
+names no ticket.
+
 | When | Command |
 |------|---------|
-| Stage 0 starts | `<NOTIFY> --event run-started --title '<SPEC_NAME>' --body '<one-line task>'` |
+| Stage 0 starts | `<NOTIFY> --event run-started --title '<SPEC_NAME>' --body '<one-line task> : <ticket URL>'` |
 | you enter a stage | `<NOTIFY> --event stage-started --stage <id>` |
 | you leave a stage | `<NOTIFY> --event stage-completed --stage <id> --body '<what the stage did, in plain words>' --artifact <that stage's artifact>` |
-| before each `AskUserQuestion` | `<NOTIFY> --event question-pending --stage <id> --body '<the question and its options>'` |
+| before each `AskUserQuestion` or asking any question to the developer | `<NOTIFY> --event question-pending --stage <id> --body '<the question and its options>'` |
 | you halt on a Terminal BLOCK/FAIL condition | `<NOTIFY> --event run-interrupted --stage <id> --body '<what failed, in plain words>'` |
 | Stage 6 ends | `<NOTIFY> --event run-completed --body '<PR_URL>'` |
 
