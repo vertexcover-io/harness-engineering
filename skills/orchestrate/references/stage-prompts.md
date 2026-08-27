@@ -62,12 +62,14 @@ PACKAGES: <PACKAGES>
 
 **Skill:** `<SKILL:coder>` · **Model:** `CFG.model` → `sonnet`
 
-Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one commit).
+Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one commit). **A resumed
+run has one unit, the fix:** a single agent, `NODE_ID=coder`.
 
 **The coder agent invokes `<SKILL:coder>` and nothing else.** That skill reaches `tdd`,
 `code-quality`, and `references/coder-contracts.md` itself; naming them in the dispatch would be a
 second source of truth for what the skill already owns (Invariant 6). Pass the phase file — that is
-what puts the skill in pipeline mode and makes the claims artifacts mandatory.
+what puts the skill in pipeline mode and makes the claims artifacts mandatory. A spec dir with no
+phase file puts it in review-fix mode instead, where it owes no claims.
 
 **Its first action is invoking `<SKILL:coder>` — before any Read or Grep.** The skill and its
 contracts shape the whole phase; an agent that explores first is working before it knows the rules.
@@ -75,8 +77,9 @@ contracts shape the whole phase; an agent that explores first is working before 
 **Pass:**
 - Design record `.harness/<SPEC_NAME>/design.md` (when the full flow ran), plan
   `.harness/<SPEC_NAME>/plan.md` (extracted from plan.html), phase file
-  `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
-- Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json`
+  `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md` — **resumed:** the caller's feedback stands in
+  for the phase file, and the plan is the original run's
+- Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json` — phases only
 - The `PACKAGES` entry this phase's work sits under, and `ENVIRONMENT` — no phase file says which
   unit or which stack it belongs to
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
@@ -84,12 +87,13 @@ contracts shape the whole phase; an agent that explores first is working before 
 **Then, verbatim — how to orient in this run:**
 
 ```
-Request every file and call site your phase file names in a single tool call block. Extra
-calls in a round are nearly free; a round is not. Orientation is done when every file the
-phase names has been read — in that sweep, not one round each.
+Request every file and call site your input names in a single tool call block. Extra calls
+in a round are nearly free; a round is not. Orientation is done when every file the input
+names has been read — in that sweep, not one round each.
 ```
 
-**Return:** files created/modified, test counts, phase completed or blocked (and why).
+**Return:** files created/modified, test counts, phase completed or blocked (and why). **Resumed:**
+each feedback item's disposition too.
 
 The orchestrator verifies the claims report independently — do not take the agent's word for it.
 
@@ -102,9 +106,15 @@ The orchestrator verifies the claims report independently — do not take the ag
 
 Tell the agent to run them in order and stop on the first failure.
 
+**On a resumed run, trace the blast radius before dispatching** — follow
+`skills/rework/references/blast-radius.md`. Its in-radius list replaces the plan below as
+`<SKILL:functional-verify>`'s requirement enumeration, and is the run's whole scope: a rework spec
+dir carries no feature doc.
+
 **Pass:**
 - Design record `.harness/<SPEC_NAME>/design.md` (when the full flow ran), plan
-  `.harness/<SPEC_NAME>/plan.md`, phase files `.harness/<SPEC_NAME>/phases/phase-*.md`
+  `.harness/<SPEC_NAME>/plan.md`, phase files `.harness/<SPEC_NAME>/phases/phase-*.md` —
+  **resumed:** these live in the original spec dir, as does the prior `proof-report.html`
 - Claims `.harness/<SPEC_NAME>/claims.json` (aggregated), verification output dir
   `.harness/<SPEC_NAME>/verification/`
 - Baseline `.harness/<SPEC_NAME>/baseline.json`, harness dir

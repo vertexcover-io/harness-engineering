@@ -15,7 +15,7 @@ Runs a full development pipeline in **6 stages** — 0, 1, then 3 through 6 (sta
 
 1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, gate on the plugin version, create the worktree, start the dashboard inside it.
 2. **No pause after Stage 1.** One skill owns both approval gates — `planning` (Stage 1): its inline checkpoint and its plan gate on `plan.html`. Those are the only pauses, they belong to the skill, and both self-bypass in `--auto`. Once the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back with NO stopping, pausing, questions, or interim summaries. The orchestrator adds no gate of its own.
-3. **Halt only on a genuine BLOCK/FAIL.** The complete halt set is the `## Terminal BLOCK/FAIL conditions` table below — nothing outside it stops the pipeline. On halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.
+3. **Halt only on a genuine BLOCK/FAIL.** The complete halt set is the `## Terminal BLOCK/FAIL conditions` table below — nothing outside it stops the pipeline. On halt, report which stage failed and why. Reaching Stage 6 is the only successful terminal state.
 4. **Every question uses `AskUserQuestion`** — never plain text. In `--auto` mode, skip all `AskUserQuestion` calls.
 5. **Invoke the stage's resolved skill. Never hand-roll its output.** Every stage runs a skill — resolve *which* per `references/config.md`, then invoke it via the `Skill` tool. Do this even when you believe you already know what it would say: your recollection is not the contract, and a project may have swapped the skill out from under you. This binds main-conversation stages exactly as it binds sub-agents — writing `plan.html` or `plan.md` yourself instead of invoking the planning stage's skill is a pipeline violation, not a shortcut. **Before leaving a stage, confirm you invoked its skill.** If you didn't, the stage did not run.
 6. **The skill owns the contract; the dispatch owns the variables.** When telling a sub-agent what to do, name the resolved skill and pass what only this run knows (paths, ids, ranges). Do NOT restate what the skill already says — a second copy is a second source of truth, and it will drift. If a sub-agent needs a rule that no skill states, add it to the skill rather than the prompt.
@@ -41,6 +41,24 @@ Every file below is one hop from here. Read the one whose condition you are in �
 ---
 
 ## Initialization (do these first, in order, before anything else)
+
+### Resume
+
+When the invocation supplies `SPEC_NAME`, `WORKTREE_PATH`, and an entry stage, this run **resumes**.
+
+- Run Step 1's script for the version gate only. The caller's feedback is `TASK_CONTEXT`.
+- Skip Step 2 and Stage 0. `cd` to `WORKTREE_PATH` — the caller seeded the harness dir already.
+- **Never re-baseline.** The original `baseline.json` measures pre-feature `main`, the bar this work
+  still has to clear.
+- Build the DAG from the rework init block in `references/dag-commands.md`.
+- Start at the entry stage and run every stage after it. `references/config.md` names the valid
+  entry stages and what each presumes already exists.
+- Scope every stage's diff `<PRE_REWORK_SHA>..HEAD`, the caller's sha — Stage 4 reviews this run's
+  fix, not the whole feature again. Its `--plan` is the caller's original plan path; `<SPEC_NAME>`
+  holds no plan of its own.
+
+A resumed run has no Stage 1 and therefore no gate: it runs from the entry stage through Stage 6
+without pausing.
 
 ### Step 1: Detect the Input and Gate on the Plugin Version
 
@@ -326,6 +344,8 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
    node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/scripts/upload-bundle.ts" '.harness/<SPEC_NAME>' 'harness-<SPEC_NAME>.zip'
    ```
 7. `write-report commit-pr`, `set-status commit-pr done`.
+
+**On a resumed run the PR already exists.** Skip steps 4 and 5.
 
 **Extract:** commits, `PR_URL`.
 

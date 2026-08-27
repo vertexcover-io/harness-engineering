@@ -203,9 +203,11 @@ Run `/code-review`. It reads the diff, checks against a plan or design doc if pr
 
 ---
 
-### I want to auto-fix PR review comments
+### I want to act on feedback a ticket came back with
 
-The `review-fixer` skill runs in GitHub Actions. When a human leaves review comments on a PR, it classifies each comment, applies fixes, runs the quality gate, commits, and replies inline on the PR.
+Run `/rework <ticket-id>` with the QA report, or `/rework <ticket-id> --pr <N>` for a reviewer's comments. It resumes the run that already exists — same worktree, same baseline, no new plan — applies the feedback, and puts it back through review, the gate, and verification scoped to what the fix touched. For PR feedback it writes a report giving every comment a verdict and a disposition.
+
+The `review-fixer` skill is the same job triggered from GitHub Actions instead of by hand.
 
 ---
 
@@ -333,6 +335,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | Command | What it does |
 |---------|-------------|
 | `/orchestrate` | Full pipeline: design → plan → code → PR |
+| `/rework` | Resumes a finished run to apply QA or PR-review feedback |
 | `/planning` | Breaks work into phases with dependency graph |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
 | `/implement` | Manual coding entry point: TDD + code-quality, review when green |
@@ -375,6 +378,7 @@ harness/
     ├── quality-gate/
     ├── refactor/
     ├── review-fixer/
+    ├── rework/
     ├── skill-eval-generator/
     ├── sync-docs/
     ├── tdd/

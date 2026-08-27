@@ -54,6 +54,24 @@ Store the printed `HARNESS_DIR` for all subsequent calls. Phase nodes are added 
 Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' add-node phase-1 'Phase 1: <label>' --parent coder && node '<DAG_SCRIPT>' add-node phase-2 'Phase 2: <label>' --parent coder --depends-on phase-1")
 ```
 
+## Rework init block (resumed runs)
+
+A resumed run starts at `coder`, so its DAG carries no setup, worktree, baseline, or planning node.
+`<SPEC_NAME>` here is the rework spec name the caller passes, which gives the run its own dashboard:
+
+```
+Bash("
+  export HARNESS_DIR=$(node '<DAG_SCRIPT>' init '<SPEC_NAME>' '<feedback summary>' '<BRANCH_NAME>' '<WORKTREE_PATH>')
+  node '<DAG_SCRIPT>' add-node coder 'Apply Feedback'
+  node '<DAG_SCRIPT>' add-node code-review 'Code Review' --depends-on coder
+  node '<DAG_SCRIPT>' add-node verify-finalize 'Verify & Finalize' --depends-on code-review
+  node '<DAG_SCRIPT>' add-node commit-pr 'Commit & Comment' --depends-on verify-finalize
+  echo \"$HARNESS_DIR\"
+")
+```
+
+Add no phase nodes — a resumed `coder` fixes inside phases that already reported.
+
 ## Start the server
 
 `serve-start` launches the server as a detached system process and returns as soon as it is
