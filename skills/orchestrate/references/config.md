@@ -26,6 +26,7 @@ key rather than guessing which stage was meant.
 | `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
 | `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 | `commit-pr` | — (Stage 6 hand-rolls the commit and PR) | PR URL |
+| `retro` | `harness-retro` | — (never gates; Stage 7 cannot fail the run) |
 
 Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,7,9,10}).
 
@@ -40,6 +41,10 @@ inherits that sub-skill's gate contract. `skill` on this stage is ignored (log i
 `worktree` and `commit-pr` are valid keys and resolve, but neither stage dispatches a resolved skill
 yet: worktree creation runs during Initialization before this file is read, and Stage 6 hand-rolls.
 An override on either is recorded and logged, not yet honoured.
+
+`retro` is the one stage `disabled` is honoured on. It runs after the PR and produces no artifact
+any later stage reads, so a project that does not want it sets `"retro": { "disabled": true }` and
+Stage 7 is skipped. Every other stage stays mandatory.
 
 ## Resolving a stage
 

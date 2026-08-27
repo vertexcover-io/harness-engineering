@@ -7,7 +7,8 @@
     "coder": { "skill": "my-implement", "model": "opus" },
     "code-review": { "skill": "strict-review" },
     "verify-finalize": { "model": "haiku", "skills": { "quality-gate": "my-gate" } },
-    "commit-pr": {}
+    "commit-pr": {},
+    "retro": {}
   },
 
   "environments": {
