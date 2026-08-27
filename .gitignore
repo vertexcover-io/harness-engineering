@@ -10,3 +10,7 @@ dev-docs
 !.harness/README.md
 .env
 .env.harness
+
+# Python bytecode
+__pycache__/
+*.pyc
