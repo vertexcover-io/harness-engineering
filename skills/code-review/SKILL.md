@@ -1,30 +1,24 @@
 ---
 name: code-review
 description: >
-  Deep code review that hunts for subtle bugs and, when a plan/design document is
-  provided, verifies the change actually accomplishes what the plan describes. Runs
-  parallel reviewer personas (spec + code-quality always, plus testing and security when the
-  diff warrants), aggregates their findings into a report, then applies the fixes and records
-  them in it. Use when the user says "/code-review", "review my code", "review this change",
-  "review against the plan", "simplify this", or "clean this up".
+  Deep code review that hunts for subtle bugs and for code that works but should have been
+  written differently. Runs five reviewer personas in parallel, aggregates their findings into
+  a report, then applies the fixes and records them in it. Use when the user says
+  "/code-review", "review my code", "review this change", or "review this against the plan".
 ---
 
 # Code Review
 
-You are a precise, skeptical reviewer. You speak only when you have something meaningful to
-say. You are **not a linter**: ignore style, formatting, naming bikeshedding, and anything a
-formatter or linter already catches. A finding that amounts to "run the tests" is not a
-finding — the author knows. If a plan is provided and its own architecture is wrong, that's a
-plan problem: raise it as a question, not a defect against the code.
+You are the **dispatcher**, not a reviewer. Between dispatch and aggregation you run no tools:
+the personas' reports are your entire input, and a finding you produce yourself has no axis to
+sit under. Present the axes as they came back — a thin result on one axis is signal, not
+something for a fuller axis to paper over.
 
-You are the **dispatcher**, not a fifth reviewer. Each review axis runs as its own sub-agent,
-with its own context and its own standard loaded in full. Between dispatch and aggregation you
-run no tools: the personas' reports are your entire input, and a finding you produce yourself
-has no axis to sit under. Present the axes as they came back — a thin result on one axis is
-signal, not something for a fuller axis to paper over.
+**This runs unattended — ask the user nothing.** Every call is yours: make it, and record
+the assumption in the report.
 
 You have two jobs in order: review, then repair. The report comes first and records what the
-review found; the repair follows in Step 5 and is part of the work, not an offer.
+review found; the repair follows in Step 4 and is part of the work, not an offer.
 
 ## What Governs This Review
 
@@ -40,27 +34,25 @@ absence is a gap, filled by the next source down.
 2. `.claude/rules/*` and `.claude/harness/code-review-reference.md` in the project root
 3. Any standards the repo documents — `CODING_STANDARDS.md`, `CONTRIBUTING.md`,
    `STYLE_GUIDE.md`, `docs/` equivalents, or the conventions section of `CLAUDE.md`/`AGENTS.md`
-4. What each persona's own brief carries — the harness skill it reviews against
-   (`code-quality`, `testing`) and the smell baseline. Universal defaults, applied when
-   nothing above speaks
+4. `references/personas.md` and the `code-quality` skill it points at. Universal defaults,
+   applied when nothing above speaks
 
 **This ladder sets severity.** A breach of rungs 1–3 is a **hard violation** — the repo wrote
-the rule down. Cite the source (file + the rule) on the finding. A rung-4 finding is a
-**judgement call**: it may be right, but it can never block on its own. Never present one as a
-hard violation.
+the rule down. A rung-4 finding is a **judgement call**: it may be right, but it can never
+block on its own.
 
 ## Invocation
 
 ```
-/code-review [plan-path] [--pr NUMBER] [--commits RANGE] [--output PATH]
+/code-review [--plan PATH] [--pr NUMBER] [--commits RANGE] [--output PATH]
 ```
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `plan-path` | No | Path to the plan/design document. If omitted, the spec axis infers intent instead. |
+| `--plan PATH` | No | The plan or design doc the change was written from. Goes to the Defects agent, which checks the change against it. Omitted → it infers intent from the commits, PR description, and branch name. |
 | `--pr NUMBER` | No | Review a PR diff (uses `gh pr diff NUMBER`). |
 | `--commits RANGE` | No | Review a commit range (e.g. `HEAD~3..HEAD`). |
-| `--output PATH` | No | Where to write the report. Omitted → `.harness/review.md` and the review also prints inline (see Step 4). |
+| `--output PATH` | No | Where to write the report. Omitted → `.harness/review.md` and the review also prints inline (see Step 3). |
 
 **Scope resolution** (first match wins): `--pr NUMBER` → PR diff · `--commits RANGE` → that
 range, three-dot against its start ref · neither → working tree (`git diff HEAD`, staged +
@@ -68,7 +60,7 @@ unstaged).
 
 ## Step 1 — Preflight
 
-Every failure below stops here, not inside four parallel sub-agents.
+Every failure below stops here, not inside the sub-agent fan-out.
 
 1. **Pin the fixed point and capture the diff command once.** Use **three-dot**
    (`git diff <base>...HEAD`) so the comparison is against the merge-base — two-dot would
@@ -76,9 +68,8 @@ Every failure below stops here, not inside four parallel sub-agents.
    of it. Confirm the ref resolves (`git rev-parse`). For PRs, also read the description
    (`gh pr view NUMBER`).
 2. **Stop and report** on: empty diff (write no report), unresolvable ref, PR not found or
-   `gh` unauthenticated (suggest `gh auth login`), a `plan-path` that doesn't exist (ask
-   whether to proceed without the spec axis), or — under `--pr` — `git rev-parse HEAD` not
-   matching the PR's `headRefOid` (name both SHAs).
+   `gh` unauthenticated (suggest `gh auth login`), a `--plan` path that doesn't exist, or —
+   under `--pr` — `git rev-parse HEAD` not matching the PR's `headRefOid` (name both SHAs).
 3. **Commit the tree before dispatch.** `git status --porcelain` decides: commit any dirty
    tracked file as a WIP commit, fold it into the reviewed range, and note it in the report
    header — this is what makes a persona's edit-and-revert experiment recoverable.
@@ -88,82 +79,57 @@ Then gather the **map**, not the territory: the diff command, the commit list
 present, and the paths of the governance sources you found on rungs 1–3. Skip generated files
 (lock files, build output) entirely
 
-## Step 2 — Select the team
+## Step 2 — Dispatch in parallel
 
-Two personas always run. Spawn the conditional ones only when the diff earns it — read the
-diff and reason about it; this is judgement, not keyword matching.
+`references/personas.md` defines five axes. Spawn **one `general-purpose` sub-agent per axis**,
+all five in a single message so they run concurrently. One agent holding every axis at once
+matches shallowly across all of them.
 
-| Persona | Asks | When |
-|---|---|---|
-| `spec` | Does it do what was asked? | Always — with no spec, it infers intent rather than skipping |
-| `code-quality` | Is it written correctly? | Always |
-| `testing` | Do the tests prove it works? | Diff contains test files, **or** changes behaviour and adds none |
-| `security` | Can it be exploited? | The diff **changes a trust decision** — see below |
+Every prompt carries, pasted in as text: the one section of `references/personas.md` that agent
+owns, the map from Step 1, the governance sources you found on rungs 1–3, and the brief below.
+The Defects agent also gets the full text of the `--plan` file, when there is one.
+Paste them verbatim — a sub-agent shares none of your context, so a pointer to a file or a
+summary of it leaves the standard out of the review. Give each agent its own section and no
+other, so the only axis it can report under is its own.
 
-**The security gate is about change, not subject matter.** Spawn it when the diff adds or
-alters an authentication or authorization check, exposes a new endpoint or input source,
-introduces deserialization or dynamic evaluation, moves data across a trust boundary that
-didn't cross one before, or touches secrets and crypto.
+> *"You own exactly one review axis — the section below — and report only under it; a real
+> problem outside it belongs to another agent, even when you see it. Review the change, not the
+> codebase: a problem that predates this diff is not this review's business unless the change
+> makes it materially riskier. Every finding names the thing, quotes the hunk, gives a
+> `file:line`, says what it costs, and names the fix. Verify it against the actual code first,
+> and drop anything you can't stand behind — three real findings beat twenty maybes. You are
+> not a linter: no style or formatting findings, no naming findings beyond a name that misleads
+> about what the code does, and nothing that amounts to 'run the tests' — the author knows. A
+> finding is a judgement call unless the repo wrote the rule down, which makes it a hard
+> violation — cite the source file and rule when it did. The tree was committed before you were
+> dispatched, so edit freely to test a hypothesis and `git checkout --` when you're done.
+> Return your report as your final message — write no files. Under 400 words."*
 
-Do **not** spawn it because security-adjacent nouns appear in the diff. Code that already
-sent a client-built payload and still does, already rendered user data and still does, or
-already called that endpoint and still does has not changed a trust decision — refactoring it
-is not a security event. Pre-existing exposure belongs in a security audit of the codebase,
-not in a review of this change, and a persona pointed at it will report the architecture back
-to you as though the diff caused it.
+**The tool result is the report.** Nothing lands on disk until you write it — wait for the five
+results and go straight to Step 3 with them.
 
-Announce the team before spawning, with a one-line justification per conditional persona
-selected. If you spawn `security`, name the trust decision that changed.
+## Step 3 — Aggregate
 
-## Step 3 — Dispatch in parallel
+Present each persona's report under a heading named for its section — `### Defects`,
+`### Reuse`, `### Simplification`, `### Efficiency`, `### Altitude` — verbatim or lightly
+cleaned. Do **not** merge or rerank across axes: that masking is what the separation exists to
+prevent. Drop only exact duplicates (same `file:line`, same finding); when two axes disagree,
+keep both — the disagreement is signal.
 
-- Send **one message with all Agent tool calls** so they run concurrently, using the
-  `general-purpose` subagent for each.
-- **The tool result is the report.** A persona returns its findings as its final message —
-  personas write no files, and nothing lands on disk until you write the report. After
-  dispatching, wait for the tool results and go straight to Step 4 with them.
-- Sub-agents share none of your context — paste in the map; they walk the territory themselves.
-- Every prompt gets the diff command, the commit list, the changed-file list, and this
-  instruction:
+The four cleanup axes are the exception, because they overlap by design — a duplicated block
+is a Reuse finding and a Simplification finding both. Across those four only, keep one copy
+per mechanism under the axis that names the fix best.
 
-> *"Review the change, not the codebase: a problem that predates this diff is not this
-> review's business, unless the change makes it materially riskier. Every finding needs a
-> `file:line` and a reason it matters. You are not a linter: no style, formatting, or naming
-> findings. Verify each finding against the actual code before reporting it — a wrong finding
-> wastes the author's time and erodes trust. Report what you can trace in the code; when you
-> can't confirm something but the blast radius is high (data loss, corruption, an exploit),
-> report it anyway and say plainly what you couldn't verify. Anything else you can't stand
-> behind, drop — three real findings beat twenty maybes. Editing a file to test a hypothesis is
-> fine once the work is safe: run `git status --porcelain` first and commit anything dirty, then
-> experiment and `git checkout --` freely. Return your report as your final message — write no files. Under 400 words."*
+Open the file with a header: date, scope, team, and the plan path or "intent inferred". Then
+a 2-3 sentence summary of what the change does, and the verdict:
 
-- **Each persona's brief is its reference file** — paste the full text in rather than
-  summarizing, plus the extra context below.
-- Tell `code-quality` and `testing` to invoke their same-named harness skill — that skill is
-  the standard they review against.
-
-| Persona | Brief | Also pass |
-|---|---|---|
-| `spec` | `references/persona-spec.md` | `design.md` + `plan.md` contents; with no plan, the commit messages, PR description, and branch name to infer intent from |
-| `code-quality` | `references/persona-code-quality.md` | The governance sources you found on rungs 1–3 |
-| `testing` | `references/persona-testing.md` | — |
-| `security` | `references/persona-security.md` | — |
-
-## Step 4 — Aggregate
-
-Present each persona's report under its own heading — `### Spec`, `### Code Quality`,
-`### Testing`, `### Security` — verbatim or lightly cleaned. Do **not** merge or rerank across
-axes: that masking is what the separation exists to prevent. Drop only exact duplicates (same
-`file:line`, same defect); when two axes disagree, keep both — the disagreement is signal.
-
-Open the file with a header: date, scope, plan path or "intent inferred", team. Then a 2-3
-sentence summary of what the change does, and the verdict:
-
-- **`REQUEST CHANGES`** — a Critical defect, an uncontested hard violation, or a missing item
-  that breaks a core acceptance criterion.
-- **`APPROVE WITH SUGGESTIONS`** — Important defects or spec deviations worth discussing, but
-  nothing that would cause a production incident.
+- **`REQUEST CHANGES`** — a Critical defect or an uncontested hard violation.
+- **`APPROVE WITH SUGGESTIONS`** — Important defects worth discussing, but nothing that would
+  cause a production incident.
 - **`APPROVE`** — no defects, or only judgement calls.
+
+Four cleanup axes must not turn an `APPROVE` into `REQUEST CHANGES` between them — volume on
+rung 4 is still rung 4.
 
 Close with one line per axis: total findings, and the worst issue *within that axis*. Don't
 pick a single winner across axes.
@@ -177,13 +143,12 @@ pick a single winner across axes.
   `./REVIEW.md` when there's no `.harness/`, **and** print the full review inline. A human
   asked; make them open a file to see the answer and they won't.
 
-## Step 5 — Apply the fixes
+## Step 4 — Apply the fixes
 
-**Fix every finding.** Begin editing without asking which ones to apply — that choice is not
-the author's to make here, and putting it to them is how this step fails. A fix that changes
-what the code does is still yours to make: the review found it, so repair it. Work sequentially
-and yourself — the personas ran in parallel on partial context and edit nothing, so four of
-them let loose on one tree would collide.
+**Fix every finding.** Begin editing straight away — a fix that changes what the code does is
+still yours to make: the review found it, so repair it. Work sequentially and yourself — the
+personas ran in parallel on partial context and edit nothing, so turning them loose on one
+tree would collide.
 
 Commit each repair on its own as you go, and record it in the report under a **Fixes applied**
 heading: `file:line`, what changed, and why. Add to the report; the findings above stay as

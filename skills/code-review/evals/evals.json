@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "name": "python-api-no-plan",
+      "name": "python-api-defects",
       "prompt": "Review this Python API code for bugs. The diff is at skills/code-review/evals/files/eval1.diff and the full source is at skills/code-review/evals/files/eval1_api.py.",
       "expected_output": "A review report identifying mutable default argument in validate_email, bare except in delete_user, thread-safety issues on _users dict (lock imported but never used), naive datetime.now() calls, and get_user returning None without caller warning. Verdict should be REQUEST CHANGES due to critical defects.",
       "files": [
@@ -33,35 +33,6 @@
     },
     {
       "id": 2,
-      "name": "typescript-with-plan",
-      "prompt": "Review this TypeScript task manager against its plan. Plan is at skills/code-review/evals/files/eval2_plan.md, diff at skills/code-review/evals/files/eval2.diff, and full source at skills/code-review/evals/files/eval2_task_manager.ts.",
-      "expected_output": "A review report with spec compliance section showing: runTask fails to await handler (acceptance criterion #2 violated), runAllPending uses forEach with async instead of Promise.all (criterion #3), parseTaskConfig has no input validation (criterion #4), == used instead of === (criterion #5), findTask return type mismatch (criterion #6). Also flags prototype pollution in mergeTaskMetadata via Object.assign with user input. Verdict should be REQUEST CHANGES.",
-      "files": [
-        "skills/code-review/evals/files/eval2.diff",
-        "skills/code-review/evals/files/eval2_task_manager.ts",
-        "skills/code-review/evals/files/eval2_plan.md"
-      ],
-      "expectations": [
-        "Review includes a Summary section summarizing the plan's intent",
-        "Review includes a Spec Compliance section with Implemented, Missing or Incomplete, and Deviations subsections",
-        "Review identifies missing await on handler() call in runTask (async function result assigned without await)",
-        "Review identifies forEach with async callback in runAllPending does not actually await tasks — plan requires Promise.all or equivalent",
-        "Review identifies JSON.parse on untrusted input without validation in parseTaskConfig (plan criterion #4)",
-        "Review identifies == used instead of === for status comparisons in runAllPending and deleteCompletedTasks (plan criterion #5)",
-        "Review identifies findTask return type mismatch: function declares return type Task but can return undefined (plan criterion #6)",
-        "Review identifies prototype pollution risk in mergeTaskMetadata via Object.assign with user-controlled input",
-        "Every defect finding includes a file:line reference",
-        "Verdict is REQUEST CHANGES due to critical spec compliance failures",
-        "Prints the review inline (invoked directly, no --output given), not only a path to a file"
-      ],
-      "anti_expectations": [
-        "Does not flag style issues, formatting, or naming conventions",
-        "Does not critique the plan's architecture — only checks code against the plan",
-        "Does not suggest running tests"
-      ]
-    },
-    {
-      "id": 3,
       "name": "empty-diff-stops-early",
       "prompt": "Review my latest changes. I've been working on the auth module.",
       "expected_output": "Skill detects an empty diff (no staged or unstaged changes in working tree) and informs the user there are no changes to review. Does NOT write a review report.",
@@ -80,13 +51,12 @@
       ]
     },
     {
-      "id": 4,
+      "id": 3,
       "name": "reports-then-fixes",
-      "prompt": "Copy skills/code-review/evals/files/eval2_task_manager.ts and eval2.diff into a scratch working directory, then run /code-review on that copy with the plan at skills/code-review/evals/files/eval2_plan.md and --output <scratch>/review.md. Do not modify the fixtures in skills/code-review/evals/files/.",
+      "prompt": "Copy skills/code-review/evals/files/eval2_task_manager.ts and eval2.diff into a scratch working directory, then run /code-review on that copy with --output <scratch>/review.md. Do not modify the fixtures in skills/code-review/evals/files/.",
       "files": [
         "skills/code-review/evals/files/eval2.diff",
-        "skills/code-review/evals/files/eval2_task_manager.ts",
-        "skills/code-review/evals/files/eval2_plan.md"
+        "skills/code-review/evals/files/eval2_task_manager.ts"
       ],
       "expected_output": "A review.md with a REQUEST CHANGES verdict and per-axis '###' sections naming the blocking defects (missing await in runTask, forEach-with-async in runAllPending, unvalidated JSON.parse, == comparisons, findTask return type, prototype pollution in mergeTaskMetadata), written before any edit. Then a fix pass on the scratch copy applying every finding, each repair recorded in review.md under a 'Fixes applied' heading, closing with the verdict restated.",
       "expectations": [
@@ -94,7 +64,9 @@
         "Findings are grouped under per-axis '###' headings rather than merged into one ranked list",
         "Every blocking defect carries a file:line and a reason it matters",
         "Judgement-call findings are recorded and marked as non-blocking",
-        "Reviewer personas are dispatched as sub-agents",
+        "All five reviewer personas are dispatched as five separate sub-agents in one message",
+        "Cleanup findings appear under their own per-angle '###' headings (Reuse, Simplification, Efficiency, Altitude)",
+        "Cleanup findings are recorded as non-blocking judgement calls and do not by themselves drive the verdict",
         "review.md is written before the scratch copy is edited",
         "The fix pass edits the scratch copy for every finding, including ones that change behaviour",
         "Each repair is recorded in review.md under a 'Fixes applied' heading with file:line and what changed",

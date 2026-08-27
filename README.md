@@ -199,7 +199,7 @@ Run `/orchestrate` with a description of the bug. It writes a failing test to re
 
 ### I want to review a PR
 
-Run `/code-review`. It reads the diff, checks against a plan or design doc if provided, and produces a `REVIEW.md` with a verdict: APPROVE, APPROVE WITH SUGGESTIONS, or REQUEST CHANGES. It then applies the fixes for what it found and records each one in the report.
+Run `/code-review`. It reads the diff, reviews it across five axes (defects, reuse, simplification, efficiency, altitude), and produces a `REVIEW.md` with a verdict: APPROVE, APPROVE WITH SUGGESTIONS, or REQUEST CHANGES. It then applies the fixes for what it found and records each one in the report.
 
 ---
 

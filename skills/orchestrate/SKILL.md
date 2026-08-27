@@ -269,7 +269,7 @@ If it prints `MISSING_PHASE_CLAIMS`, stop the pipeline. Schema of what it writes
 
 The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>` **in this conversation** — it dispatches its own reviewer personas, so there is no sub-agent to dispatch and no model to retarget. After writing the report it applies the fixes and records them in it; Stage 5's quality gate runs after, so those edits are gated. Pass what only this run knows:
 
-- Plan `.harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
+- Plan `--plan .harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
 - `--output .harness/<SPEC_NAME>/review/review.md`
 
 `set-status code-review done`.
