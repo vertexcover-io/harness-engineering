@@ -76,8 +76,9 @@ Every failure below stops here, not inside four parallel sub-agents.
    of it. Confirm the ref resolves (`git rev-parse`). For PRs, also read the description
    (`gh pr view NUMBER`).
 2. **Stop and report** on: empty diff (write no report), unresolvable ref, PR not found or
-   `gh` unauthenticated (suggest `gh auth login`), or a `plan-path` that doesn't exist (ask
-   whether to proceed without the spec axis).
+   `gh` unauthenticated (suggest `gh auth login`), a `plan-path` that doesn't exist (ask
+   whether to proceed without the spec axis), or — under `--pr` — `git rev-parse HEAD` not
+   matching the PR's `headRefOid` (name both SHAs).
 3. **Commit the tree before dispatch.** `git status --porcelain` decides: commit any dirty
    tracked file as a WIP commit, fold it into the reviewed range, and note it in the report
    header — this is what makes a persona's edit-and-revert experiment recoverable.
@@ -184,12 +185,13 @@ what the code does is still yours to make: the review found it, so repair it. Wo
 and yourself — the personas ran in parallel on partial context and edit nothing, so four of
 them let loose on one tree would collide.
 
-Record each repair in the report under a **Fixes applied** heading: `file:line`, what changed,
-and why. Add to the report; the findings above stay as written.
+Commit each repair on its own as you go, and record it in the report under a **Fixes applied**
+heading: `file:line`, what changed, and why. Add to the report; the findings above stay as
+written.
 
-Run the repo's typecheck, lint, and tests after the last edit. If a fix breaks them and the
-repair isn't obvious, `git checkout --` that fix and record it under **Left unfixed** with the
-failure it caused.
+Run the repo's typecheck, lint, and tests once, after the last edit. If they fail, revert the
+repair commits newest-first until they pass, and record each reverted one under **Left
+unfixed** with the failure it caused.
 
 **You are done when every finding sits under Fixes applied or Left unfixed** — walk the report
 axis by axis and account for each one, then restate the verdict. `REQUEST CHANGES` still stands
