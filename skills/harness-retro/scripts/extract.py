@@ -36,15 +36,25 @@ def w(out: str, name: str) -> "object":
     return open(os.path.join(out, name), "w")
 
 
-def dump_spine(s: Session, out: str) -> tuple[int, int]:
+def dump_spine(s: Session, out: str, gate: int | None) -> tuple[int, int, int]:
     rows = s.human_messages()
     queued = sum(1 for m in rows if m.kind == "QUEUED")
+    post = sum(1 for m in rows if gate and m.line > gate)
     with w(out, "01-spine.txt") as f:
-        f.write(f"# Human messages: {len(rows)} total, {queued} typed mid-action\n")
-        f.write("# QUEUED = typed while the agent was working. Corrections live here.\n\n")
+        f.write(f"# Human messages: {len(rows)} total, {queued} typed mid-action, "
+                f"{post} after the plan gate\n")
+        f.write("# QUEUED   = typed while the agent was working. Corrections live here.\n")
+        f.write("# POST-GATE = after the plan gate. The pipeline promised not to stop here.\n")
+        f.write("#             Every one of these is an issue until you write down why not.\n\n")
+        marked = False
         for m in rows:
-            f.write(f"===== {m.kind} main:{m.line} @ {m.at(s.clock)}\n{m.text[:2000]}\n\n")
-    return len(rows), queued
+            if gate and m.line > gate and not marked:
+                f.write(f"===== THE LINE — plan gate at main:{gate}. "
+                        f"{post} message(s) follow.\n\n")
+                marked = True
+            tag = f"{m.kind} POST-GATE" if gate and m.line > gate else m.kind
+            f.write(f"===== {tag} main:{m.line} @ {m.at(s.clock)}\n{m.text[:2000]}\n\n")
+    return len(rows), queued, post
 
 
 def dump_assistant(s: Session, out: str) -> None:
@@ -148,13 +158,16 @@ def main() -> None:
     p.add_argument("--project", help="project working directory (default: cwd)")
     p.add_argument("--subagents", help="agent-*.jsonl directory (default: alongside main)")
     p.add_argument("--tz", help="IANA zone for displayed times, e.g. Asia/Kolkata")
+    p.add_argument("--gate-line", type=int,
+                   help="override the plan-gate line; default is the last plan.md/plan.html write")
     a = p.parse_args()
 
     s = Session.discover(a.main, a.session, a.project, a.subagents, a.tz)
     os.makedirs(a.out, exist_ok=True)
 
+    gate = a.gate_line or s.plan_gate()
     dump_assistant(s, a.out)
-    n_human, n_queued = dump_spine(s, a.out)
+    n_human, n_queued, n_post = dump_spine(s, a.out, gate)
     calls = dump_calls(s, a.out)
     n_err, families = dump_failures(s, a.out)
     n_ask = dump_questions(s, a.out)
@@ -175,6 +188,10 @@ def main() -> None:
                      f"({human_span(span[1] - span[0])}, {s.clock.name})")
     lines += [
         f"human messages   {n_human}  ({n_queued} typed mid-action -> 01-spine.txt)",
+        (f"plan gate        main:{gate}" if gate
+         else "plan gate        NOT FOUND — set it with --gate-line N"),
+        f"post-gate msgs   {n_post}"
+        + ("  <- every one is an issue" if n_post else "  (contract held)"),
         f"AskUserQuestion  {n_ask}",
         f"sub-agents       {n_agents}",
         f"tool errors      {n_err}",

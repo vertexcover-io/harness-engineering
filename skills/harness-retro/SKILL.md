@@ -23,6 +23,8 @@ Use these words for these meanings, every time.
 - **Lead** — one detector hit. A lead is not yet an issue.
 - **Issue** — a confirmed defect that goes in the report.
 - **Spine** — the ordered list of every message the human typed during the run.
+- **The line** — the plan gate. The pipeline promises to run from there to the PR with no
+  stopping, no pausing, and no questions.
 
 ## Run this in a sub-agent
 
@@ -111,8 +113,8 @@ found, and hits that became issues. The report appendix needs both.
 
 | # | Detector | Where | Signal |
 |---|----------|-------|--------|
-| D1 | Unsolicited human text | `01-spine.txt` | A message that is not the kickoff and not an answer to a pending question. Every `QUEUED` message is one by definition |
-| D2 | Question audit | `05-ask-user.txt` | Flag questions asked after plan approval. Flag answers that correct rather than select |
+| D1 | Unsolicited human text | `01-spine.txt` | A message that is not the kickoff and not an answer to a pending question. Every `QUEUED` message is one by definition. **Every post-gate message is an issue** — see The line |
+| D2 | Question audit | `05-ask-user.txt` | Every question asked after the plan gate is an issue. Before it, flag answers that correct rather than select, and ground covered twice |
 | D3 | Error clusters | `04-tool-errors.txt`, `00-summary.txt` | Three or more failures in one command family is a lead |
 | D4 | Stalls | `07-timeline.txt` | Every gap over 5 minutes, pre-marked with a bracket checklist. Apply the bracket rule below |
 | D5 | Permission blocks | `08-incidents.txt` | `preventedContinuation`, hook errors, `toolDenialKind` |
@@ -130,18 +132,55 @@ Recipes for D9 to D12 are in
 **The bracket rule for D4.** A gap is not a stall until you prove it. Check what sat on each
 side of the gap.
 
-- A gap before a human message is **blocked time**. The agent waited for the human.
 - A gap in the main transcript while a sub-agent was running is **normal**. The orchestrator was
   waiting for its own worker. Open that agent's transcript and confirm activity.
-- A gap with no running sub-agent and no pending question is a **stall**. Only this one counts.
+- A gap before a human message is **blocked time**. Which kind depends on the line — see below.
+- A gap with no running sub-agent and no pending question is a **stall**. Only this one is a
+  defect on its own.
 
 Skipping the bracket rule turns a healthy run into fake stalls, and the report loses trust.
 
-**Blocked time.** Blocked time is the sum of gaps where the agent asked and the human had not yet
-answered. Nothing else counts. Report it per stage and for the whole run.
+**Blocked time** is the sum of gaps where the agent asked and the human had not yet answered.
+Nothing else counts. Report it per stage and for the whole run, split at the line.
 
 Done when: every detector has run, and every gap over 5 minutes carries one of the three bracket
 labels.
+
+## The line
+
+Find the plan gate: the last human approval before the first coder dispatch. Everything after it
+is post-gate.
+
+The pipeline's contract is that it runs from the plan gate to the PR with no stopping, no
+pausing, and no questions. So the two halves of a run mean opposite things.
+
+| Where | A human message means |
+|-------|-----------------------|
+| Before the line | The design is being decided. Expected. Measure the wait; file an issue only when the same ground is covered twice, or a question had an answer already in the repo |
+| **After the line** | **The contract broke.** File an issue every time, no exceptions |
+
+**Every post-gate human message is an issue.** Not because the human was slow, and not because
+the question was unreasonable. Because in `--auto` nobody is there to answer it. Whatever that
+message corrected, `--auto` ships wrong.
+
+Class it `BLOCKED` and default it to `major`. Lower it to `minor` only when you can show the run
+would have produced correct output had the message never arrived. A one-word style correction
+still means a design token never reached the coder, so it stays `major`.
+
+This holds for a question the agent asked, a correction the human volunteered, and an interrupt.
+Three shapes, one defect: something reached the coder wrong, and only a human standing there
+caught it.
+
+**The `QUEUED` label is the cheapest signal in the retro.** A queued message is one the human
+typed while the agent was working. Post-gate, that is someone watching output go wrong in real
+time. Read every post-gate `QUEUED` message before anything else in the run.
+
+`extract.py` marks the line for you. It takes the last write to a `plan.*` artifact, prints it as
+`GATE`, and tags every later message `POST-GATE` in `01-spine.txt` and in the summary. When it
+cannot find one it says so; set the line yourself with `--gate-line N` and re-run.
+
+Done when: every post-gate human message has an issue, or a written reason why it does not.
+
 
 ## Step 2 — Walk the leads
 
@@ -292,6 +331,7 @@ Do not cap the issue count. Every issue earns its place with evidence.
 | Started at | local time, with the timezone named |
 | Total time | human-readable, such as `31h 12m` |
 | Blocked time | human-readable. Waiting on the human only |
+| Blocked after the line | human-readable, and the message count. This number should be `0m` |
 
 Close the header with the line that makes every citation usable:
 

@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 Rec = tuple[int, dict[str, Any]]
 
 WRAPPER_PREFIXES = (
+    "[Request interrupted",
     "<task-notification",
     "<command-name",
     "<local-command",
@@ -56,6 +57,8 @@ ERROR_TEXT = re.compile(
 )
 
 LIMIT_BANNER = re.compile(r"session limit|rate.?limit|usage limit", re.I)
+
+PLAN_ARTIFACT = re.compile(r"^plan\.(md|html)$", re.I)
 
 
 # ---------------------------------------------------------------- primitives
@@ -98,7 +101,12 @@ def body(rec: dict[str, Any]) -> str:
 
 
 def is_wrapper(text: str) -> bool:
-    """True for harness-injected text that only looks like a human wrote it."""
+    """True for text that only looks like a human message.
+
+    Includes `[Request interrupted by user]`, which is a marker the client writes, not
+    something anyone typed. Interrupts are real incidents — detector D6 reads them from the
+    incident flags, where they carry their own record.
+    """
     return any(text.startswith(p) for p in WRAPPER_PREFIXES)
 
 
@@ -389,6 +397,28 @@ class Session:
 
     def final_message(self) -> tuple[int, str]:
         return final_message(self.main)
+
+    def plan_gate(self) -> int | None:
+        """Line of the last write to a plan artifact — the gate the pipeline promises to
+        run past without stopping. Everything after it is post-gate.
+
+        Returns the line of the human approval that follows the last plan write. Returns
+        None when no plan artifact was written (an atomic run, or a different pipeline);
+        the caller then sets the line itself.
+        """
+        last: int | None = None
+        for c in self.calls(("Write", "Edit")):
+            path = c.input.get("file_path", "") if isinstance(c.input, dict) else ""
+            if PLAN_ARTIFACT.search(os.path.basename(str(path))):
+                last = c.line
+        if last is None:
+            return None
+        # The gate is the approval, not the write. "looks good, go" is the last legitimate
+        # human message of the run; everything after it breaks the no-stopping contract.
+        for m in self.human_messages():
+            if m.line > last:
+                return m.line
+        return last
 
 
 def final_message(path: str) -> tuple[int, str]:
