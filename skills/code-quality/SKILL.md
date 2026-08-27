@@ -195,3 +195,24 @@ Injecting purely to make something mockable is the same mistake in another direc
 
 Validate where external data enters the system (API requests, file reads, environment variables, user input). Define schemas once and derive types from them. Inside the system, trust the type system — don't re-validate what the boundary already checked.
 
+---
+
+## Summary Checklist
+
+Before considering code complete, verify:
+
+- [ ] No type escape hatches (no `any`/`Any`, no type assertions, no ignore directives)
+- [ ] All data structures are immutable (readonly properties, frozen dataclasses)
+- [ ] Core logic is pure (side effects at boundaries only)
+- [ ] Functions are small and compose well (max ~20 lines, max 2 nesting levels)
+- [ ] Every extracted function passes the gate — it removes decoding cost or repeated lines
+- [ ] No function exists solely to give a test something to import
+- [ ] Every comment is load-bearing
+- [ ] Declarative transformations over imperative loops
+- [ ] Early returns instead of nested conditionals
+- [ ] Named parameters for functions with 3+ arguments
+- [ ] Explicit error types for expected failures (Result pattern)
+- [ ] Dependencies injected, not created internally
+- [ ] Schemas at trust boundaries, types internally
+- [ ] The repo's own documented standards were read and followed where they differ from these defaults
+- [ ] Language-specific checklist from the reference file also passes
