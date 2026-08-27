@@ -49,8 +49,6 @@ export const mtimeMs = async (p) => {
   }
 };
 
-// --- sync variants, for hooks that must stay synchronous ---------------------
-
 const sleepSync = (ms) => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 };
@@ -64,15 +62,12 @@ export const readJsonSyncOr = (p, fallback) => {
 };
 
 export const writeJsonAtomicSync = (p, obj) => {
-  // The pid keeps two concurrent writers off each other's temp file.
   const tmp = `${p}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(obj, null, 2));
   renameSync(tmp, p);
 };
 
-// mkdir is the lock: it is atomic, and it fails when the directory exists.
-// After the retries are spent we break the lock and proceed, matching
-// withDagLock — a holder that has been silent for five seconds is dead.
+// mkdir is the lock. A holder silent for five seconds is assumed dead.
 export const withDirLockSync = (lockDir, fn) => {
   let held = false;
   for (let i = 0; i < 50 && !held; i++) {
