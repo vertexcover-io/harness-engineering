@@ -132,6 +132,35 @@ Stages 3 and 5 are dispatched as sub-agents via `Agent`, as is Stage 0's `baseli
 
 **DAG transitions:** `set-status running` before each stage, `done` after, `write-report` on completion. **Take every invocation verbatim from `references/dag-commands.md`** — read it before the first transition; a mistyped command silently writes nothing. Report bodies follow `references/dashboard-report-formats.md`.
 
+**Notifications:** read the setting first. Run this from the worktree root:
+
+```
+node -e "const n=require('./orchestrate.config.json').notifier||{};console.log(JSON.stringify({enabled:n.enabled,provider:n.provider}))"
+```
+
+If `enabled` is not `true`, ignore the rest of this section. If it is `true`, run one command per
+row of the table below. Read `<NOTIFY>` as
+`node --experimental-strip-types <plugin-root>/skills/_shared/notify.ts`.
+
+The first command prints a thread reference. Store it as `<THREAD>`, then add
+`--title '<SPEC_NAME>' --thread '<THREAD>'` to every later command. Pass DAG node ids to `--stage`.
+`references/config.md` owns the `notifier` config and its errors.
+
+A person outside the team reads these messages. Write each `--body` in plain words. Say what
+happened and what it means. Do not paste a verdict code, a raw metric, or a stage report.
+
+`run-started`'s ticket URL comes from `TASK_CONTEXT`; drop the ` : <ticket URL>` suffix when the task
+names no ticket.
+
+| When | Command |
+|------|---------|
+| Stage 0 starts | `<NOTIFY> --event run-started --title '<SPEC_NAME>' --body '<one-line task> : <ticket URL>'` |
+| you enter a stage | `<NOTIFY> --event stage-started --stage <id>` |
+| you leave a stage | `<NOTIFY> --event stage-completed --stage <id> --body '<what the stage did, in plain words>' --artifact <that stage's artifact>` |
+| before each `AskUserQuestion` or asking any question to the developer | `<NOTIFY> --event question-pending --stage <id> --body '<the question and its options>'` |
+| you halt on a Terminal BLOCK/FAIL condition | `<NOTIFY> --event run-interrupted --stage <id> --body '<what failed, in plain words>'` |
+| Stage 6 ends | `<NOTIFY> --event run-completed --body '<PR_URL>'` |
+
 **Document style:** every human-facing document any stage writes — `plan.html` copy, phase files, the README index, review reports — follows `${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md` (STE rules: active voice, ≤20-word sentences, one term per concept). Sub-agents that write documents get that path in their dispatch prompt.
 
 ### Pipeline Flow

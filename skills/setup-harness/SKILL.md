@@ -116,6 +116,21 @@ writes the unscoped command rather than dropping the key.
 step does. Seeding and authentication usually exist as scripts and go undeclared, and each one
 omitted is prose a verification run rediscovers by hand.
 
+**Notifications are opt-in.** Ask whether the pipeline should report its progress to a chat
+provider. Omit the `notifier` block when the answer is no. When it is yes, add
+`"notifier": { "enabled": true, "provider": "<name>" }`, then send one test notification:
+
+```
+node --experimental-strip-types <plugin-root>/skills/_shared/notify.ts --event run-started --title setup-check --body "Notifier check from setup-harness."
+```
+
+It prints a reference on success. On failure it names the exact credential it needs. Put that
+credential in `.env` at the repo root, never in `orchestrate.config.json`, because that file is
+committed. A red credential is theirs to supply — record it in Step 7.
+
+`slack` needs three: `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`, and `SLACK_MEMBER_ID` (the run owner's
+member ID). Ask for all three before the test send.
+
 **Print what you wrote and name anything you guessed** — this file is committed, so a wrong command
 here is wrong on every run after.
 
