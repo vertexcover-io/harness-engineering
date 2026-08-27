@@ -23,11 +23,12 @@ them, so look deliberately:
 
 ## Judgement calls — the smell baseline
 
-Fowler's smells (_Refactoring_, ch.3), which apply even when a repo documents nothing. Name
-the smell, quote the hunk, suggest the fix. Match against **the diff**, not the surrounding
-code. Also flag violations of the `code-quality` skill's own rules here — silenced type
-checkers, mutation where the standard calls for immutability, impure logic that belongs at the
-boundary.
+Fowler's smells (_Refactoring_, ch.3) and the cleanup smells after them, which apply even when
+a repo documents nothing. Name the smell, quote the hunk, suggest the fix. Match against **the
+diff**, not the surrounding code — except Missed Reuse, Dead Code, and Wrong Altitude, which
+send you into it. Also flag violations of the `code-quality` skill's own rules here — silenced
+type checkers, mutation where the standard calls for immutability, impure logic that belongs
+at the boundary.
 
 - **Mysterious Name** — a function, variable, or type whose name doesn't reveal what it does
   or holds. → rename it; if no honest name comes, the design's murky.
@@ -57,6 +58,23 @@ boundary.
   the inheritance, use composition.
 - **Mutable Shared State** — data reachable from two places where one of them writes. → make
   it immutable, or give each reader its own copy.
+- **Missed Reuse** — Duplicated Code at repo scale: new code re-implements something the
+  codebase already has. This is the one smell that overrides "review the change, not the
+  codebase": grep shared/utility modules and the files adjacent to the change before accepting
+  a helper as new. → call what exists, and name it in the finding.
+- **Derivable State** — the change stores a field or variable computable from what is already
+  there, so the two can drift apart. → compute it at the read. If recomputing is expensive,
+  keep the field and check it is invalidated everywhere its inputs change.
+- **Dead Code** — the change orphaned something: a branch nothing reaches now, a parameter no
+  caller passes, a helper with no remaining call site. → delete it.
+- **Wasted Work** — redundant computation, repeated I/O, independent operations awaited one
+  after another, or blocking work added to startup or a hot path. → name the cheaper form.
+- **Captured Scope** — a long-lived object built from a closure. It pins the entire enclosing
+  scope for that object's lifetime, which leaks whenever the scope holds something large.
+  → a struct or class that copies only the fields it needs.
+- **Wrong Altitude** — a special case layered onto shared infrastructure where the underlying
+  mechanism should have been generalized. The special case is the tell that the fix did not go
+  deep enough. → generalize the mechanism.
 
 ## Don't flag
 

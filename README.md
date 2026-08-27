@@ -199,7 +199,7 @@ Run `/orchestrate` with a description of the bug. It writes a failing test to re
 
 ### I want to review a PR
 
-Run `/code-review`. It reads the diff, checks against a plan or design doc if provided, and produces a `REVIEW.md` with a verdict: APPROVE, APPROVE WITH SUGGESTIONS, or REQUEST CHANGES.
+Run `/code-review`. It reads the diff, checks against a plan or design doc if provided, and produces a `REVIEW.md` with a verdict: APPROVE, APPROVE WITH SUGGESTIONS, or REQUEST CHANGES. It then applies the fixes for what it found and records each one in the report.
 
 ---
 
@@ -336,7 +336,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/planning` | Breaks work into phases with dependency graph |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
 | `/implement` | Manual coding entry point: TDD + code-quality, review when green |
-| `/code-review` | Reviews a PR, produces verdict in REVIEW.md |
+| `/code-review` | Reviews a PR, produces verdict in REVIEW.md, then applies the fixes |
 | `/git-commit` | Groups changes into logical conventional commits |
 | `/tech-debt-finder` | Finds code smells, creates GitHub issues |
 | `/coverage-guard` | Enforces minimum test coverage |

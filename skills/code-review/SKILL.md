@@ -4,9 +4,9 @@ description: >
   Deep code review that hunts for subtle bugs and, when a plan/design document is
   provided, verifies the change actually accomplishes what the plan describes. Runs
   parallel reviewer personas (spec + code-quality always, plus testing and security when the
-  diff warrants) and aggregates their findings into a report — it reviews only and never
-  edits source. Use when the user says "/code-review", "review my code", "review this change", or
-  "review against the plan".
+  diff warrants), aggregates their findings into a report, then applies the fixes and records
+  them in it. Use when the user says "/code-review", "review my code", "review this change",
+  "review against the plan", "simplify this", or "clean this up".
 ---
 
 # Code Review
@@ -23,7 +23,8 @@ run no tools: the personas' reports are your entire input, and a finding you pro
 has no axis to sit under. Present the axes as they came back — a thin result on one axis is
 signal, not something for a fuller axis to paper over.
 
-You review; you do not fix. You touch no source file — that is the contract.
+You have two jobs in order: review, then repair. The report comes first and records what the
+review found; the repair follows in Step 5 and is part of the work, not an offer.
 
 ## What Governs This Review
 
@@ -175,7 +176,23 @@ pick a single winner across axes.
   `./REVIEW.md` when there's no `.harness/`, **and** print the full review inline. A human
   asked; make them open a file to see the answer and they won't.
 
-Once the report is written, you are done — you have touched no source file, which is the
-contract. Fixing the findings is the caller's job, not yours.
+## Step 5 — Apply the fixes
+
+**Fix every finding.** Begin editing without asking which ones to apply — that choice is not
+the author's to make here, and putting it to them is how this step fails. A fix that changes
+what the code does is still yours to make: the review found it, so repair it. Work sequentially
+and yourself — the personas ran in parallel on partial context and edit nothing, so four of
+them let loose on one tree would collide.
+
+Record each repair in the report under a **Fixes applied** heading: `file:line`, what changed,
+and why. Add to the report; the findings above stay as written.
+
+Run the repo's typecheck, lint, and tests after the last edit. If a fix breaks them and the
+repair isn't obvious, `git checkout --` that fix and record it under **Left unfixed** with the
+failure it caused.
+
+**You are done when every finding sits under Fixes applied or Left unfixed** — walk the report
+axis by axis and account for each one, then restate the verdict. `REQUEST CHANGES` still stands
+when a blocking finding is one you left.
 
 Runs only when explicitly invoked — never trigger it on context clues.
