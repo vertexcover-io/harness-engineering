@@ -33,6 +33,8 @@
     }
   },
 
+  "notifier": { "enabled": true, "provider": "slack" },
+
   "commands": {
     "typecheck": "pnpm typecheck",
     "lint": "pnpm eslint .",
