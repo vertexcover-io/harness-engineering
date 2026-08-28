@@ -4,7 +4,7 @@
 Usage:
     python3 cite.py TRANSCRIPT.jsonl LINE [LINE ...] [--context N] [--tz ZONE] [--full]
 
-A citation in the report reads `main:1234`. This turns that into the actual message,
+A citation in the report reads `main.jsonl:1234`. This turns that into the actual message,
 command, or output, without opening the transcript.
 """
 
@@ -31,7 +31,7 @@ def stamp(rec: dict[str, Any], zone: str | None) -> str:
 
 
 def render(line: int, rec: dict[str, Any], zone: str | None, cap: int) -> str:
-    head = f"--- {os.environ.get('CITE_LABEL', 'main')}:{line} @ {stamp(rec, zone)} [{rec.get('type')}]"
+    head = f"--- {os.environ.get('CITE_LABEL', 'main.jsonl')}:{line} @ {stamp(rec, zone)} [{rec.get('type')}]"
     body: list[str] = []
     c = (rec.get("message") or {}).get("content")
 
@@ -70,7 +70,7 @@ def main() -> None:
     a = p.parse_args()
 
     cap = 1_000_000 if a.full else 3000
-    os.environ["CITE_LABEL"] = os.path.basename(a.transcript).split(".")[0][:20]
+    os.environ["CITE_LABEL"] = os.path.basename(a.transcript)[:25]
 
     wanted: set[int] = set()
     for n in a.lines:

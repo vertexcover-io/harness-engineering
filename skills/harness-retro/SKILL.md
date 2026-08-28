@@ -17,21 +17,6 @@ what a stage did or missed.
 You write one file, `report.md`. Your reader builds the harness. Your reader has never heard of
 the task, the repo, or the product. Every issue must stand alone for that reader.
 
-## Definitions
-
-Use these words for these meanings, every time.
-
-- **Run** — the one pipeline execution you audit.
-- **Stage** — one step of the pipeline, such as setup, plan, coder, review, or verify.
-- **Gate** — a check that can stop the run. A review pass and a user approval are both gates.
-- **Seam** — the boundary between stage N and stage N+1.
-- **Detector** — one mechanical check for suspicious records.
-- **Lead** — one detector hit. A lead is not yet an issue.
-- **Issue** — a confirmed defect that goes in the report.
-- **Spine** — the ordered list of every message the human typed during the run.
-- **The line** — the plan gate. The pipeline promises to run from there to the PR with no
-  stopping, no pausing, and no questions.
-
 ## Run this in a sub-agent
 
 Dispatch the retro as its own agent, always. Two reasons.
@@ -50,7 +35,7 @@ the transcript path.
 1. **Run the scripts, read the output.** Transcripts are megabytes of JSONL. `scripts/extract.py`
    turns them into nine small files. Read those. Opening a transcript with `Read` destroys your
    context and gains you nothing.
-2. **Cite every claim.** Write `main:1234` for the main transcript and `agent-ID:558` for a
+2. **Cite every claim.** Write `main.jsonl:1234` for the main transcript and `agent-ID.jsonl:558` for a
    sub-agent. Delete a claim you cannot cite. Label an estimate as an estimate.
 3. **Check the present before you recommend.** The repo and the harness moved on after the run.
    Read the current skill file and the current repo state first. When the current version already
@@ -111,10 +96,15 @@ Work every detector. The first eight are already answered by Step 0's files; you
 do not re-derive them. The last four you run yourself. Record two numbers per detector: hits
 found, and hits that became issues. The report appendix needs both.
 
+A detector hit is a **lead** — a record worth reading, not yet a defect. Step 2 turns each lead
+into an issue or a written drop.
+
 | # | Detector | Where | Signal |
 |---|----------|-------|--------|
 | D1 | Unsolicited human text | `01-spine.txt` | A message that is not the kickoff and not an answer to a pending question. Every `QUEUED` message is one by definition. **Every post-gate message is an issue** — see The line |
-| D2 | Question audit | `05-ask-user.txt` | Every question asked after the plan gate is an issue. Before it, flag answers that correct rather than select, and ground covered twice |
+| D2 | Question audit | `05-ask-user.txt` | Every question asked after the plan gate is an issue. Before it, flag answers that correct rather than select |
+| D2b | Document was unreadable | `01-spine.txt` | A human message asking what a document meant — "explain this", "not clear", "what does this mean", "rewrite this". The document failed. Pre-gate trigger 1 |
+| D2c | Repeated instruction | `01-spine.txt` | The same ask from the human two or more times, or the same ground covered twice. Pre-gate triggers 2 and 3 |
 | D3 | Error clusters | `04-tool-errors.txt`, `00-summary.txt` | Three or more failures in one command family is a lead |
 | D4 | Stalls | `07-timeline.txt` | Every gap over 5 minutes, pre-marked with a bracket checklist. Apply the bracket rule below |
 | D5 | Permission blocks | `08-incidents.txt` | `preventedContinuation`, hook errors, `toolDenialKind` |
@@ -156,8 +146,29 @@ pausing, and no questions. So the two halves of a run mean opposite things.
 
 | Where | A human message means |
 |-------|-----------------------|
-| Before the line | The design is being decided. Expected. Measure the wait; file an issue only when the same ground is covered twice, or a question had an answer already in the repo |
+| Before the line | The design is being decided. Most messages are expected. Measure the wait, and file an issue against the four triggers below |
 | **After the line** | **The contract broke.** File an issue every time, no exceptions |
+
+### Pre-gate triggers
+
+Deciding the design takes conversation, so a human message before the line is not a defect on its
+own. These four are.
+
+**The human asked what a document meant.** "Explain this", "what does this mean", "not clear",
+"rewrite this" — against a plan, a design, a checkpoint summary, or any prose the pipeline wrote.
+The document failed. A reader who has to ask got a document that did not do its job, and the
+question proves it. File it against the stage that wrote the document. Quote the sentence the
+human could not read.
+
+**The human asked for the same thing more than once.** The agent did not act the first time, or
+acted on a different reading of it. Either way the instruction was already given. Count the asks
+and cite each one.
+
+**The same ground is covered twice.** Two rounds on one decision means the first round did not
+land the question or did not record the answer.
+
+**A question had an answer already in the repo.** The agent asked for something a file, a config,
+or the git history already said.
 
 **Every post-gate human message is an issue.** Not because the human was slow, and not because
 the question was unreasonable. Because in `--auto` nobody is there to answer it. Whatever that
@@ -179,7 +190,8 @@ time. Read every post-gate `QUEUED` message before anything else in the run.
 `GATE`, and tags every later message `POST-GATE` in `01-spine.txt` and in the summary. When it
 cannot find one it says so; set the line yourself with `--gate-line N` and re-run.
 
-Done when: every post-gate human message has an issue, or a written reason why it does not.
+Done when: every post-gate human message has an issue, or a written reason why it does not,
+and every pre-gate message has been checked against the four triggers.
 
 
 ## Step 2 — Walk the leads
@@ -198,9 +210,9 @@ and what the human changed. A human message that redirects the approach *after t
 passed it* is the most valuable finding in the retro. That message is exactly what `--auto` would
 have shipped.
 
-**The seam walk.** Take each stage boundary. Name one fact stage N ended with: a decision, a
+**The handoff walk.** Take each stage boundary. Name one fact stage N ended with: a decision, a
 constraint, a file it found, a command that worked. Then check whether stage N+1 re-derived that
-fact or got it wrong. Both skills can do their jobs correctly while the seam drops the fact. No
+fact or got it wrong. Both skills can do their jobs correctly while the handoff between them drops the fact. No
 single skill's own retro finds this.
 
 **The requirement walk.** The run's documents form a chain: ticket, then PRD, then design, then
@@ -208,7 +220,7 @@ plan, then phase files, then review, then verification. Pull the `Write` payload
 from the main transcript. List the acceptance bullets in the PRD. For each bullet, pick a
 distinctive phrase of three to six words. Search that phrase across every later document and
 across the raw main transcript. A bullet that appears in the PRD, vanishes from the design and
-the plan, and returns in a human message is a confirmed seam drop. Cite every link of the chain.
+the plan, and returns in a human message is a confirmed handoff drop. Cite every link of the chain.
 
 **The verification-honesty walk.** Take the verify stage. Ask what it *claimed* to check, then
 ask what it *actually drove*. Search its commands and narrative for
@@ -224,7 +236,7 @@ Two more checks are cheap and often pay.
 - **Asserted facts in dispatch prompts.** Pull each `Agent` dispatch prompt in full. Find claims
   about the environment, such as "the server is running" or "the baseline is green". Compare each
   claim against the sub-agent's first ten minutes. A claim the sub-agent had to disprove is a
-  seam failure. The dispatcher asserted instead of checking.
+  handoff failure. The dispatcher asserted instead of checking.
 
 Done when: every lead is an issue or a recorded drop, and all four walks produced a written note
 even when the note says "nothing found".
@@ -311,8 +323,8 @@ Write one file, `report.md`, beside your scratch directory.
 
 ### How to write
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md` and follow it. It owns the voice, the
-report rules, and the ship-check you run before delivering.
+Load the `writing-style` skill and follow it. It owns the voice, the report rules, and the
+ship-check you run before delivering.
 
 Two of its rules decide whether this report is usable, so they are worth repeating here.
 
@@ -347,7 +359,7 @@ they are labels, not sentences.
 | Result | shipped or not, then every PR as an embedded markdown link |
 
 Then the glosses a stranger needs to read anything below: the repos or services in one line each,
-what a `main:1234` citation is, and — if the run and the audit used different machines or harness
+what a `main.jsonl:1234` citation is, and — if the run and the audit used different machines or harness
 versions — one sentence saying so, or every version claim reads as impossible.
 
 Then **"If you only do N things"** — two to four bullets, each naming an issue id, each an
@@ -396,7 +408,7 @@ usually three to eight sentences.
 
 **Evidence**
 The verbatim command, message, or output in a fenced block. Trim it, never paraphrase it. Cap it
-near 15 lines. Cite the source: `main:1234 @ 14:22 IST`. Add a short line above or below saying
+near 15 lines. Cite the source: `main.jsonl:1234 @ 14:22 IST`. Add a short line above or below saying
 what the reader should notice in it.
 
 **Why**
@@ -418,12 +430,11 @@ Short. It is not a second report — everything an issue owns stays in that issu
 
 - **What I worked from**: the transcript paths, your extraction directory, and the `cite.py`
   command that opens any citation.
-- **Findings that belong to no single issue**: the one or two facts the walks produced that no
-  issue block carries. Nothing that re-narrates an issue.
+- **What else I noticed**: a fact a walk turned up that is true and worth knowing, but is not a
+  defect — so no issue block holds it. One or two at most. If it is already an issue, it does not
+  go here.
 - **What the recordings could not tell me**: every question the transcripts left open, and why.
   Missing sub-agent capture, unrecorded approvals, state that lived only on a dashboard.
-- **What a live log would have caught**: what real-time instrumentation would have found that
-  post-hoc mining could not.
 
 Do **not** print the detector table or a walk-by-walk narrative. Detectors are your method, not the
 reader's concern, and a walk that produced a real finding already produced an issue. If a number in

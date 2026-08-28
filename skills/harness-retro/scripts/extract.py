@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from collections import Counter
 
@@ -36,25 +37,36 @@ def w(out: str, name: str) -> "object":
     return open(os.path.join(out, name), "w")
 
 
-def dump_spine(s: Session, out: str, gate: int | None) -> tuple[int, int, int]:
+UNREADABLE = re.compile(
+    r"\b(explain (this|that|it)|what does (this|that|it) mean|not clear|unclear|"
+    r"didn'?t understand|don'?t understand|confusing|rewrite (this|that|it)|"
+    r"reword|makes no sense|i don'?t get (this|it))\b", re.I)
+
+
+def dump_spine(s: Session, out: str, gate: int | None) -> tuple[int, int, int, int]:
     rows = s.human_messages()
     queued = sum(1 for m in rows if m.kind == "QUEUED")
     post = sum(1 for m in rows if gate and m.line > gate)
+    unread = sum(1 for m in rows if UNREADABLE.search(m.text))
     with w(out, "01-spine.txt") as f:
         f.write(f"# Human messages: {len(rows)} total, {queued} typed mid-action, "
                 f"{post} after the plan gate\n")
         f.write("# QUEUED   = typed while the agent was working. Corrections live here.\n")
         f.write("# POST-GATE = after the plan gate. The pipeline promised not to stop here.\n")
-        f.write("#             Every one of these is an issue until you write down why not.\n\n")
+        f.write("#             Every one of these is an issue until you write down why not.\n")
+        f.write("# UNREADABLE = the human asked what a document meant. The document failed.\n"
+                "#             File it against the stage that wrote the document (D2b).\n\n")
         marked = False
         for m in rows:
             if gate and m.line > gate and not marked:
-                f.write(f"===== THE LINE — plan gate at main:{gate}. "
+                f.write(f"===== THE LINE — plan gate at main.jsonl:{gate}. "
                         f"{post} message(s) follow.\n\n")
                 marked = True
             tag = f"{m.kind} POST-GATE" if gate and m.line > gate else m.kind
-            f.write(f"===== {tag} main:{m.line} @ {m.at(s.clock)}\n{m.text[:2000]}\n\n")
-    return len(rows), queued, post
+            if UNREADABLE.search(m.text):
+                tag += " UNREADABLE"
+            f.write(f"===== {tag} main.jsonl:{m.line} @ {m.at(s.clock)}\n{m.text[:2000]}\n\n")
+    return len(rows), queued, post, unread
 
 
 def dump_assistant(s: Session, out: str) -> None:
@@ -167,7 +179,7 @@ def main() -> None:
 
     gate = a.gate_line or s.plan_gate()
     dump_assistant(s, a.out)
-    n_human, n_queued, n_post = dump_spine(s, a.out, gate)
+    n_human, n_queued, n_post, n_unread = dump_spine(s, a.out, gate)
     calls = dump_calls(s, a.out)
     n_err, families = dump_failures(s, a.out)
     n_ask = dump_questions(s, a.out)
@@ -188,10 +200,12 @@ def main() -> None:
                      f"({human_span(span[1] - span[0])}, {s.clock.name})")
     lines += [
         f"human messages   {n_human}  ({n_queued} typed mid-action -> 01-spine.txt)",
-        (f"plan gate        main:{gate}" if gate
+        (f"plan gate        main.jsonl:{gate}" if gate
          else "plan gate        NOT FOUND — set it with --gate-line N"),
         f"post-gate msgs   {n_post}"
         + ("  <- every one is an issue" if n_post else "  (contract held)"),
+        f"unreadable docs  {n_unread}"
+        + ("  <- the human asked what a document meant (D2b)" if n_unread else ""),
         f"AskUserQuestion  {n_ask}",
         f"sub-agents       {n_agents}",
         f"tool errors      {n_err}",
