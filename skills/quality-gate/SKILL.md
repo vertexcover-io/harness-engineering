@@ -6,10 +6,8 @@ user-invocable: false
 
 # Quality Gate: Tool-Based Verification
 
-**Writing for a person** (reports, plan copy, README indexes, PR descriptions — not
-agent-only files like `design.md`): first read
-`${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md`; before shipping, run its ship-check.
-Sub-agents that write documents get that path in their dispatch prompt.
+Load the `writing-style` skill before you write `gate-report-<stage>-<NNN>.md`. Run its
+ship-check before you return a verdict.
 
 This is the gate between "the coder says it's done" and "the feature ships." Every verdict is backed by **evidence** — verbatim command output, never an adjective. No check may be silently absent, skipped, weakened, or overridden by a sub-agent.
 

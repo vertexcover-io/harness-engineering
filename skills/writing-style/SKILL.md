@@ -1,4 +1,17 @@
+---
+name: writing-style
+description: >
+  How to write any document a person will read — reports, plans, PR and issue bodies,
+  READMEs, release notes, summaries. Use whenever you write or edit prose for a human
+  reader. Trigger before writing a report, a plan, a summary, a commit or PR description,
+  or documentation — even when the user never asks for "good writing". Covers voice,
+  structure, claim-to-evidence matching, and a ship-check to run before delivering.
+---
+
 # Writing style
+
+Use this skill whenever a person will read what you write. Skip it for agent-only files
+such as `design.md`.
 
 **Write the way an engineer would explain it to the person sitting next to them.**
 

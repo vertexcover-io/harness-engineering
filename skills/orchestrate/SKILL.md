@@ -162,7 +162,7 @@ names no ticket.
 | you halt on a Terminal BLOCK/FAIL condition | `<NOTIFY> --event run-interrupted --stage <id> --body '<what failed, in plain words>'` |
 | Stage 6 ends | `<NOTIFY> --event run-completed --body '<PR_URL>'` |
 
-**Writing for a person** — every document any stage writes that a person reads (`plan.html` copy, phase files, the README index, review reports; not agent-only files like `design.md`): first read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md`; before shipping, run its ship-check. Sub-agents that write documents get that path in their dispatch prompt.
+**Documents a person reads** — `plan.html` copy, phase files, the README index, review reports. Every stage that writes one loads the `writing-style` skill first, and runs its ship-check before shipping. Sub-agents that write documents get the same instruction in their dispatch prompt. Agent-only files like `design.md` skip it.
 
 ### Pipeline Flow
 
