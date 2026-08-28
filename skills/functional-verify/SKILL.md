@@ -13,6 +13,11 @@ user-invocable: true
 
 # Functional Verify: The Gate
 
+**Writing for a person** (reports, plan copy, README indexes, PR descriptions — not
+agent-only files like `design.md`): first read
+`${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md`; before shipping, run its ship-check.
+Sub-agents that write documents get that path in their dispatch prompt.
+
 **First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
 
 ## Your Contract

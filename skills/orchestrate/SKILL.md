@@ -162,7 +162,7 @@ names no ticket.
 | you halt on a Terminal BLOCK/FAIL condition | `<NOTIFY> --event run-interrupted --stage <id> --body '<what failed, in plain words>'` |
 | Stage 6 ends | `<NOTIFY> --event run-completed --body '<PR_URL>'` |
 
-**Document style:** every human-facing document any stage writes — `plan.html` copy, phase files, the README index, review reports — follows `${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md` (STE rules: active voice, ≤20-word sentences, one term per concept). Sub-agents that write documents get that path in their dispatch prompt.
+**Writing for a person** — every document any stage writes that a person reads (`plan.html` copy, phase files, the README index, review reports; not agent-only files like `design.md`): first read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md`; before shipping, run its ship-check. Sub-agents that write documents get that path in their dispatch prompt.
 
 ### Pipeline Flow
 

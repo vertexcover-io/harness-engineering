@@ -10,6 +10,11 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 
 # Sync Docs
 
+**Writing for a person** (reports, plan copy, README indexes, PR descriptions — not
+agent-only files like `design.md`): first read
+`${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md`; before shipping, run its ship-check.
+Sub-agents that write documents get that path in their dispatch prompt.
+
 Ensures documentation stays in sync with code changes. Runs after coding and quality gate,
 before commit. Only touches docs relevant to what changed — does not generate unnecessary files.
 

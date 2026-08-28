@@ -26,7 +26,8 @@ standalone, derive a short kebab-case name from the topic before step 1):
 | `plan.md` + `phases/phase-N.md` | step 8, extracted from plan.html | coders, quality-gate |
 
 People read the checkpoint summary and `plan.html`. Write those per
-`../_shared/writing-style.md`. `design.md` is agent-only and skips the style rules. `plan.md`
+`../_shared/writing-style.md`, and run its ship-check before you present them. `design.md` is
+agent-only and skips the style rules. `plan.md`
 and the phase files keep them: their steps are transcribed into `plan.html`, so a person reads
 that prose too.
 

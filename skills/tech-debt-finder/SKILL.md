@@ -19,6 +19,11 @@ Note: `$ARGUMENTS` is reserved for scan scope (path or 'full'), not reference fi
 
 # Tech Debt Finder
 
+**Writing for a person** (reports, plan copy, README indexes, PR descriptions — not
+agent-only files like `design.md`): first read
+`${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md`; before shipping, run its ship-check.
+Sub-agents that write documents get that path in their dispatch prompt.
+
 Scans the codebase for architectural and code-level technical debt, producing a prioritized report and creating a GitHub issue with actionable findings.
 
 **Announce at start:** "Using tech-debt-finder to scan for technical debt..."
