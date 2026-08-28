@@ -10,6 +10,10 @@
     "commit-pr": {}
   },
 
+  "extensions": {
+    "planning": "harness/planning.md"
+  },
+
   "environments": {
     "default": "local",
     "local": {

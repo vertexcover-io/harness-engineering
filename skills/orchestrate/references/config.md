@@ -4,9 +4,10 @@ Required, at the **repo root**, committed. Being tracked, it is present at the w
 too — either path reads the same content. Orchestrate reads it once during Stage 0 and passes the
 result forward. A worked example lives in `references/orchestrate.config.example.json`.
 
-One file carries four things: this project's **stage overrides**, its **commands**, its
-**environments**, and its **notifier**. It is self-describing — read it directly. Nothing here restates what its keys
-mean, and a command it does not name is a command there is nothing to run for.
+One file carries five things: this project's **stage overrides**, its **commands**, its
+**environments**, its **notifier**, and its **extensions**. It is self-describing — read it
+directly. Nothing here restates what its keys mean, and a command it does not name is a command
+there is nothing to run for.
 
 Does NOT apply to `orchestrate` itself (no recursive override).
 
@@ -87,6 +88,17 @@ caller reads the named test's line, not the exit code.
 **This project names its own stack steps.** Read the entry for the environment you are using and
 run the steps it declares, resolving each as above. Where one declares no readiness step, poll its
 status step instead.
+
+## Extensions
+
+`extensions` maps a **skill name** (not a stage id) to a repo-relative markdown doc that skill
+reads and follows. Contract: `skills/_shared/extensions.md`. Each skill resolves its own entry;
+orchestrate passes nothing extra. Replace a skill (`stages.<id>.skill`) for a different flow;
+extend it for the same flow with project instructions.
+
+```json
+"extensions": { "planning": "harness/planning.md" }
+```
 
 ## Custom skills
 
