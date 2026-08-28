@@ -2,8 +2,8 @@
 name: code-review
 description: >
   Deep code review that hunts for subtle bugs and for code that works but should have been
-  written differently. Runs five reviewer personas in parallel, aggregates their findings into
-  a report, then applies the fixes and records them in it. Use when the user says
+  written differently. Runs eight reviewer personas in parallel, aggregates their findings
+  into a report, then applies the fixes and records them in it. Use when the user says
   "/code-review", "review my code", "review this change", or "review this against the plan".
 ---
 
@@ -34,8 +34,8 @@ absence is a gap, filled by the next source down.
 2. `.claude/rules/*` and `.claude/harness/code-review-reference.md` in the project root
 3. Any standards the repo documents — `CODING_STANDARDS.md`, `CONTRIBUTING.md`,
    `STYLE_GUIDE.md`, `docs/` equivalents, or the conventions section of `CLAUDE.md`/`AGENTS.md`
-4. `references/personas.md` and the `code-quality` skill it points at. Universal defaults,
-   applied when nothing above speaks
+4. The `references/persona-*.md` file each agent is given, and the `code-quality` and `tdd`
+   skills those files name. Universal defaults, applied when nothing above speaks
 
 **This ladder sets severity.** A breach of rungs 1–3 is a **hard violation** — the repo wrote
 the rule down. A rung-4 finding is a **judgement call**: it may be right, but it can never
@@ -49,7 +49,7 @@ block on its own.
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `--plan PATH` | No | The plan or design doc the change was written from. Goes to the Defects agent, which checks the change against it. Omitted → it infers intent from the commits, PR description, and branch name. |
+| `--plan PATH` | No | The plan or design doc the change was written from. Goes to the Spec agent, which checks the change against it. Omitted → it infers intent from the commits, PR description, and branch name. |
 | `--pr NUMBER` | No | Review a PR diff (uses `gh pr diff NUMBER`). |
 | `--commits RANGE` | No | Review a commit range (e.g. `HEAD~3..HEAD`). |
 | `--output PATH` | No | Where to write the report. Omitted → `.harness/review.md` and the review also prints inline (see Step 3). |
@@ -81,54 +81,74 @@ present, and the paths of the governance sources you found on rungs 1–3. Skip 
 
 ## Step 2 — Dispatch in parallel
 
-`references/personas.md` defines five axes. Spawn **one `general-purpose` sub-agent per axis**,
-all five in a single message so they run concurrently. One agent holding every axis at once
-matches shallowly across all of them.
+`references/` holds one `persona-*.md` file per axis. Spawn **one `general-purpose` sub-agent
+per axis, eight in a single message** so they run concurrently. One agent holding every axis at
+once matches shallowly across all of them.
 
-Every prompt carries, pasted in as text: the one section of `references/personas.md` that agent
-owns, the map from Step 1, the governance sources you found on rungs 1–3, and the brief below.
-The Defects agent also gets the full text of the `--plan` file, when there is one.
-Paste them verbatim — a sub-agent shares none of your context, so a pointer to a file or a
-summary of it leaves the standard out of the review. Give each agent its own section and no
-other, so the only axis it can report under is its own.
+| Agent | File | Also give it |
+|---|---|---|
+| Defects | `references/persona-defects.md` | — |
+| Spec | `references/persona-spec.md` | the full text of the `--plan` file, when there is one |
+| Security | `references/persona-security.md` | — |
+| Testing | `references/persona-testing.md` | — |
+| Reuse | `references/persona-reuse.md` | — |
+| Simplification | `references/persona-simplification.md` | — |
+| Efficiency | `references/persona-efficiency.md` | — |
+| Altitude | `references/persona-altitude.md` | — |
 
-> *"You own exactly one review axis — the section below — and report only under it; a real
-> problem outside it belongs to another agent, even when you see it. Review the change, not the
-> codebase: a problem that predates this diff is not this review's business unless the change
-> makes it materially riskier. Every finding names the thing, quotes the hunk, gives a
+**All eight run on every review.** There is no gate and no team selection: an axis with nothing
+to report returns nothing, and that emptiness is a result you present.
+
+Every prompt names that agent's persona file by path and tells it to read the file first, before
+anything else. Give each agent its own file and no other, so the only axis it can report under
+is its own. Tell the Defects, Reuse, Simplification, Efficiency and Altitude agents to also
+invoke the `code-quality` skill: it is the standard those five check against.
+
+Then paste in, as text: the map from Step 1, the governance sources you found on rungs 1–3, and
+the brief below. A sub-agent shares none of your context, so a summary of a governance source
+leaves that standard out of the review.
+
+**One diff, one review, eight agents.** A change spanning several packages or several repos is
+still one change. Give every agent the whole diff and treat the working set as a single tree.
+
+> *"You own exactly one review axis — the persona file named for you — and report only under it;
+> a real problem outside it belongs to another agent, even when you see it. Review the change,
+> not the codebase: a problem that predates this diff is not this review's business unless the
+> change makes it materially riskier. Every finding names the thing, quotes the hunk, gives a
 > `file:line`, says what it costs, and names the fix. Verify it against the actual code first,
-> and drop anything you can't stand behind — three real findings beat twenty maybes. You are
-> not a linter: no style or formatting findings, no naming findings beyond a name that misleads
+> and drop anything you can't stand behind — three real findings beat twenty maybes. You are not
+> a linter: no style or formatting findings, no naming findings beyond a name that misleads
 > about what the code does, and nothing that amounts to 'run the tests' — the author knows. A
 > finding is a judgement call unless the repo wrote the rule down, which makes it a hard
 > violation — cite the source file and rule when it did. The tree was committed before you were
-> dispatched, so edit freely to test a hypothesis and `git checkout --` when you're done.
-> Return your report as your final message — write no files. Under 400 words."*
+> dispatched, so edit freely to test a hypothesis and `git checkout --` when you're done. Return
+> your report as your final message — write no files. Under 400 words."*
 
-**The tool result is the report.** Nothing lands on disk until you write it — wait for the five
-results and go straight to Step 3 with them.
+**The tool result is the report.** Nothing lands on disk until you write it — wait for all
+eight results and go straight to Step 3 with them.
 
 ## Step 3 — Aggregate
 
-Present each persona's report under a heading named for its section — `### Defects`,
-`### Reuse`, `### Simplification`, `### Efficiency`, `### Altitude` — verbatim or lightly
-cleaned. Do **not** merge or rerank across axes: that masking is what the separation exists to
-prevent. Drop only exact duplicates (same `file:line`, same finding); when two axes disagree,
-keep both — the disagreement is signal.
+Present each persona's report under a heading named for its axis — `### Defects`,
+`### Spec`, `### Security`, `### Testing`, `### Reuse`, `### Simplification`, `### Efficiency`,
+`### Altitude` — verbatim or lightly cleaned. Do **not** merge or rerank across axes: that
+masking is what the separation exists to prevent. Drop only exact duplicates (same
+`file:line`, same finding); when two axes disagree, keep both — the disagreement is signal.
 
-The four cleanup axes are the exception, because they overlap by design — a duplicated block
-is a Reuse finding and a Simplification finding both. Across those four only, keep one copy
-per mechanism under the axis that names the fix best.
+Reuse, Simplification, Efficiency and Altitude are the exception, because they overlap by
+design — a duplicated block is a Reuse finding and a Simplification finding both. Across those
+four only, keep one copy per mechanism under the axis that names the fix best.
 
-Open the file with a header: date, scope, team, and the plan path or "intent inferred". Then
+Open the file with a header: date, scope, and the plan path or "intent inferred". Then
 a 2-3 sentence summary of what the change does, and the verdict:
 
-- **`REQUEST CHANGES`** — a Critical defect or an uncontested hard violation.
+- **`REQUEST CHANGES`** — a Critical defect, an uncontested hard violation, or a missing item
+  that breaks a core acceptance criterion.
 - **`APPROVE WITH SUGGESTIONS`** — Important defects worth discussing, but nothing that would
   cause a production incident.
 - **`APPROVE`** — no defects, or only judgement calls.
 
-Four cleanup axes must not turn an `APPROVE` into `REQUEST CHANGES` between them — volume on
+Those four axes must not turn an `APPROVE` into `REQUEST CHANGES` between them — volume on
 rung 4 is still rung 4.
 
 Close with one line per axis: total findings, and the worst issue *within that axis*. Don't
