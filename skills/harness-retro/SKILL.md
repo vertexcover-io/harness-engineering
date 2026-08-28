@@ -1,6 +1,12 @@
 ---
 name: harness-retro
-description: "Audit a finished pipeline run and report the harness defects it exposed. Mines the run's session transcripts for what broke and writes one ranked report for the people who build the harness. Runs as orchestrate Stage 7, after the PR. Also use it whenever a run ends or aborts and the user says retro, post-mortem, what went wrong in that run, why did the harness stop, or hands over a session transcript path. Ranks correctness risk above time cost: a defect that would ship silently in --auto outranks one that wasted an hour."
+description: >
+  Audit a finished harness pipeline run and report the harness defects it exposed. Reads the
+  run's session transcripts, finds what broke, and writes one ranked report for the people who
+  build the harness. Use this skill whenever a pipeline run ends or aborts, and whenever the
+  user says "retro", "retro this run", "post-mortem", "what went wrong in that run", "why did
+  the harness stop", or gives you a session transcript path. Ranks correctness risk above time
+  cost: a defect that would ship silently in --auto outranks one that wasted an hour.
 ---
 
 # Harness retro
@@ -36,11 +42,8 @@ Dispatch the retro as its own agent, always. Two reasons.
   inline and the transcript grows under you. As a sub-agent, the parent's transcript is complete
   through the moment of dispatch.
 
-Orchestrate calls this skill as Stage 7, after the PR exists. A human calls it later. Neither
-needs to know the transcript path.
-
-**Stage 7 never fails the pipeline.** The PR is already open by the time the retro runs. A retro
-that cannot complete prints one line saying why and exits clean.
+The pipeline calls this skill at the end of a run. A human calls it later. Neither needs to know
+the transcript path.
 
 ## Three rules
 
@@ -56,16 +59,14 @@ that cannot complete prints one line saying why and exits clean.
 ## Step 0 — Extract
 
 ```bash
-SKILL="${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/harness-retro"
-OUT='.harness/<SPEC_NAME>/retro'
-python3 "$SKILL/scripts/extract.py" --out "$OUT" --session "$SESSION_ID" --project "$LAUNCH_DIR"
+SKILL="${CLAUDE_PLUGIN_ROOT}/skills/harness-retro"
+OUT=SCRATCH_DIR/retro
+python3 "$SKILL/scripts/extract.py" --out "$OUT" --tz Asia/Kolkata
 ```
 
-The script finds its own inputs. With no `--session` and no `--main` it takes the project's newest
-session and the `subagents/` directory beside it. Stage 7 passes the `SESSION_ID` orchestrate
-captured during Initialization, and `--project` is the **launch directory**, not the worktree —
-transcripts live under the directory the run started in. Add `--tz ZONE` to print every time in
-one timezone.
+The script finds its own inputs. With no arguments it takes the project's newest session and the
+`subagents/` directory beside it. Override with `--session ID`, `--main PATH`, `--project DIR`.
+Set `--tz` to the timezone the report will use; times print in that zone everywhere.
 
 It writes nine files and prints a summary. Read `00-summary.txt` first.
 
@@ -95,12 +96,11 @@ Done when: every stage in the table has a start and an end, and every sub-agent 
 
 Ask for whichever the user did not supply.
 
-- **Harness skills directory** — `${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/`, or the
-  version under `~/.claude/plugins/cache/harness/harness/VERSION/skills/`. Fixes name these paths.
-  Read `manifest.json` in `.harness/<SPEC_NAME>/` for the version the run actually used.
+- **Harness skills directory** — the current version under
+  `~/.claude/plugins/cache/harness/harness/VERSION/skills/`. Fixes point at these paths.
 - **The project repo** — read-only. Use it to check whether a defect still exists.
-- **Pull request numbers** — from `manifest.json` (`pr_number`) in a pipeline run. Human review
-  comments on the PR show what the pipeline's own review stages missed.
+- **Pull request numbers** — optional. Human review comments on the PR show what the pipeline's
+  own review stages missed.
 
 Sub-agent transcripts are found automatically. When none exist you lose most `CAUGHT` findings.
 Say so in the report.
@@ -307,13 +307,21 @@ generalization that survives the noun test.
 
 ## Step 4 — Write the report
 
-Write one file, `report.md`, beside the extractions — `.harness/<SPEC_NAME>/retro/report.md` in a
-pipeline run. `.harness/` is gitignored, so the report never reaches the PR.
+Write one file, `report.md`, beside your scratch directory.
 
-Write the report prose in Simplified Technical English, the same style this skill uses. Use the
-active voice. Keep sentences to 20 words or fewer. Give one idea per sentence. Keep paragraphs to
-6 sentences or fewer. Explain a technical term the first time you use it, then reuse that term.
-The style rules control prose only. Keep every path, command, number, and quoted output exact.
+### How to write
+
+Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md` and follow it. It owns the voice, the
+report rules, and the ship-check you run before delivering.
+
+Two of its rules decide whether this report is usable, so they are worth repeating here.
+
+**Controlled vocabulary stays exact.** `Severity` is `major` or `minor`. `Class` is `MISSED`,
+`BLOCKED`, `SLOW` or `CAUGHT`. `Fix type` is one of the fourteen types in Step 3. Never soften them
+into friendlier words, and never rename a field. Gloss both coded columns under the problems table.
+
+**Do not print the detectors.** They are how you found the issues, not something the reader needs.
+A detector that found something has already produced an issue.
 
 Order issues by severity first, then by class in the order `MISSED`, `BLOCKED`, `SLOW`, `CAUGHT`.
 Do not cap the issue count. Every issue earns its place with evidence.
@@ -322,45 +330,56 @@ Do not cap the issue count. Every issue earns its place with evidence.
 
 **1. Header**
 
+Open with the facts table. No prose preamble above it. Keep the field names short and ordinary —
+they are labels, not sentences.
+
 | Field | Value |
 |-------|-------|
 | Session id | the id only |
 | Task | ticket id and title |
 | Kickoff | the run mode, then the human's first instruction in one line |
-| Harness version | the version only |
-| Started at | local time, with the timezone named |
+| Harness | the version only |
+| Started | local time, with the timezone named |
 | Total time | human-readable, such as `31h 12m` |
-| Blocked time | human-readable. Waiting on the human only |
-| Blocked after the line | human-readable, and the message count. This number should be `0m` |
+| Waiting on human | human-readable. Blocked time only |
+| Waiting after the line | human-readable, and the message count. This number should be `0m` |
+| Issues | `N major, M minor` |
+| Result | shipped or not, then every PR as an embedded markdown link |
 
-Close the header with the line that makes every citation usable:
+Then the glosses a stranger needs to read anything below: the repos or services in one line each,
+what a `main:1234` citation is, and — if the run and the audit used different machines or harness
+versions — one sentence saying so, or every version claim reads as impossible.
 
-```markdown
-Citations read `main:1234`. To open one:
-`python3 SKILL_DIR/scripts/cite.py MAIN.jsonl 1234 --context 5 --tz Asia/Kolkata`
-Extractions are in `OUT/`.
-```
+Then **"If you only do N things"** — two to four bullets, each naming an issue id, each an
+instruction rather than a description. "Fix I1 first, it is one change." "Do not merge until I3 is
+settled."
 
-Write the real paths, not the placeholders. A line number nobody can open is not evidence.
+**2. Timeline**
 
-**2. Stage timeline**
-
-| Stage | Start | Total time | Blocked time | Issues |
+| Step | Started | Took | Waiting on human | Issues |
 |-------|-------|-----------|--------------|--------|
 
-**3. Issues at a glance**
+Name each step in plain words — "write the code, part 2 of 4" beats "coder phase 2". Add a line
+under the table only if one gap dominates the total, and only to say which.
+
+**3. Problems**
 
 One row per issue, in report order. This table is how a reader decides what to read.
 
-| # | Issue | Severity | Class | Fix type | Stage | Cost |
+| # | Problem | Severity | Class | Fix type | Stage | Cost |
 |---|-------|----------|-------|----------|-------|------|
 
-**4. Issues**
+The **Problem** cell is one plain sentence a stranger understands, not a label.
 
-One block per issue. Keep the field order.
+Gloss both coded columns under the table: one line for the four `Class` codes, one for the fix
+types. Compact, separated by `·` — a reminder, not a legend.
+
+**4. Detail**
+
+One block per issue, under a one-word heading such as `## Detail`. Keep the field names, the field order, and the field values exactly as below.
 
 ```markdown
-### I3 — Verifier proved the fix against data it injected itself
+### I3 — The verifier proved the fix against data it fed in itself
 
 - **Severity:** major
 - **Class:** MISSED
@@ -369,38 +388,50 @@ One block per issue. Keep the field order.
 - **Missed by:** no gate reads the verifier's method, only its verdict
 - **When:** 14:22 → 14:51 IST (29m)
 
-**Description**
-Two to five plain sentences. Say what the agent was trying to do. Say what it did instead.
-Quote the human or the agent where the words carry the point.
+**What**
+Start with the background the reader needs — what this stage does, what the tool is for. Then
+what the agent was trying to do, then what it did instead. Then why that matters. Quote the human
+or the agent where their words carry the point. Length is whatever it takes to be understood,
+usually three to eight sentences.
 
-**Proof**
-The verbatim command, message, or output in a fenced block. Trim it, never paraphrase it. Cap
-it near 15 lines. Cite the source: `main:1234 @ 14:22 IST`.
+**Evidence**
+The verbatim command, message, or output in a fenced block. Trim it, never paraphrase it. Cap it
+near 15 lines. Cite the source: `main:1234 @ 14:22 IST`. Add a short line above or below saying
+what the reader should notice in it.
 
-**Cause**
-The root cause in one paragraph. Not the proximate error.
+**Why**
+The root cause in plain words. Not the proximate error. If two things went wrong at once, say so
+and name both.
 
 **Fix**
-The file to change and the rule to add. Use the current version's path. Say when the current
-version already fixed it.
-
-**Generalizes to**
-The task-agnostic pattern, and the kind of ticket that hits it again.
+The file to change and the rule to add, in that order. Use the current version's path. Say when
+the current version already fixed it.
 ```
 
 The **Missed by** field is mandatory on every `MISSED` and `BLOCKED` issue. Name the gate that
 should have caught the defect, and say why it did not. A defect that reached the human passed
 *through* every gate on the way, and the gate it beat is the gate to fix.
 
-**5. Appendix**
+**5. Notes**
 
-- Detector table: hits found and hits kept, per detector. Name the detectors that produced only
-  noise.
-- What the transcripts could not answer, and why. Missing sub-agent capture, truncated output,
-  and state that lived only on a dashboard all belong here.
-- What a live incident log would have caught that this post-hoc mining could not.
+Short. It is not a second report — everything an issue owns stays in that issue's block.
 
-Done when: every issue carries all six header fields plus the five prose fields; every `MISSED`
-and `BLOCKED` issue names the gate that missed it; every `CAUGHT` issue carries a one-off verdict;
-the at-a-glance table has one row per issue; and a reader who never saw the task can follow every
-issue without opening a transcript.
+- **What I worked from**: the transcript paths, your extraction directory, and the `cite.py`
+  command that opens any citation.
+- **Findings that belong to no single issue**: the one or two facts the walks produced that no
+  issue block carries. Nothing that re-narrates an issue.
+- **What the recordings could not tell me**: every question the transcripts left open, and why.
+  Missing sub-agent capture, unrecorded approvals, state that lived only on a dashboard.
+- **What a live log would have caught**: what real-time instrumentation would have found that
+  post-hoc mining could not.
+
+Do **not** print the detector table or a walk-by-walk narrative. Detectors are your method, not the
+reader's concern, and a walk that produced a real finding already produced an issue. If a number in
+such a table would contradict the issue blocks, it damages the report more than it proves rigour.
+
+Done when: every issue carries all six header fields with their exact vocabulary, plus **What**,
+**Evidence**, **Why** and **Fix**; the report opens with the facts table and ends that section in
+instructions, not a recap; every `MISSED` and `BLOCKED` issue names the gate that missed it; every
+`CAUGHT` issue carries a one-off verdict; the problems table has one row per issue with a class and
+a fix-type gloss under it; every duration appears with the same value everywhere it is mentioned;
+and a reader who never saw the task can follow every issue without opening a transcript.
