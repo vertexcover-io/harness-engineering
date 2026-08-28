@@ -1,5 +1,5 @@
 import { readFile, writeFile, rename, mkdir, rmdir, stat } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const fileExists = (p) => existsSync(p);
@@ -46,5 +46,45 @@ export const mtimeMs = async (p) => {
     return (await stat(p)).mtimeMs;
   } catch {
     return 0;
+  }
+};
+
+const sleepSync = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+
+export const readJsonSyncOr = (p, fallback) => {
+  try {
+    return readJsonSync(p);
+  } catch {
+    return fallback;
+  }
+};
+
+export const writeJsonAtomicSync = (p, obj) => {
+  const tmp = `${p}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  renameSync(tmp, p);
+};
+
+// mkdir is the lock. A holder silent for five seconds is assumed dead.
+export const withDirLockSync = (lockDir, fn) => {
+  let held = false;
+  for (let i = 0; i < 50 && !held; i++) {
+    try {
+      mkdirSync(lockDir, { recursive: false });
+      held = true;
+    } catch {
+      sleepSync(100);
+    }
+  }
+  if (!held) {
+    try { rmdirSync(lockDir); } catch {}
+    try { mkdirSync(lockDir); } catch {}
+  }
+  try {
+    return fn();
+  } finally {
+    try { rmdirSync(lockDir); } catch {}
   }
 };

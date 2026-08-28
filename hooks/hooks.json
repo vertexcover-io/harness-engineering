@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/ask-user-hook.mjs\" pre 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/artifact-history.mjs\" 2>/dev/null || true"
           }
         ]
       }
@@ -28,6 +32,10 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/dashboard/dag-update.mjs\" finalize interrupted 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/artifact-history.mjs\" 2>/dev/null || true"
           }
         ]
       }
@@ -38,6 +46,10 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/coder-e2e-gate.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/artifact-history.mjs\" 2>/dev/null || true"
           }
         ]
       }
