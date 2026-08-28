@@ -42,6 +42,15 @@ inherits that sub-skill's gate contract. `skill` on this stage is ignored (log i
 yet: worktree creation runs during Initialization before this file is read, and Stage 6 hand-rolls.
 An override on either is recorded and logged, not yet honoured.
 
+## Entry stage (resumed runs)
+
+`coder` is the only valid entry stage. It presumes the worktree, `baseline.json`, and `claims.json`
+are in place before the stage starts, and that the caller names the prior run's `plan.md`.
+
+Its gate contract shifts: a resumed `coder` runs `implement` in review-fix mode, which produces no
+`phase-<N>-claims.json`. The gate is the caller's disposition table — every feedback item carries a
+terminal disposition. Every later stage gates as written above.
+
 ## Resolving a stage
 
 Look the entry up by stage id; call it `CFG`. An **absent key, an empty object, and an empty string

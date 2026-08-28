@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rework Report</title>
+
+<!-- ==========================================================================
+     REVIEW REPORT · fill the JSON island below, change nothing else.
+     One page, read top to bottom. Omit any key you have nothing for and its
+     section disappears.
+
+     ORDER ON THE PAGE
+       bar          title, verdict, disposition counts
+       fields[]     branch, PR, commit range, date
+       summary      one sentence: what came back and what was done
+       items[]      one card per feedback item, everything about it in the card.
+                    The first opens, the rest are collapsed to their header and
+                    the first line of `said`.
+       blastRadius  what was re-verified, what was not
+       checks[]     code review, quality gate, verification
+
+     TOP LEVEL
+       title        "<ticket> rework", short
+       verdict      PASS | ATTENTION | FAIL, the badge in the bar
+       summary      one sentence, plain
+       fields[]     {label,value} shown under the bar. value takes `code`.
+       items[]      see below
+       blastRadius  {reverified[], notReverified[]}
+                    reverified[]    {id,title,result}
+                    notReverified[] {id,title,why}  why must name the reason,
+                                    not repeat the title
+       checks[]     {name,verdict,detail,href} verdict: Pass | Fail | Skipped
+
+     ITEM · everything a developer needs about one piece of feedback
+       n            "1", "2" ... the number used in the index
+       source       who it came from: "Reviewer @dana, PR #214" or "QA report"
+       said         their words, verbatim
+       where        "path/to/file.ts:88" the location they wrote it against
+       context      {from,code,mark} the code that is there NOW.
+                    from  the first line number in code, code the excerpt,
+                    mark  the line number to highlight. The block is headed by
+                    `where`. Without this the developer has to open the file.
+       verdict      valid | stale | out-of-scope | wrong
+       disposition  applied | deferred | dropped  (the coloured badge)
+       why          the reasoning from their comment to that outcome
+       changes[]    {file,diff}  file is "path:line-range", diff is unified
+                    text with + and - line prefixes. Omit when nothing changed.
+       proof        {command,result} the test that now covers it
+       followUp     what a deferred item needs, and from whom
+
+     `code` and **bold** work in every prose field.
+     ========================================================================== -->
+
+<script type="application/json" id="report-data">
+{
+  "title": "<ticket-id> rework",
+  "verdict": "ATTENTION",
+  "summary": "<one sentence: what came back, what was done, what is left>",
+  "fields": [
+    { "label": "Branch", "value": "<branch-name>" },
+    { "label": "PR", "value": "<#number>" },
+    { "label": "Commits", "value": "<sha>..HEAD" },
+    { "label": "Date", "value": "<date>" }
+  ],
+  "items": [
+    {
+      "n": "1",
+      "source": "<Reviewer @handle, PR #N comment>",
+      "said": "<their comment, verbatim>",
+      "where": "<path/to/file.ts:88>",
+      "context": {
+        "from": 84,
+        "mark": 88,
+        "code": "<the lines that are there now, starting at `from`>"
+      },
+      "verdict": "valid",
+      "disposition": "applied",
+      "why": "<what makes them right, and what the fix does about it>",
+      "changes": [
+        {
+          "file": "<path/to/file.ts:88-91>",
+          "diff": "- <the line as it was>\n+ <the line as it is>"
+        }
+      ],
+      "proof": {
+        "command": "<the test command>",
+        "result": "<its output, trimmed to the line that settles it>"
+      }
+    },
+    {
+      "n": "2",
+      "source": "<Reviewer @handle, PR #N comment>",
+      "said": "<their comment, verbatim>",
+      "where": "<path/to/other.ts:12>",
+      "verdict": "out-of-scope",
+      "disposition": "deferred",
+      "why": "<why it is real but not this ticket's work>",
+      "followUp": "<what has to happen, and who decides>"
+    }
+  ],
+  "blastRadius": {
+    "reverified": [
+      { "id": "<S03>", "title": "<the behaviour>", "result": "Pass" }
+    ],
+    "notReverified": [
+      { "id": "<S07>", "title": "<the behaviour>", "why": "<no changed file reaches it>" }
+    ]
+  },
+  "checks": [
+    { "name": "Code review", "verdict": "Pass", "detail": "<what it returned>", "href": "" },
+    { "name": "Quality gate", "verdict": "Pass", "detail": "<what it returned>", "href": "" },
+    { "name": "Verification", "verdict": "Pass", "detail": "<what it returned>", "href": "verification/proof-report.html" }
+  ]
+}
+</script>
+
+<style>
+:root {
+  --bg:      #F4F6F8;
+  --pane:    #FFFFFF;
+  --rail:    #FAFBFC;
+  --bar:     #FFFFFF;
+  --line:    #DFE4EA;
+  --line-2:  #EDF0F3;
+  --fg:      #16202B;
+  --fg-2:    #59677A;
+  --fg-3:    #8A97A6;
+  --accent:  #2F5BD0;
+  --accent-w:#EAF0FD;
+  --pass:    #16794C;
+  --pass-w:  #E7F4ED;
+  --fail:    #C03221;
+  --fail-w:  #FBECEA;
+  --hold:    #96660A;
+  --hold-w:  #FBF2DF;
+  --skip:    #6B7885;
+  --code-bg: #F1F4F7;
+  --pre-bg:  #171C24;
+  --pre-fg:  #D6DEE8;
+
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
+  --mono: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --bar-h: 46px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151A; --pane: #1A1E25; --rail: #15181E; --bar: #1A1E25;
+    --line: #2B313A; --line-2: #232830;
+    --fg: #E3E8EE; --fg-2: #98A4B3; --fg-3: #6E7C8C;
+    --accent: #7FA0FF; --accent-w: #1E2740;
+    --pass: #4FBF8B; --pass-w: #172B24; --fail: #F1705C; --fail-w: #2E1D1B;
+    --hold: #E0A93B; --hold-w: #2C2517; --skip: #8895A5;
+    --code-bg: #232A33; --pre-bg: #0E1218; --pre-fg: #C6D1DE;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151A; --pane: #1A1E25; --rail: #15181E; --bar: #1A1E25;
+  --line: #2B313A; --line-2: #232830;
+  --fg: #E3E8EE; --fg-2: #98A4B3; --fg-3: #6E7C8C;
+  --accent: #7FA0FF; --accent-w: #1E2740;
+  --pass: #4FBF8B; --pass-w: #172B24; --fail: #F1705C; --fail-w: #2E1D1B;
+  --hold: #E0A93B; --hold-w: #2C2517; --skip: #8895A5;
+  --code-bg: #232A33; --pre-bg: #0E1218; --pre-fg: #C6D1DE;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 13.5px/1.55 var(--ui); -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+a { color: var(--accent); }
+code {
+  font: .875em/1.4 var(--mono); background: var(--code-bg);
+  padding: 1px 4px; border-radius: 3px;
+}
+
+/* bar */
+.bar {
+  position: sticky; top: 0; z-index: 20; height: var(--bar-h);
+  display: flex; align-items: center; gap: 12px; padding: 0 18px;
+  background: var(--bar); border-bottom: 1px solid var(--line);
+}
+.bar__t { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
+.bar__v {
+  font: 600 10.5px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase;
+  padding: 5px 8px; border: 1px solid currentColor; border-radius: 4px;
+}
+.bar__sp { flex: 1; }
+.counts { display: flex; gap: 4px; }
+.count {
+  display: flex; align-items: baseline; gap: 5px; white-space: nowrap;
+  padding: 4px 9px; border: 1px solid var(--line); border-radius: 4px; background: var(--pane);
+}
+.count__n { font: 600 13px/1 var(--mono); }
+.count__l { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--fg-2); }
+.count--pass .count__n { color: var(--pass); }
+.count--hold .count__n { color: var(--hold); }
+.count--skip .count__n { color: var(--skip); }
+.btn {
+  background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--fg-2); font: 11px/1 var(--ui); letter-spacing: .04em;
+  padding: 7px 10px; cursor: pointer; text-transform: uppercase;
+}
+.btn:hover { color: var(--fg); border-color: var(--fg-3); }
+
+/* page */
+.page { max-width: 980px; margin-inline: auto; padding: 20px 18px 90px; }
+
+.fields {
+  display: flex; flex-wrap: wrap; gap: 6px 26px;
+  padding-bottom: 14px; border-bottom: 1px solid var(--line);
+}
+.fields div { display: flex; gap: 8px; align-items: baseline; }
+.fields dt {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fg-3); margin: 0;
+}
+.fields dd { font: 12px/1.5 var(--mono); margin: 0; }
+
+.summary { font-size: 15px; line-height: 1.55; margin: 16px 0 0; max-width: 84ch; }
+
+.sec { margin-top: 30px; }
+.sec__h {
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--fg-3); margin: 0 0 12px; display: flex; align-items: center; gap: 10px;
+}
+.sec__h::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* index */
+.index { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 18px; }
+.jump {
+  display: inline-flex; align-items: baseline; gap: 7px; text-decoration: none;
+  border: 1px solid var(--line); border-left-width: 3px; border-radius: 4px;
+  padding: 4px 9px; background: var(--pane); color: var(--fg); font-size: 12.5px;
+}
+.jump:hover { border-color: var(--fg-3); }
+.jump b { font: 600 11px/1.5 var(--mono); color: var(--fg-3); }
+.jump span { font: 11.5px/1.5 var(--mono); color: var(--fg-2); }
+.jump--pass { border-left-color: var(--pass); }
+.jump--hold { border-left-color: var(--hold); }
+.jump--skip { border-left-color: var(--skip); }
+
+/* item card · a details element, so a long report opens one item at a time */
+.item {
+  background: var(--pane); border: 1px solid var(--line); border-left: 3px solid var(--skip);
+  border-radius: 5px; margin-bottom: 14px; scroll-margin-top: 58px;
+}
+.item--pass { border-left-color: var(--pass); }
+.item--hold { border-left-color: var(--hold); }
+.item > summary { cursor: pointer; list-style: none; padding: 12px 16px; }
+.item > summary::-webkit-details-marker { display: none; }
+.item > summary:hover { background: var(--rail); }
+.item[open] > summary { border-bottom: 1px solid var(--line-2); }
+.item__b { padding: 4px 16px 16px; }
+.item__h { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.item__h::before { content: "\25b8"; color: var(--fg-3); font-size: 10px; flex: none; }
+.item[open] .item__h::before { content: "\25be"; }
+.item__peek {
+  margin: 5px 0 0 18px; font-size: 12.5px; line-height: 1.5; color: var(--fg-2);
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
+.item[open] .item__peek { display: none; }
+.item__n { font: 600 12px/1.5 var(--mono); color: var(--fg-3); }
+.item__src { font-size: 13px; font-weight: 650; }
+.item__badges { margin-left: auto; display: flex; gap: 6px; }
+.tag {
+  font: 700 9.5px/1.6 var(--ui); letter-spacing: .09em; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: 3px; padding: 1px 6px;
+}
+.tag--pass { color: var(--pass); background: var(--pass-w); }
+.tag--hold { color: var(--hold); background: var(--hold-w); }
+.tag--skip { color: var(--skip); }
+.tag--o { color: var(--fg-2); border-style: dashed; }
+
+.said {
+  border-left: 2px solid var(--line); padding: 2px 0 2px 12px;
+  margin: 12px 0 0; font-size: 14px; max-width: 86ch;
+}
+.said p { margin: 0 0 8px; }
+.said p:last-child { margin: 0; }
+
+.row { margin-top: 14px; }
+.row__l {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fg-3); margin: 0 0 6px;
+}
+.row p { margin: 0 0 9px; font-size: 13.5px; max-width: 86ch; }
+.row p:last-child { margin: 0; }
+
+/* code blocks */
+.src { border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.src__f {
+  font: 11.5px/1.5 var(--mono); color: var(--fg-2); background: var(--rail);
+  padding: 5px 10px; border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; gap: 12px;
+}
+.src__f a { text-decoration: none; }
+.src__b {
+  margin: 0; padding: 8px 0; background: var(--pre-bg); color: var(--pre-fg);
+  font: 11.5px/1.65 var(--mono); overflow-x: auto;
+}
+.ln { display: grid; grid-template-columns: 46px 1fr; white-space: pre; }
+.ln i { color: #5C6B7E; font-style: normal; text-align: right; padding-right: 12px; user-select: none; }
+.ln--mark { background: rgba(127,160,255,.16); }
+.ln--mark i { color: #9FB6FF; }
+.ln--add { background: rgba(79,191,139,.15); }
+.ln--del { background: rgba(241,112,92,.15); }
+.cap {
+  font: 11.5px/1.6 var(--mono); background: var(--pre-bg); color: var(--pre-fg);
+  border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; white-space: pre;
+}
+.cmd { color: var(--fg-2); font: 11.5px/1.6 var(--mono); margin: 0 0 5px; }
+.cmd::before { content: "$ "; color: var(--fg-3); }
+
+/* blast radius + checks tables */
+.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tbl th {
+  text-align: left; font: 700 10px/1.6 var(--ui); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fg-3); padding: 0 12px 6px 0; border-bottom: 1px solid var(--line);
+}
+.tbl td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.tbl td:first-child { font: 600 12px/1.6 var(--mono); color: var(--fg-2); white-space: nowrap; }
+.tbl td.v { white-space: nowrap; }
+.sub { font-size: 13px; font-weight: 650; margin: 0 0 8px; color: var(--fg-2); }
+.sub + .tbl { margin-bottom: 20px; }
+.empty { color: var(--fg-2); font-size: 13.5px; margin: 0; }
+
+@media (max-width: 640px) {
+  .bar { gap: 8px; padding: 0 12px; }
+  .bar__t { display: none; }
+  .page { padding: 16px 12px 60px; }
+}
+@media print {
+  .bar { position: static; }
+  .btn { display: none; }
+  .item { break-inside: avoid; }
+  .item > summary { cursor: auto; }
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <h1 class="bar__t" id="b-t"></h1>
+  <span class="bar__v" id="b-v" hidden></span>
+  <span class="bar__sp"></span>
+  <div class="counts" id="b-c"></div>
+  <button class="btn" id="b-x" hidden>Expand all</button>
+  <button class="btn" id="b-theme" title="Toggle theme">Theme</button>
+</header>
+
+<main class="page" id="page"></main>
+
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById('report-data').textContent);
+  const ITEMS = D.items || [], BR = D.blastRadius || {}, CHECKS = D.checks || [];
+
+  const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
+  const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const rich = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  const paras = (h, s) => String(s).split(/\n\n+/).forEach(p => { const n = el('p'); n.innerHTML = rich(p); h.appendChild(n); });
+
+  /* disposition drives every colour on the page: it is what the developer acts on */
+  const tone = d => ({ applied: 'pass', deferred: 'hold', dropped: 'skip' }[String(d || '').toLowerCase()] || 'skip');
+  const vtone = v => /^(pass|success)/i.test(v || '') ? 'pass' : /^fail/i.test(v || '') ? 'fail' : 'skip';
+
+  const page = document.getElementById('page');
+
+  /* bar */
+  document.getElementById('b-t').textContent = D.title || 'Rework Report';
+  document.title = D.title || 'Rework Report';
+  if (D.verdict) {
+    const v = document.getElementById('b-v');
+    v.textContent = D.verdict;
+    v.style.color = `var(--${/^pass/i.test(D.verdict) ? 'pass' : /^fail/i.test(D.verdict) ? 'fail' : 'hold'})`;
+    v.hidden = false;
+  }
+  const n = { applied: 0, deferred: 0, dropped: 0 };
+  ITEMS.forEach(i => { const k = String(i.disposition || '').toLowerCase(); if (k in n) n[k]++; });
+  const bc = document.getElementById('b-c');
+  [['applied', 'pass'], ['deferred', 'hold'], ['dropped', 'skip']].forEach(([k, t]) => {
+    if (!n[k]) return;
+    const c = el('div', 'count count--' + t);
+    c.appendChild(el('span', 'count__n', String(n[k])));
+    c.appendChild(el('span', 'count__l', k));
+    bc.appendChild(c);
+  });
+  const root = document.documentElement;
+  document.getElementById('b-theme').addEventListener('click', () => {
+    const cur = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  });
+
+  /* fields + summary */
+  if ((D.fields || []).length) {
+    const dl = el('dl', 'fields');
+    D.fields.forEach(f => {
+      const d = el('div');
+      d.appendChild(el('dt', null, f.label));
+      const dd = el('dd'); dd.innerHTML = rich(f.value); d.appendChild(dd);
+      dl.appendChild(d);
+    });
+    page.appendChild(dl);
+  }
+  if (D.summary) { const s = el('div', 'summary'); paras(s, D.summary); page.appendChild(s); }
+
+  function section(heading) {
+    const s = el('div', 'sec');
+    s.appendChild(el('p', 'sec__h', heading));
+    page.appendChild(s);
+    return s;
+  }
+
+  /* A labelled block inside a card. `body` is a node or prose. */
+  function row(host, label, body) {
+    const r = el('div', 'row');
+    if (label) r.appendChild(el('p', 'row__l', label));
+    if (typeof body === 'string') paras(r, body); else r.appendChild(body);
+    host.appendChild(r);
+  }
+
+  /* A code excerpt with real line numbers, so `file:line` needs no lookup.
+     `from` numbers the first line; `mark` highlights the line under discussion. */
+  function excerpt(file, code, from, mark) {
+    const box = el('div', 'src');
+    const head = el('div', 'src__f');
+    head.appendChild(el('span', null, file));
+    box.appendChild(head);
+    const pre = el('pre', 'src__b');
+    String(code).replace(/\n$/, '').split('\n').forEach((line, i) => {
+      const no = from ? from + i : null;
+      const d = el('div', 'ln' + (mark && no === mark ? ' ln--mark' : ''));
+      d.appendChild(el('i', null, no == null ? '' : String(no)));
+      d.appendChild(el('span', null, line));
+      pre.appendChild(d);
+    });
+    box.appendChild(pre);
+    return box;
+  }
+
+  /* A unified diff. + and - lines carry their own background; nothing else moves. */
+  function diff(file, text) {
+    const box = el('div', 'src');
+    box.appendChild(el('div', 'src__f')).appendChild(el('span', null, file));
+    const pre = el('pre', 'src__b');
+    String(text).replace(/\n$/, '').split('\n').forEach(line => {
+      const k = line[0] === '+' ? ' ln--add' : line[0] === '-' ? ' ln--del' : '';
+      const d = el('div', 'ln' + k);
+      d.appendChild(el('i', null, ''));
+      d.appendChild(el('span', null, line));
+      pre.appendChild(d);
+    });
+    box.appendChild(pre);
+    return box;
+  }
+
+  /* items */
+  if (ITEMS.length) {
+    const sec = section('Feedback');
+
+    /* The index only earns its space once the cards no longer fit on one screen. */
+    if (ITEMS.length > 3) {
+      const idx = el('div', 'index');
+      ITEMS.forEach(it => {
+        const a = el('a', 'jump jump--' + tone(it.disposition));
+        a.href = '#item-' + it.n;
+        a.appendChild(el('b', null, it.n));
+        a.appendChild(document.createTextNode(String(it.disposition || '')));
+        if (it.where) a.appendChild(el('span', null, it.where));
+        idx.appendChild(a);
+      });
+      sec.appendChild(idx);
+    }
+
+    ITEMS.forEach((it, i) => {
+      const t = tone(it.disposition);
+      const card = el('details', 'item item--' + t);
+      card.id = 'item-' + it.n;
+      card.open = i === 0;
+
+      /* closed, an item shows who it is from, what it ended on, and the first
+         line of what they said, which is enough to decide whether to open it */
+      const sum = el('summary');
+      const h = el('div', 'item__h');
+      h.appendChild(el('span', 'item__n', '#' + it.n));
+      h.appendChild(el('span', 'item__src', it.source || ''));
+      const b = el('div', 'item__badges');
+      if (it.verdict) b.appendChild(el('span', 'tag tag--o', it.verdict));
+      if (it.disposition) b.appendChild(el('span', 'tag tag--' + t, it.disposition));
+      h.appendChild(b);
+      sum.appendChild(h);
+      if (it.said) sum.appendChild(el('div', 'item__peek', String(it.said).replace(/[`*]/g, '').split(/\n\n/)[0]));
+      card.appendChild(sum);
+
+      const body = el('div', 'item__b');
+      if (it.said) { const q = el('div', 'said'); paras(q, it.said); body.appendChild(q); }
+
+      const c = it.context;
+      if (c && c.code) row(body, 'The code they wrote it against', excerpt(it.where || c.file || '', c.code, c.from, c.mark));
+      else if (it.where) row(body, 'Where', (() => { const p = el('p'); p.innerHTML = rich('`' + it.where + '`'); return p; })());
+
+      if (it.why) row(body, 'Why', it.why);
+
+      (it.changes || []).forEach((ch, j) => row(body, j ? '' : 'What changed', diff(ch.file || '', ch.diff || '')));
+
+      if (it.proof) {
+        const w = el('div');
+        if (it.proof.command) w.appendChild(el('p', 'cmd', it.proof.command));
+        if (it.proof.result) w.appendChild(el('pre', 'cap', it.proof.result));
+        row(body, 'Proof', w);
+      }
+      if (it.followUp) row(body, 'Follow-up', it.followUp);
+
+      card.appendChild(body);
+      sec.appendChild(card);
+    });
+
+    const cards = [...sec.querySelectorAll('details.item')];
+
+    /* an index chip lands on a closed card, so opening it is part of the jump */
+    sec.querySelectorAll('a.jump').forEach(a => a.addEventListener('click', () => {
+      const c = document.getElementById(a.getAttribute('href').slice(1));
+      if (c) c.open = true;
+    }));
+
+    const x = document.getElementById('b-x');
+    x.hidden = false;
+    x.addEventListener('click', () => {
+      const open = cards.some(c => !c.open);
+      cards.forEach(c => { c.open = open; });
+      x.textContent = open ? 'Collapse all' : 'Expand all';
+    });
+
+    /* a closed details prints blank, so open every one and put them back after */
+    let reopened = [];
+    addEventListener('beforeprint', () => {
+      reopened = cards.filter(c => !c.open);
+      reopened.forEach(c => { c.open = true; });
+    });
+    addEventListener('afterprint', () => {
+      reopened.forEach(c => { c.open = false; });
+      reopened = [];
+    });
+  }
+
+  /* blast radius */
+  function radiusTable(rows, cols, pick) {
+    const t = el('table', 'tbl');
+    const hr = el('tr');
+    cols.forEach(c => hr.appendChild(el('th', null, c)));
+    t.appendChild(hr);
+    rows.forEach(r => {
+      const tr = el('tr');
+      pick(r).forEach((cell, i) => {
+        const td = el('td', i === 2 ? 'v' : null);
+        if (cell && cell.node) td.appendChild(cell.node); else td.innerHTML = rich(cell || '');
+        tr.appendChild(td);
+      });
+      t.appendChild(tr);
+    });
+    return t;
+  }
+
+  if ((BR.reverified || []).length || (BR.notReverified || []).length) {
+    const sec = section('Blast radius');
+    if ((BR.reverified || []).length) {
+      sec.appendChild(el('p', 'sub', 'Re-verified after the fix'));
+      sec.appendChild(radiusTable(BR.reverified, ['Id', 'Behaviour', 'Result'], r => {
+        const v = el('span', 'tag tag--' + (vtone(r.result) === 'pass' ? 'pass' : 'skip'), r.result || '');
+        return [r.id, r.title, { node: v }];
+      }));
+    }
+    if ((BR.notReverified || []).length) {
+      sec.appendChild(el('p', 'sub', 'Not re-verified'));
+      sec.appendChild(radiusTable(BR.notReverified, ['Id', 'Behaviour', 'Why not'], r => [r.id, r.title, r.why]));
+    }
+  }
+
+  /* checks */
+  if (CHECKS.length) {
+    const sec = section('Checks');
+    const t = el('table', 'tbl');
+    const hr = el('tr');
+    ['Check', 'Result', 'Detail'].forEach(c => hr.appendChild(el('th', null, c)));
+    t.appendChild(hr);
+    CHECKS.forEach(ck => {
+      const tr = el('tr');
+      tr.appendChild(el('td', null, ck.name || ''));
+      const v = el('td', 'v');
+      v.appendChild(el('span', 'tag tag--' + (vtone(ck.verdict) === 'pass' ? 'pass' : vtone(ck.verdict) === 'fail' ? 'skip' : 'skip'), ck.verdict || ''));
+      if (vtone(ck.verdict) === 'fail') v.firstChild.style.color = 'var(--fail)';
+      tr.appendChild(v);
+      const d = el('td');
+      d.innerHTML = rich(ck.detail || '');
+      if (ck.href) {
+        d.appendChild(document.createTextNode(' '));
+        const a = el('a', null, 'open');
+        a.href = ck.href; a.target = '_blank'; a.rel = 'noopener';
+        d.appendChild(a);
+      }
+      tr.appendChild(d);
+      t.appendChild(tr);
+    });
+    sec.appendChild(t);
+  }
+})();
+</script>
+</body>
+</html>

@@ -30,18 +30,8 @@ Store these as `PR_NUMBER`, `REPOSITORY`, `REVIEWER`, `REVIEW_BODY`.
 
 ### Fetch Review Comments
 
-Fetch file-level review comments from the GitHub API:
-```bash
-gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments" \
-  --jq '[.[] | {id: .id, path: .path, line: (.line // .original_line), body: .body, diff_hunk: .diff_hunk}]'
-```
-
-Store the result as `COMMENTS_JSON`. Each entry has:
-- `path` — file path
-- `line` — line number
-- `body` — reviewer's comment text
-- `diff_hunk` — surrounding code context
-- `id` — comment ID for replying
+Fetch them per `skills/rework/references/comment-triage.md` — the single source for the call and the
+comment shape. Store the result as `COMMENTS_JSON`.
 
 If the API call fails or returns an empty array, treat the review body as the sole instruction.
 
