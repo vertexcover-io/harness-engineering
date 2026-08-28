@@ -7,15 +7,15 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestio
 
 # Orchestrate: Multi-Agent Development Pipeline
 
-Runs a full development pipeline in **6 stages** — 0, 1, then 3 through 6 (stage numbers are stable ids; 2 merged into 1). Stage 1 is the merged design-and-plan stage: the `planning` skill owns the question loop, the inline checkpoint, the library probe, and the plan gate. The Pipeline Stages table below is the authority on each stage's execution mode and output.
+Runs a full development pipeline in **7 stages** — 0, 1, then 3 through 7 (stage numbers are stable ids; 2 merged into 1). Stage 1 is the merged design-and-plan stage: the `planning` skill owns the question loop, the inline checkpoint, the library probe, and the plan gate. The Pipeline Stages table below is the authority on each stage's execution mode and output.
 
 **Announce at start:** "Using the orchestrate skill to run the full development pipeline."
 
 ## Invariants
 
 1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, gate on the plugin version, create the worktree, start the dashboard inside it.
-2. **No pause after Stage 1.** One skill owns both approval gates — `planning` (Stage 1): its inline checkpoint and its plan gate on `plan.html`. Those are the only pauses, they belong to the skill, and both self-bypass in `--auto`. Once the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back with NO stopping, pausing, questions, or interim summaries. The orchestrator adds no gate of its own.
-3. **Halt only on a genuine BLOCK/FAIL.** The complete halt set is the `## Terminal BLOCK/FAIL conditions` table below — nothing outside it stops the pipeline. On halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state.
+2. **No pause after Stage 1.** One skill owns both approval gates — `planning` (Stage 1): its inline checkpoint and its plan gate on `plan.html`. Those are the only pauses, they belong to the skill, and both self-bypass in `--auto`. Once the plan is approved, run every remaining stage (3 → 4 → 5 → 6 → 7, ending in commit + PR + retro) back-to-back with NO stopping, pausing, questions, or interim summaries. The orchestrator adds no gate of its own.
+3. **Halt only on a genuine BLOCK/FAIL.** The complete halt set is the `## Terminal BLOCK/FAIL conditions` table below — nothing outside it stops the pipeline. On halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state; Stage 7 runs after it and cannot change the verdict.
 4. **Every question uses `AskUserQuestion`** — never plain text. In `--auto` mode, skip all `AskUserQuestion` calls.
 5. **Invoke the stage's resolved skill. Never hand-roll its output.** Every stage runs a skill — resolve *which* per `references/config.md`, then invoke it via the `Skill` tool. Do this even when you believe you already know what it would say: your recollection is not the contract, and a project may have swapped the skill out from under you. This binds main-conversation stages exactly as it binds sub-agents — writing `plan.html` or `plan.md` yourself instead of invoking the planning stage's skill is a pipeline violation, not a shortcut. **Before leaving a stage, confirm you invoked its skill.** If you didn't, the stage did not run.
 6. **The skill owns the contract; the dispatch owns the variables.** When telling a sub-agent what to do, name the resolved skill and pass what only this run knows (paths, ids, ranges). Do NOT restate what the skill already says — a second copy is a second source of truth, and it will drift. If a sub-agent needs a rule that no skill states, add it to the skill rather than the prompt.
@@ -95,7 +95,7 @@ later, so nothing in initialization blocks on it.
 
 (In `--auto` mode, skip this whole step — no worktree, no dashboard.)
 
-1. Generate a spec name from the prompt: lowercase, spaces → hyphens, truncate to 30 chars — long enough to stay descriptive, short enough that the branch name and every `.harness/<SPEC_NAME>/…` path stay readable in `git branch` and on the dashboard. `"Add user auth system"` → `"add-user-auth-system"`. Then, **while cwd is still the launch directory** (before the worktree `cd`), capture the top-level session id so Stage 5 can publish artifacts against the real session: `SESSION_ID=$(basename "$(ls -t ~/.claude/projects/"$(pwd | sed 's#/#-#g')"/*.jsonl 2>/dev/null | head -1)" .jsonl 2>/dev/null)`. Store `SESSION_ID` (empty is fine — capture may be off; the verify skill then derives its own).
+1. Generate a spec name from the prompt: lowercase, spaces → hyphens, truncate to 30 chars — long enough to stay descriptive, short enough that the branch name and every `.harness/<SPEC_NAME>/…` path stay readable in `git branch` and on the dashboard. `"Add user auth system"` → `"add-user-auth-system"`. Then, **while cwd is still the launch directory** (before the worktree `cd`), capture the top-level session id so Stage 5 can publish artifacts against the real session: `SESSION_ID=$(basename "$(ls -t ~/.claude/projects/"$(pwd | sed 's#/#-#g')"/*.jsonl 2>/dev/null | head -1)" .jsonl 2>/dev/null)`. Store `SESSION_ID` (empty is fine — capture may be off; the verify skill then derives its own) and `LAUNCH_DIR=$(pwd)` beside it — Stage 7 needs the launch directory, because transcripts live under it and never under the worktree.
 2. **Create the worktree.** Use the project's own worktree skill when it has one — check `CLAUDE.md` and the available skills for one that sets up a worktree — otherwise invoke `using-git-worktrees`. Either way, `cd` into it and store `WORKTREE_PATH`, `BRANCH_NAME`.
 3. **From inside the worktree**, open `references/dag-commands.md` and run its init block verbatim — it creates every stage node, and a hand-built DAG will not match the transitions the rest of this file issues. Store the printed `HARNESS_DIR`.
 4. Start the dashboard server: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve-start")`. It detaches, so this is a plain foreground call.
@@ -113,14 +113,15 @@ later, so nothing in initialization blocks on it.
 | 4 | Code Review | **Main conversation** | `.harness/<SPEC_NAME>/review/review.md` — per-axis findings + verdict (review only, no source edits) |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
+| 7 | Retro | Sub-agent | `.harness/<SPEC_NAME>/retro/report.md` — ranked harness defects this run exposed |
 
 **Every stage runs a skill, and which one is never hardcoded here** — `references/config.md` owns the
 stage → default-skill table, the resolution order, and each stage's gate contract. Resolve it
 there, then invoke it (Invariant 5).
 
-Stages 3 and 5 are dispatched as sub-agents via `Agent`, as is Stage 0's `baseline` half. The rest run in the main conversation: Stage 0 sets the working directory, Stage 1 needs conversation context and explores the codebase interactively, Stage 4's skill dispatches its own reviewer personas, and Stage 6 commits.
+Stages 3, 5 and 7 are dispatched as sub-agents via `Agent`, as is Stage 0's `baseline` half. The rest run in the main conversation: Stage 0 sets the working directory, Stage 1 needs conversation context and explores the codebase interactively, Stage 4's skill dispatches its own reviewer personas, and Stage 6 commits.
 
-**Every stage is mandatory.** The planning skill scales itself — its step 0 collapses the question loop and checkpoint for work with nothing to decide, and its own gate may route atomic work to `implement`. The orchestrator never pre-empts either call.
+**Every stage is mandatory except Stage 7**, which a project may switch off with `"retro": { "disabled": true }`. The planning skill scales itself — its step 0 collapses the question loop and checkpoint for work with nothing to decide, and its own gate may route atomic work to `implement`. The orchestrator never pre-empts either call.
 
 ---
 
@@ -161,7 +162,7 @@ names no ticket.
 | you halt on a Terminal BLOCK/FAIL condition | `<NOTIFY> --event run-interrupted --stage <id> --body '<what failed, in plain words>'` |
 | Stage 6 ends | `<NOTIFY> --event run-completed --body '<PR_URL>'` |
 
-**Document style:** every human-facing document any stage writes — `plan.html` copy, phase files, the README index, review reports — follows `${CLAUDE_PLUGIN_ROOT}/skills/_shared/writing-style.md` (STE rules: active voice, ≤20-word sentences, one term per concept). Sub-agents that write documents get that path in their dispatch prompt.
+**Documents a person reads** — `plan.html` copy, phase files, the README index, review reports. Every stage that writes one loads the `writing-style` skill first, and runs its ship-check before shipping. Sub-agents that write documents get the same instruction in their dispatch prompt. Agent-only files like `design.md` skip it.
 
 ### Pipeline Flow
 
@@ -331,6 +332,26 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
 
 ---
 
+### Stage 7: Retro
+
+Resolve `CFG.retro`. When it carries `disabled: true`, `set-status retro skipped` and go straight
+to the Summary. Otherwise `set-status retro running` and dispatch the Stage 7 template from
+`references/stage-prompts.md`.
+
+The retro audits the run that just finished: which defects a human had to catch, which the agents
+burned time on, and which nothing caught at all. It reads the session transcripts, so it runs
+**after** Stage 6 — the PR exists, and the transcript is complete through it.
+
+**This stage cannot fail the run.** The PR is already open. On any error, `set-status retro failed`,
+print one line naming what went wrong, and continue to the Summary with the retro row marked
+`not produced`. Nothing here belongs in the Terminal BLOCK/FAIL table.
+
+`write-report retro`, `set-status retro done`.
+
+**Extract:** issue count, MISSED count, report path.
+
+---
+
 ## Terminal BLOCK/FAIL conditions
 
 This table is Invariant 3's halt set — the whole of it. Stop the pipeline and report which stage failed and why on any of:
@@ -372,6 +393,7 @@ Present ONLY after Stage 6 completes, or after a genuine BLOCK/FAIL halt — nev
 | 4. Review | <verdict> (<findings> findings) |
 | 5. Verify & Finalize | Verify: <PASSED/FAILED>, Gate: <PASS/BLOCKED>, docs: <N> updated |
 | 6. PR | <PR_URL> |
+| 7. Retro | <N> issues (<M> MISSED) → .harness/<SPEC_NAME>/retro/report.md |
 
 **Issues:** <any retries, failures, stagnation, or "None">
 ```

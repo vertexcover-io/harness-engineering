@@ -19,6 +19,10 @@ Note: `$ARGUMENTS` is reserved for scan scope (path or blank for full scan), not
 
 # Doc Quality Guard
 
+Load the `writing-style` skill before you write the Doc Quality Report or the fix spec. Run
+its ship-check before you print either one. Scanner sub-agents get the same instruction in
+their dispatch prompt.
+
 **First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
 
 Audits documentation for **accuracy** (code-doc sync, staleness) and **tone** (AI slop), then generates a fix spec and hands off to `/orchestrate`.

@@ -6,6 +6,9 @@ user-invocable: false
 
 # Quality Gate: Tool-Based Verification
 
+Load the `writing-style` skill before you write `gate-report-<stage>-<NNN>.md`. Run its
+ship-check before you return a verdict.
+
 This is the gate between "the coder says it's done" and "the feature ships." Every verdict is backed by **evidence** — verbatim command output, never an adjective. No check may be silently absent, skipped, weakened, or overridden by a sub-agent.
 
 **Announce at start:** "Running quality gate checks against baseline metrics."

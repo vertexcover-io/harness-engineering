@@ -10,6 +10,10 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 
 # Sync Docs
 
+Load the `writing-style` skill before you write or edit any doc. Run its ship-check on every
+file you touch. It governs the human-facing docs — `README.md`, `docs/`; agent-facing files
+like `CLAUDE.md` and `AGENTS.md` are exempt.
+
 Ensures documentation stays in sync with code changes. Runs after coding and quality gate,
 before commit. Only touches docs relevant to what changed — does not generate unnecessary files.
 
