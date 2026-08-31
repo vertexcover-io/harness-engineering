@@ -89,9 +89,53 @@ else
   GATE_STATUS=0
 fi
 
+# --- Step 3: environment preflight -------------------------------------------
+# Runs before the worktree exists, so a red environment halts with nothing to
+# clean up. Prints PREFLIGHT=OK, PREFLIGHT=FAIL <names>, or PREFLIGHT=UNKNOWN.
+# The failing names index the fix steps preflight.ts prints on its own stderr/stdout;
+# this line never carries them.
+preflight_path() {
+  local root dir
+  root="${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-}}"
+  if [ -n "$root" ] && [ -f "$root/skills/_shared/preflight.ts" ]; then
+    printf '%s\n' "$root/skills/_shared/preflight.ts"
+    return 0
+  fi
+  dir="$SCRIPT_DIR"
+  while [ "$dir" != "/" ]; do
+    if [ -f "$dir/skills/_shared/preflight.ts" ]; then
+      printf '%s\n' "$dir/skills/_shared/preflight.ts"
+      return 0
+    fi
+    dir=$(dirname -- "$dir")
+  done
+  return 1
+}
+
+PREFLIGHT_SCRIPT=$(preflight_path) || PREFLIGHT_SCRIPT=""
+if [ -z "$PREFLIGHT_SCRIPT" ] || ! command -v node >/dev/null 2>&1; then
+  # No script or no node to run it: report UNKNOWN rather than inventing a
+  # verdict. A check that could not run is not a check that passed.
+  PREFLIGHT_LINE="PREFLIGHT=UNKNOWN"
+else
+  PREFLIGHT_JSON=$(node --experimental-strip-types "$PREFLIGHT_SCRIPT" --json 2>/dev/null)
+  if [ -z "$PREFLIGHT_JSON" ] || ! command -v jq >/dev/null 2>&1; then
+    PREFLIGHT_LINE="PREFLIGHT=UNKNOWN"
+  else
+    FAILED=$(printf '%s' "$PREFLIGHT_JSON" \
+      | jq -r '[.results[] | select(.status != "ok") | .name] | join(",")' 2>/dev/null)
+    if [ -z "$FAILED" ]; then
+      PREFLIGHT_LINE="PREFLIGHT=OK"
+    else
+      PREFLIGHT_LINE="PREFLIGHT=FAIL $FAILED"
+    fi
+  fi
+fi
+
 printf 'AUTO_MODE=%s\n' "$AUTO_MODE"
 printf 'INPUT_KIND=%s\n' "$INPUT_KIND"
 printf 'INPUT_PATH=%s\n' "$INPUT_PATH"
 printf '%s\n' "$GATE_LINE"
+printf '%s\n' "$PREFLIGHT_LINE"
 
 exit "$GATE_STATUS"

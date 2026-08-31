@@ -13,7 +13,7 @@ Runs a full development pipeline in **6 stages** — 0, 1, then 3 through 6 (sta
 
 ## Invariants
 
-1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, gate on the plugin version, create the worktree, start the dashboard inside it.
+1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, gate on the plugin version, check the environment, create the worktree, start the dashboard inside it.
 2. **No pause after Stage 1.** One skill owns both approval gates — `planning` (Stage 1): its inline checkpoint and its plan gate on `plan.html`. Those are the only pauses, they belong to the skill, and both self-bypass in `--auto`. Once the plan is approved, run every remaining stage (3 → 4 → 5 → 6, ending in commit + PR) back-to-back with NO stopping, pausing, questions, or interim summaries. The orchestrator adds no gate of its own.
 3. **Halt only on a genuine BLOCK/FAIL.** The complete halt set is the `## Terminal BLOCK/FAIL conditions` table below — nothing outside it stops the pipeline. On halt, report which stage failed and why. Reaching Stage 6 is the only successful terminal state.
 4. **Every question uses `AskUserQuestion`** — never plain text. In `--auto` mode, skip all `AskUserQuestion` calls.
@@ -46,7 +46,7 @@ Every file below is one hop from here. Read the one whose condition you are in �
 
 When the invocation supplies `SPEC_NAME`, `WORKTREE_PATH`, and an entry stage, this run **resumes**.
 
-- Run Step 1's script for the version gate only. The caller's feedback is `TASK_CONTEXT`.
+- Run Step 1's script for the version gate and the environment check; both verdicts apply as written in Step 1. The caller's feedback is `TASK_CONTEXT`.
 - Skip Step 2 and Stage 0. `cd` to `WORKTREE_PATH` — the caller seeded the harness dir already.
 - **Never re-baseline.** The original `baseline.json` measures pre-feature `main`, the bar this work
   still has to clear.
@@ -60,9 +60,9 @@ When the invocation supplies `SPEC_NAME`, `WORKTREE_PATH`, and an entry stage, t
 A resumed run has no Stage 1 and therefore no gate: it runs from the entry stage through Stage 6
 without pausing.
 
-### Step 1: Detect the Input and Gate on the Plugin Version
+### Step 1: Detect the Input, Gate on the Plugin Version, Check the Environment
 
-One script does both. A stale harness runs stale contracts, so the gate runs **before the worktree exists** — a halt here leaves nothing to clean up. Pass the raw argument through, `--auto` and all:
+One script does all three. A stale harness runs stale contracts and a missing tool fails a stage hours later, so both gates run **before the worktree exists** — a halt here leaves nothing to clean up. Pass the raw argument through, `--auto` and all:
 
 ```bash
 bash "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-.}}/skills/orchestrate/scripts/init-gate.sh" "<raw argument>"
@@ -70,13 +70,14 @@ bash "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-.}}/skills/orchestrate/scripts/
 
 Outside a plugin runtime neither root is set — run the script by its path in the checkout instead. It resolves the version gate and the plugin manifest by walking up from its own location either way.
 
-It prints exactly four lines. Act on them — do not re-derive them:
+It prints exactly five lines. Act on them — do not re-derive them:
 
 ```
 AUTO_MODE=true|false
 INPUT_KIND=prompt|file|findings
 INPUT_PATH=<absolute path, empty when INPUT_KIND=prompt>
 VERSION_GATE=OK|UNKNOWN|STALE local=<x> remote=<y>
+PREFLIGHT=OK|UNKNOWN|FAIL <comma-separated check names>
 ```
 
 **Input.** The argument is either an **inline prompt** or a **path to a document describing the work** — a PRD, an issue export, a brief, or an existing design doc. (There is no `spec.md` stage in this pipeline; the requirement namespace belongs to the PRD and to `plan.md`.) The script has already stripped `--auto` and tested the remainder with `[ -f ]`:
@@ -92,6 +93,12 @@ Store the resolved input as `TASK_CONTEXT` — passed to every stage.
 - `VERSION_GATE=OK` → continue.
 - `VERSION_GATE=UNKNOWN` → log one warning line and continue; a version that could not be read is never grounds to block a ticket.
 - `VERSION_GATE=STALE` → **stop before creating anything.** Report both versions and tell the user to update the harness plugin (`/plugin`), then reload the session or restart Claude and re-run the same orchestrate command. In `--auto` mode, log the same warning and continue — CI cannot reload a session. (The script exits non-zero only on `STALE`.)
+
+**Environment verdict.** Run `skills/_shared/preflight.ts` directly to print each named failure with its fix commands.
+
+- `PREFLIGHT=OK` or `UNKNOWN` → continue; log one warning line on `UNKNOWN`.
+- `PREFLIGHT=FAIL` where every named check is fixed by editing a file in this repo → apply the fixes without asking, re-run the script, continue on `OK`.
+- `PREFLIGHT=FAIL` naming anything else → **stop.** Report each failing check with its fix commands and name `setup-harness`. Never install software or write a credential yourself. Stop the same way in `--auto`.
 
 When `AUTO_MODE=true`:
 - Skip all `AskUserQuestion` calls — Claude decides autonomously, auto-approves designs and plans.
@@ -360,6 +367,7 @@ This table is Invariant 3's halt set — the whole of it. Stop the pipeline and 
 | Sub-agent error | Any sub-agent fails or returns an error |
 | Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
 | Missing verification artifacts | `proof-report.html` absent → `MISSING_VERIFICATION_ARTIFACTS` |
+| Preflight failed | Step 1 printed `PREFLIGHT=FAIL` naming a check no repo-file edit resolves — report each failing check with its fix commands and name `setup-harness`. Halts in `--auto` too |
 | Config missing | `orchestrate.config.json` is absent from the repo root — report it and name `setup-harness`, which writes it. Never fall back to discovering commands |
 | Package not in config | a `PACKAGES` entry `CONFIG.packages` does not carry — halt and name `setup-harness`, which adds it. Every stage after this one would otherwise guess its commands |
 | Config stale | A command the config names does not resolve (exit 127, missing script, binary not installed) — report the command, the package it came from, and that the config needs updating |
