@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const API = "https://app.asana.com/api/1.0";
@@ -41,8 +41,26 @@ const readEnvFile = (file: string, key: string): string | null => {
   return null;
 };
 
+let rootsCache: { readonly repoRoot: string; readonly mainCheckout: string } | null = null;
+
+const gitRoots = (): { readonly repoRoot: string; readonly mainCheckout: string } => {
+  if (rootsCache) return rootsCache;
+  try {
+    const roots = execFileSync("git", ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .trim()
+      .split("\n");
+    rootsCache = { repoRoot: roots[0] ?? ".", mainCheckout: dirname(roots[1] ?? "") || "." };
+  } catch {
+    rootsCache = { repoRoot: ".", mainCheckout: "." };
+  }
+  return rootsCache;
+};
+
 export const readEnvValue = (key: string): string | null =>
-  process.env[key]?.trim() || readEnvFile(".env", key);
+  process.env[key]?.trim() || readEnvFile(join(gitRoots().mainCheckout, ".env"), key);
 
 export const readCredentials = (): Credentials | null => {
   const pat = readEnvValue("ASANA_PAT");
@@ -62,7 +80,9 @@ export const currentTicketRef = (): string | null => {
   }
 };
 
-export const readTrackerConfig = (file = "orchestrate.config.json"): TrackerConfig | null => {
+export const readTrackerConfig = (
+  file = join(gitRoots().repoRoot, "orchestrate.config.json"),
+): TrackerConfig | null => {
   if (!existsSync(file)) return null;
   let parsed: unknown;
   try {
@@ -88,12 +108,16 @@ const request = async (
   creds: Credentials,
   init: RequestInit = {},
 ): Promise<{ readonly ok: boolean; readonly status: number; readonly body: unknown }> => {
-  const response = await fetch(`${API}${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${creds.pat}`, ...(init.headers ?? {}) },
-  });
-  const body = await response.json().catch(() => null);
-  return { ok: response.ok, status: response.status, body };
+  try {
+    const response = await fetch(`${API}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${creds.pat}`, ...(init.headers ?? {}) },
+    });
+    const body = await response.json().catch(() => null);
+    return { ok: response.ok, status: response.status, body };
+  } catch {
+    return { ok: false, status: 0, body: null };
+  }
 };
 
 const TASK_FIELDS = "gid,name,projects.gid,custom_fields.gid,custom_fields.people_value.gid,custom_fields.people_value.name";
@@ -129,7 +153,13 @@ export const findTaskByRef = async (ref: string, refField: string, creds: Creden
 
   if (!ok) {
     const reason =
-      status === 401 ? "bad or expired ASANA_PAT" : status === 429 ? "rate limited" : `HTTP ${status}`;
+      status === 0
+        ? "network unreachable"
+        : status === 401
+          ? "bad or expired ASANA_PAT"
+          : status === 429
+            ? "rate limited"
+            : `HTTP ${status}`;
     return { kind: "error", detail: reason };
   }
   if (!isRecord(body) || !Array.isArray(body["data"])) return { kind: "error", detail: "unreadable search response" };
