@@ -5,7 +5,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 type Status = "ok" | "missing";
 
@@ -39,6 +39,15 @@ const run = (command: string, args: readonly string[]): string | null => {
 };
 
 const repoRoot = (): string => run("git", ["rev-parse", "--show-toplevel"]) ?? process.cwd();
+
+// .env is gitignored, so it exists only in the main checkout, never in a worktree.
+const mainCheckout = (): string => {
+  const common = run("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  return common ? dirname(common) : repoRoot();
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
 
 const readDotenvKeys = (path: string): ReadonlySet<string> => {
   if (!existsSync(path)) return new Set();
@@ -124,7 +133,12 @@ const checkNotifierSecrets = (): { readonly status: Status; readonly detail: str
   const configPath = join(repoRoot(), "orchestrate.config.json");
   if (!existsSync(configPath)) return { status: "ok", detail: "no config, notifier off" };
 
-  const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    return { status: "missing", detail: "orchestrate.config.json is not valid JSON" };
+  }
   const notifier =
     typeof parsed === "object" && parsed !== null && "notifier" in parsed
       ? (parsed as { readonly notifier?: { enabled?: boolean; provider?: string } }).notifier
@@ -136,7 +150,7 @@ const checkNotifierSecrets = (): { readonly status: Status; readonly detail: str
   }
 
   const available = new Set([
-    ...readDotenvKeys(join(repoRoot(), ".env")),
+    ...readDotenvKeys(join(mainCheckout(), ".env")),
     ...Object.keys(process.env).filter((key) => process.env[key] !== ""),
   ]);
   const required = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "SLACK_MEMBER_ID"];
@@ -146,14 +160,61 @@ const checkNotifierSecrets = (): { readonly status: Status; readonly detail: str
   return { status: "ok", detail: "slack credentials present" };
 };
 
+const TRACKER_GID_FIELDS = ["project", "refField", "ownerField"] as const;
+const TRACKER_SECTIONS = ["plan-review", "code-review"] as const;
+
+// readTrackerConfig returns null on any malformed field and every caller reads that as
+// "no tracker configured", so a typo silently disables the feature. Name the bad field here.
+const trackerConfigProblems = (config: unknown): readonly string[] => {
+  if (!isRecord(config)) return ["orchestrate.config.json is not an object"];
+  const tracker = config["tracker"];
+  if (!isRecord(tracker)) return ["tracker is not an object"];
+
+  const fieldProblems = TRACKER_GID_FIELDS.filter((key) => typeof tracker[key] !== "string" || tracker[key] === "").map(
+    (key) => `tracker.${key} is missing or not a string`,
+  );
+
+  const sections = tracker["sections"];
+  if (!isRecord(sections)) return [...fieldProblems, "tracker.sections is missing or not an object"];
+
+  return [
+    ...fieldProblems,
+    ...TRACKER_SECTIONS.filter((key) => typeof sections[key] !== "string" || sections[key] === "").map(
+      (key) => `tracker.sections["${key}"] is missing or not a string`,
+    ),
+  ];
+};
+
 const checkAsanaCredentials = (): { readonly status: Status; readonly detail: string } => {
   const available = new Set([
-    ...readDotenvKeys(join(repoRoot(), ".env")),
+    ...readDotenvKeys(join(mainCheckout(), ".env")),
     ...Object.keys(process.env).filter((key) => process.env[key] !== ""),
   ]);
   const absent = ["ASANA_PAT", "ASANA_WORKSPACE_GID"].filter((key) => !available.has(key));
   if (absent.length > 0) return { status: "missing", detail: `unset: ${absent.join(", ")}` };
-  return { status: "ok", detail: "asana credentials present" };
+
+  const configPath = join(repoRoot(), "orchestrate.config.json");
+  if (!existsSync(configPath)) return { status: "ok", detail: "credentials present, no config to check" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    return { status: "missing", detail: "orchestrate.config.json is not valid JSON" };
+  }
+
+  // The tracker block is optional. Absent, the pipeline touches no ticket.
+  if (!isRecord(parsed) || !("tracker" in parsed)) {
+    return { status: "ok", detail: "credentials present, no tracker configured" };
+  }
+  const provider = isRecord(parsed["tracker"]) ? parsed["tracker"]["provider"] : undefined;
+  if (provider !== "asana") {
+    return { status: "ok", detail: `tracker provider ${typeof provider === "string" ? provider : "unset"}` };
+  }
+
+  const problems = trackerConfigProblems(parsed);
+  if (problems.length > 0) return { status: "missing", detail: problems.join("; ") };
+  return { status: "ok", detail: "asana credentials and tracker config present" };
 };
 
 const CHECKS: readonly Check[] = [
@@ -250,17 +311,19 @@ const CHECKS: readonly Check[] = [
     name: "notifier-secrets",
     unblocks: "orchestrate run-started and stage notifications",
     fix: [
-      "add SLACK_BOT_TOKEN, SLACK_CHANNEL_ID and SLACK_MEMBER_ID to .env at the repo root",
+      "add SLACK_BOT_TOKEN, SLACK_CHANNEL_ID and SLACK_MEMBER_ID to .env at the main repo root",
       "or set notifier.enabled to false in orchestrate.config.json",
     ],
     run: checkNotifierSecrets,
   },
   {
     name: "asana-credentials",
-    unblocks: "functional-verify publish step, ticket linking",
+    unblocks: "functional-verify publish step, ticket linking, plan-review and code-review transitions",
     fix: [
-      "add ASANA_PAT and ASANA_WORKSPACE_GID to .env at the repo root",
+      "add ASANA_PAT and ASANA_WORKSPACE_GID to .env at the main repo root",
       "the workspace GID is in the Asana URL",
+      "a named tracker.* fault means orchestrate.config.json has that field wrong: every value is a GID from the project's own board, and sections needs both plan-review and code-review",
+      "or remove the tracker block from orchestrate.config.json to leave tickets alone",
     ],
     run: checkAsanaCredentials,
   },
