@@ -145,12 +145,11 @@ Optional. Absent, or `provider` other than `asana`, and the pipeline touches no 
 
 Every value is a GID from this project's own board. `refField` is the custom field holding the
 ticket ref the branch is named for (`REF-1234`); `ownerField` is a **people**-type field whose
-first entry becomes the assignee. **Resolution matches `refField`'s value, never the task's name** —
-task names rarely carry the ref, and matching on them finds the task and then discards it.
+first entry becomes the assignee. **Resolution matches `refField`'s value, never the task's name.**
 
 `sections` keys are pipeline moments, not board labels, so a project on a different board keeps the
 same two names: `plan-review` (Stage 1, once the plan is approved) and `code-review` (Stage 6, once
-the PR exists). `orchestrate/SKILL.md` owns which moment fires which.
+the PR exists).
 
 No credential belongs in this file, because it is committed. `ASANA_PAT` and `ASANA_WORKSPACE_GID`
 come from the environment, or from `.env` at the main repo root.

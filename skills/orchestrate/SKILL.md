@@ -227,14 +227,13 @@ On the first successful join, `write-report baseline` and `set-status baseline d
 5. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `write-report planning`, `set-status planning done`.
 6. **Hand the ticket to its owner for plan review.** The plan is approved and a human is next, so move
    the ticket to the `plan-review` section and assign it to the owner named on the ticket. Config
-   shape and the best-effort contract: the Tracker section of `references/config.md`. Prints one line
-   and always exits 0 — never a halt.
+   shape and the best-effort contract: the Tracker section of `references/config.md`.
 
    ```bash
    node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/_shared/asana.ts" --to plan-review
    ```
 
-   **Skip this on the `implement` route below** — that route writes no plan, so there is nothing to
+   **Skip this on the `implement` route below.** That route writes no plan, so there is nothing to
    review and the ticket must not move.
 
 **If planning routed to `implement` instead of writing a plan.** Its step-0 gate may hand genuinely atomic work straight to the `implement` skill, producing **no `plan.html` and no phase files**. That is a valid outcome, not a stage failure — and the orchestrator never pre-empts that gate by making the call itself. When it happens:
@@ -337,9 +336,8 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
    ```bash
    node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/scripts/upload-bundle.ts" '.harness/<SPEC_NAME>' 'harness-<SPEC_NAME>.zip'
    ```
-7. **Hand the ticket to its owner for code review.** Runs last, after the PR and both attachments
-   exist — a ticket in the review section with no PR on it is not reviewable. Same contract as the
-   Stage 1 call: one line, always exits 0.
+7. **Hand the ticket to its owner for code review.** Runs after step 6, so the PR and both
+   attachments are already on the ticket.
 
    ```bash
    node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/_shared/asana.ts" --to code-review

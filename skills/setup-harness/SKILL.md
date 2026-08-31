@@ -179,7 +179,7 @@ Secrets and logins are theirs. Print a numbered list of exactly the ones still r
 | `claude-sessions` MISSING | Install the CLI, then `claude-sessions login --server <url>` and `claude-sessions install-hooks`. Ask for the server URL — there is no default to guess. |
 | `claude-sessions` UNAUTHENTICATED | Run `claude-sessions login --server <url>` — it opens a browser pairing flow. |
 | `asana-workspace` UNSET | Open Asana, copy the workspace GID from the URL, and add `ASANA_WORKSPACE_GID=<gid>` to the repo-root `.env`. The `ASANA_PAT` token goes there too. |
-| `asana-tracker` INCOMPLETE | `tracker` names Asana but a GID is missing. Fill `project`, `refField`, `ownerField`, and both `sections` — shape and meanings in `orchestrate/references/config.md`. Ticket moves skip in one line until then. |
+| `asana-tracker` INCOMPLETE | `tracker` names Asana but a GID is missing. Fill `project`, `refField`, `ownerField`, and both `sections`. Shape and meanings in `orchestrate/references/config.md`. Ticket moves skip in one line until then. |
 | `gh` present but unauthenticated | Run `gh auth login` — interactive. |
 | any tool needing `sudo` | Give the exact one-liner from Step 3 for their platform. |
 | a service that would not start | Quote the command and its output, and name what only they can supply — a credential, a login, an image, a free port. |
