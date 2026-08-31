@@ -4,10 +4,12 @@
     {
       "id": 1,
       "name": "resume-seeds-the-rework-dir",
-      "prompt": "/rework PROJ-412 The invite email goes out with the wrong workspace name when a user belongs to two workspaces.",
-      "expected_output": "The skill resolves the prior run from .harness/*/manifest.json, cds to that worktree, creates .harness/<SPEC_NAME>-rework-1, copies baseline.json and claims.json into it, removes .harness/current-phase, reproduces the reported bug as a failing test, then invokes orchestrate at entry stage coder.",
+      "prompt": "/rework https://app.asana.com/0/1201234567890/1200000000001",
+      "expected_output": "The skill reads the Asana task, finds no PR URL in its notes, stories or attachments, and treats the task name and notes as the reported issue. It resolves the prior run from .harness/*/manifest.json, cds to that worktree, creates .harness/<SPEC_NAME>-rework-1, copies baseline.json and claims.json into it, removes .harness/current-phase, reproduces the reported bug as a failing test, then invokes orchestrate at entry stage coder.",
       "files": [],
       "expectations": [
+        "Resolves PRS from the Asana task before searching for SPEC_NAME",
+        "Treats the empty PRS list as the QA case rather than halting",
         "Finds SPEC_NAME by searching .harness/*/manifest.json rather than guessing from the ticket id",
         "Creates a sibling rework spec dir named <SPEC_NAME>-rework-<N>, not a subdirectory of the original",
         "Copies baseline.json and claims.json into the rework spec dir",
@@ -21,17 +23,18 @@
         "Does not write a design doc or a plan",
         "Does not ask the user any question",
         "Does not re-run the full pipeline from stage 0",
-        "Does not copy plan.md into the rework spec dir"
+        "Does not copy plan.md into the rework spec dir",
+        "Does not halt because the Asana task links no PR"
       ]
     },
     {
       "id": 2,
       "name": "pr-comments-every-item-dispositioned",
-      "prompt": "/rework PROJ-412 --pr 214",
+      "prompt": "/rework https://github.com/acme/lydia/pull/214",
       "expected_output": "The skill fetches the PR's inline comments and review summaries, dispatches a general-purpose subagent to read the code at each path:line, gives each comment a verdict, and every fetched comment ends on exactly one disposition. The only file written is rework-report.html.",
       "files": [],
       "expectations": [
-        "Fetches inline comments via the pulls/{N}/comments endpoint and review summaries via pulls/{N}/reviews",
+        "Derives repository acme/lydia and pr_number 214 from the URL, then fetches inline comments via the pulls/{N}/comments endpoint and review summaries via pulls/{N}/reviews",
         "Dispatches a general-purpose subagent to read the code at each comment's path:line rather than reading the files itself",
         "Assigns every comment one of: valid, stale, out-of-scope, wrong",
         "A 'wrong' verdict names the behavior that makes the existing code correct",
@@ -49,7 +52,7 @@
       "id": 3,
       "name": "blast-radius-fails-open",
       "prompt": "The rework fix touched packages/api/src/mailer.ts and packages/api/src/config.ts. mailer.ts is named in phases/phase-2.md; config.ts is named in no phase file. Trace the blast radius.",
-      "expected_output": "A general-purpose subagent traces the radius and returns two lists. Because config.ts maps to no phase, the radius widens to every coverage id in the prior proof-report. The in-radius list is passed in the Stage 5 dispatch as functional-verify's requirement enumeration, and both lists go into rework-report.html.",
+      "expected_output": "A general-purpose subagent traces the radius and returns two lists. Because config.ts maps to no phase, the radius widens to every coverage id in the prior proof-report. The in-radius list is passed in the Stage 5 dispatch as functional-verify's requirement enumeration. The out-of-radius list reaches rework-report.html as a caveat, and only when something was not re-verified.",
       "files": [],
       "expectations": [
         "Dispatches a general-purpose subagent for the trace instead of reading the phase files itself",
@@ -62,10 +65,30 @@
         "Each out-of-radius id carries the reason it is out"
       ],
       "anti_expectations": [
-        "Does not write a scope file \u2014 the lists travel in the dispatch prompt and the report",
+        "Does not write a scope file \u2014 the dispatch prompt carries the in-radius list, and the report carries the out-of-radius list as a caveat",
         "Does not narrow scope when a changed file maps to no phase",
         "Does not omit ids from both lists",
         "Does not edit functional-verify's own scope rule or claim a partial verification is complete"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "asana-task-fans-out-to-every-linked-pr",
+      "prompt": "/rework https://app.asana.com/0/1201234567890/1200000000002",
+      "expected_output": "The Asana task links two PRs, acme/lydia#25 and acme/serana#24. The skill fetches comments from both, triages every comment from both, and every fetched comment ends on exactly one disposition. Each report item sourceHref points at the repository and PR that comment came from.",
+      "files": [],
+      "expectations": [
+        "Collects both PR URLs from the Asana task rather than stopping at the first",
+        "Runs the comments and reviews fetch once per PR, with that PR's repository and pr_number",
+        "Identifies a comment by repository, pr_number and id together, not by id alone",
+        "Resolves a single SPEC_NAME covering both PRs",
+        "Builds each sourceHref from that comment's own repository and pr_number",
+        "Every fetched comment across both PRs ends on exactly one disposition"
+      ],
+      "anti_expectations": [
+        "Does not triage only one of the two PRs",
+        "Does not create a separate rework spec dir per PR",
+        "Does not ask the user which PR to use"
       ]
     }
   ]

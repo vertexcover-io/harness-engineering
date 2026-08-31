@@ -5,15 +5,17 @@ The single source for reading a PR's human review comments and judging each one.
 
 ## Fetch
 
-`REPOSITORY` comes from `gh repo view --json nameWithOwner -q .nameWithOwner`.
+Run both calls once for each `REPOSITORY` and `PR_NUMBER` the caller holds. `rework` passes one
+pair per `PRS` entry; `review-fixer` passes the single pair it parsed.
 
 ```bash
 gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments" \
-  --jq '[.[] | {id: .id, path: .path, line: (.line // .original_line), body: .body, diff_hunk: .diff_hunk}]'
+  --jq "[.[] | {repository: \"${REPOSITORY}\", pr_number: ${PR_NUMBER}, id: .id, path: .path, line: (.line // .original_line), body: .body, diff_hunk: .diff_hunk}]"
 ```
 
-Per entry: `id`, `path`, `line`, `body` (what the reviewer wrote), `diff_hunk` (the code they wrote
-it against).
+Per entry: `repository`, `pr_number`, `id`, `path`, `line`, `body` (what the reviewer wrote),
+`diff_hunk` (the code they wrote it against). Identify a comment by `repository`, `pr_number` and
+`id` together. `id` alone repeats across repos.
 
 Then the review summaries, which often carry a request no inline comment does:
 
@@ -21,7 +23,9 @@ Then the review summaries, which often carry a request no inline comment does:
 gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews" --jq '[.[] | {body, state}]'
 ```
 
-Nothing from either call is a halt — there is no feedback to rework.
+Concatenate every PR's results into one list before triage.
+
+Nothing from any call is a halt — there is no feedback to rework.
 
 ## Triage
 
@@ -49,5 +53,5 @@ Every comment ends on exactly one **disposition**:
 - `deferred` — verdict `out-of-scope`, report names the follow-up
 - `dropped` — verdict `stale` or `wrong`, report carries the reason
 
-**Walk the fetched list by id and account for each one.** A comment nobody dispositioned is
-unfinished work, not an accepted risk.
+**Walk the fetched list by `repository`, `pr_number` and `id`, and account for each one.** A comment
+nobody dispositioned is unfinished work, not an accepted risk.
