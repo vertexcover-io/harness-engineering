@@ -4,46 +4,11 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-type Credentials = { readonly pat: string; readonly workspace: string };
-type AsanaTask = { readonly gid: string; readonly name: string };
+import { API, currentTicketRef, findTaskByRef, readCredentials, readTrackerConfig, type Credentials } from "../../_shared/asana.ts";
 
-const API = "https://app.asana.com/api/1.0";
 const MAX_ATTACHMENT_BYTES = 90 * 1024 * 1024;
-const TICKET_REF = /[A-Z]{2,}-\d+/;
 const ZIP_ALWAYS_EXCLUDES = ["*.zip"];
 const ZIP_OVERSIZE_EXCLUDES = ["*.zip", "verification/traces/*"];
-
-function currentTicketRef(): string | null {
-  try {
-    const branch = execFileSync("git", ["branch", "--show-current"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return TICKET_REF.exec(branch)?.[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function readTasks(body: unknown): ReadonlyArray<AsanaTask> {
-  if (typeof body !== "object" || body === null || !("data" in body) || !Array.isArray(body.data)) return [];
-  return body.data.filter(
-    (item: unknown): item is AsanaTask =>
-      typeof item === "object" &&
-      item !== null &&
-      "gid" in item &&
-      typeof item.gid === "string" &&
-      "name" in item &&
-      typeof item.name === "string",
-  );
-}
-
-async function findTaskNamedRef(ref: string, creds: Credentials): Promise<string | null> {
-  const url = `${API}/workspaces/${creds.workspace}/tasks/search?text=${encodeURIComponent(ref)}&opt_fields=gid,name`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${creds.pat}` } });
-  if (!response.ok) return null;
-  return readTasks(await response.json()).find((task) => task.name.includes(ref))?.gid ?? null;
-}
 
 function zipSpecDir(specDir: string, zipPath: string, excludes: ReadonlyArray<string>): void {
   execFileSync("zip", ["-qr", zipPath, ".", "-x", ...excludes], { cwd: specDir, stdio: "ignore" });
@@ -73,9 +38,14 @@ if (!specDir || !zipName) {
   process.exit(1);
 }
 
-const pat = process.env["ASANA_PAT"];
-const workspace = process.env["ASANA_WORKSPACE_GID"];
-if (!pat || !workspace) {
+const config = readTrackerConfig();
+if (!config) {
+  console.log(`no asana tracker configured — skipping ${zipName} upload`);
+  process.exit(0);
+}
+
+const creds = readCredentials();
+if (!creds) {
   console.log(`ASANA_PAT or ASANA_WORKSPACE_GID unset — skipping ${zipName} upload`);
   process.exit(0);
 }
@@ -86,12 +56,18 @@ if (!ref) {
   process.exit(0);
 }
 
-const creds: Credentials = { pat, workspace };
-const gid = await findTaskNamedRef(ref, creds);
-if (!gid) {
-  console.log(`no Asana task named ${ref} — skipping ${zipName} upload`);
+const lookup = await findTaskByRef(ref, config.refField, creds);
+if (lookup.kind !== "found") {
+  const reason =
+    lookup.kind === "error"
+      ? `could not search for ${ref} — ${lookup.detail}`
+      : lookup.kind === "ambiguous"
+        ? `${lookup.count} tasks carry ${ref}`
+        : `no task carries ${ref}`;
+  console.log(`${reason} — skipping ${zipName} upload`);
   process.exit(0);
 }
+const task = lookup.task;
 
 const tempDir = mkdtempSync(join(tmpdir(), "harness-bundle-"));
 const zipPath = join(tempDir, zipName);
@@ -103,8 +79,8 @@ try {
     zipSpecDir(specDir, zipPath, ZIP_OVERSIZE_EXCLUDES);
   }
   const note = oversize ? " (over 90MB — verification/traces excluded)" : "";
-  const attached = await attachToTask({ zipPath, zipName, gid, creds });
-  console.log(attached ? `attached ${zipName} to task ${gid}${note}` : `FAILED to attach ${zipName}`);
+  const attached = await attachToTask({ zipPath, zipName, gid: task.gid, creds });
+  console.log(attached ? `attached ${zipName} to task ${task.gid}${note}` : `FAILED to attach ${zipName}`);
 } catch (error) {
   console.log(`FAILED to attach ${zipName}: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
