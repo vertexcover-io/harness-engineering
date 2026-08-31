@@ -160,11 +160,10 @@ const checkNotifierSecrets = (): { readonly status: Status; readonly detail: str
   return { status: "ok", detail: "slack credentials present" };
 };
 
+// this is heavily refrens specific, but could not think of any easier way.
 const TRACKER_GID_FIELDS = ["project", "refField", "ownerField"] as const;
 const TRACKER_SECTIONS = ["plan-review", "code-review"] as const;
 
-// readTrackerConfig returns null on any malformed field and every caller reads that as
-// "no tracker configured", so a typo silently disables the feature. Name the bad field here.
 const trackerConfigProblems = (config: unknown): readonly string[] => {
   if (!isRecord(config)) return ["orchestrate.config.json is not an object"];
   const tracker = config["tracker"];
