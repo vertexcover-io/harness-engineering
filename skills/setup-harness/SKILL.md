@@ -33,6 +33,10 @@ if command -v claude-sessions >/dev/null 2>&1; then
 else p claude-sessions MISSING; fi
 W="${ASANA_WORKSPACE_GID:-$(grep -hs '^ASANA_WORKSPACE_GID=' .env | tail -1 | cut -d= -f2-)}"
 [ -n "$W" ] && p asana-workspace "OK ($W)" || p asana-workspace UNSET
+jq -e '.tracker.provider=="asana"' orchestrate.config.json >/dev/null 2>&1 && {
+  jq -e '[.tracker|.project,.refField,.ownerField,.sections["plan-review"],.sections["code-review"]]
+         |all(type=="string" and test("^[0-9]+$"))' \
+    orchestrate.config.json >/dev/null 2>&1 && p asana-tracker OK || p asana-tracker INCOMPLETE; }
 grep -qxF '.harness/' .gitignore 2>/dev/null && p ignore-harness OK || p ignore-harness MISSING
 [ -f orchestrate.config.json ] && p orchestrate-config OK || p orchestrate-config MISSING
 M=~/.claude/projects/"$(printf %s "$PWD" | tr '/.' '--')"/memory
@@ -175,6 +179,7 @@ Secrets and logins are theirs. Print a numbered list of exactly the ones still r
 | `claude-sessions` MISSING | Install the CLI, then `claude-sessions login --server <url>` and `claude-sessions install-hooks`. Ask for the server URL — there is no default to guess. |
 | `claude-sessions` UNAUTHENTICATED | Run `claude-sessions login --server <url>` — it opens a browser pairing flow. |
 | `asana-workspace` UNSET | Open Asana, copy the workspace GID from the URL, and add `ASANA_WORKSPACE_GID=<gid>` to the repo-root `.env`. The `ASANA_PAT` token goes there too. |
+| `asana-tracker` INCOMPLETE | `tracker` names Asana but a GID is missing. Fill `project`, `refField`, `ownerField`, and both `sections` — shape and meanings in `orchestrate/references/config.md`. Ticket moves skip in one line until then. |
 | `gh` present but unauthenticated | Run `gh auth login` — interactive. |
 | any tool needing `sudo` | Give the exact one-liner from Step 3 for their platform. |
 | a service that would not start | Quote the command and its output, and name what only they can supply — a credential, a login, an image, a free port. |
