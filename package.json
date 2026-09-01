@@ -3,6 +3,11 @@
   "version": "1.30.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "release:version": "bun scripts/version.ts",
+    "test:scripts": "cd scripts && bun test",
+    "test:hooks": "node --test \"hooks/*.test.mjs\""
+  },
   "pi": {
     "skills": ["./skills"],
     "extensions": ["./extensions/pi/harness-hooks.ts"]
