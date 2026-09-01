@@ -115,7 +115,8 @@ names), else to the codebase. Follow that skill for procedure, never for proof: 
 to match a project's conventions.
 
 **Take the base URL from the entry's own command** and hold it for the session — a URL assembled from an assumed
-port is the wrong stack.
+port is the wrong stack. It is the run's one host, and it goes in the report's `fields[]` as `Base URL`; every
+scenario records only the path it opened on.
 
 **Step 1 is done when the route you came to drive returns the page you expect**, every service a scenario needs is
 up — including the sink a side effect lands in, often a separate service the stack-up does not launch — and two
@@ -150,6 +151,12 @@ not the setup that reached it — a fixture you find missing mid-walk is seeded 
 re-driven. Read `references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, the
 capture loop and the phone replay are all there.
 
+**Record the path each scenario opened on** — the path with its query, not the host — and, where a step is what
+moved the browser, the path it moved to. They are the scenario's `url` and its steps' `url`, and they are what lets
+a reader open the same screen you drove. A path reached by clicking comes back in the assert batch you already run,
+never a batch of its own. **Redact the value of any auth or identity parameter as `<redacted>`**: the report is
+published, and a driven URL carries live credentials more often than not.
+
 **Every flow on the surface the change landed on is replayed on a phone**, as its own numbered scenario in the same
 session. Whether this app is meant to work on a phone at all is a project fact like any other.
 
@@ -161,8 +168,8 @@ in `extra[]`. A screen nobody drew is not a failure.
 
 **A frame is evidence only once its assert passed and your own eyes confirmed it shows what you think** — read at
 the moment you shoot, since frames lag renders. **Done when every behaviour the docs claim is reached by some flow;
-every UI scenario's `NN_<slug>` frames in `screenshots/` tell its whole story; every screen a design defines
-carries its comparison in `reason`; and every flow on the surface the change landed on has a phone replay driven
+every UI scenario names the path it opened on; every UI scenario's `NN_<slug>` frames in `screenshots/` tell its
+whole story; every screen a design defines carries its comparison in `reason`; and every flow on the surface the change landed on has a phone replay driven
 to its closing assert, whatever it returned.**
 
 ## Step 3 — API, DB & Side-Effects: Proving What Has No Screen
@@ -172,7 +179,8 @@ verification and carries the whole scope** from *Scope* above. Read `references/
 your first request: it holds the shape of a headless walk, and the traps that make one look green when the code
 under test never ran.
 
-Run curl with `-w '\n%{http_code}'` and keep the **verbatim exchange**, which a dev re-runs to check you: it goes
+A headless scenario names its path the same way: the request path it drove is its `url`. Run curl with
+`-w '\n%{http_code}'` and keep the **verbatim exchange**, which a dev re-runs to check you: it goes
 **inline and whole** into a `proofs[]` entry (shape in `references/writing-the-report.md`) rather than into a file.
 Record the verdict by exact-matching the expected response the design or plan describes. Read the written state back
 through the product's own API and quote the fields; where the database is directly reachable (an MCP tool, else the

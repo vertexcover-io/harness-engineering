@@ -11,7 +11,8 @@
      Omit any key you have nothing for and its section disappears.
 
      A scenario renders in this order:
-       reason         free prose, under the verdict
+       URL            FIXED FORMAT   url
+       reason         free prose, under the URL
        Expected       FIXED FORMAT   expected
        Steps          FIXED FORMAT   steps[]
        Visual proof   FIXED FORMAT   video + frames[]
@@ -28,8 +29,9 @@
                    in the top bar
        drivenOn    where you drove, as what user, against which data
        fields[]    {label,value} shown behind "Stack · ports · sinks" in the bar
-       labels{}    rename a section: steps, media, frames, proofs, files,
-                   extra, bugs, gaps  (extra has no heading unless you name it)
+       labels{}    rename a section: url, steps, media, frames, proofs, files,
+                   extra, bugs, gaps  (reason and extra have no heading unless
+                   you name them)
        scenarios[] see below
        bugs[]      {severity,origin,reachedBy,scenario,title,body}  severity: blocker | major | minor
                    origin: introduced here | pre-existing | pre-existing, worsened here
@@ -50,10 +52,18 @@
        title       the behaviour, as a sentence a QA would use
        verdict     Success | Failure | NOT VERIFIED | INVALID
                    Failure and NOT VERIFIED colour the row in the rail
+       url         the path this scenario opened on — the path with its query,
+                   never the host: "/app/acme/reports/gstr2b?period=062026".
+                   Headless: the request path. A later path belongs to the step
+                   that moved there, not here. Redact the value of any auth or
+                   identity parameter as <redacted>; this report gets published.
+                   The base URL is one row in fields[].
        reason      what decided it — the diff between expected and observed.
                    Blank line starts a new paragraph.
        expected    what should happen, written from the docs before driving
-       steps[]     plain sentences naming the values you sent, in order
+       steps[]     plain sentences naming the values you sent, in order. A step
+                   that moved to another path is {text,url} and shows that path,
+                   redacted the same way
        video       NN_<slug>.mp4 — the first frame becomes its poster
        videoLabel  caption under the video (default "Watch the whole run")
        frames[]    {src,label} in order. A bare path works too — the label is
@@ -84,6 +94,10 @@
   "drivenOn": "<where you drove, as what user, against which data>",
   "fields": [
     {
+      "label": "Base URL",
+      "value": "<the one host every scenario's path hangs off>"
+    },
+    {
       "label": "Stack",
       "value": "<service :port → service :port>"
     },
@@ -99,11 +113,15 @@
       "short": "<3-4 words>",
       "title": "<the behaviour, as a sentence a QA would use>",
       "verdict": "Success",
+      "url": "<the path this opened on, with its query — not the host>",
       "reason": "<what decided it — the rendered string, the measured value, the status code>\n\n<a second paragraph if one observation is not enough>",
       "expected": "<what should happen, from the docs, with the values it turns on>",
       "steps": [
         "<the walk you drove, naming the value each step sent>",
-        "<one line per step>"
+        {
+          "text": "<a step that moved to another path>",
+          "url": "<the path it moved to>"
+        }
       ],
       "video": "01_<slug>.mp4",
       "videoLabel": "Watch the whole run",
@@ -336,6 +354,13 @@ a { color: var(--accent); }
   flex: none; font: 700 10.5px/1 var(--ui); letter-spacing: .1em; text-transform: uppercase;
   padding: 6px 10px; border: 1px solid currentColor; border-radius: 4px;
 }
+.paths { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.path {
+  font: 500 11.5px/1.7 var(--mono); color: var(--fg-2);
+  background: var(--line-2); border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 7px; word-break: break-all;
+}
+
 .summary { margin: 14px 0 0; font-size: 14px; color: var(--fg); max-width: 92ch; }
 .expect { border-left: 2px solid var(--line); padding-left: 12px; margin-top: 0; }
 .summary p { margin: 0 0 9px; }
@@ -356,6 +381,12 @@ a { color: var(--accent); }
 }
 .steps li:last-child { border-bottom: 0; }
 .steps b { font: 600 11.5px/1.65 var(--mono); color: var(--fg-3); }
+.steps .step__u {
+  display: block; width: fit-content; max-width: 100%;
+  margin-top: 2px; word-break: break-all;
+  font: 500 11px/1.6 var(--mono); color: var(--fg-3);
+  background: none; padding: 0;
+}
 
 /* video + frames */
 .strip {
@@ -519,6 +550,7 @@ a { color: var(--accent); }
   display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 2px 22px; padding: 11px 14px;
 }
+.run__f { min-width: 0; }
 .run__k { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-3); }
 .run__v { font: 12px/1.5 var(--mono); color: var(--fg); margin-bottom: 7px; }
 .run__note { grid-column: 1 / -1; font-size: 12.5px; color: var(--fg-2); border-top: 1px solid var(--line); padding-top: 8px; }
@@ -653,6 +685,7 @@ code {
 
   const L = Object.assign({
     expected: 'Expected',
+    url: 'URL',
     steps: 'Steps',
     media: 'Visual proof',
     frames: 'Screenshots',
@@ -708,8 +741,10 @@ code {
   document.getElementById('b-run').addEventListener('click', () => runBox.classList.toggle('is-open'));
   const runIn = document.getElementById('run-in');
   (D.fields || []).forEach(f => {
-    runIn.appendChild(el('div', 'run__k', f.label));
-    runIn.appendChild(el('div', 'run__v', f.value));
+    const cell = el('div', 'run__f');
+    cell.appendChild(el('div', 'run__k', f.label));
+    cell.appendChild(el('div', 'run__v', f.value));
+    runIn.appendChild(cell);
   });
   if (D.drivenOn) { const p = el('div', 'run__note'); p.innerHTML = rich(D.drivenOn); runIn.appendChild(p); }
 
@@ -792,6 +827,12 @@ code {
     return b;
   }
 
+  /* The one accepted shape is a string; an author who writes an object gets the
+     path out of it rather than [object Object]. Anything carrying no path at all
+     returns '', which every guard below reads as "render no URL". */
+  const pathText = u => (typeof u === 'string' ? u : (u && (u.path || u.url))) || '';
+  const pathChip = (cls, u) => el('code', cls, pathText(u));
+
   const frameList = s => (s.frames || []).map(f => {
     const src = typeof f === 'string' ? f : f.src;
     return {
@@ -801,6 +842,20 @@ code {
     };
   });
 
+  /* URL — FIXED FORMAT. s.url: the path this scenario opened on, without the host. */
+  function renderPaths(sec, s) {
+    const row = el('div', 'paths');
+    row.appendChild(pathChip('path', s.url));
+    sec.appendChild(row);
+  }
+
+  /* Reason — what decided the verdict. Headingless: it has no key in L. */
+  function renderReason(sec, s) {
+    const d = el('div', 'summary');
+    paras(d, s.reason);
+    sec.appendChild(d);
+  }
+
   /* Expected — FIXED FORMAT. s.expected: the outcome written from the docs before
      driving, so a reader meets the bar before the evidence. */
   function renderExpected(sec, s) {
@@ -809,13 +864,17 @@ code {
     sec.appendChild(d);
   }
 
-  /* Steps — FIXED FORMAT. s.steps[]: plain sentences, numbered in the order you drove them. */
+  /* Steps — FIXED FORMAT. s.steps[]: plain sentences, numbered in the order you drove them.
+     A step that moved to another path is {text, url} and carries that path under it. */
   function renderSteps(sec, s) {
     const ol = el('ol', 'steps');
     s.steps.forEach((t, j) => {
+      const step = typeof t === 'string' ? { text: t } : t;
       const li = el('li');
       li.appendChild(el('b', null, String(j + 1).padStart(2, '0')));
-      const sp = el('span'); sp.innerHTML = rich(t); li.appendChild(sp);
+      const sp = el('span'); sp.innerHTML = rich(step.text || '');
+      if (pathText(step.url)) sp.appendChild(pathChip('step__u', step.url));
+      li.appendChild(sp);
       ol.appendChild(li);
     });
     sec.appendChild(ol);
@@ -902,6 +961,8 @@ code {
      and put the field in the JSON. Steps and Visual proof are fixed format on
      purpose; everything below them is free prose. */
   const SECTIONS = [
+    ['url',    s => pathText(s.url),                              renderPaths],
+    ['reason', s => s.reason,                                     renderReason],
     ['expected', s => s.expected,                                 renderExpected],
     ['steps',  s => s.steps && s.steps.length,                    renderSteps],
     ['media',  s => s.video || (s.frames && s.frames.length),     renderVisual],
@@ -920,7 +981,6 @@ code {
     head.appendChild(h);
     head.appendChild(el('span', 'head__v v--' + k, label(s.verdict)));
     pane.appendChild(head);
-    if (s.reason) { const d = el('div', 'summary'); paras(d, s.reason); pane.appendChild(d); }
 
     SECTIONS.forEach(([key, has, render]) => {
       if (!has(s)) return;
