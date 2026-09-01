@@ -41,6 +41,7 @@
   "notifier": { "enabled": true, "provider": "slack" },
 
   "commands": {
+    "preflight": "./scripts/preflight.sh {PACKAGE...} --env {ENV}",
     "typecheck": "pnpm typecheck",
     "lint": "pnpm eslint .",
     "lint_file": "pnpm eslint {FILE}",

@@ -203,6 +203,11 @@ Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `-
    Resolve two more values here, once, and pass both in every dispatch that runs a command. No stage can infer either, and resolving them per stage is how the verify stage ends up on a different stack than the coder's e2e:
    - `PACKAGES` — the `packages` keys this run touches, from the task's repos or the worktree set.
    - `ENVIRONMENT` — the `environments` key this run drives, from the request, else `environments.default`.
+
+4a. **Run `CONFIG`'s `preflight` command**, resolved per `references/config.md`; `NOT_APPLICABLE` skips this step.
+   `{PACKAGE...}` ← `PACKAGES`, `{BRANCH}` ← `BRANCH_NAME`, `{ENV}` ← `ENVIRONMENT`.
+   Non-zero exit is `PREFLIGHT_FAILED`.
+
 5. `set-status setup done`, `set-status baseline running`, then **dispatch the `baseline` sub-agent** (block in `references/stage-prompts.md`) and go straight to Stage 1 without waiting for it.
 
 **The join.** The baseline runs while the developer answers Stage 1's questions, so every stage that reads `baseline.json` joins it first — before the Stage 3 coder dispatch, before the Stage 5 dispatch, and before planning's `implement` route hands off. That route is the one path where Stage 1 does not take minutes, and the only one that starts editing source while the suite may still be running against the same tree.
@@ -361,6 +366,7 @@ This table is Invariant 3's halt set — the whole of it. Stop the pipeline and 
 | Sub-agent error | Any sub-agent fails or returns an error |
 | Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
 | Missing verification artifacts | `proof-report.html` absent → `MISSING_VERIFICATION_ARTIFACTS` |
+| Preflight failed | `PREFLIGHT_FAILED` — Stage 0's `preflight` command exited non-zero. Report the command, its exit code, and its output; the project owns the fix |
 | Config missing | `orchestrate.config.json` is absent from the repo root — report it and name `setup-harness`, which writes it. Never fall back to discovering commands |
 | Package not in config | a `PACKAGES` entry `CONFIG.packages` does not carry — halt and name `setup-harness`, which adds it. Every stage after this one would otherwise guess its commands |
 | Config stale | A command the config names does not resolve (exit 127, missing script, binary not installed) — report the command, the package it came from, and that the config needs updating |
