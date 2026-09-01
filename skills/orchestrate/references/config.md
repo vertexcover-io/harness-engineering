@@ -133,30 +133,17 @@ fails soft to stderr, so a provider outage never interrupts a run.
 
 Optional. Absent, or `provider` other than `asana`, and the pipeline touches no ticket.
 
-```json
-"tracker": {
-  "provider": "asana",
-  "project": "<project-gid>",
-  "refField": "<ref-field-gid>",
-  "ownerField": "<owner-field-gid>",
-  "sections": { "plan-review": "<plan-review-section-gid>", "code-review": "<code-review-section-gid>" }
-}
-```
-
 Every value is a GID from this project's own board. `refField` is the custom field holding the
-ticket ref the branch is named for (`REF-1234`); `ownerField` is a **people**-type field whose
-first entry becomes the assignee. **Resolution matches `refField`'s value, never the task's name.**
-
-`sections` keys are pipeline moments, not board labels, so a project on a different board keeps the
-same two names: `plan-review` (Stage 1, once the plan is approved) and `code-review` (Stage 6, once
-the PR exists).
+ticket ref the branch is named for (`REF-1234`), and resolution matches its value, never the task's
+name. `ownerField` is a **people**-type field whose first entry becomes the assignee. `sections`
+keys are pipeline moments, not board labels: `plan-review` (Stage 1, once the plan is approved) and
+`code-review` (Stage 6, once the PR exists).
 
 No credential belongs in this file, because it is committed. `ASANA_PAT` and `ASANA_WORKSPACE_GID`
 come from the environment, or from `.env` at the main repo root.
 
-Every tracker call is best-effort: missing config, an unset token, an unresolvable branch, an
-ambiguous ref, or an API failure prints one line and exits 0. A tracker outage never fails a run,
-and nothing here belongs in the Terminal BLOCK/FAIL table.
+Every tracker call is best-effort: any failure prints one line and exits 0, so a tracker outage
+never fails a run.
 
 ## When the file is missing
 
