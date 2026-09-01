@@ -145,11 +145,11 @@ This check **only reads** the runner output each coder phase left behind — it 
 - For each report, derive the counts yourself from the runner's result records — never from a top-level total an agent could have edited — and verify:
   1. Executed count is > 0 — a suite authored but never run is a hard block
   2. Failed count is 0 — any E2E failure during coding is a hard block
-  3. At least one test title carries a scenario `S<n>` id, and every id it carries resolves to a scenario in the phase file
+  3. At least one test title carries a scenario `SC<n>` id, and every id it carries resolves to a scenario heading in the phase file
   4. File mtime is within the pipeline run window (not stale from a previous run)
-- **Pass:** executed > 0 and failed = 0 in every report, S-ids resolve, files current
-- **Fail:** failed > 0 in any report, or executed = 0, or an S-id doesn't resolve, or a phase report missing for a user-facing task
-- Report, per phase: executed count, failed count, S-id resolution results
+- **Pass:** executed > 0 and failed = 0 in every report, SC-ids resolve, files current
+- **Fail:** failed > 0 in any report, or executed = 0, or an SC-id doesn't resolve, or a phase report missing for a user-facing task
+- Report, per phase: executed count, failed count, SC-id resolution results
 
 ### Check 10: Mutation Spot-Check
 

@@ -22,7 +22,7 @@ wire protocol around it.
 `.harness/<SPEC_NAME>/phases/`; its overview is `plan.md` one level up). Map its sections:
 
 - `## Implementation` — the build steps to execute
-- `## Test Scenarios` (`### Unit` / `### API` / `### E2E`, each `S<n>`) — the RED specs, one
+- `## Test Scenarios` (`### Unit` / `### API` / `### E2E`, each `SC<n>`) — the RED specs, one
   test per scenario. The scenarios are already derived and placed — do not re-decompose the
   feature.
 - `## Commit` — the message to use
@@ -31,7 +31,7 @@ wire protocol around it.
 for it — that file is the spec. Match it. A screen you design yourself can pass every test and
 still be the wrong screen.
 
-**Carry the scenario's id in each test title** (`S12: …`) so a reviewer can trace it. The id
+**Carry the scenario's id in each test title** (`SC12: …`) so a reviewer can trace it. The id
 is for tracing — the rest of the title still states the claim, per the `tdd` skill.
 
 
@@ -97,7 +97,7 @@ env var or flag through it — the file on disk is what the gate reads, not the 
 counts, test titles and statuses all come from the run. A summary you compose yourself is a
 claim, not evidence, and the pipeline has no use for it.
 
-**Carry the scenario id in the test title** (`S12: …`, per *Input: the phase file*) — that is how
+**Carry the scenario id in the test title** (`SC12: …`, per *Input: the phase file*) — that is how
 counts become traceable to scenarios without a second file to keep in sync.
 
 **Escape hatch — use sparingly.** Skip E2E only if the phase changes *no externally-observable

@@ -61,7 +61,7 @@ For each file with uncovered regions:
 
 1. Read the source to understand what the uncovered code does
 2. If a plan exists for the current work, map each uncovered region to the Test Matrix
-   behavior(s) it belongs to (by `R#`/`EC#` requirement or `S<n>` scenario id)
+   behavior(s) it belongs to (by `R#`/`EC#` requirement or `SC<n>` scenario id)
 3. Classify regions with no matching behavior as one of:
    - **Candidate for the don't-test list** — getters/mappers/pass-throughs/framework behavior
      (intentionally untested; no action)
