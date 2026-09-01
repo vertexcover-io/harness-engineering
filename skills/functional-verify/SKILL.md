@@ -257,16 +257,13 @@ verification pays the same cost from scratch.
 
 ## Step 7 — Publish, Then Clean Up
 
-Publish so a reviewer finds the evidence without hunting through a worktree. Two homes, both **best-effort — they
-never fail the verification**; both implementations are in `references/publish.md`:
+Publish so a reviewer finds the evidence without hunting through a worktree. **Best-effort — it never fails the
+verification**; the implementation is in `references/publish.md`.
 
-- **The feature's tracker** — one attachment: a zip of the whole `verification/` folder, so the report, its frames
-  and its videos all resolve once unzipped. That zip is the whole delivery; the ticket keeps the PR link, design and
-  plan a human put there. Which tracker and how a branch maps to a ticket are project facts. When the config says
-  `none`, is absent, or its token is unset, skip in one line.
-- **Claude Sessions** — the report and videos, so they show in the Sessions Artifacts tab. Use the injected
-  `SESSION_ID` (orchestrate exports it) verbatim; on a standalone run, derive it from the newest transcript under
-  the cwd. Not installed / not authenticated → skip in one line.
+**The feature's tracker** takes one attachment: a zip of the whole `verification/` folder, so the report, its frames
+and its videos all resolve once unzipped. That zip is the whole delivery; the ticket keeps the PR link, design and
+plan a human put there. Which tracker and how a branch maps to a ticket are project facts. When the config says
+`none`, is absent, or its token is unset, skip in one line.
 
 Then close the session (`agent-browser --session <SPEC_NAME> close`), remove the fixtures you created, and
 **release the stack**: the teardown step of the environment you brought up, else the way the stack skill says.
