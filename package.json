@@ -1,8 +1,18 @@
 {
   "name": "harness-engineering",
-  "version": "1.30.0",
+  "version": "1.30.2",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "release:version": "bun scripts/version.ts",
+    "release:version:node": "node scripts/version.ts",
+    "test:scripts": "node --test scripts/*.test.ts",
+    "test:scripts:bun": "bun test scripts/",
+    "test:hooks": "node --test hooks/*.test.mjs"
+  },
   "pi": {
     "skills": ["./skills"],
     "extensions": ["./extensions/pi/harness-hooks.ts"]

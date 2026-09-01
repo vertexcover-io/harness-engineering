@@ -37,4 +37,5 @@ already reported.
 
 ## Manual mode — everything else
 
-When green, use `code-review` to review the work. Ask before committing.
+When green, use `code-review` to review the work — it applies the fixes it finds, so expect a
+changed tree. Ask before committing.
