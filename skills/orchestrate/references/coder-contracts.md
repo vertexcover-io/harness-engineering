@@ -4,8 +4,8 @@
 
 - [Input: the phase file](#input-the-phase-file)
 - [Tooling commands](#tooling-commands)
-- [E2E is mandatory and gated](#e2e-is-mandatory-and-gated)
-- [Report artifacts (mandatory, machine-derived)](#report-artifacts-mandatory-machine-derived)
+- [E2E is mandatory](#e2e-is-mandatory)
+- [Report artifact (mandatory, machine-derived)](#report-artifact-mandatory-machine-derived)
 - [Behavior coverage is judged at altitude](#behavior-coverage-is-judged-at-altitude)
 
 **Read this when** executing a coder phase inside the orchestrate pipeline — the `implement` skill
@@ -50,15 +50,14 @@ lint-config concern.
 
 ---
 
-## E2E is mandatory and gated
+## E2E is mandatory
 
 **Every phase that changes production behavior gets an E2E leg** — not only UI/HTTP changes: a
 backend job, a CLI command, a queue consumer all have externally-observable effects. The phase
-is BLOCKED until the E2E test passes and the report artifacts are written.
+is not done until the E2E test passes and the runner report is written.
 
-- **Authored ≠ run.** `executed > 0` at the scenario's altitude is the gate — authoring a
-  `.spec.ts` without running it = BLOCKED. Counts must come from a real runner invocation,
-  never hand-authored.
+- **Authored ≠ run.** A `.spec.ts` authored but never run is a BLOCKED phase. The report's
+  counts must come from a real runner invocation, never hand-authored.
 - **The environment is the first task of the phase, not a blocker.** A stack that won't start,
   an unsynced consumer build, a service that's down — bring it up with the `environments` entry
   your `ENVIRONMENT` names, else the project's testing contract (CLAUDE.md's testing/e2e
@@ -78,27 +77,33 @@ is BLOCKED until the E2E test passes and the report artifacts are written.
   and the consumer's installed copy must be rebuilt/synced from the worktree first — see
   `consumer-repo-e2e.md`.
 
-### Report artifacts (mandatory, machine-derived)
+### Report artifact (mandatory, machine-written)
 
-1. **`phase-<N>-claims.json`** — see `phase-claims-format.md` for the schema and gate rules
-   (`executed > 0`, `failed = 0`, per-file `proven_by` coverage, UI claims).
-2. **`e2e-report.json`** at `.harness/<SPEC_NAME>/` (gitignored; consumed by
-   functional-verify and quality-gate), derived from the runner's machine output:
+The phase's e2e leg writes its runner's own machine output to
+`.harness/<SPEC_NAME>/phase-<PHASE_N>-e2e.json` (gitignored; read by quality-gate's Check 9).
+**A bare `--reporter=json` prints to stdout and writes no file** — each runner names its
+destination differently:
 
-```json
-{
-  "phase": "<PHASE_N>", "timestamp": "<ISO>", "passed": 0, "failed": 0,
-  "coverage": [{ "scenario": "S12", "description": "<what was tested>", "verdict": "PASS" }],
-  "gaps": ["<what this E2E suite did NOT test — flows skipped, edge cases not covered>"]
-}
-```
+| Runner | Invocation |
+|---|---|
+| Playwright | `PLAYWRIGHT_JSON_OUTPUT_NAME=<path> playwright test --reporter=json` |
+| vitest | `vitest run --reporter=json --outputFile=<path>` |
+| jest | `jest --json --outputFile=<path>` |
 
-`gaps` is as important as `coverage` — it tells functional-verify what to target. Be honest.
+Where the project wraps its runner (an `e2e` script, a custom entry point), pass the same
+env var or flag through it — the file on disk is what the gate reads, not the console output.
+
+**Write nothing into it by hand.** The file is evidence precisely because no agent authored it:
+counts, test titles and statuses all come from the run. A summary you compose yourself is a
+claim, not evidence, and the pipeline has no use for it.
+
+**Carry the scenario id in the test title** (`S12: …`, per *Input: the phase file*) — that is how
+counts become traceable to scenarios without a second file to keep in sync.
 
 **Escape hatch — use sparingly.** Skip E2E only if the phase changes *no externally-observable
 behavior* (pure internal refactor, doc-only, config with no runtime effect). Migrations, new
 endpoints/jobs, and any change touching the request path do NOT qualify. Write
-`"not_applicable": true, "reason": "<why>"` and be ready to justify it.
+`.harness/<SPEC_NAME>/phase-<PHASE_N>-e2e-skipped.md` naming the reason, and be ready to justify it.
 
 ---
 

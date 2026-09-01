@@ -71,4 +71,4 @@ what makes a gate trustworthy. Pipeline runs have a required schema and path: se
 - [ ] The e2e command brings up its own infra and tears it down (works from a cold checkout, no manual start first)
 - [ ] Every wait fails fast (<30s) with a clear error
 - [ ] Each spec passes **both** alone and inside the full suite (proves isolation)
-- [ ] Runner emits `e2e-report.json`
+- [ ] Runner emits `phase-<N>-e2e.json` via its own JSON reporter

@@ -21,7 +21,7 @@ This is the gate between "the coder says it's done" and "the feature ships." Eve
 
 The quality gate receives these parameters from the orchestrator:
 
-- **Feature dir:** `.harness/<SPEC_NAME>/` (gitignored — baseline.json, e2e-report.json, claims.json, gate reports)
+- **Feature dir:** `.harness/<SPEC_NAME>/` (gitignored — baseline.json, phase-*-e2e.json, gate reports)
 - **Stage:** `post-tdd` (the gate runs once, after the TDD stage, before commit)
 - **`PACKAGES`:** the `orchestrate.config.json` package keys this run touches. Invoked by hand
   without it, take the packages the changed files sit under.
@@ -135,22 +135,21 @@ human-observable properties are functional-verify's job, not the gate's.
 
 ### Check 9: E2E Report Verification
 
-This check **only reads** the coder's e2e artifacts — it does not launch a browser or re-run the e2e suite. The suite ran once, during coding. It reads two files: `e2e-report.json` (the raw run summary) and `claims.json` (the aggregated claim ledger).
+This check **only reads** the runner output each coder phase left behind — it does not launch a browser or re-run the e2e suite. The suite ran once per phase, during coding. Every file it reads is machine-written, so there is no summary to take on trust.
 
-- Read `.harness/<SPEC_NAME>/e2e-report.json`
+- Read every `.harness/<SPEC_NAME>/phase-*-e2e.json`. Each phase in `phases/` owes one, or a `phase-<N>-e2e-skipped.md` naming why.
 - If no package in `PACKAGES` declares an `e2e` command → `NOT_APPLICABLE`, naming them: the project has no e2e leg.
-- If a package declares `e2e`, the file does not exist, and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no e2e-report.json found". The runner should **emit this file itself** from its machine output (e.g. Playwright's JSON reporter) — a `failed`/`coverage`/`timestamp` derived from the actual run, not hand-authored. A report whose numbers can't be traced to a runner invocation is not evidence.
-- If `not_applicable: true` → `NOT_APPLICABLE` with the reason from the file
-- If file exists, verify:
-  1. `failed` count is 0 — any E2E failures during coding are a hard block
-  2. `coverage` array is non-empty — the report must cover at least one scenario
-  3. Each `coverage[].scenario` is a scenario `S<n>` id (not a requirement id)
-  4. `gaps` field exists and is non-empty — a report with no documented gaps is suspicious; flag as WARNING (not BLOCKED)
-  5. Timestamp is within the pipeline run window (not stale from a previous run)
-- **Then corroborate against `claims.json`** (aggregated from the coder's `phase-*-claims.json`), when present: aggregated `failed == 0` and `executed > 0`, and every `type: "ui"` claim's `proven_by` names a real test. A `claims.json` that disagrees with `e2e-report.json` (e.g. `failed > 0` in one) is a hard block — the two views of the same run must agree.
-- **Pass:** `failed` = 0 in both files, coverage non-empty, timestamp current
-- **Fail:** `failed` > 0 in either file, or coverage empty, or a coverage S-id doesn't resolve, or e2e-report.json missing for a user-facing task
-- Report: failed count (both files), coverage count, gap count, S-id resolution results
+- If a package declares `e2e`, a phase has neither file, and the task has user-facing changes → **BLOCKED**: "E2E tests were not run during coding — no phase-N-e2e.json found".
+- A `phase-<N>-e2e-skipped.md` → that phase is `NOT_APPLICABLE` with the reason from the file; the remaining phases are still checked.
+- **A hand-authored file is not evidence.** These are runner reports (Playwright/vitest/jest JSON). One that does not parse as its runner's schema is **BLOCKED** — an agent wrote it.
+- For each report, derive the counts yourself from the runner's result records — never from a top-level total an agent could have edited — and verify:
+  1. Executed count is > 0 — a suite authored but never run is a hard block
+  2. Failed count is 0 — any E2E failure during coding is a hard block
+  3. At least one test title carries a scenario `S<n>` id, and every id it carries resolves to a scenario in the phase file
+  4. File mtime is within the pipeline run window (not stale from a previous run)
+- **Pass:** executed > 0 and failed = 0 in every report, S-ids resolve, files current
+- **Fail:** failed > 0 in any report, or executed = 0, or an S-id doesn't resolve, or a phase report missing for a user-facing task
+- Report, per phase: executed count, failed count, S-id resolution results
 
 ### Check 10: Mutation Spot-Check
 
