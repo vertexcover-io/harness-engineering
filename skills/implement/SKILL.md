@@ -37,4 +37,5 @@ are. A review-fix agent owes none of them — it is fixing inside phases that al
 
 ## Manual mode — everything else
 
-When green, use `code-review` to review the work. Ask before committing.
+When green, use `code-review` to review the work — it applies the fixes it finds, so expect a
+changed tree. Ask before committing.

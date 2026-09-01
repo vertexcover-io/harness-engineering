@@ -110,7 +110,7 @@ later, so nothing in initialization blocks on it.
 | 0 | Setup | **Main conversation** (`setup`) + background sub-agent (`baseline`) | Worktree path, spec artifact directory, and — once the join resolves — baseline metrics |
 | 1 | Design & Plan | **Main conversation** | `design.md` (recorder; carries the dependency + fallback chain) · `plan.html` (review surface, gate) → extracted `plan.md` + `phases/phase-*.md` |
 | 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-claims.json` + `e2e-report.json` |
-| 4 | Code Review | **Main conversation** | `.harness/<SPEC_NAME>/review/review.md` — per-axis findings + verdict (review only, no source edits) |
+| 4 | Code Review | **Main conversation** | `.harness/<SPEC_NAME>/review/review.md` — per-axis findings + verdict, then fixes applied and recorded |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
 | 7 | Retro | Sub-agent | `.harness/<SPEC_NAME>/retro/report.md` — ranked harness defects this run exposed |
@@ -268,9 +268,9 @@ If it prints `MISSING_PHASE_CLAIMS`, stop the pipeline. Schema of what it writes
 
 ### Stage 4: Code Review
 
-The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>` **in this conversation** — it dispatches its own reviewer personas, so there is no sub-agent to dispatch and no model to retarget. It reviews only and edits no source. Pass what only this run knows:
+The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>` **in this conversation** — it dispatches its own reviewer personas, so there is no sub-agent to dispatch and no model to retarget. After writing the report it applies the fixes and records them in it; Stage 5's quality gate runs after, so those edits are gated. Pass what only this run knows:
 
-- Plan `.harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
+- Plan `--plan .harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
 - `--output .harness/<SPEC_NAME>/review/review.md`
 
 `set-status code-review done`.
