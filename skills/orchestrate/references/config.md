@@ -4,12 +4,26 @@ Required, at the **repo root**, committed. Being tracked, it is present at the w
 too — either path reads the same content. Orchestrate reads it once during Stage 0 and passes the
 result forward. A worked example lives in `references/orchestrate.config.example.json`.
 
-One file carries five things: this project's **stage overrides**, its **commands**, its
-**environments**, its **notifier**, and its **extensions**. It is self-describing — read it
+One file carries six things: this project's **doctor**, its **stage overrides**, its **commands**,
+its **environments**, its **notifier**, and its **extensions**. It is self-describing — read it
 directly. Nothing here restates what its keys mean, and a command it does not name is a command
 there is nothing to run for.
 
 Does NOT apply to `orchestrate` itself (no recursive override).
+
+## Doctor
+
+Optional, top level. One command that checks what this project's own commands rely on — tools,
+credentials, datastores, layout. `skills/_shared/doctor.ts` runs it from the repo root with `--json`
+appended and folds its rows into its own table, so one verdict covers both.
+
+```json
+"doctor": "bun bin/doctor.ts"
+```
+
+Expected stdout: `{ "results": [ { "name", "status": "ok" | "warn" | "fail", "optional"?, "detail"?, "fix"?: [] } ] }`.
+A command that prints anything else is one row, `project-doctor`, judged by its exit code. One that
+does not resolve (exit 127) is a `fail` row naming the command. Absent or `null`: no rows.
 
 ## Stage overrides
 

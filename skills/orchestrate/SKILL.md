@@ -13,7 +13,7 @@ Runs a full development pipeline in **7 stages** — 0, 1, then 3 through 7 (sta
 
 ## Invariants
 
-1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: detect input, check for auto mode, gate on the plugin version, create the worktree, start the dashboard inside it.
+1. **Initialize before anything else.** Do NOT explore the codebase, read project files, or fetch URLs before the Initialization steps below. First actions: run the doctor, detect input, check for auto mode, create the worktree, start the dashboard inside it.
 2. **No pause after Stage 1.** One skill owns both approval gates — `planning` (Stage 1): its inline checkpoint and its plan gate on `plan.html`. Those are the only pauses, they belong to the skill, and both self-bypass in `--auto`. Once the plan is approved, run every remaining stage (3 → 4 → 5 → 6 → 7, ending in commit + PR + retro) back-to-back with NO stopping, pausing, questions, or interim summaries. The orchestrator adds no gate of its own.
 3. **Halt only on a genuine BLOCK/FAIL.** The complete halt set is the `## Terminal BLOCK/FAIL conditions` table below — nothing outside it stops the pipeline. On halt, report which stage failed and why. Reaching Stage 6 (PR created) is the only successful terminal state; Stage 7 runs after it and cannot change the verdict.
 4. **Every question uses `AskUserQuestion`** — never plain text. In `--auto` mode, skip all `AskUserQuestion` calls.
@@ -40,38 +40,34 @@ Every file below is one hop from here. Read the one whose condition you are in �
 
 ## Initialization (do these first, in order, before anything else)
 
-### Step 1: Detect the Input and Gate on the Plugin Version
+### Step 1: Run the Doctor and Detect the Input
 
-One script does both. A stale harness runs stale contracts, so the gate runs **before the worktree exists** — a halt here leaves nothing to clean up. Pass the raw argument through, `--auto` and all:
+One script does both. A stale harness runs stale contracts and a missing tool fails a stage half an hour in, so the check runs **before the worktree exists** — a halt here leaves nothing to clean up. Pass the raw argument through, `--auto` and all:
 
 ```bash
-bash "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-.}}/skills/orchestrate/scripts/init-gate.sh" "<raw argument>"
+node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-.}}/skills/_shared/doctor.ts" "<raw argument>"
 ```
 
-Outside a plugin runtime neither root is set — run the script by its path in the checkout instead. It resolves the version gate and the plugin manifest by walking up from its own location either way.
+Outside a plugin runtime neither root is set — run the script by its path in the checkout instead. It resolves the plugin manifest by walking up from its own location either way.
 
-It prints exactly four lines. Act on them — do not re-derive them:
+It prints three sections: `ENVIRONMENT`, a table of the harness's checks followed by the project's own `doctor` rows (`references/config.md`); `INPUT`, the parsed argument; and `VERDICT`, one word. Act on them — do not re-derive them.
 
-```
-AUTO_MODE=true|false
-INPUT_KIND=prompt|file|findings
-INPUT_PATH=<absolute path, empty when INPUT_KIND=prompt>
-VERSION_GATE=OK|UNKNOWN|STALE local=<x> remote=<y>
-```
+**VERDICT** is `READY`, `DEGRADED <names>`, or `BLOCKED <names>`.
 
-**Input.** The argument is either an **inline prompt** or a **path to a document describing the work** — a PRD, an issue export, a brief, or an existing design doc. (There is no `spec.md` stage in this pipeline; the requirement namespace belongs to the PRD and to `plan.md`.) The script has already stripped `--auto` and tested the remainder with `[ -f ]`:
+- `READY` → continue.
+- `DEGRADED` → each named check costs the one stage it unblocks: `gh` skips the PR, `samskara` skips publish. Print the WARN rows with their fixes, then ask via `AskUserQuestion`: **fix now** (invoke `setup-harness`, then re-run this step), **continue without** (log the names and go on), or **stop**. In `--auto` mode, log them and continue — nobody is there to answer.
+- `BLOCKED` → **stop before creating anything.** Print the FAIL rows with their fixes and name `setup-harness`, which runs the same checks and applies what it can. A project row is the project's to fix — report the row as printed. In `--auto` mode, log them and continue: CI cannot install a tool or reload a session, and a stage that needs one fails with its own diagnosis.
+
+`harness-version` in a `BLOCKED` list means the local plugin is behind `main`. Its fix is `/plugin`, then reload the session or restart Claude and re-run the same orchestrate command.
+
+**INPUT** carries `AUTO_MODE`, `INPUT_KIND`, `INPUT_REF`, and one line naming what to do with them. The argument describes the work as an **inline prompt**, a **ticket URL**, or a **path to a document** — a PRD, an issue export, a brief, or an existing design doc. (There is no `spec.md` stage in this pipeline; the requirement namespace belongs to the PRD and to `plan.md`.) The script has already stripped `--auto` and classified the remainder:
 
 - `INPUT_KIND=prompt` → the stripped argument is the inline task prompt.
-- `INPUT_KIND=file` → read `INPUT_PATH` yourself; its contents are the task description.
-- `INPUT_KIND=findings` → **tech-debt manifest mode.** `INPUT_PATH` is a `findings.json` from `tech-debt-finder` (detected by shape, not filename). Do NOT re-summarize it into prose. Read the manifest directly and follow `tech-debt-finder/references/auto-fix-handoff.md`: fix only `auto_fixable: true` findings, and before Stage 6 write `fix-manifest.json` giving every finding a terminal disposition (`fixed`/`issue`/`suppressed`/`dropped`, reason required for `dropped`). BLOCK the commit if any `auto_fixable` finding was dropped without a reason. Include the disposition table in the commit/PR body.
+- `INPUT_KIND=ticket` → `INPUT_REF` is a URL. Fetch the ticket with whatever the project uses to read its tracker and treat its title and description as the task description. When nothing can read it, say so and fall back to treating the URL as context rather than halting.
+- `INPUT_KIND=file` → read `INPUT_REF` yourself; its contents are the task description.
+- `INPUT_KIND=findings` → **tech-debt manifest mode.** `INPUT_REF` is a `findings.json` from `tech-debt-finder` (detected by shape, not filename). Do NOT re-summarize it into prose. Read the manifest directly and follow `tech-debt-finder/references/auto-fix-handoff.md`: fix only `auto_fixable: true` findings, and before Stage 6 write `fix-manifest.json` giving every finding a terminal disposition (`fixed`/`issue`/`suppressed`/`dropped`, reason required for `dropped`). BLOCK the commit if any `auto_fixable` finding was dropped without a reason. Include the disposition table in the commit/PR body.
 
 Store the resolved input as `TASK_CONTEXT` — passed to every stage.
-
-**Version verdict.**
-
-- `VERSION_GATE=OK` → continue.
-- `VERSION_GATE=UNKNOWN` → log one warning line and continue; a version that could not be read is never grounds to block a ticket.
-- `VERSION_GATE=STALE` → **stop before creating anything.** Report both versions and tell the user to update the harness plugin (`/plugin`), then reload the session or restart Claude and re-run the same orchestrate command. In `--auto` mode, log the same warning and continue — CI cannot reload a session. (The script exits non-zero only on `STALE`.)
 
 When `AUTO_MODE=true`:
 - Skip all `AskUserQuestion` calls — Claude decides autonomously, auto-approves designs and plans.
@@ -93,7 +89,7 @@ later, so nothing in initialization blocks on it.
 
 (In `--auto` mode, skip this whole step — no worktree, no dashboard.)
 
-1. Generate a spec name from the prompt: lowercase, spaces → hyphens, truncate to 30 chars — long enough to stay descriptive, short enough that the branch name and every `.harness/<SPEC_NAME>/…` path stay readable in `git branch` and on the dashboard. `"Add user auth system"` → `"add-user-auth-system"`. Then, **while cwd is still the launch directory** (before the worktree `cd`), capture the top-level session id so Stage 5 can publish artifacts against the real session: `SESSION_ID=$(basename "$(ls -t ~/.claude/projects/"$(pwd | sed 's#/#-#g')"/*.jsonl 2>/dev/null | head -1)" .jsonl 2>/dev/null)`. Store `SESSION_ID` (empty is fine — capture may be off; the verify skill then derives its own) and `LAUNCH_DIR=$(pwd)` beside it — Stage 7 needs the launch directory, because transcripts live under it and never under the worktree.
+1. Generate a spec name from the prompt: lowercase, spaces → hyphens, truncate to 30 chars — long enough to stay descriptive, short enough that the branch name and every `.harness/<SPEC_NAME>/…` path stay readable in `git branch` and on the dashboard. `"Add user auth system"` → `"add-user-auth-system"`. Then, **while cwd is still the launch directory** (before the worktree `cd`), capture the top-level session id: `SESSION_ID=$(basename "$(ls -t ~/.claude/projects/"$(pwd | sed 's#/#-#g')"/*.jsonl 2>/dev/null | head -1)" .jsonl 2>/dev/null)`. Store `SESSION_ID` (empty is fine — capture may be off) and `LAUNCH_DIR=$(pwd)` beside it — Stage 7 needs the launch directory, because transcripts live under it and never under the worktree.
 2. **Create the worktree.** Use the project's own worktree skill when it has one — check `CLAUDE.md` and the available skills for one that sets up a worktree — otherwise invoke `using-git-worktrees`. Either way, `cd` into it and store `WORKTREE_PATH`, `BRANCH_NAME`.
 3. **From inside the worktree**, open `references/dag-commands.md` and run its init block verbatim — it creates every stage node, and a hand-built DAG will not match the transitions the rest of this file issues. Store the printed `HARNESS_DIR`.
 4. Start the dashboard server: `Bash("export HARNESS_DIR='<HARNESS_DIR>' && node '<DAG_SCRIPT>' serve-start")`. It detaches, so this is a plain foreground call.
@@ -334,6 +330,7 @@ This table is Invariant 3's halt set — the whole of it. Stop the pipeline and 
 | Sub-agent error | Any sub-agent fails or returns an error |
 | Functional verification FAILED | Feature doesn't work as specified — report which scenarios failed |
 | Missing verification artifacts | `proof-report.html` absent → `MISSING_VERIFICATION_ARTIFACTS` |
+| Doctor BLOCKED | Step 1's verdict is `BLOCKED` and the run is not `--auto`. Print the FAIL rows with their fixes; a harness row names `setup-harness`, a project row is the project's to fix |
 | Config missing | `orchestrate.config.json` is absent from the repo root — report it and name `setup-harness`, which writes it. Never fall back to discovering commands |
 | Package not in config | a `PACKAGES` entry `CONFIG.packages` does not carry — halt and name `setup-harness`, which adds it. Every stage after this one would otherwise guess its commands |
 | Config stale | A command the config names does not resolve (exit 127, missing script, binary not installed) — report the command, the package it came from, and that the config needs updating |
