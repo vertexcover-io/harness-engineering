@@ -15,18 +15,19 @@
 //   tracker.ts comment    (--body S | --body-file F) [--marker M] [--ref R]
 //   tracker.ts transition --to <started|in_review|verified|done|blocked> [--ref R]
 //   tracker.ts link       --url URL [--title T] [--ref R]
+//   tracker.ts attach     --file PATH [--name N] [--ref R]
 // Global: --dry-run prints what would be sent and sends nothing.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import { basename, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadProjectConfig } from "./harness-config.ts";
 
 export const LIFECYCLE_STATES = ["started", "in_review", "verified", "done", "blocked"] as const;
 export type LifecycleState = (typeof LIFECYCLE_STATES)[number];
 
-const VERBS = ["resolve", "get", "comment", "transition", "link"] as const;
+const VERBS = ["resolve", "get", "comment", "transition", "link", "attach"] as const;
 export type Verb = (typeof VERBS)[number];
 const READ_VERBS: ReadonlySet<Verb> = new Set(["resolve", "get"]);
 
@@ -51,6 +52,7 @@ export type TrackerProvider = {
   readonly comment: (ref: string, body: string) => Promise<WriteResult>;
   readonly transition: (ref: string, state: string) => Promise<WriteResult>;
   readonly link: (ref: string, url: string, title: string) => Promise<WriteResult>;
+  readonly attach: (ref: string, file: string, name: string) => Promise<WriteResult>;
 };
 
 export type TrackerConfig = {
@@ -68,6 +70,8 @@ export type Args = {
   readonly title: string | null;
   readonly body: string | null;
   readonly marker: string | null;
+  readonly file: string | null;
+  readonly name: string | null;
   readonly dryRun: boolean;
 };
 
@@ -88,6 +92,8 @@ export const parseArgs = (argv: readonly string[]): Args => {
   let title: string | null = null;
   let body: string | null = null;
   let marker: string | null = null;
+  let file: string | null = null;
+  let name: string | null = null;
   let dryRun = false;
 
   for (let i = 1; i < argv.length; ) {
@@ -112,6 +118,8 @@ export const parseArgs = (argv: readonly string[]): Args => {
       case "--body": body = value; break;
       case "--body-file": body = readFileSync(value, "utf8"); break;
       case "--marker": marker = value; break;
+      case "--file": file = value; break;
+      case "--name": name = value; break;
       default: throw new TrackerError(`Unknown flag "${flag}".`);
     }
     i += 2;
@@ -122,7 +130,8 @@ export const parseArgs = (argv: readonly string[]): Args => {
     throw new TrackerError(`transition needs --to. Lifecycle states: ${LIFECYCLE_STATES.join(", ")}.`);
   }
   if (verb === "link" && url === null) throw new TrackerError("link needs --url.");
-  return { verb, ref, to, url, title, body, marker, dryRun };
+  if (verb === "attach" && file === null) throw new TrackerError("attach needs --file.");
+  return { verb, ref, to, url, title, body, marker, file, name, dryRun };
 };
 
 const recordAt = (obj: Readonly<Record<string, unknown>>, key: string): Readonly<Record<string, unknown>> | null => {
@@ -225,6 +234,18 @@ const runLink = async (
   return skip(`provider "${provider.name}" supports neither link nor comment — skipping link`);
 };
 
+const runAttach = async (
+  provider: TrackerProvider,
+  ref: string,
+  file: string,
+  name: string,
+  dryRun: boolean,
+): Promise<Outcome> => {
+  if (dryRun) return skip(`DRY-RUN ${provider.name} attach ${name} -> ${ref}`);
+  const result = await provider.attach(ref, file, name);
+  return skip(result.ok ? `attached ${name} to ${ref}` : `attach failed: ${result.detail}`);
+};
+
 export const performVerb = async (
   args: Args,
   cfg: TrackerConfig,
@@ -254,6 +275,10 @@ export const performVerb = async (
         return await runTransition(provider, ref, args.to ?? "started", cfg.states, args.dryRun);
       case "link":
         return await runLink(provider, ref, args.url ?? "", args.title, args.dryRun);
+      case "attach": {
+        const file = args.file ?? "";
+        return await runAttach(provider, ref, file, args.name ?? basename(file), args.dryRun);
+      }
     }
   } catch (err) {
     return { lines: [`${args.verb} failed: ${message(err)}`], code: failCode(args.verb) };
@@ -334,11 +359,127 @@ export const createGithub = (exec: Exec = ghExec): TrackerProvider => {
     // Linking on GitHub is a PR-side write (a "Closes #N" keyword in the PR body),
     // not a ticket write — so the capability is absent and link degrades to a comment.
     link: async () => ({ ok: false, detail: "github links PRs from the PR body, not the issue" }),
+
+    attach: async () => ({ ok: false, detail: "github issues cannot take file attachments via the API" }),
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Asana provider — tasks via the REST API. A ticket ref resolves to the task in
+// ASANA_WORKSPACE_GID whose name carries the ref (the branch→task convention the
+// old upload-bundle.ts and functional-verify publish flow both used).
+
+type FetchResponse = {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly json: () => Promise<unknown>;
+};
+export type FetchLike = (url: string, init?: RequestInit) => Promise<FetchResponse>;
+
+const dataOf = (body: unknown): unknown =>
+  typeof body === "object" && body !== null && "data" in body ? (body as { data: unknown }).data : null;
+
+export const createAsana = (
+  secrets: Readonly<Record<string, string>>,
+  fetchFn: FetchLike = fetch,
+): TrackerProvider => {
+  const need = (key: string): string => {
+    const value = secrets[key];
+    if (!value) {
+      throw new TrackerError(`provider "asana" needs ${key}. Export it, or add it to .env at the repo root.`);
+    }
+    return value;
+  };
+
+  const API = "https://app.asana.com/api/1.0";
+  const pat = need("ASANA_PAT");
+  const workspace = need("ASANA_WORKSPACE_GID");
+
+  const call = async (path: string, init: RequestInit = {}): Promise<unknown> => {
+    const response = await fetchFn(`${API}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${pat}`, ...(init.headers ?? {}) },
+    });
+    if (!response.ok) throw new TrackerError(`asana ${path.split("?")[0]} failed: ${response.status}`);
+    return response.json();
+  };
+
+  const taskGid = async (ref: string): Promise<string> => {
+    const body = await call(`/workspaces/${workspace}/tasks/search?text=${encodeURIComponent(ref)}&opt_fields=gid,name`);
+    const data = dataOf(body);
+    const tasks = Array.isArray(data)
+      ? data.flatMap((item: unknown) => {
+          const record = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+          const gid = record["gid"];
+          const name = record["name"];
+          return typeof gid === "string" && typeof name === "string" ? [{ gid, name }] : [];
+        })
+      : [];
+    const gid = tasks.find((task) => task.name.includes(ref))?.gid;
+    if (gid === undefined) throw new TrackerError(`no asana task named ${ref} in workspace ${workspace}`);
+    return gid;
+  };
+
+  return {
+    name: "asana",
+    capabilities: new Set<Verb>(["get", "comment", "attach"]),
+
+    get: async (ref) => {
+      const gid = await taskGid(ref);
+      const body = await call(`/tasks/${gid}?opt_fields=name,notes,completed,permalink_url`);
+      const task = typeof dataOf(body) === "object" && dataOf(body) !== null ? (dataOf(body) as Record<string, unknown>) : {};
+      return {
+        ref,
+        url: asString(task["permalink_url"]),
+        title: asString(task["name"]),
+        body: asString(task["notes"]),
+        state: task["completed"] === true ? "completed" : "open",
+        labels: [],
+      };
+    },
+
+    comments: async (ref) => {
+      const gid = await taskGid(ref);
+      const body = await call(`/tasks/${gid}/stories?opt_fields=type,text`);
+      const data = dataOf(body);
+      return Array.isArray(data)
+        ? data.flatMap((story: unknown) => {
+            const record = typeof story === "object" && story !== null ? (story as Record<string, unknown>) : {};
+            return record["type"] === "comment" && typeof record["text"] === "string" ? [record["text"]] : [];
+          })
+        : [];
+    },
+
+    comment: async (ref, body) => {
+      const gid = await taskGid(ref);
+      await call(`/tasks/${gid}/stories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: { text: body } }),
+      });
+      return { ok: true, detail: "" };
+    },
+
+    // Asana states are project sections or enum fields — per-project structures the
+    // provider cannot see yet. Absent from capabilities, so transition degrades cleanly.
+    transition: async () => ({ ok: false, detail: "asana states are project sections — not supported yet" }),
+
+    link: async () => ({ ok: false, detail: "asana has no native PR link" }),
+
+    attach: async (ref, file, name) => {
+      const gid = await taskGid(ref);
+      const form = new FormData();
+      form.append("parent", gid);
+      form.append("file", new Blob([readFileSync(file)], { type: "application/octet-stream" }), name);
+      await call("/attachments", { method: "POST", body: form });
+      return { ok: true, detail: "" };
+    },
   };
 };
 
 const providers: Record<string, (secrets: Readonly<Record<string, string>>) => TrackerProvider> = {
   github: () => createGithub(),
+  asana: (secrets) => createAsana(secrets),
 };
 
 export const resolveProvider = (cfg: TrackerConfig): TrackerProvider => {
@@ -351,7 +492,7 @@ export const resolveProvider = (cfg: TrackerConfig): TrackerProvider => {
   return factory(cfg.secrets);
 };
 
-const currentBranch = (cwd: string): string => {
+export const currentBranch = (cwd: string): string => {
   try {
     return execFileSync("git", ["branch", "--show-current"], {
       cwd,

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 import {
   LIFECYCLE_STATES,
+  createAsana,
   createGithub,
   loadTrackerConfig,
   main,
@@ -48,6 +49,10 @@ const fake = (over: Partial<TrackerProvider> = {}, calls: Call[] = []): TrackerP
   },
   link: async (ref, url, title) => {
     calls.push(["link", ref, url, title]);
+    return { ok: true, detail: "" };
+  },
+  attach: async (ref, file, name) => {
+    calls.push(["attach", ref, file, name]);
     return { ok: true, detail: "" };
   },
   ...over,
@@ -93,6 +98,11 @@ describe("parseArgs", () => {
 
   test("link requires --url", () => {
     assert.throws(() => parseArgs(["link"]), /--url/);
+  });
+
+  test("attach requires --file", () => {
+    assert.throws(() => parseArgs(["attach"]), /--file/);
+    assert.equal(parseArgs(["attach", "--file", "a.zip"]).file, "a.zip");
   });
 });
 
@@ -227,6 +237,32 @@ describe("performVerb", () => {
     assert.deepEqual(calls, [["link", "REF-12", "https://pr/1", "PR #1"]]);
   });
 
+  test("attach passes the file and defaults the name to its basename", async () => {
+    const calls: Call[] = [];
+    const withAttach = fake({ capabilities: new Set<Verb>(["attach"]) }, calls);
+    const out = await performVerb(
+      parseArgs(["attach", "--file", "/tmp/bundles/spec.zip"]),
+      cfg(),
+      withAttach,
+      "REF-12",
+    );
+    assert.equal(out.code, 0);
+    assert.deepEqual(calls, [["attach", "REF-12", "/tmp/bundles/spec.zip", "spec.zip"]]);
+  });
+
+  test("attach on a provider without the capability skips, exit 0", async () => {
+    const calls: Call[] = [];
+    const out = await performVerb(
+      parseArgs(["attach", "--file", "a.zip"]),
+      cfg(),
+      fake({}, calls),
+      "REF-12",
+    );
+    assert.equal(out.code, 0);
+    assert.equal(calls.length, 0);
+    assert.match(out.lines[0] ?? "", /does not support attach/);
+  });
+
   test("a write-verb provider crash is soft: one line, exit 0", async () => {
     const bad = fake({ comment: async () => { throw new Error("503 from tracker"); } });
     const out = await performVerb(parseArgs(["comment", "--body", "hi"]), cfg(), bad, "REF-12");
@@ -319,6 +355,89 @@ describe("createGithub", () => {
     assert.equal(other.ok, false);
     assert.match(other.detail, /Code Review/);
     assert.deepEqual(log.map((l) => l.slice(0, 2)), [["issue", "close"], ["issue", "reopen"]]);
+  });
+});
+
+describe("createAsana", () => {
+  type Route = { readonly body: unknown };
+  type Hit = { readonly url: string; readonly method: string };
+
+  const asana = (routes: Record<string, Route>, hits: Hit[] = []) =>
+    createAsana({ ASANA_PAT: "pat", ASANA_WORKSPACE_GID: "ws1" }, async (url, init) => {
+      hits.push({ url, method: init?.method ?? "GET" });
+      const match = Object.entries(routes).find(([part]) => url.includes(part));
+      return {
+        ok: match !== undefined,
+        status: match === undefined ? 404 : 200,
+        json: async () => match?.[1].body ?? {},
+      };
+    });
+
+  const SEARCH = { body: { data: [{ gid: "42", name: "REF-12 · Login flow" }] } };
+
+  test("a missing credential names the exact key", () => {
+    assert.throws(() => createAsana({}, async () => ({ ok: true, status: 200, json: async () => ({}) })), /ASANA_PAT/);
+    assert.throws(
+      () => createAsana({ ASANA_PAT: "pat" }, async () => ({ ok: true, status: 200, json: async () => ({}) })),
+      /ASANA_WORKSPACE_GID/,
+    );
+  });
+
+  test("get searches the workspace for the ref, then fetches the task", async () => {
+    const hits: Hit[] = [];
+    const provider = asana(
+      {
+        "tasks/search": SEARCH,
+        "tasks/42?": {
+          body: { data: { name: "REF-12 · Login flow", notes: "the notes", completed: false, permalink_url: "https://app.asana.com/t/42" } },
+        },
+      },
+      hits,
+    );
+    const ticket = await provider.get("REF-12");
+    assert.equal(ticket.title, "REF-12 · Login flow");
+    assert.equal(ticket.body, "the notes");
+    assert.equal(ticket.state, "open");
+    assert.equal(ticket.url, "https://app.asana.com/t/42");
+    assert.match(hits[0]?.url ?? "", /workspaces\/ws1\/tasks\/search\?text=REF-12/);
+  });
+
+  test("a ref with no matching task is an error naming the ref", async () => {
+    const provider = asana({ "tasks/search": { body: { data: [{ gid: "9", name: "unrelated" }] } } });
+    await assert.rejects(() => provider.get("REF-12"), /REF-12/);
+  });
+
+  test("comment posts a story; comments returns only comment stories", async () => {
+    const hits: Hit[] = [];
+    const provider = asana(
+      {
+        "tasks/search": SEARCH,
+        "tasks/42/stories": {
+          body: { data: [{ type: "comment", text: "hello" }, { type: "system", text: "moved" }] },
+        },
+      },
+      hits,
+    );
+    assert.deepEqual(await provider.comments("REF-12"), ["hello"]);
+    assert.equal((await provider.comment("REF-12", "hi")).ok, true);
+    assert.equal(hits.filter((h) => h.url.includes("/stories") && h.method === "POST").length, 1);
+  });
+
+  test("attach posts the file to the attachments endpoint", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tracker-attach-"));
+    writeFileSync(join(dir, "spec.zip"), "zipbytes");
+    const hits: Hit[] = [];
+    const provider = asana({ "tasks/search": SEARCH, "attachments": { body: { data: {} } } }, hits);
+    const result = await provider.attach("REF-12", join(dir, "spec.zip"), "spec.zip");
+    assert.equal(result.ok, true);
+    assert.equal(hits.filter((h) => h.url.endsWith("/attachments") && h.method === "POST").length, 1);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("declares no transition capability, so states degrade cleanly", () => {
+    const provider = asana({});
+    assert.equal(provider.capabilities.has("transition"), false);
+    assert.equal(provider.capabilities.has("attach"), true);
   });
 });
 

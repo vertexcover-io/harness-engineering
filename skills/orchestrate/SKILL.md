@@ -293,8 +293,9 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
 5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md.
 6. **Attach the spec directory to the ticket** — a zip of `.harness/<SPEC_NAME>/`, a **second**
    attachment beside functional-verify's `verification/` zip, not a replacement. Runs after step 5 so
-   the bundle carries the README index and the PR link. Needs `ASANA_PAT` and `ASANA_WORKSPACE_GID`
-   in the environment; best-effort, prints one line and always exits 0.
+   the bundle carries the README index and the PR link. Goes through the project's `tracker` block in
+   `orchestrate.config.json` (provider credentials from the environment or `.env`); best-effort,
+   prints one line and always exits 0.
 
    ```bash
    node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/scripts/upload-bundle.ts" '.harness/<SPEC_NAME>' 'harness-<SPEC_NAME>.zip'

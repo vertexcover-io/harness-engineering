@@ -1,70 +1,36 @@
 #!/usr/bin/env node --experimental-strip-types
+// Zips a spec directory and attaches it to the run's ticket through the project's
+// configured tracker (the `tracker` block in orchestrate.config.json). Best-effort
+// by contract: every missing piece — config, credentials, ticket, capability, the
+// upload itself — prints one line and exits 0, because Stage 6 must never fail on
+// tracker trouble.
+
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  currentBranch,
+  loadTrackerConfig,
+  resolveProvider,
+  resolveTicketRef,
+} from "../../_shared/tracker.ts";
+import type { TrackerProvider } from "../../_shared/tracker.ts";
 
-type Credentials = { readonly pat: string; readonly workspace: string };
-type AsanaTask = { readonly gid: string; readonly name: string };
-
-const API = "https://app.asana.com/api/1.0";
 const MAX_ATTACHMENT_BYTES = 90 * 1024 * 1024;
-const TICKET_REF = /[A-Z]{2,}-\d+/;
 const ZIP_ALWAYS_EXCLUDES = ["*.zip"];
 const ZIP_OVERSIZE_EXCLUDES = ["*.zip", "verification/traces/*"];
-
-function currentTicketRef(): string | null {
-  try {
-    const branch = execFileSync("git", ["branch", "--show-current"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    return TICKET_REF.exec(branch)?.[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function readTasks(body: unknown): ReadonlyArray<AsanaTask> {
-  if (typeof body !== "object" || body === null || !("data" in body) || !Array.isArray(body.data)) return [];
-  return body.data.filter(
-    (item: unknown): item is AsanaTask =>
-      typeof item === "object" &&
-      item !== null &&
-      "gid" in item &&
-      typeof item.gid === "string" &&
-      "name" in item &&
-      typeof item.name === "string",
-  );
-}
-
-async function findTaskNamedRef(ref: string, creds: Credentials): Promise<string | null> {
-  const url = `${API}/workspaces/${creds.workspace}/tasks/search?text=${encodeURIComponent(ref)}&opt_fields=gid,name`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${creds.pat}` } });
-  if (!response.ok) return null;
-  return readTasks(await response.json()).find((task) => task.name.includes(ref))?.gid ?? null;
-}
 
 function zipSpecDir(specDir: string, zipPath: string, excludes: ReadonlyArray<string>): void {
   execFileSync("zip", ["-qr", zipPath, ".", "-x", ...excludes], { cwd: specDir, stdio: "ignore" });
 }
 
-async function attachToTask(options: {
-  readonly zipPath: string;
-  readonly zipName: string;
-  readonly gid: string;
-  readonly creds: Credentials;
-}): Promise<boolean> {
-  const form = new FormData();
-  form.append("parent", options.gid);
-  form.append("file", new Blob([readFileSync(options.zipPath)], { type: "application/zip" }), options.zipName);
-  const response = await fetch(`${API}/attachments`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${options.creds.pat}` },
-    body: form,
-  });
-  return response.ok;
-}
+const skip = (line: string): never => {
+  console.log(line);
+  process.exit(0);
+};
+
+const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const specDir = process.argv[2];
 const zipName = process.argv[3];
@@ -73,24 +39,21 @@ if (!specDir || !zipName) {
   process.exit(1);
 }
 
-const pat = process.env["ASANA_PAT"];
-const workspace = process.env["ASANA_WORKSPACE_GID"];
-if (!pat || !workspace) {
-  console.log(`ASANA_PAT or ASANA_WORKSPACE_GID unset — skipping ${zipName} upload`);
-  process.exit(0);
-}
-
-const ref = currentTicketRef();
-if (!ref) {
-  console.log(`branch carries no ticket ref — skipping ${zipName} upload`);
-  process.exit(0);
-}
-
-const creds: Credentials = { pat, workspace };
-const gid = await findTaskNamedRef(ref, creds);
-if (!gid) {
-  console.log(`no Asana task named ${ref} — skipping ${zipName} upload`);
-  process.exit(0);
+let provider: TrackerProvider;
+let ref: string;
+try {
+  const cfg = loadTrackerConfig();
+  if (cfg === null) skip(`no tracker block in orchestrate.config.json — skipping ${zipName} upload`);
+  provider = resolveProvider(cfg);
+  if (!provider.capabilities.has("attach")) {
+    skip(`provider "${provider.name}" does not support attach — skipping ${zipName} upload`);
+  }
+  const branch = currentBranch(process.cwd());
+  const resolved = resolveTicketRef(null, cfg.pattern, branch);
+  if (resolved === null) skip(`branch "${branch}" carries no ticket ref — skipping ${zipName} upload`);
+  ref = resolved;
+} catch (err) {
+  skip(`${message(err)} — skipping ${zipName} upload`);
 }
 
 const tempDir = mkdtempSync(join(tmpdir(), "harness-bundle-"));
@@ -103,10 +66,10 @@ try {
     zipSpecDir(specDir, zipPath, ZIP_OVERSIZE_EXCLUDES);
   }
   const note = oversize ? " (over 90MB — verification/traces excluded)" : "";
-  const attached = await attachToTask({ zipPath, zipName, gid, creds });
-  console.log(attached ? `attached ${zipName} to task ${gid}${note}` : `FAILED to attach ${zipName}`);
+  const result = await provider.attach(ref, zipPath, zipName);
+  console.log(result.ok ? `attached ${zipName} to ${ref}${note}` : `FAILED to attach ${zipName}: ${result.detail}`);
 } catch (error) {
-  console.log(`FAILED to attach ${zipName}: ${error instanceof Error ? error.message : String(error)}`);
+  console.log(`FAILED to attach ${zipName}: ${message(error)}`);
 } finally {
   rmSync(tempDir, { recursive: true, force: true });
 }
