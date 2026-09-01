@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url"
  */
 const MANIFESTS = ["package.json", ".claude-plugin/plugin.json"]
 
-const EXPLICIT = /^\d+\.\d+\.\d+(?:[-+].+)?$/
+const EXPLICIT = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const SEGMENTS = /^(\d+)\.(\d+)\.(\d+)/
 const VERSION_FIELD = /("version":\s*")[^"]*(")/
 const NAME_LINE = /("name":\s*"[^"]*",\n)/
@@ -41,13 +41,23 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url))
 const git = (...args: string[]): string =>
   execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim()
 
-const currentVersion = (): string => {
-  for (const manifest of MANIFESTS) {
-    const found = readVersion(readFileSync(join(repoRoot, manifest), "utf8"))
-    if (found !== null) return found
+/**
+ * Bumping from whichever manifest happened to be read first would renumber a
+ * drifted tree down to the lower version and tag it — the failure this script
+ * exists to prevent. A manifest with no version field yet is not drift; it gets
+ * filled in from the ones that agree.
+ */
+export const agreedVersion = (sources: readonly string[]): string => {
+  const found = sources.map(readVersion).filter((version) => version !== null)
+  const distinct = [...new Set(found)]
+  if (distinct.length > 1) {
+    throw new Error(`manifests have drifted: ${distinct.join(" vs ")} — reconcile them first`)
   }
-  return "0.0.0"
+  return distinct[0] ?? "0.0.0"
 }
+
+const currentVersion = (): string =>
+  agreedVersion(MANIFESTS.map((manifest) => readFileSync(join(repoRoot, manifest), "utf8")))
 
 const main = (): void => {
   const args = process.argv.slice(2)

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, test } from "node:test"
-import { nextVersion, readVersion, setVersion } from "./version.ts"
+import { agreedVersion, nextVersion, readVersion, setVersion } from "./version.ts"
 
 describe("nextVersion", () => {
   test("bumps a segment and zeroes the ones below it", () => {
@@ -20,6 +20,39 @@ describe("nextVersion", () => {
 
   test("rejects a current version it cannot parse", () => {
     assert.throws(() => nextVersion("nightly", "patch"))
+  })
+
+  test("rejects an explicit version carrying characters that would corrupt JSON", () => {
+    assert.throws(() => nextVersion("1.2.3", '1.3.0-"rc"'))
+    assert.throws(() => nextVersion("1.2.3", "1.3.0-rc\\"))
+    assert.throws(() => nextVersion("1.2.3", "1.3.0-rc 1"))
+  })
+
+  test("still takes a well-formed prerelease and build tag", () => {
+    assert.equal(nextVersion("1.2.3", "1.3.0-rc.1"), "1.3.0-rc.1")
+    assert.equal(nextVersion("1.2.3", "1.3.0+build.5"), "1.3.0+build.5")
+    assert.equal(nextVersion("1.2.3", "1.3.0-rc.1+build.5"), "1.3.0-rc.1+build.5")
+  })
+})
+
+describe("agreedVersion", () => {
+  test("returns the version every manifest shares", () => {
+    assert.equal(agreedVersion(['{"version": "1.30.0"}', '{"version": "1.30.0"}']), "1.30.0")
+  })
+
+  test("refuses to bump manifests that have already drifted", () => {
+    assert.throws(
+      () => agreedVersion(['{"version": "1.30.0"}', '{"version": "1.31.0"}']),
+      /drifted/,
+    )
+  })
+
+  test("lets a manifest with no version field be filled in from the others", () => {
+    assert.equal(agreedVersion(['{"version": "1.30.0"}', '{"name": "harness"}']), "1.30.0")
+  })
+
+  test("starts at 0.0.0 when no manifest declares a version", () => {
+    assert.equal(agreedVersion(['{"name": "harness"}']), "0.0.0")
   })
 })
 
