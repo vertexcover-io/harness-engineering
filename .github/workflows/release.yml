@@ -16,6 +16,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Both runtimes, because the release script is meant to run under either
+      # and only CI can catch one of them drifting.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.19
@@ -34,9 +40,23 @@ jobs:
             fi
           done
 
-      - run: bun run test:scripts
+      - run: npm run test:scripts
 
-      - run: bun run test:hooks
+      - run: npm run test:scripts:bun
+
+      - run: npm run test:hooks
+
+      # A release cut on the wrong runtime is a silent no-op, so prove the
+      # script actually rewrites both manifests before trusting it to tag.
+      - name: Check the release script runs under both runtimes
+        run: |
+          for runner in node bun; do
+            $runner scripts/version.ts 99.99.99 --no-git
+            grep -q '"version": "99.99.99"' package.json
+            grep -q '"version": "99.99.99"' .claude-plugin/plugin.json
+            git checkout package.json .claude-plugin/plugin.json
+            echo "$runner: ok"
+          done
 
       - name: Publish the GitHub release
         env:

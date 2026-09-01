@@ -1,6 +1,5 @@
-#!/usr/bin/env bun
 import { execFileSync } from "node:child_process"
-import { readFileSync, writeFileSync } from "node:fs"
+import { readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -80,7 +79,23 @@ const main = (): void => {
   )
 }
 
-if (import.meta.main) {
+/**
+ * `import.meta.main` would be shorter, but Node only grew it in 24.2 — on an
+ * older Node it reads undefined and the release silently does nothing at all.
+ * Comparing real paths says the same thing on every runtime, and the test file
+ * imports this module without tripping it.
+ */
+const isEntrypoint = (): boolean => {
+  const invoked = process.argv[1]
+  if (invoked === undefined) return false
+  try {
+    return realpathSync(invoked) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+}
+
+if (isEntrypoint()) {
   try {
     main()
   } catch (error) {
