@@ -61,7 +61,14 @@ VERSION_GATE=OK|UNKNOWN|STALE local=<x> remote=<y>
 
 **Input.** The argument is either an **inline prompt** or a **path to a document describing the work** — a PRD, an issue export, a brief, or an existing design doc. (There is no `spec.md` stage in this pipeline; the requirement namespace belongs to the PRD and to `plan.md`.) The script has already stripped `--auto` and tested the remainder with `[ -f ]`:
 
-- `INPUT_KIND=prompt` → the stripped argument is the inline task prompt.
+- `INPUT_KIND=prompt` → the stripped argument is the inline task prompt. **Except:** when the
+  **entire** argument matches the `tracker.resolve.pattern` in `orchestrate.config.json` (e.g.
+  `/orchestrate REF-123`), this is **ticket mode**. Fetch it — `<TRACKER> get --ref '<arg>'` (read
+  `<TRACKER>` as in the Tracker events section) — and halt if that exits non-zero or no `tracker`
+  block exists: the user named a ticket, and inventing a task from a bare ref helps nobody. On
+  success, `TASK_CONTEXT` = the ticket's title + body, its `url` is the run-started ticket URL,
+  and store `TICKET_REF`; pass `--ref '<TICKET_REF>'` on every later `<TRACKER>` call so tracker
+  writes never depend on the branch name.
 - `INPUT_KIND=file` → read `INPUT_PATH` yourself; its contents are the task description.
 - `INPUT_KIND=findings` → **tech-debt manifest mode.** `INPUT_PATH` is a `findings.json` from `tech-debt-finder` (detected by shape, not filename). Do NOT re-summarize it into prose. Read the manifest directly and follow `tech-debt-finder/references/auto-fix-handoff.md`: fix only `auto_fixable: true` findings, and before Stage 6 write `fix-manifest.json` giving every finding a terminal disposition (`fixed`/`issue`/`suppressed`/`dropped`, reason required for `dropped`). BLOCK the commit if any `auto_fixable` finding was dropped without a reason. Include the disposition table in the commit/PR body.
 
@@ -159,6 +166,20 @@ names no ticket.
 | before each `AskUserQuestion` or asking any question to the developer | `<NOTIFY> --event question-pending --stage <id> --body '<the question and its options>'` |
 | you halt on a Terminal BLOCK/FAIL condition | `<NOTIFY> --event run-interrupted --stage <id> --body '<what failed, in plain words>'` |
 | Stage 6 ends | `<NOTIFY> --event run-completed --body '<PR_URL>'` |
+
+**Tracker events.** Read `<TRACKER>` as
+`node --experimental-strip-types <plugin-root>/skills/_shared/tracker.ts`. These keep the run's
+ticket current — each event runs whatever actions the project bound to it in `tracker.on`
+(`references/config.md`). Every call is best-effort and exits 0: no `tracker` block, no bound
+actions, or a tracker outage is one printed line, never a halt. In ticket mode append
+`--ref '<TICKET_REF>'` to every call.
+
+| When | Command |
+|------|---------|
+| Stage 0 ends | `<TRACKER> event run-started --var SPEC=<SPEC_NAME>` |
+| Stage 6, right after the PR exists | `<TRACKER> event pr-created --var PR_URL=<PR_URL> --var SPEC=<SPEC_NAME>` |
+| you halt on a Terminal BLOCK/FAIL condition | `<TRACKER> event run-interrupted --var SPEC=<SPEC_NAME>` |
+| Stage 7 ends | `<TRACKER> event run-completed --var PR_URL=<PR_URL> --var SPEC=<SPEC_NAME>` |
 
 **Documents a person reads** — `plan.html` copy, phase files, the README index, review reports. Every stage that writes one loads the `writing-style` skill first, and runs its ship-check before shipping. Sub-agents that write documents get the same instruction in their dispatch prompt. Agent-only files like `design.md` skip it.
 
@@ -289,7 +310,7 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
 1. **Generate `.harness/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict stated inline; one-paragraph summary; TOC naming each artifact (`plan.html` first — the review surface — then `design.md`, `plan.md`, `phases/`); PR link placeholder. Reviewers read this index and its artifacts out-of-band (directly, or uploaded to the tracker), since nothing under `.harness/` reaches the PR.
 2. Invoke `git-commit` via `Skill` for the feature changes. `.harness/` paths are gitignored and never staged — if `git status` shows them, fix `.gitignore` instead of committing.
 3. `git push -u origin <BRANCH_NAME>`.
-4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`.
+4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`. Then fire the `pr-created` row of the Tracker events table.
 5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md.
 6. **Attach the spec directory to the ticket** — a zip of `.harness/<SPEC_NAME>/`, a **second**
    attachment beside functional-verify's `verification/` zip, not a replacement. Runs after step 5 so

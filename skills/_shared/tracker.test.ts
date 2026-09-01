@@ -64,7 +64,9 @@ const cfg = (over: Partial<TrackerConfig> = {}): TrackerConfig => ({
   provider: "fake",
   pattern: "REF-\\d+",
   states: { in_review: "Code Review" },
+  on: {},
   secrets: {},
+  repoRoot: "",
   ...over,
 });
 
@@ -105,6 +107,15 @@ describe("parseArgs", () => {
   test("attach requires --file", () => {
     assert.throws(() => parseArgs(["attach"]), /--file/);
     assert.equal(parseArgs(["attach", "--file", "a.zip"]).file, "a.zip");
+  });
+
+  test("event takes a positional name and repeatable --var KEY=VALUE", () => {
+    const args = parseArgs(["event", "pr-created", "--var", "PR_URL=https://pr/1", "--var", "SPEC=my-spec"]);
+    assert.equal(args.verb, "event");
+    assert.equal(args.event, "pr-created");
+    assert.deepEqual(args.vars, { PR_URL: "https://pr/1", SPEC: "my-spec" });
+    assert.throws(() => parseArgs(["event"]), /event needs a name/);
+    assert.throws(() => parseArgs(["event", "--var", "A=1"]), /event needs a name/);
   });
 });
 
@@ -273,6 +284,86 @@ describe("performVerb", () => {
   });
 });
 
+describe("performVerb event", () => {
+  test("an event with no bindings skips in one line, exit 0", async () => {
+    const out = await performVerb(parseArgs(["event", "pr-created"]), cfg(), fake(), "REF-12");
+    assert.equal(out.code, 0);
+    assert.match(out.lines[0] ?? "", /no actions bound/);
+  });
+
+  test("actions run in order with {VAR}, {TICKET} and {BRANCH} substituted", async () => {
+    const calls: Call[] = [];
+    const bound = cfg({
+      on: {
+        "pr-created": [
+          { link: "{PR_URL}" },
+          { transition: "in_review" },
+          { comment: "PR for {TICKET} on {BRANCH}: {PR_URL}" },
+        ],
+      },
+    });
+    const out = await performVerb(
+      parseArgs(["event", "pr-created", "--var", "PR_URL=https://pr/1"]),
+      bound,
+      fake({}, calls),
+      "feature/REF-12-login",
+    );
+    assert.equal(out.code, 0);
+    assert.equal(out.lines.length, 3);
+    // link has no native capability on the fake → falls back to a marked comment
+    const [linkComment, transition, comment] = calls.filter((c) => c[0] === "comment" || c[0] === "transition");
+    assert.match(String(linkComment?.[2]), /https:\/\/pr\/1/);
+    assert.deepEqual(transition, ["transition", "REF-12", "Code Review"]);
+    assert.match(String(comment?.[2]), /PR for REF-12 on feature\/REF-12-login: https:\/\/pr\/1/);
+  });
+
+  test("comment actions are idempotent per event (and per SPEC when given)", async () => {
+    const calls: Call[] = [];
+    const seen = fake({ comments: async () => ["<!-- harness:verified:my-spec -->"] }, calls);
+    const bound = cfg({ on: { verified: [{ comment: "done" }] } });
+    await performVerb(parseArgs(["event", "verified", "--var", "SPEC=my-spec"]), bound, seen, "REF-12");
+    assert.equal(calls.some((c) => c[0] === "comment"), false);
+  });
+
+  test("comment_file reads a repo-relative template; a missing file is one line", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tracker-tpl-"));
+    writeFileSync(join(dir, "tpl.md"), "verified {TICKET}");
+    const calls: Call[] = [];
+    const bound = cfg({ repoRoot: dir, on: { verified: [{ comment_file: "tpl.md" }, { comment_file: "gone.md" }] } });
+    const out = await performVerb(parseArgs(["event", "verified"]), bound, fake({}, calls), "REF-12");
+    const posted = calls.find((c) => c[0] === "comment");
+    assert.match(String(posted?.[2]), /verified REF-12/);
+    assert.match(out.lines[1] ?? "", /gone\.md/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("an unknown action key warns and continues; a bad transition target warns", async () => {
+    const calls: Call[] = [];
+    const bound = cfg({
+      on: { verified: [{ frobnicate: "x" }, { transition: "Not A Lifecycle" }, { comment: "still ran" }] },
+    });
+    const out = await performVerb(parseArgs(["event", "verified"]), bound, fake({}, calls), "REF-12");
+    assert.equal(out.code, 0);
+    assert.match(out.lines[0] ?? "", /unknown event action/);
+    assert.match(out.lines[1] ?? "", /not a lifecycle state/);
+    assert.equal(calls.some((c) => c[0] === "comment"), true);
+  });
+
+  test("a run action substitutes vars and executes", async () => {
+    const bound = cfg({ on: { verified: [{ run: "echo ran-for-{TICKET}" }] } });
+    const out = await performVerb(parseArgs(["event", "verified"]), bound, fake(), "REF-12");
+    assert.match(out.lines[0] ?? "", /ran-for-REF-12/);
+  });
+
+  test("--dry-run walks every action without touching the provider", async () => {
+    const calls: Call[] = [];
+    const bound = cfg({ on: { verified: [{ transition: "in_review" }, { comment: "hi" }, { run: "echo x" }] } });
+    const out = await performVerb(parseArgs(["event", "verified", "--dry-run"]), bound, fake({}, calls), "REF-12");
+    assert.equal(calls.length, 0);
+    assert.equal(out.lines.every((line) => line.startsWith("DRY-RUN")), true);
+  });
+});
+
 const repoFixture = (config: unknown): string => {
   const dir = mkdtempSync(join(tmpdir(), "tracker-repo-"));
   execFileSync("git", ["init", "-q", "-b", "feature/REF-12-login", dir]);
@@ -287,18 +378,20 @@ describe("loadTrackerConfig", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("reads provider, pattern and states", () => {
+  test("reads provider, pattern, states and event bindings", () => {
     const dir = repoFixture({
       tracker: {
         provider: "github",
         resolve: { from: "branch", pattern: "REF-\\d+" },
         states: { done: "closed" },
+        on: { "pr-created": [{ link: "{PR_URL}" }] },
       },
     });
     const got = loadTrackerConfig(dir);
     assert.equal(got?.provider, "github");
     assert.equal(got?.pattern, "REF-\\d+");
     assert.deepEqual(got?.states, { done: "closed" });
+    assert.deepEqual(got?.on, { "pr-created": [{ link: "{PR_URL}" }] });
     rmSync(dir, { recursive: true, force: true });
   });
 });

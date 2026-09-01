@@ -16,7 +16,11 @@
 //   tracker.ts transition --to <started|in_review|verified|done|blocked> [--ref R]
 //   tracker.ts link       --url URL [--title T] [--ref R]
 //   tracker.ts attach     --file PATH [--name N] [--ref R]
+//   tracker.ts event      NAME [--var KEY=VALUE]... [--ref R]
 // Global: --dry-run prints what would be sent and sends nothing.
+//
+// `event` runs the ordered action list bound to NAME in tracker.on — the
+// project's declaration of what each pipeline moment does to its ticket.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -27,7 +31,7 @@ import { loadProjectConfig } from "./harness-config.ts";
 export const LIFECYCLE_STATES = ["started", "in_review", "verified", "done", "blocked"] as const;
 export type LifecycleState = (typeof LIFECYCLE_STATES)[number];
 
-const VERBS = ["resolve", "get", "comment", "transition", "link", "attach"] as const;
+const VERBS = ["resolve", "get", "comment", "transition", "link", "attach", "event"] as const;
 export type Verb = (typeof VERBS)[number];
 const READ_VERBS: ReadonlySet<Verb> = new Set(["resolve", "get"]);
 
@@ -55,11 +59,15 @@ export type TrackerProvider = {
   readonly attach: (ref: string, file: string, name: string) => Promise<WriteResult>;
 };
 
+export type EventAction = Readonly<Record<string, unknown>>;
+
 export type TrackerConfig = {
   readonly provider: string;
   readonly pattern: string | null;
   readonly states: Readonly<Record<string, string>>;
+  readonly on: Readonly<Record<string, readonly EventAction[]>>;
   readonly secrets: Readonly<Record<string, string>>;
+  readonly repoRoot: string;
 };
 
 export type Args = {
@@ -72,6 +80,8 @@ export type Args = {
   readonly marker: string | null;
   readonly file: string | null;
   readonly name: string | null;
+  readonly event: string | null;
+  readonly vars: Readonly<Record<string, string>>;
   readonly dryRun: boolean;
 };
 
@@ -94,9 +104,21 @@ export const parseArgs = (argv: readonly string[]): Args => {
   let marker: string | null = null;
   let file: string | null = null;
   let name: string | null = null;
+  let event: string | null = null;
+  const vars: Record<string, string> = {};
   let dryRun = false;
 
-  for (let i = 1; i < argv.length; ) {
+  let first = 1;
+  if (verb === "event") {
+    const positional = argv[1];
+    if (positional === undefined || positional.startsWith("--")) {
+      throw new TrackerError("event needs a name, e.g. `event pr-created`.");
+    }
+    event = positional;
+    first = 2;
+  }
+
+  for (let i = first; i < argv.length; ) {
     const flag = argv[i];
     if (flag === "--dry-run") {
       dryRun = true;
@@ -120,6 +142,12 @@ export const parseArgs = (argv: readonly string[]): Args => {
       case "--marker": marker = value; break;
       case "--file": file = value; break;
       case "--name": name = value; break;
+      case "--var": {
+        const eq = value.indexOf("=");
+        if (eq < 1) throw new TrackerError(`--var wants KEY=VALUE, got "${value}".`);
+        vars[value.slice(0, eq)] = value.slice(eq + 1);
+        break;
+      }
       default: throw new TrackerError(`Unknown flag "${flag}".`);
     }
     i += 2;
@@ -131,7 +159,7 @@ export const parseArgs = (argv: readonly string[]): Args => {
   }
   if (verb === "link" && url === null) throw new TrackerError("link needs --url.");
   if (verb === "attach" && file === null) throw new TrackerError("attach needs --file.");
-  return { verb, ref, to, url, title, body, marker, file, name, dryRun };
+  return { verb, ref, to, url, title, body, marker, file, name, event, vars, dryRun };
 };
 
 const recordAt = (obj: Readonly<Record<string, unknown>>, key: string): Readonly<Record<string, unknown>> | null => {
@@ -154,11 +182,21 @@ export const loadTrackerConfig = (cwd: string = process.cwd()): TrackerConfig | 
   const block = recordAt(project.raw, "tracker");
   if (block === null) return null;
   const resolveBlock = recordAt(block, "resolve");
+  const on = Object.fromEntries(
+    Object.entries(recordAt(block, "on") ?? {}).map(([eventName, actions]) => [
+      eventName,
+      Array.isArray(actions)
+        ? actions.filter((action): action is EventAction => typeof action === "object" && action !== null)
+        : [],
+    ]),
+  );
   return {
     provider: stringAt(block, "provider") ?? "",
     pattern: resolveBlock === null ? null : stringAt(resolveBlock, "pattern"),
     states: stringMap(recordAt(block, "states") ?? {}),
+    on,
     secrets: project.secrets,
+    repoRoot: project.repoRoot,
   };
 };
 
@@ -246,6 +284,95 @@ const runAttach = async (
   return skip(result.ok ? `attached ${name} to ${ref}` : `attach failed: ${result.detail}`);
 };
 
+const substitute = (template: string, vars: Readonly<Record<string, string>>): string =>
+  template.replace(/\{([A-Z_]+)\}/g, (whole, key: string) => vars[key] ?? whole);
+
+const runAction = async (
+  provider: TrackerProvider,
+  cfg: TrackerConfig,
+  ref: string,
+  eventName: string,
+  action: EventAction,
+  vars: Readonly<Record<string, string>>,
+  dryRun: boolean,
+): Promise<Outcome> => {
+  // Comments from an event are stamped per event (and per SPEC when the caller
+  // passes one), so a re-run of the same stage never posts a duplicate.
+  const marker = ["harness", eventName, vars["SPEC"]].filter(Boolean).join(":");
+  const gate = (verb: Verb): Outcome | null =>
+    provider.capabilities.has(verb) ? null : skip(`provider "${provider.name}" does not support ${verb} — skipping action`);
+
+  const transitionTo = stringAt(action, "transition");
+  if (transitionTo !== null) {
+    if (!isLifecycle(transitionTo)) {
+      return skip(`event action transition "${transitionTo}" is not a lifecycle state (${LIFECYCLE_STATES.join(", ")}) — skipping`);
+    }
+    return gate("transition") ?? runTransition(provider, ref, transitionTo, cfg.states, dryRun);
+  }
+
+  const linkTemplate = stringAt(action, "link");
+  if (linkTemplate !== null) {
+    return runLink(provider, ref, substitute(linkTemplate, vars), null, dryRun);
+  }
+
+  const commentTemplate = stringAt(action, "comment");
+  if (commentTemplate !== null) {
+    return gate("comment") ?? runComment(provider, ref, substitute(commentTemplate, vars), marker, dryRun);
+  }
+
+  const commentFile = stringAt(action, "comment_file");
+  if (commentFile !== null) {
+    const path = resolvePath(cfg.repoRoot, commentFile);
+    let template: string;
+    try {
+      template = readFileSync(path, "utf8");
+    } catch {
+      return skip(`comment_file ${commentFile} not found at ${path} — skipping action`);
+    }
+    return gate("comment") ?? runComment(provider, ref, substitute(template, vars), marker, dryRun);
+  }
+
+  const attachTemplate = stringAt(action, "attach");
+  if (attachTemplate !== null) {
+    const path = substitute(attachTemplate, vars);
+    return gate("attach") ?? runAttach(provider, ref, path, basename(path), dryRun);
+  }
+
+  const runTemplate = stringAt(action, "run");
+  if (runTemplate !== null) {
+    const command = substitute(runTemplate, vars);
+    if (dryRun) return skip(`DRY-RUN run: ${command}`);
+    try {
+      const output = execFileSync("bash", ["-c", command], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      return skip(`ran: ${command}${output.trim() ? ` -> ${output.trim().split("\n")[0]}` : ""}`);
+    } catch (err) {
+      return skip(`run failed: ${command}: ${message(err)}`);
+    }
+  }
+
+  return skip(`unknown event action ${JSON.stringify(action)} — skipping`);
+};
+
+const runEvent = async (
+  provider: TrackerProvider,
+  cfg: TrackerConfig,
+  ref: string,
+  eventName: string,
+  vars: Readonly<Record<string, string>>,
+  dryRun: boolean,
+): Promise<Outcome> => {
+  const actions = cfg.on[eventName];
+  if (actions === undefined || actions.length === 0) {
+    return skip(`no actions bound for event "${eventName}" — skipping`);
+  }
+  const lines: string[] = [];
+  for (const action of actions) {
+    const outcome = await runAction(provider, cfg, ref, eventName, action, vars, dryRun);
+    lines.push(...outcome.lines);
+  }
+  return { lines, code: 0 };
+};
+
 export const performVerb = async (
   args: Args,
   cfg: TrackerConfig,
@@ -261,7 +388,7 @@ export const performVerb = async (
   if (ref === null) {
     return { lines: [`branch "${branch}" carries no ticket ref — skipping ${args.verb}`], code: failCode(args.verb) };
   }
-  if (args.verb !== "link" && !provider.capabilities.has(args.verb)) {
+  if (args.verb !== "link" && args.verb !== "event" && !provider.capabilities.has(args.verb)) {
     return { lines: [`provider "${provider.name}" does not support ${args.verb} — skipping`], code: failCode(args.verb) };
   }
 
@@ -278,6 +405,10 @@ export const performVerb = async (
       case "attach": {
         const file = args.file ?? "";
         return await runAttach(provider, ref, file, args.name ?? basename(file), args.dryRun);
+      }
+      case "event": {
+        const vars = { ...args.vars, TICKET: ref, BRANCH: branch };
+        return await runEvent(provider, cfg, ref, args.event ?? "", vars, args.dryRun);
       }
     }
   } catch (err) {

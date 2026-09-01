@@ -177,6 +177,41 @@ Exit discipline: reads (`resolve`, `get`) exit 1 on a miss, because the caller a
 not get. Writes are best-effort — an outage, an unmapped state, or a verb the provider lacks prints
 one line and exits 0. A tracker problem never fails a run.
 
+### Event bindings — `tracker.on`
+
+What each pipeline moment does to the ticket is the project's call, declared as ordered action
+lists keyed by event name and fired with `event <name> [--var KEY=VALUE]...`:
+
+```json
+"on": {
+  "run-started": [ { "transition": "started" } ],
+  "pr-created": [
+    { "link": "{PR_URL}" },
+    { "transition": "in_review" },
+    { "comment_file": "harness/tracker/pr-comment.md" }
+  ],
+  "run-interrupted": [ { "transition": "blocked" }, { "run": "scripts/page-oncall.sh {TICKET}" } ]
+}
+```
+
+Actions, each a one-key object, executed in order, every one best-effort:
+
+| Action | Does |
+|--------|------|
+| `{ "transition": "<lifecycle>" }` | Move the ticket via the `states` map — the value is a **lifecycle** state, not a project state name. |
+| `{ "link": "<url template>" }` | Native PR link where the provider has one, else a marked comment. |
+| `{ "comment": "<inline template>" }` | Post a comment. |
+| `{ "comment_file": "<repo-relative path>" }` | Post a markdown file as the comment body. |
+| `{ "attach": "<path template>" }` | Attach a file. |
+| `{ "run": "<command template>" }` | Escape hatch: run a project script with the vars substituted. |
+
+Templates substitute `{KEY}` from `--var` plus the built-ins `{TICKET}` and `{BRANCH}`. Event
+comments are stamped `harness:<event>[:<SPEC>]`, so re-running a stage never posts a duplicate.
+Orchestrate fires `run-started`, `pr-created`, `run-interrupted`, and `run-completed` (see its
+Tracker events table); event names are free-form, so a project skill can fire its own. An event
+with no binding is a one-line skip — an empty `on` means the tracker is read and attached to, but
+never written by events.
+
 ## When the file is missing
 
 Stage 0 halts and tells the user to run `setup-harness`, which writes it. There is no run-time

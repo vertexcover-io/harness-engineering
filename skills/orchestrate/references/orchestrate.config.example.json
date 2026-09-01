@@ -43,7 +43,13 @@
   "tracker": {
     "provider": "github",
     "resolve": { "from": "branch", "pattern": "REF-\\d+" },
-    "states": { "started": "open", "done": "closed" }
+    "states": { "started": "open", "done": "closed" },
+    "on": {
+      "pr-created": [
+        { "link": "{PR_URL}" },
+        { "comment": "PR up for {TICKET}: {PR_URL}" }
+      ]
+    }
   },
 
   "commands": {
