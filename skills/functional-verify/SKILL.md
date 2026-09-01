@@ -13,6 +13,9 @@ user-invocable: true
 
 # Functional Verify: The Gate
 
+Load the `writing-style` skill before you write `verification/proof-report.html`. Run its
+ship-check before you call the feature verified.
+
 **First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
 
 ## Your Contract

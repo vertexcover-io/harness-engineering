@@ -46,7 +46,7 @@ meaning and write that one.
 files it must read. A line that does not change what the coder builds takes attention it needs
 elsewhere.
 
-`../_shared/writing-style.md` governs both files.
+The `writing-style` skill governs both files.
 
 ## File references
 

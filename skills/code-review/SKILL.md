@@ -9,6 +9,10 @@ description: >
 
 # Code Review
 
+Load the `writing-style` skill before you write `.harness/review.md`. Run its ship-check
+before you hand the report back. Each reviewer persona gets the same instruction in its
+dispatch prompt.
+
 You are the **dispatcher**, not a reviewer. Between dispatch and aggregation you run no tools:
 the personas' reports are your entire input, and a finding you produce yourself has no axis to
 sit under. Present the axes as they came back — a thin result on one axis is signal, not

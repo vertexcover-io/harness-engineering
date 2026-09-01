@@ -43,6 +43,7 @@ Bash("
   node '<DAG_SCRIPT>' add-node code-review 'Code Review' --depends-on coder
   node '<DAG_SCRIPT>' add-node verify-finalize 'Verify & Finalize' --depends-on code-review
   node '<DAG_SCRIPT>' add-node commit-pr 'Commit & PR' --depends-on verify-finalize
+  node '<DAG_SCRIPT>' add-node retro 'Retro' --depends-on commit-pr
   echo \"$HARNESS_DIR\"
 ")
 ```

@@ -171,7 +171,7 @@ Click any completed node to inspect its report:
 After the pipeline completes, the dashboard is finalized into a self-contained HTML file you can share or archive.
 
 You can also run stages individually if you prefer more control:
-`/planning` → `/tdd` → `/quality-gate` → `/git-commit`
+`/planning` → `/tdd` → `/quality-gate` → `/git-commit` → `/harness-retro`
 
 ## Recipes
 
@@ -332,7 +332,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 
 | Command | What it does |
 |---------|-------------|
-| `/orchestrate` | Full pipeline: design → plan → code → PR |
+| `/orchestrate` | Full pipeline: design → plan → code → PR → retro |
 | `/planning` | Breaks work into phases with dependency graph |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
 | `/implement` | Manual coding entry point: TDD + code-quality, review when green |
@@ -342,6 +342,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/coverage-guard` | Enforces minimum test coverage |
 | `/doc-quality-guard` | Audits docs for accuracy and staleness |
 | `/skill-eval-generator` | Generates eval test suites for skills (pairs with `skill-creator eval`) |
+| `/harness-retro` | Post-mortems a finished run: what broke, why, and which skill to fix |
 
 **Run automatically (no command needed):**
 `code-quality` · `refactor` · `quality-gate` · `pipeline-setup` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
@@ -367,6 +368,7 @@ harness/
     ├── coverage-guard/
     ├── doc-quality-guard/
     ├── git-commit/
+    ├── harness-retro/
     ├── implement/
     ├── learn/
     ├── orchestrate/

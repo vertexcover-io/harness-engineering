@@ -7,6 +7,7 @@
 - [Stage 0 — Baseline](#stage-0--baseline)
 - [Stage 3 — Coder](#stage-3--coder)
 - [Stage 5 — Verify & Finalize](#stage-5--verify--finalize)
+- [Stage 7 — Retro](#stage-7--retro)
 - [What belongs in the prompt vs the skill](#what-belongs-in-the-prompt-vs-the-skill)
 
 Each sub-agent stage does one thing: **invoke its skill**. The skill carries the contract. This file
@@ -119,6 +120,28 @@ Tell the agent to run them in order and stop on the first failure.
 
 The orchestrator enforces the artifact and UI-proof contracts itself after the agent returns — a
 `PASSED` without the artifacts means the gate was skipped. See SKILL.md Stage 5.
+
+---
+
+## Stage 7 — Retro
+
+**Skill:** `<SKILL:harness-retro>` · **Model:** `CFG.model` → `sonnet`
+
+Runs after the PR exists, so it sees the whole run including Stage 6.
+
+**Pass:**
+- Session id `<SESSION_ID>` and launch directory `<LAUNCH_DIR>` — the transcripts live under the
+  directory the run started in, never the worktree. When `<SESSION_ID>` is empty, pass only
+  `<LAUNCH_DIR>` and let the skill take that project's newest session.
+- Output dir `.harness/<SPEC_NAME>/retro`, spec name `<SPEC_NAME>`, harness dir
+  `.harness/<SPEC_NAME>/`
+- Plugin skills root `${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills` — recommendations name
+  files under it
+- `PR: <PR_URL>`, `BRANCH: <BRANCH_NAME>`, `BASE: <BASE_BRANCH>`
+
+**Return:** issue count, MISSED count, report path.
+
+This stage has no gate and no verdict. See SKILL.md Stage 7.
 
 ---
 
