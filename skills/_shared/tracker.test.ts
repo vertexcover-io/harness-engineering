@@ -16,6 +16,7 @@ import {
   performVerb,
   resolveProvider,
   resolveTicketRef,
+  runDoctor,
 } from "./tracker.ts";
 import type { Ticket, TrackerConfig, TrackerProvider, Verb } from "./tracker.ts";
 
@@ -361,6 +362,53 @@ describe("performVerb event", () => {
     const out = await performVerb(parseArgs(["event", "verified", "--dry-run"]), bound, fake({}, calls), "REF-12");
     assert.equal(calls.length, 0);
     assert.equal(out.lines.every((line) => line.startsWith("DRY-RUN")), true);
+  });
+});
+
+describe("runDoctor", () => {
+  test("a healthy config with a reachable ticket is all OK, exit 0", async () => {
+    const out = await runDoctor(cfg(), "feature/REF-12-login", null, fake());
+    assert.equal(out.code, 0);
+    assert.match(out.lines.join("\n"), /ticket REF-12/);
+    assert.equal(out.lines.some((line) => line.startsWith("FAIL")), false);
+  });
+
+  test("an unknown provider is a FAIL, exit 1", async () => {
+    const out = await runDoctor(cfg({ provider: "trello" }), "main", null, null);
+    assert.equal(out.code, 1);
+    assert.match(out.lines.join("\n"), /trello/);
+  });
+
+  test("a pattern that does not compile is a FAIL, exit 1", async () => {
+    const out = await runDoctor(cfg({ pattern: "REF-[" }), "main", null, fake());
+    assert.equal(out.code, 1);
+    assert.match(out.lines.join("\n"), /pattern/);
+  });
+
+  test("non-lifecycle states keys and unknown actions are WARNs, exit 0", async () => {
+    const bound = cfg({
+      states: { in_review: "Code Review", review: "oops" },
+      on: { "pr-created": [{ frobnicate: "x" }, { transition: "not_a_state" }] },
+    });
+    const out = await runDoctor(bound, "feature/REF-12-x", null, fake());
+    assert.equal(out.code, 0);
+    const text = out.lines.join("\n");
+    assert.match(text, /WARN.*"review"/);
+    assert.match(text, /WARN.*frobnicate/);
+    assert.match(text, /WARN.*not_a_state/);
+  });
+
+  test("a get that fails against a real ref is a FAIL", async () => {
+    const dead = fake({ get: async () => { throw new Error("401"); } });
+    const out = await runDoctor(cfg(), "feature/REF-12-x", null, dead);
+    assert.equal(out.code, 1);
+    assert.match(out.lines.join("\n"), /401/);
+  });
+
+  test("no resolvable ref is a WARN, not a failure", async () => {
+    const out = await runDoctor(cfg(), "main", null, fake());
+    assert.equal(out.code, 0);
+    assert.match(out.lines.join("\n"), /WARN.*--ref/);
   });
 });
 

@@ -33,6 +33,7 @@ if command -v claude-sessions >/dev/null 2>&1; then
 else p claude-sessions MISSING; fi
 W="${ASANA_WORKSPACE_GID:-$(grep -hs '^ASANA_WORKSPACE_GID=' .env | tail -1 | cut -d= -f2-)}"
 [ -n "$W" ] && p asana-workspace "OK ($W)" || p asana-workspace UNSET
+jq -e .tracker orchestrate.config.json >/dev/null 2>&1 && p tracker configured || p tracker UNSET
 grep -qxF '.harness/' .gitignore 2>/dev/null && p ignore-harness OK || p ignore-harness MISSING
 [ -f orchestrate.config.json ] && p orchestrate-config OK || p orchestrate-config MISSING
 M=~/.claude/projects/"$(printf %s "$PWD" | tr '/.' '--')"/memory
@@ -43,7 +44,7 @@ for f in $(git ls-files '*CLAUDE.md' '*AGENTS.md') CLAUDE.local.md \
 ```
 
 Required: `git`, `node`, `jq`, `curl`, `ignore-harness`, `orchestrate-config`.
-On-demand: `just`, `mani`, `wt` (the repo's own task/multi-repo/worktree commands) · `agent-browser` (functional-verify's UI proofs) · `gh` (code-review on a PR, orchestrate's PR stage) · `claude-sessions` and `asana-workspace` (functional-verify's publish step, best-effort — it skips in one line when either is red).
+On-demand: `just`, `mani`, `wt` (the repo's own task/multi-repo/worktree commands) · `agent-browser` (functional-verify's UI proofs) · `gh` (code-review on a PR, orchestrate's PR stage) · `claude-sessions` and `asana-workspace` (functional-verify's publish step, best-effort — it skips in one line when either is red) · `tracker` (the tracker bridge: ticket fetch, PR link, status moves, attachments — every call self-skips in one line when UNSET).
 
 The `wt` line reports which name answered — on Windows worktrunk installs as `git-wt`, since Windows Terminal owns `wt`.
 
@@ -131,6 +132,20 @@ committed. A red credential is theirs to supply — record it in Step 7.
 `slack` needs three: `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`, and `SLACK_MEMBER_ID` (the run owner's
 member ID). Ask for all three before the test send.
 
+**The tracker is opt-in the same way.** Ask whether the project's tickets should follow the run
+(fetched as input, PR linked, status moved, artifacts attached). When the answer is no, omit the
+`tracker` block. When it is yes, write it — provider, `resolve.pattern`, `states`, and any `on`
+bindings, shapes in `skills/orchestrate/references/config.md` — then validate it:
+
+```
+node --experimental-strip-types <plugin-root>/skills/_shared/tracker.ts doctor
+```
+
+Fix every FAIL row yourself where you can (a pattern that does not compile, a misspelled provider);
+a FAIL naming a credential is theirs — the key goes in `.env` at the repo root, never in
+`orchestrate.config.json`, and the item goes to Step 7. Re-run doctor until only OK/WARN rows
+remain, and quote any WARN rows in Step 8.
+
 **Print what you wrote and name anything you guessed** — this file is committed, so a wrong command
 here is wrong on every run after.
 
@@ -176,6 +191,7 @@ Secrets and logins are theirs. Print a numbered list of exactly the ones still r
 | `claude-sessions` UNAUTHENTICATED | Run `claude-sessions login --server <url>` — it opens a browser pairing flow. |
 | `asana-workspace` UNSET | Open Asana, copy the workspace GID from the URL, and add `ASANA_WORKSPACE_GID=<gid>` to the repo-root `.env`. The `ASANA_PAT` token goes there too. |
 | `gh` present but unauthenticated | Run `gh auth login` — interactive. |
+| `tracker` doctor FAIL on a credential | Quote the doctor line — it names the exact key (`ASANA_PAT`, `LINEAR_API_KEY`, `JIRA_API_TOKEN`, …). The value goes in the repo-root `.env`. |
 | any tool needing `sudo` | Give the exact one-liner from Step 3 for their platform. |
 | a service that would not start | Quote the command and its output, and name what only they can supply — a credential, a login, an image, a free port. |
 

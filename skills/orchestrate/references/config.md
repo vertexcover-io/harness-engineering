@@ -148,8 +148,11 @@ node --experimental-strip-types <plugin-root>/skills/_shared/tracker.ts <verb> [
 ```
 
 Verbs: `resolve` · `get [--ref R]` · `comment (--body S | --body-file F) [--marker M]` ·
-`transition --to <lifecycle>` · `link --url <PR url> [--title T]` · `attach --file F [--name N]`.
-`--dry-run` on any verb prints what would be sent and sends nothing.
+`transition --to <lifecycle>` · `link --url <PR url> [--title T]` · `attach --file F [--name N]` ·
+`event <name> [--var KEY=VALUE]...` · `doctor [--ref R]`. `--dry-run` on any verb prints what would
+be sent and sends nothing. `doctor` validates the block — provider, credentials, pattern, states,
+event bindings, plus one live `get` when a ref resolves — and exits 1 on any FAIL row; setup-harness
+runs it after writing this block.
 
 - **provider** names one entry in the provider table in `skills/_shared/tracker.ts`, exactly as
   `notifier.provider` names one in `notify.ts`. Credentials come from the environment or `.env` at

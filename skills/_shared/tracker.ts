@@ -17,13 +17,14 @@
 //   tracker.ts link       --url URL [--title T] [--ref R]
 //   tracker.ts attach     --file PATH [--name N] [--ref R]
 //   tracker.ts event      NAME [--var KEY=VALUE]... [--ref R]
+//   tracker.ts doctor     [--ref R]   validate config, credentials, and a live get
 // Global: --dry-run prints what would be sent and sends nothing.
 //
 // `event` runs the ordered action list bound to NAME in tracker.on — the
 // project's declaration of what each pipeline moment does to its ticket.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadProjectConfig } from "./harness-config.ts";
@@ -31,9 +32,9 @@ import { loadProjectConfig } from "./harness-config.ts";
 export const LIFECYCLE_STATES = ["started", "in_review", "verified", "done", "blocked"] as const;
 export type LifecycleState = (typeof LIFECYCLE_STATES)[number];
 
-const VERBS = ["resolve", "get", "comment", "transition", "link", "attach", "event"] as const;
+const VERBS = ["resolve", "get", "comment", "transition", "link", "attach", "event", "doctor"] as const;
 export type Verb = (typeof VERBS)[number];
-const READ_VERBS: ReadonlySet<Verb> = new Set(["resolve", "get"]);
+const READ_VERBS: ReadonlySet<Verb> = new Set(["resolve", "get", "doctor"]);
 
 export class TrackerError extends Error {}
 
@@ -884,6 +885,83 @@ export const currentBranch = (cwd: string): string => {
   }
 };
 
+const EVENT_ACTION_KEYS = ["transition", "link", "comment", "comment_file", "attach", "run"] as const;
+
+// Validates a project's tracker setup: provider + credentials, the resolve
+// pattern, the states map, every event binding, and (when a ref is reachable)
+// one live get. FAIL rows exit 1; WARN rows are advisory and exit 0.
+export const runDoctor = async (
+  cfg: TrackerConfig,
+  branch: string,
+  explicitRef: string | null,
+  injected: TrackerProvider | null,
+): Promise<Outcome> => {
+  const lines: string[] = [];
+  let failed = false;
+  const ok = (detail: string): void => { lines.push(`OK   ${detail}`); };
+  const warn = (detail: string): void => { lines.push(`WARN ${detail}`); };
+  const fail = (detail: string): void => { lines.push(`FAIL ${detail}`); failed = true; };
+
+  let provider: TrackerProvider | null = injected;
+  if (provider === null) {
+    try {
+      provider = resolveProvider(cfg);
+    } catch (err) {
+      fail(message(err));
+    }
+  }
+  if (provider !== null) ok(`provider "${provider.name}" — supports ${[...provider.capabilities].join(", ")}`);
+
+  let pattern: RegExp | null = null;
+  if (cfg.pattern === null) {
+    warn("no resolve.pattern — every tracker call will need an explicit --ref");
+  } else {
+    try {
+      pattern = new RegExp(cfg.pattern);
+      ok(`resolve.pattern /${cfg.pattern}/ compiles`);
+    } catch (err) {
+      fail(`resolve.pattern /${cfg.pattern}/ does not compile: ${message(err)}`);
+    }
+  }
+
+  for (const key of Object.keys(cfg.states)) {
+    if (!isLifecycle(key)) warn(`states key "${key}" is not a lifecycle state (${LIFECYCLE_STATES.join(", ")}) — it will never fire`);
+  }
+
+  for (const [eventName, actions] of Object.entries(cfg.on)) {
+    for (const action of actions) {
+      const keys = Object.keys(action);
+      const known = keys.find((key) => (EVENT_ACTION_KEYS as readonly string[]).includes(key));
+      if (known === undefined) {
+        warn(`on.${eventName}: unknown action keys [${keys.join(", ")}]`);
+        continue;
+      }
+      const transitionTo = stringAt(action, "transition");
+      if (transitionTo !== null && !isLifecycle(transitionTo)) {
+        warn(`on.${eventName}: transition "${transitionTo}" is not a lifecycle state`);
+      }
+      const commentFile = stringAt(action, "comment_file");
+      if (commentFile !== null && !existsSync(resolvePath(cfg.repoRoot, commentFile))) {
+        warn(`on.${eventName}: comment_file ${commentFile} not found under ${cfg.repoRoot}`);
+      }
+    }
+  }
+
+  const ref = explicitRef ?? (pattern === null ? null : pattern.exec(branch)?.[0] ?? null);
+  if (provider !== null && ref !== null) {
+    try {
+      const ticket = await provider.get(ref);
+      ok(`ticket ${ref}: "${ticket.title}" (${ticket.state})`);
+    } catch (err) {
+      fail(`get ${ref} failed: ${message(err)}`);
+    }
+  } else if (provider !== null) {
+    warn(`branch "${branch}" resolves to no ticket ref — pass --ref to test a live get`);
+  }
+
+  return { lines, code: failed ? 1 : 0 };
+};
+
 export const main = async (
   argv: readonly string[],
   injected: TrackerProvider | null = null,
@@ -895,8 +973,14 @@ export const main = async (
     process.stderr.write("tracker: no tracker block in orchestrate.config.json — skipping.\n");
     return failCode(args.verb);
   }
+  const branch = currentBranch(cwd);
+  if (args.verb === "doctor") {
+    const outcome = await runDoctor(cfg, branch, args.ref, injected);
+    for (const line of outcome.lines) process.stdout.write(`${line}\n`);
+    return outcome.code;
+  }
   const provider = injected ?? resolveProvider(cfg);
-  const outcome = await performVerb(args, cfg, provider, currentBranch(cwd));
+  const outcome = await performVerb(args, cfg, provider, branch);
   for (const line of outcome.lines) process.stdout.write(`${line}\n`);
   return outcome.code;
 };
