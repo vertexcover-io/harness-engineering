@@ -34,8 +34,6 @@ Every file below is one hop from here. Read the one whose condition you are in �
 | `references/dashboard-report-formats.md` | writing the markdown body of any `write-report` call |
 | `references/stage-prompts.md` | dispatching a sub-agent (Stage 0 Baseline, Stage 3 Coder, Stage 5 Verify & Finalize) |
 | `references/coder-contracts.md` | you need the coder stage's wire protocol — phase-file inputs, mandatory E2E, report artifacts |
-| `references/phase-claims-format.md` | reading or checking a per-phase `phase-<N>-claims.json` |
-| `references/claims-aggregation-format.md` | aggregating phase claims after Stage 3, or running the Stage 5 aggregated-claims check |
 | `references/consumer-repo-e2e.md` | a phase changes a published library whose end-to-end proof must run in a consumer repo |
 
 ---
@@ -88,7 +86,7 @@ DAG commands, the init block, and the transition pattern all live in **`referenc
 
 The dashboard script path is: !`echo "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/dashboard/dag-update.mjs"`
 
-**Create the worktree FIRST, then start the dashboard from inside it** — `init` writes `.harness/<SPEC_NAME>/` relative to cwd, so it must run with the worktree as cwd (else the dashboard and the phase/claims files split across two checkouts).
+**Create the worktree FIRST, then start the dashboard from inside it** — `init` writes `.harness/<SPEC_NAME>/` relative to cwd, so it must run with the worktree as cwd (else the dashboard and the phase artifacts split across two checkouts).
 
 Every step here is seconds of work. The minutes-long baseline is dispatched by Stage 0 and joined
 later, so nothing in initialization blocks on it.
@@ -109,7 +107,7 @@ later, so nothing in initialization blocks on it.
 |---|-------|-----------|--------|
 | 0 | Setup | **Main conversation** (`setup`) + background sub-agent (`baseline`) | Worktree path, spec artifact directory, and — once the join resolves — baseline metrics |
 | 1 | Design & Plan | **Main conversation** | `design.md` (recorder; carries the dependency + fallback chain) · `plan.html` (review surface, gate) → extracted `plan.md` + `phases/phase-*.md` |
-| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-claims.json` + `e2e-report.json` |
+| 3 | Coder | Sub-agent (parallelizable) | Implementation + tests + `phase-<N>-e2e.json` (runner output) |
 | 4 | Code Review | **Main conversation** | `.harness/<SPEC_NAME>/review/review.md` — per-axis findings + verdict, then fixes applied and recorded |
 | 5 | Verify & Finalize | Sub-agent | Functional verification, quality gate PASS/BLOCKED, synced docs |
 | 6 | Commit & PR | **Main conversation** | Commits + PR URL |
@@ -230,7 +228,7 @@ On the first successful join, `write-report baseline` and `set-status baseline d
 
 - Mark the `planning` node `done` and record the route in its report.
 - **Skip Stages 3 and 4 entirely** — there is no phase graph to dispatch from and no slice to review at. Set both DAG nodes to `skipped`.
-- Invoke `implement` via `Skill` with the recon findings planning handed back, then go to **Stage 5**. Stage 5's claims checks (`MISSING_CLAIMS_FILE`, `E2E_NOT_EXECUTED`) do not apply — there are no phase claims — so run functional-verify, quality-gate, and sync-docs, and enforce only the `proof-report.html` artifact contract.
+- Invoke `implement` via `Skill` with the recon findings planning handed back, then go to **Stage 5**. There are no phase files, so the route writes `phase-1-e2e.json` if it runs an e2e suite at all; where it does not, quality-gate's Check 9 is `NOT_APPLICABLE` and only the `proof-report.html` artifact contract is enforced.
 - Stage 6 runs unchanged.
 
 **Extract:** `PLAN_PATH`, `PHASE_DIR`, phase graph (DOT from plan.md), phase count — or the `implement` route.
@@ -241,30 +239,9 @@ Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 b
 
 **The coder agent invokes exactly one skill: `<SKILL:coder>`, defaulting to `implement`** — dispatch shape in `references/stage-prompts.md`. Handing it the phase file is what puts it in pipeline mode.
 
-Coder writes, per phase, **both** `phase-<N>-claims.json` (structured claim ledger — the `coder-e2e-gate` hook reads it per phase, quality-gate's Check 9 reads the aggregate) **and** `e2e-report.json` (raw run summary — quality-gate reads this). Neither is an input to functional-verify: that skill derives its scenarios from the feature's docs, not from claims.
+Coder writes one artifact per phase: `phase-<N>-e2e.json`, its e2e runner's own machine output, which quality-gate's Check 9 reads. Nothing in it is hand-authored. It is not an input to functional-verify — that skill derives its scenarios from the feature's docs, and treats anything the runner did not cover as unproven.
 
 DAG: `set-status coder running` before dispatch; per phase `set-status <phase-node> running`/`done`; after all phases `set-status coder done`.
-
-**Coder-e2e-gate breadcrumb (mandatory before EVERY coder dispatch):** before dispatching any coder sub-agent, write the active-phase breadcrumb so the `coder-e2e-gate` SubagentStop hook can verify the phase report after the agent returns. Without this file the hook no-ops and the phase is unprotected:
-
-```bash
-START_SHA="$(git rev-parse HEAD)"
-cat > .harness/current-phase <<EOF
-SPEC_NAME=<SPEC_NAME>
-PHASE_N=<PHASE_N>
-START_SHA=$START_SHA
-EOF
-```
-
-After each phase completes, delete the breadcrumb (`rm -f .harness/current-phase`) so later-stage sub-agents don't trigger the gate.
-
-**Claims aggregation (mandatory, after the last phase completes):** aggregate every `phase-*-claims.json` into a single `.harness/<SPEC_NAME>/claims.json` by running the script — do not transcribe its `jq`:
-
-```bash
-bash "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/scripts/aggregate-claims.sh" '<WORKTREE_PATH>' '<SPEC_NAME>'
-```
-
-If it prints `MISSING_PHASE_CLAIMS`, stop the pipeline. Schema of what it writes: `references/claims-aggregation-format.md`. The aggregated `claims.json` is what verify reads; phase files are kept for audit.
 
 ### Stage 4: Code Review
 
@@ -281,7 +258,7 @@ The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>
 
 Single consolidated sub-agent: functional verification → quality gate → sync docs. `set-status verify-finalize running`. Dispatch the Stage 5 template from `references/stage-prompts.md`; model = verify-finalize model (`sonnet` default).
 
-**After the sub-agent returns, enforce the artifact + e2e-execution contracts before trusting the verdict:**
+**After the sub-agent returns, enforce the artifact contract before trusting the verdict:**
 
 ```
 Bash("
@@ -292,13 +269,9 @@ Bash("
 
 If the file is missing → verification FAILED regardless of the returned verdict; stop the pipeline. A "PASSED" verdict without the artifact means the gate was skipped.
 
-**E2E execution check (mandatory):** run the aggregated-claims check from `references/claims-aggregation-format.md`. It enforces `claims.json` exists, `executed > 0`, `failed = 0`.
+**The e2e evidence is quality-gate's job, not a second check here.** Its Check 9 reads every phase's runner report and blocks on a missing, failed, or unrun suite — it runs inside this stage, so re-checking the same files after the sub-agent returns proves nothing new.
 
-Failure modes (stop the pipeline):
-- `MISSING_PHASE_CLAIMS` / `MISSING_CLAIMS_FILE` — coder or aggregation skipped.
-- `E2E_NOT_EXECUTED` / `E2E_FAILED` — phase suites did not run or had failures.
-
-**Verification itself is not gated.** functional-verify writes `proof-report.html` — an HTML workbench whose prose is written for a human and carries no claim ids, so there is no verdict here to grep for; see *Why verification is not gated* in `references/claims-aggregation-format.md`. A passing phase `.spec.ts` is NOT sufficient evidence a feature works: the verifier must have driven a real browser via the `agent-browser` CLI and filmed each scenario.
+**Verification itself is not gated.** functional-verify writes `proof-report.html` — an HTML workbench whose prose is written for a human, so there is no verdict here to grep for. A passing phase `.spec.ts` is NOT sufficient evidence a feature works: the verifier must have driven a real browser via the `agent-browser` CLI and filmed each scenario.
 
 **Disposition every bug it reports before Stage 6 — the list is the checklist.** Enumerate the bugs from the returned report and give each exactly one of two dispositions:
 

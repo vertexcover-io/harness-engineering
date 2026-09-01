@@ -45,10 +45,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/coder-e2e-gate.mjs\""
-          },
-          {
-            "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/artifact-history.mjs\" 2>/dev/null || true"
           }
         ]

@@ -53,6 +53,13 @@ skipping" and stop.
   toast duration, where a triggered email lands, what the stack shares). This lives in the **project's own skills**
   and `CLAUDE.md`. This skill mandates no dedicated file for it — only that Step 1's two unknowns come back
   answered.
+- **The coder's e2e runner reports** at `.harness/<SPEC_NAME>/phase-*-e2e.json` — the raw JSON its
+  runner wrote, listing every test that actually executed. Test titles carry a scenario id
+  (`SC3: …`), not a requirement id, so read the report in two hops: title id → the phase file's
+  matching scenario heading → the requirement ids that heading traces to (`**SC3 — …** · R2, EC1`).
+  A requirement no executed scenario traces to was never covered end to end; one whose scenarios all
+  sit under `### Unit` was covered at the wrong altitude. Nobody hands you that list — deriving it is
+  this skill's job.
 - **A level allocation is not a scope limit.** Where a doc assigns requirements to test levels — a test matrix, a
   "proven at unit level" column, a phase file claiming a scenario — it tells you where *tests* live. Read it for
   what the feature must do, and take your scope from *Scope* below. Passing unit and integration tests are the
@@ -67,6 +74,10 @@ a scoping decision.
 
 One walk often proves several requirements at once, and should. **Scenario count is not the target**; an id with
 nothing behind it is what you are looking for.
+
+**Name the holes, not just the walks.** The report's coverage table accounts for every id, so where a requirement
+was proven only by a unit test, only by an API call, or not at all, say which and why — that gap list is what a
+reviewer reads to decide whether the feature is really done.
 
 ## Output Layout
 

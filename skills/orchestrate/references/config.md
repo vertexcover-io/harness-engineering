@@ -23,7 +23,7 @@ key rather than guessing which stage was meant.
 | `worktree` | the project's own worktree skill, else `using-git-worktrees` | — |
 | `baseline` | `pipeline-setup` (`baseline` branch) | `baseline.json` |
 | `planning` | `planning` | `plan.html` + extracted `plan.md`/`phases/` (or the `implement` route) |
-| `coder` | `implement` | phase `…-claims.json` (`executed>0`, `failed=0`) |
+| `coder` | `implement` | phase `…-e2e.json` runner output (executed>0, failed=0), or a skip note |
 | `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
 | `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 | `commit-pr` | — (Stage 6 hand-rolls the commit and PR) | PR URL |
