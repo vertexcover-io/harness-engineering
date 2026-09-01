@@ -10,6 +10,7 @@
     "release:version": "bun scripts/version.ts",
     "release:version:node": "node scripts/version.ts",
     "test:scripts": "node --test scripts/*.test.ts",
+    "test:shared": "node --test skills/_shared/*.test.ts",
     "test:scripts:bun": "bun test scripts/",
     "test:hooks": "node --test hooks/*.test.mjs"
   },

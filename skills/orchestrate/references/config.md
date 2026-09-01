@@ -129,6 +129,45 @@ fails soft to stderr, so a provider outage never interrupts a run.
 
 `orchestrate/SKILL.md` owns which event fires where.
 
+## Tracker
+
+Optional. Absent, and every tracker call skips in one line — nothing is fetched or written.
+
+```json
+"tracker": {
+  "provider": "github",
+  "resolve": { "from": "branch", "pattern": "REF-\\d+" },
+  "states": { "started": "open", "done": "closed" }
+}
+```
+
+The bridge is `skills/_shared/tracker.ts`, invoked the same way as the notifier:
+
+```
+node --experimental-strip-types <plugin-root>/skills/_shared/tracker.ts <verb> [flags]
+```
+
+Verbs: `resolve` · `get [--ref R]` · `comment (--body S | --body-file F) [--marker M]` ·
+`transition --to <lifecycle>` · `link --url <PR url> [--title T]`. `--dry-run` on any verb prints
+what would be sent and sends nothing.
+
+- **provider** names one entry in the provider table in `skills/_shared/tracker.ts`, exactly as
+  `notifier.provider` names one in `notify.ts`. Credentials come from the environment or `.env` at
+  the main repo root — never from this file, because it is committed.
+- **resolve.pattern** is a regex whose first match against the current branch is the ticket ref.
+  `--ref` on any call overrides it.
+- **states** maps the harness's five lifecycle states — `started`, `in_review`, `verified`, `done`,
+  `blocked` — onto this project's own workflow names. Skills only ever name a lifecycle state; this
+  map decides what it means here. **An unmapped state means: never move the ticket for it.** The
+  harness never learns a project's stage names, and a project never edits a skill to rename one.
+- **markers** make writes idempotent. `--marker harness:pr-created:<spec>` stamps the comment, and a
+  re-run of the same stage sees the stamp and skips instead of posting a duplicate. `link` stamps
+  `harness:link:<url>` on its fallback comment automatically.
+
+Exit discipline: reads (`resolve`, `get`) exit 1 on a miss, because the caller asked for data it did
+not get. Writes are best-effort — an outage, an unmapped state, or a verb the provider lacks prints
+one line and exits 0. A tracker problem never fails a run.
+
 ## When the file is missing
 
 Stage 0 halts and tells the user to run `setup-harness`, which writes it. There is no run-time

@@ -40,6 +40,12 @@
 
   "notifier": { "enabled": true, "provider": "slack" },
 
+  "tracker": {
+    "provider": "github",
+    "resolve": { "from": "branch", "pattern": "REF-\\d+" },
+    "states": { "started": "open", "done": "closed" }
+  },
+
   "commands": {
     "typecheck": "pnpm typecheck",
     "lint": "pnpm eslint .",
