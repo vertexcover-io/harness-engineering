@@ -40,6 +40,17 @@
 
   "notifier": { "enabled": true, "provider": "slack" },
 
+  "tracker": {
+    "provider": "asana",
+    "project": "<project-gid>",
+    "refField": "<ref-field-gid>",
+    "ownerField": "<owner-field-gid>",
+    "sections": {
+      "plan-review": "<plan-review-section-gid>",
+      "code-review": "<code-review-section-gid>"
+    }
+  },
+
   "commands": {
     "typecheck": "pnpm typecheck",
     "lint": "pnpm eslint .",

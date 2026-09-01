@@ -225,6 +225,16 @@ On the first successful join, `write-report baseline` and `set-status baseline d
 3. The skill owns the whole arc: understand → question loop → solution review → **inline checkpoint** (pause 1) → recorder writes `design.md` → phase design → **plan gate** on `.harness/<SPEC_NAME>/plan.html` (pause 2) → payload extraction. The orchestrator adds no `AskUserQuestion` of its own; the PreToolUse hook handles the `waiting` status. The skill's step 0 scales the flow itself — trivial work skips the checkpoint. Do not pre-empt that call.
 4. After the skill returns, verify the outputs: `.harness/<SPEC_NAME>/plan.html` and extracted `plan.md` + `phases/phase-*.md`.
 5. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `write-report planning`, `set-status planning done`.
+6. **Hand the ticket to its owner for plan review.** The plan is approved and a human is next, so move
+   the ticket to the `plan-review` section and assign it to the owner named on the ticket. Config
+   shape and the best-effort contract: the Tracker section of `references/config.md`.
+
+   ```bash
+   node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/_shared/asana.ts" --to plan-review
+   ```
+
+   **Skip this on the `implement` route below.** That route writes no plan, so there is nothing to
+   review and the ticket must not move.
 
 **If planning routed to `implement` instead of writing a plan.** Its step-0 gate may hand genuinely atomic work straight to the `implement` skill, producing **no `plan.html` and no phase files**. That is a valid outcome, not a stage failure — and the orchestrator never pre-empts that gate by making the call itself. When it happens:
 
@@ -326,7 +336,13 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
    ```bash
    node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/scripts/upload-bundle.ts" '.harness/<SPEC_NAME>' 'harness-<SPEC_NAME>.zip'
    ```
-7. `write-report commit-pr`, `set-status commit-pr done`.
+7. **Hand the ticket to its owner for code review.** Runs after step 6, so the PR and both
+   attachments are already on the ticket.
+
+   ```bash
+   node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/_shared/asana.ts" --to code-review
+   ```
+8. `write-report commit-pr`, `set-status commit-pr done`.
 
 **Extract:** commits, `PR_URL`.
 
