@@ -8,6 +8,8 @@ import {
   LIFECYCLE_STATES,
   createAsana,
   createGithub,
+  createJira,
+  createLinear,
   loadTrackerConfig,
   main,
   parseArgs,
@@ -438,6 +440,137 @@ describe("createAsana", () => {
     const provider = asana({});
     assert.equal(provider.capabilities.has("transition"), false);
     assert.equal(provider.capabilities.has("attach"), true);
+  });
+});
+
+describe("createLinear", () => {
+  type GqlHit = { readonly query: string; readonly variables: Record<string, unknown> };
+
+  // Routes keyed by a substring of the GraphQL query; the fake answers whichever matches.
+  const linear = (routes: Record<string, unknown>, hits: GqlHit[] = []) =>
+    createLinear({ LINEAR_API_KEY: "lin_key" }, async (_url, init) => {
+      const payload = JSON.parse(String(init?.body ?? "{}")) as GqlHit;
+      hits.push(payload);
+      const match = Object.entries(routes).find(([part]) => payload.query.includes(part));
+      return { ok: true, status: 200, json: async () => ({ data: match?.[1] ?? {} }) };
+    });
+
+  // A full GraphQL data payload: the fake returns route values as `data` verbatim.
+  const SEARCH_DATA = {
+    issueSearch: {
+      nodes: [
+        { id: "uuid-1", identifier: "ENG-123", title: "T", description: "D", url: "https://linear.app/i/ENG-123", state: { name: "Todo" } },
+        { id: "uuid-2", identifier: "ENG-1234", title: "other", description: "", url: "u", state: { name: "Todo" } },
+      ],
+    },
+  };
+
+  test("a missing credential names LINEAR_API_KEY", () => {
+    assert.throws(() => createLinear({}, async () => ({ ok: true, status: 200, json: async () => ({}) })), /LINEAR_API_KEY/);
+  });
+
+  test("get matches the identifier exactly, not the first search hit", async () => {
+    const provider = linear({ issueSearch: SEARCH_DATA });
+    const ticket = await provider.get("ENG-123");
+    assert.equal(ticket.ref, "ENG-123");
+    assert.equal(ticket.title, "T");
+    assert.equal(ticket.state, "todo");
+  });
+
+  test("transition resolves the target state name to the team's stateId", async () => {
+    const hits: GqlHit[] = [];
+    const provider = linear(
+      {
+        issueSearch: SEARCH_DATA,
+        "team {": { issue: { team: { states: { nodes: [{ id: "st-1", name: "In Review" }, { id: "st-2", name: "Done" }] } } } },
+        issueUpdate: { issueUpdate: { success: true } },
+      },
+      hits,
+    );
+    const result = await provider.transition("ENG-123", "In Review");
+    assert.equal(result.ok, true);
+    const update = hits.find((h) => h.query.includes("issueUpdate"));
+    assert.equal((update?.variables ?? {})["stateId"], "st-1");
+  });
+
+  test("a state name the team lacks reports the names it has", async () => {
+    const provider = linear({
+      issueSearch: SEARCH_DATA,
+      "team {": { issue: { team: { states: { nodes: [{ id: "st-2", name: "Done" }] } } } },
+    });
+    const result = await provider.transition("ENG-123", "Code Review");
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /Done/);
+  });
+
+  test("link is native: attachmentLinkURL", async () => {
+    const hits: GqlHit[] = [];
+    const provider = linear(
+      { issueSearch: SEARCH_DATA, attachmentLinkURL: { attachmentLinkURL: { success: true } } },
+      hits,
+    );
+    assert.equal((await provider.link("ENG-123", "https://pr/1", "PR #1")).ok, true);
+    assert.equal(provider.capabilities.has("link"), true);
+    const link = hits.find((h) => h.query.includes("attachmentLinkURL"));
+    assert.equal((link?.variables ?? {})["url"], "https://pr/1");
+  });
+});
+
+describe("createJira", () => {
+  type Hit = { readonly url: string; readonly method: string; readonly body: string };
+
+  const jira = (routes: Record<string, unknown>, hits: Hit[] = []) =>
+    createJira(
+      { JIRA_BASE_URL: "https://acme.atlassian.net/", JIRA_EMAIL: "e@x.io", JIRA_API_TOKEN: "tok" },
+      async (url, init) => {
+        hits.push({ url, method: init?.method ?? "GET", body: String(init?.body ?? "") });
+        const match = Object.entries(routes).find(([part]) => url.includes(part));
+        return { ok: match !== undefined, status: match === undefined ? 404 : 200, json: async () => match?.[1] ?? {} };
+      },
+    );
+
+  test("missing credentials name the exact key", () => {
+    const noop = async () => ({ ok: true, status: 200, json: async () => ({}) });
+    assert.throws(() => createJira({}, noop), /JIRA_BASE_URL/);
+    assert.throws(() => createJira({ JIRA_BASE_URL: "u" }, noop), /JIRA_EMAIL/);
+    assert.throws(() => createJira({ JIRA_BASE_URL: "u", JIRA_EMAIL: "e" }, noop), /JIRA_API_TOKEN/);
+  });
+
+  test("get reads the issue and builds the browse url off the trimmed base", async () => {
+    const provider = jira({
+      "issue/REF-12?": { fields: { summary: "T", description: "D", status: { name: "To Do" }, labels: ["infra"] } },
+    });
+    const ticket = await provider.get("REF-12");
+    assert.equal(ticket.title, "T");
+    assert.equal(ticket.state, "to do");
+    assert.equal(ticket.url, "https://acme.atlassian.net/browse/REF-12");
+    assert.deepEqual(ticket.labels, ["infra"]);
+  });
+
+  test("transition picks the legal transition whose target matches, by name", async () => {
+    const hits: Hit[] = [];
+    const provider = jira(
+      { "/transitions": { transitions: [{ id: "31", to: { name: "In Review" } }, { id: "41", to: { name: "Done" } }] } },
+      hits,
+    );
+    assert.equal((await provider.transition("REF-12", "in review")).ok, true);
+    const posted = hits.find((h) => h.method === "POST");
+    assert.match(posted?.body ?? "", /"31"/);
+  });
+
+  test("no legal transition to the target reports the reachable ones", async () => {
+    const provider = jira({ "/transitions": { transitions: [{ id: "41", to: { name: "Done" } }] } });
+    const result = await provider.transition("REF-12", "In Review");
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /Done/);
+  });
+
+  test("link posts a remote link and comment posts a body", async () => {
+    const hits: Hit[] = [];
+    const provider = jira({ "/remotelink": {}, "/comment": {} }, hits);
+    assert.equal((await provider.link("REF-12", "https://pr/1", "PR #1")).ok, true);
+    assert.equal((await provider.comment("REF-12", "hi")).ok, true);
+    assert.deepEqual(hits.map((h) => h.method), ["POST", "POST"]);
   });
 });
 

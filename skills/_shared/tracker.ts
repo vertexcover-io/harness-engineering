@@ -364,6 +364,14 @@ export const createGithub = (exec: Exec = ghExec): TrackerProvider => {
   };
 };
 
+const needSecret = (secrets: Readonly<Record<string, string>>, providerName: string, key: string): string => {
+  const value = secrets[key];
+  if (!value) {
+    throw new TrackerError(`provider "${providerName}" needs ${key}. Export it, or add it to .env at the repo root.`);
+  }
+  return value;
+};
+
 // ---------------------------------------------------------------------------
 // Asana provider — tasks via the REST API. A ticket ref resolves to the task in
 // ASANA_WORKSPACE_GID whose name carries the ref (the branch→task convention the
@@ -383,17 +391,9 @@ export const createAsana = (
   secrets: Readonly<Record<string, string>>,
   fetchFn: FetchLike = fetch,
 ): TrackerProvider => {
-  const need = (key: string): string => {
-    const value = secrets[key];
-    if (!value) {
-      throw new TrackerError(`provider "asana" needs ${key}. Export it, or add it to .env at the repo root.`);
-    }
-    return value;
-  };
-
   const API = "https://app.asana.com/api/1.0";
-  const pat = need("ASANA_PAT");
-  const workspace = need("ASANA_WORKSPACE_GID");
+  const pat = needSecret(secrets, "asana", "ASANA_PAT");
+  const workspace = needSecret(secrets, "asana", "ASANA_WORKSPACE_GID");
 
   const call = async (path: string, init: RequestInit = {}): Promise<unknown> => {
     const response = await fetchFn(`${API}${path}`, {
@@ -477,9 +477,258 @@ export const createAsana = (
   };
 };
 
+// ---------------------------------------------------------------------------
+// Linear provider — GraphQL. A ref is the issue identifier ("ENG-123"); a state
+// is resolved to the issue's team's stateId by name, so the config's `states`
+// values are the names shown in Linear's UI.
+
+type LinearIssue = {
+  readonly id: string;
+  readonly identifier: string;
+  readonly title: string;
+  readonly description: string;
+  readonly url: string;
+  readonly stateName: string;
+};
+
+export const createLinear = (
+  secrets: Readonly<Record<string, string>>,
+  fetchFn: FetchLike = fetch,
+): TrackerProvider => {
+  const key = needSecret(secrets, "linear", "LINEAR_API_KEY");
+
+  const gql = async (query: string, variables: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const response = await fetchFn("https://api.linear.app/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: key },
+      body: JSON.stringify({ query, variables }),
+    });
+    if (!response.ok) throw new TrackerError(`linear graphql failed: ${response.status}`);
+    const body = await response.json();
+    const record = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+    if (record["errors"] !== undefined) {
+      throw new TrackerError(`linear: ${JSON.stringify(record["errors"]).slice(0, 200)}`);
+    }
+    return typeof record["data"] === "object" && record["data"] !== null
+      ? (record["data"] as Record<string, unknown>)
+      : {};
+  };
+
+  const findIssue = async (ref: string): Promise<LinearIssue> => {
+    const data = await gql(
+      `query($ref: String!) { issueSearch(query: $ref, first: 10) {
+         nodes { id identifier title description url state { name } } } }`,
+      { ref },
+    );
+    const nodes = (recordAt(data, "issueSearch") ?? {})["nodes"];
+    const issues = Array.isArray(nodes)
+      ? nodes.flatMap((node: unknown): LinearIssue[] => {
+          const record = typeof node === "object" && node !== null ? (node as Record<string, unknown>) : {};
+          const id = record["id"];
+          const identifier = record["identifier"];
+          if (typeof id !== "string" || typeof identifier !== "string") return [];
+          return [{
+            id,
+            identifier,
+            title: asString(record["title"]),
+            description: asString(record["description"]),
+            url: asString(record["url"]),
+            stateName: asString((recordAt(record, "state") ?? {})["name"]),
+          }];
+        })
+      : [];
+    const issue = issues.find((candidate) => candidate.identifier.toLowerCase() === ref.toLowerCase());
+    if (issue === undefined) throw new TrackerError(`no linear issue with identifier ${ref}`);
+    return issue;
+  };
+
+  const teamStates = async (issueId: string): Promise<ReadonlyArray<{ id: string; name: string }>> => {
+    const data = await gql(
+      `query($id: String!) { issue(id: $id) { team { states { nodes { id name } } } } }`,
+      { id: issueId },
+    );
+    const nodes = (recordAt(recordAt(recordAt(data, "issue") ?? {}, "team") ?? {}, "states") ?? {})["nodes"];
+    return Array.isArray(nodes)
+      ? nodes.flatMap((node: unknown) => {
+          const record = typeof node === "object" && node !== null ? (node as Record<string, unknown>) : {};
+          const id = record["id"];
+          const name = record["name"];
+          return typeof id === "string" && typeof name === "string" ? [{ id, name }] : [];
+        })
+      : [];
+  };
+
+  return {
+    name: "linear",
+    capabilities: new Set<Verb>(["get", "comment", "transition", "link"]),
+
+    get: async (ref) => {
+      const issue = await findIssue(ref);
+      return {
+        ref: issue.identifier,
+        url: issue.url,
+        title: issue.title,
+        body: issue.description,
+        state: issue.stateName.toLowerCase(),
+        labels: [],
+      };
+    },
+
+    comments: async (ref) => {
+      const issue = await findIssue(ref);
+      const data = await gql(
+        `query($id: String!) { issue(id: $id) { comments { nodes { body } } } }`,
+        { id: issue.id },
+      );
+      const nodes = (recordAt(recordAt(data, "issue") ?? {}, "comments") ?? {})["nodes"];
+      return Array.isArray(nodes)
+        ? nodes.flatMap((node: unknown) => {
+            const body = typeof node === "object" && node !== null ? (node as Record<string, unknown>)["body"] : null;
+            return typeof body === "string" ? [body] : [];
+          })
+        : [];
+    },
+
+    comment: async (ref, body) => {
+      const issue = await findIssue(ref);
+      await gql(
+        `mutation($issueId: String!, $body: String!) { commentCreate(input: { issueId: $issueId, body: $body }) { success } }`,
+        { issueId: issue.id, body },
+      );
+      return { ok: true, detail: "" };
+    },
+
+    transition: async (ref, state) => {
+      const issue = await findIssue(ref);
+      const states = await teamStates(issue.id);
+      const target = states.find((candidate) => candidate.name.toLowerCase() === state.toLowerCase());
+      if (target === undefined) {
+        return { ok: false, detail: `team has no state named "${state}" — it has: ${states.map((s) => s.name).join(", ")}` };
+      }
+      await gql(
+        `mutation($id: String!, $stateId: String!) { issueUpdate(id: $id, input: { stateId: $stateId }) { success } }`,
+        { id: issue.id, stateId: target.id },
+      );
+      return { ok: true, detail: "" };
+    },
+
+    link: async (ref, url, title) => {
+      const issue = await findIssue(ref);
+      await gql(
+        `mutation($issueId: String!, $url: String!, $title: String!) { attachmentLinkURL(issueId: $issueId, url: $url, title: $title) { success } }`,
+        { issueId: issue.id, url, title },
+      );
+      return { ok: true, detail: "" };
+    },
+
+    attach: async () => ({ ok: false, detail: "linear file uploads are not supported yet — link a URL instead" }),
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Jira provider — REST v2 with basic auth. The crucial semantics: Jira has no
+// "set status" — a move must be one of the legal transitions from the current
+// status, so the target state name is matched against those and the transition
+// id is what gets posted.
+
+export const createJira = (
+  secrets: Readonly<Record<string, string>>,
+  fetchFn: FetchLike = fetch,
+): TrackerProvider => {
+  const base = needSecret(secrets, "jira", "JIRA_BASE_URL").replace(/\/+$/, "");
+  const email = needSecret(secrets, "jira", "JIRA_EMAIL");
+  const token = needSecret(secrets, "jira", "JIRA_API_TOKEN");
+  const auth = `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
+
+  const call = async (path: string, init: RequestInit = {}): Promise<unknown> => {
+    const response = await fetchFn(`${base}/rest/api/2${path}`, {
+      ...init,
+      headers: { Authorization: auth, "Content-Type": "application/json", ...(init.headers ?? {}) },
+    });
+    if (!response.ok) throw new TrackerError(`jira ${path.split("?")[0]} failed: ${response.status}`);
+    return response.json();
+  };
+
+  return {
+    name: "jira",
+    capabilities: new Set<Verb>(["get", "comment", "transition", "link", "attach"]),
+
+    get: async (ref) => {
+      const body = await call(`/issue/${ref}?fields=summary,description,status,labels`);
+      const fields = recordAt(typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {}, "fields") ?? {};
+      const labels = fields["labels"];
+      return {
+        ref,
+        url: `${base}/browse/${ref}`,
+        title: asString(fields["summary"]),
+        body: asString(fields["description"]),
+        state: asString((recordAt(fields, "status") ?? {})["name"]).toLowerCase(),
+        labels: Array.isArray(labels) ? labels.filter((label): label is string => typeof label === "string") : [],
+      };
+    },
+
+    comments: async (ref) => {
+      const body = await call(`/issue/${ref}/comment`);
+      const comments = (typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {})["comments"];
+      return Array.isArray(comments)
+        ? comments.flatMap((comment: unknown) => {
+            const text = typeof comment === "object" && comment !== null ? (comment as Record<string, unknown>)["body"] : null;
+            return typeof text === "string" ? [text] : [];
+          })
+        : [];
+    },
+
+    comment: async (ref, body) => {
+      await call(`/issue/${ref}/comment`, { method: "POST", body: JSON.stringify({ body }) });
+      return { ok: true, detail: "" };
+    },
+
+    transition: async (ref, state) => {
+      const body = await call(`/issue/${ref}/transitions`);
+      const raw = (typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {})["transitions"];
+      const transitions = Array.isArray(raw)
+        ? raw.flatMap((item: unknown) => {
+            const record = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+            const id = record["id"];
+            const toName = (recordAt(record, "to") ?? {})["name"];
+            return typeof id === "string" && typeof toName === "string" ? [{ id, toName }] : [];
+          })
+        : [];
+      const target = transitions.find((candidate) => candidate.toName.toLowerCase() === state.toLowerCase());
+      if (target === undefined) {
+        return {
+          ok: false,
+          detail: `no legal transition to "${state}" from the current status — reachable: ${transitions.map((t) => t.toName).join(", ")}`,
+        };
+      }
+      await call(`/issue/${ref}/transitions`, { method: "POST", body: JSON.stringify({ transition: { id: target.id } }) });
+      return { ok: true, detail: "" };
+    },
+
+    link: async (ref, url, title) => {
+      await call(`/issue/${ref}/remotelink`, { method: "POST", body: JSON.stringify({ object: { url, title } }) });
+      return { ok: true, detail: "" };
+    },
+
+    attach: async (ref, file, name) => {
+      const form = new FormData();
+      form.append("file", new Blob([readFileSync(file)], { type: "application/octet-stream" }), name);
+      const response = await fetchFn(`${base}/rest/api/2/issue/${ref}/attachments`, {
+        method: "POST",
+        headers: { Authorization: auth, "X-Atlassian-Token": "no-check" },
+        body: form,
+      });
+      if (!response.ok) return { ok: false, detail: `jira attachment failed: ${response.status}` };
+      return { ok: true, detail: "" };
+    },
+  };
+};
+
 const providers: Record<string, (secrets: Readonly<Record<string, string>>) => TrackerProvider> = {
   github: () => createGithub(),
   asana: (secrets) => createAsana(secrets),
+  linear: (secrets) => createLinear(secrets),
+  jira: (secrets) => createJira(secrets),
 };
 
 export const resolveProvider = (cfg: TrackerConfig): TrackerProvider => {

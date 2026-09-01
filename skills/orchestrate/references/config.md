@@ -151,11 +151,18 @@ Verbs: `resolve` · `get [--ref R]` · `comment (--body S | --body-file F) [--ma
 `transition --to <lifecycle>` · `link --url <PR url> [--title T]` · `attach --file F [--name N]`.
 `--dry-run` on any verb prints what would be sent and sends nothing.
 
-- **provider** names one entry in the provider table in `skills/_shared/tracker.ts` (`github`,
-  `asana`), exactly as `notifier.provider` names one in `notify.ts`. Credentials come from the
-  environment or `.env` at the main repo root — never from this file, because it is committed. A
-  provider declares which verbs it supports; an unsupported verb is a one-line skip, never an error
-  (github has no `attach`; asana has no `transition` yet).
+- **provider** names one entry in the provider table in `skills/_shared/tracker.ts`, exactly as
+  `notifier.provider` names one in `notify.ts`. Credentials come from the environment or `.env` at
+  the main repo root — never from this file, because it is committed. A provider declares which
+  verbs it supports; an unsupported verb is a one-line skip, never an error. A missing credential
+  errors naming the exact key.
+
+  | provider | credentials | notes |
+  |----------|-------------|-------|
+  | `github` | `gh` CLI auth | issues only; no `attach`; states beyond open/closed degrade |
+  | `asana` | `ASANA_PAT`, `ASANA_WORKSPACE_GID` | ref matches the task name; no `transition` yet |
+  | `linear` | `LINEAR_API_KEY` | ref is the identifier (`ENG-123`); native PR `link`; `states` values are the team's state names |
+  | `jira` | `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` | moves use legal transitions only — an unreachable state reports what is reachable |
 - **resolve.pattern** is a regex whose first match against the current branch is the ticket ref.
   `--ref` on any call overrides it.
 - **states** maps the harness's five lifecycle states — `started`, `in_review`, `verified`, `done`,
