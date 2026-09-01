@@ -133,6 +133,16 @@ fails soft to stderr, so a provider outage never interrupts a run.
 
 Optional. Absent, or `provider` other than `asana`, and the pipeline touches no ticket.
 
+```json
+"tracker": {
+  "provider": "asana",
+  "project": "<project-gid>",
+  "refField": "<ref-field-gid>",
+  "ownerField": "<owner-field-gid>",
+  "sections": { "plan-review": "<plan-review-section-gid>", "code-review": "<code-review-section-gid>" }
+}
+```
+
 Every value is a GID from this project's own board. `refField` is the custom field holding the
 ticket ref the branch is named for (`REF-1234`), and resolution matches its value, never the task's
 name. `ownerField` is a **people**-type field whose first entry becomes the assignee. `sections`
