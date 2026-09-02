@@ -4,10 +4,10 @@ Required, at the **repo root**, committed. Being tracked, it is present at the w
 too — either path reads the same content. Orchestrate reads it once during Stage 0 and passes the
 result forward. A worked example lives in `references/orchestrate.config.example.json`.
 
-One file carries five things: this project's **stage overrides**, its **commands**, its
-**environments**, its **notifier**, and its **extensions**. It is self-describing — read it
-directly. Nothing here restates what its keys mean, and a command it does not name is a command
-there is nothing to run for.
+One file carries six things: this project's **stage overrides**, its **commands**, its
+**environments**, its **notifier**, its **extensions**, and its **hooks**. It is self-describing —
+read it directly. Nothing here restates what its keys mean, and a command it does not name is a
+command there is nothing to run for.
 
 Does NOT apply to `orchestrate` itself (no recursive override).
 
@@ -124,10 +124,58 @@ Optional. Absent, or `enabled: false`, and the pipeline sends nothing.
 in this file, because it is committed — each provider reads its own keys from the environment, or
 from `.env` at the main repo root.
 
-`run-started` is the one strict gate: it exits non-zero, and Stage 0 halts on it. Every later event
-fails soft to stderr, so a provider outage never interrupts a run.
+Every event fails soft, `run-started` included: the notifier rides the pipeline as a default hook
+with `required` unset, so a provider outage never halts a stage — `fire` records the failure in its
+output map and the run continues. See `## Hooks` below for the entry shape that guarantee comes from.
 
 `orchestrate/SKILL.md` owns which event fires where.
+
+## Hooks
+
+Optional. A `hooks` block maps **event names** to ordered arrays of hook entries. The pipeline
+fires seven events — `run-started`, `stage-started`, `stage-completed`, `question-pending`,
+`run-interrupted`, `run-completed`, and `artifact-created` (which carries a `kind`: `pr`,
+`commit`, `plan`, `proof-report`). An eighth, `hook-failed`, is fired by the dispatcher itself
+whenever a hook fails — hook it to page someone, and never fire it by hand.
+`skills/_shared/hooks.ts` is the dispatcher; `orchestrate/SKILL.md` owns which event fires where.
+
+Entries run in the order you write them, with one exception: the harness ships its own hooks and
+runs them first. Today that is the Slack notifier, on the six lifecycle events and on
+`hook-failed` when `notifier.enabled` is true — so a hook you declare first still runs after it.
+A `hook-failed` notice mentions a person only when the hook that broke was `required`.
+
+```json
+"hooks": {
+  "stage-completed": [
+    { "name": "page-me", "when": { "stage": "coder", "result": "fail" },
+      "cmd": "scripts/page-me.sh", "required": true }
+  ],
+  "artifact-created": [
+    { "name": "link-pr", "when": { "kind": "pr" },
+      "fn": { "module": "harness/hooks.ts", "export": "linkPr" } }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | required, unique within its event — the key the hook's output appears under |
+| exactly one of `fn` / `cmd` / `prompt` | `fn` {module, export} is imported and called in-process; `cmd` is spawned with the payload JSON on stdin; `prompt` is a markdown/skill file the orchestrator executes inline |
+| `when` | optional filter — `stage`, `result` (pass\|fail), `kind`; every given key must equal the fired payload's value |
+| `required` | default false. A failing required hook halts the stage (`HOOK_HALT`) |
+| `report` | default false. A hook's output text reaches the orchestrator only when set — or whenever the hook failed |
+| `timeoutMs` | default 120000; a timeout is a failure under the `required` rule |
+
+`fire` prints one JSON line: `status` (the verdict — `success`, `skipped`, `failure`, `halt`, or
+`invalid`), `result` (why, on `halt` and `invalid`), `results` (name → {status, result}), and
+`prompts` (prompt hooks for the orchestrator to execute). It exits non-zero for `invalid` alone
+— a command it could not act on, rejected before any hook fired, safe to correct and send again.
+A required hook's failure is `halt`: the caller pauses, and exit stays 0, because a hook is not
+the stage. `references/events.md` has the table. `hooks.ts doctor` validates the block and exits
+1 on any FAIL row; setup-harness runs it.
+
+This file is committed: no secrets in hook entries — a hook reads its own keys from the
+environment or `.env`, exactly like the notifier.
 
 ## When the file is missing
 

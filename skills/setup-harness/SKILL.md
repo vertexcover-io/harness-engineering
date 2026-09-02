@@ -35,6 +35,7 @@ W="${ASANA_WORKSPACE_GID:-$(grep -hs '^ASANA_WORKSPACE_GID=' .env | tail -1 | cu
 [ -n "$W" ] && p asana-workspace "OK ($W)" || p asana-workspace UNSET
 grep -qxF '.harness/' .gitignore 2>/dev/null && p ignore-harness OK || p ignore-harness MISSING
 [ -f orchestrate.config.json ] && p orchestrate-config OK || p orchestrate-config MISSING
+jq -e .hooks orchestrate.config.json >/dev/null 2>&1 && p hooks configured || p hooks UNSET
 M=~/.claude/projects/"$(printf %s "$PWD" | tr '/.' '--')"/memory
 for f in $(git ls-files '*CLAUDE.md' '*AGENTS.md') CLAUDE.local.md \
          .claude/settings.json .claude/settings.local.json \
@@ -43,7 +44,7 @@ for f in $(git ls-files '*CLAUDE.md' '*AGENTS.md') CLAUDE.local.md \
 ```
 
 Required: `git`, `node`, `jq`, `curl`, `ignore-harness`, `orchestrate-config`.
-On-demand: `just`, `mani`, `wt` (the repo's own task/multi-repo/worktree commands) · `agent-browser` (functional-verify's UI proofs) · `gh` (code-review on a PR, orchestrate's PR stage) · `claude-sessions` and `asana-workspace` (functional-verify's publish step, best-effort — it skips in one line when either is red).
+On-demand: `just`, `mani`, `wt` (the repo's own task/multi-repo/worktree commands) · `agent-browser` (functional-verify's UI proofs) · `gh` (code-review on a PR, orchestrate's PR stage) · `claude-sessions` and `asana-workspace` (functional-verify's publish step, best-effort — it skips in one line when either is red) · `hooks` (the pipeline's optional `hooks` block — UNSET is a fine state).
 
 The `wt` line reports which name answered — on Windows worktrunk installs as `git-wt`, since Windows Terminal owns `wt`.
 
@@ -134,7 +135,12 @@ member ID). Ask for all three before the test send.
 **Print what you wrote and name anything you guessed** — this file is committed, so a wrong command
 here is wrong on every run after.
 
-**Done when** `jq -e .` parses it and every command it names resolves.
+When the config carries a `hooks` block, run
+`node --experimental-strip-types <plugin-root>/skills/_shared/hooks.ts doctor` and fix entries
+until no FAIL row remains — a FAIL means the pipeline will skip or halt on that hook mid-run.
+
+**Done when** `jq -e .` parses it, every command it names resolves, and `hooks.ts doctor` (if a
+`hooks` block exists) shows no FAIL row.
 
 ## Step 5 — Resolve contested instructions
 

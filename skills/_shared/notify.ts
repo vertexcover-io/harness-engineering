@@ -13,15 +13,26 @@ const EVENTS = [
   "question-pending",
   "run-interrupted",
   "run-completed",
+  "hook-failed",
 ] as const;
 
 export type NotifyEvent = (typeof EVENTS)[number];
+
+export type PendingQuestion = { readonly question: string; readonly answers?: readonly string[] };
+export type HookFailure = {
+  readonly name: string;
+  readonly event: string;
+  readonly required: boolean;
+  readonly detail: string;
+};
 
 export type Args = {
   readonly event: NotifyEvent;
   readonly stage: string | null;
   readonly title: string | null;
   readonly body: string | null;
+  readonly questions: readonly PendingQuestion[];
+  readonly failure: HookFailure | null;
   readonly thread: string | null;
   readonly artifacts: readonly string[];
 };
@@ -29,6 +40,9 @@ export type Args = {
 export type Message = {
   readonly title: string;
   readonly body: string;
+  /** Questions stay structured to here: each provider renders them in its own markup. */
+  readonly questions: readonly PendingQuestion[];
+  readonly failure: HookFailure | null;
   readonly threadRef: string | null;
   /** Address the message to a person. True for the events a human must act on. */
   readonly mention: boolean;
@@ -75,7 +89,7 @@ export const parseArgs = (argv: readonly string[]): Args => {
   }
 
   if (event === null) throw new NotifierError("--event is required.");
-  return { event, stage, title, body, thread, artifacts };
+  return { event, stage, title, body, questions: [], failure: null, thread, artifacts };
 };
 
 const CONFIG_FILE = "orchestrate.config.json";
@@ -142,6 +156,19 @@ const slackPost = async (
   return json;
 };
 
+const slackQuestion = (q: PendingQuestion): string =>
+  [`*${q.question}*`, ...(q.answers ?? []).map((a) => `\u2022 ${a}`)].join("\n");
+
+const slackFailure = (f: HookFailure): string => `*${f.name}* failed on ${f.event}\n${f.detail}`;
+
+export const slackText = (msg: Message, memberId: string): string => {
+  // Outside the bold marker: Slack renders `<@ID>` as a name, and bold-wrapping it reads as shouting.
+  const heading = msg.mention ? `<@${memberId}> *${msg.title}*` : `*${msg.title}*`;
+  const questions = msg.questions.map(slackQuestion).join("\n\n");
+  const failure = msg.failure === null ? "" : slackFailure(msg.failure);
+  return [heading, msg.body, questions, failure].filter((part) => part !== "").join("\n");
+};
+
 const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
   const need = (key: string): string => {
     const value = secrets[key];
@@ -158,15 +185,12 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
   const memberId = need("SLACK_MEMBER_ID");
   const thread = (msg: Message): Record<string, string> =>
     msg.threadRef === null ? {} : { thread_ts: msg.threadRef };
-  // Outside the bold marker: Slack renders `<@ID>` as a name, and bold-wrapping it reads as shouting.
-  const heading = (msg: Message): string =>
-    msg.mention ? `<@${memberId}> *${msg.title}*` : `*${msg.title}*`;
 
   return {
     send: async (msg) => {
       const res = await slackPost(token, "chat.postMessage", {
         channel,
-        text: `${heading(msg)}\n${msg.body}`,
+        text: slackText(msg, memberId),
         ...thread(msg),
       });
       return typeof res["ts"] === "string" ? res["ts"] : null;
@@ -230,13 +254,17 @@ export const formatMessage = (args: Args): Message => {
     case "question-pending": title = `Waiting for you · stage ${stage}`; break;
     case "run-interrupted":  title = `Run interrupted · stage ${stage}`; break;
     case "run-completed":    title = `Run complete: ${spec}`; break;
+    case "hook-failed":      title = `Hook failed \u00b7 stage ${stage}`; break;
   }
 
   return {
     title,
     body: args.body ?? "",
+    questions: args.questions,
+    failure: args.failure,
     threadRef: args.thread,
-    mention: MENTIONED.has(args.event),
+    // A hook that broke is only worth waking someone for when the run depended on it.
+    mention: MENTIONED.has(args.event) || args.failure?.required === true,
   };
 };
 

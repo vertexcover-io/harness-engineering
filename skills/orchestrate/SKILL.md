@@ -35,6 +35,7 @@ Every file below is one hop from here. Read the one whose condition you are in �
 | `references/stage-prompts.md` | dispatching a sub-agent (Stage 0 Baseline, Stage 3 Coder, Stage 5 Verify & Finalize) |
 | `references/coder-contracts.md` | you need the coder stage's wire protocol — phase-file inputs, mandatory E2E, report artifacts |
 | `references/consumer-repo-e2e.md` | a phase changes a published library whose end-to-end proof must run in a consumer repo |
+| `references/events.md` | firing a hook event — every moment orchestrate fires one, and how to act on what `fire` prints |
 
 ---
 
@@ -131,34 +132,12 @@ Stages 3, 5 and 7 are dispatched as sub-agents via `Agent`, as is Stage 0's `bas
 
 **DAG transitions:** `set-status running` before each stage, `done` after, `write-report` on completion. **Take every invocation verbatim from `references/dag-commands.md`** — read it before the first transition; a mistyped command silently writes nothing. Report bodies follow `references/dashboard-report-formats.md`.
 
-**Notifications:** read the setting first. Run this from the worktree root:
-
-```
-node -e "const n=require('./orchestrate.config.json').notifier||{};console.log(JSON.stringify({enabled:n.enabled,provider:n.provider}))"
-```
-
-If `enabled` is not `true`, ignore the rest of this section. If it is `true`, run one command per
-row of the table below. Read `<NOTIFY>` as
-`node --experimental-strip-types <plugin-root>/skills/_shared/notify.ts`.
-
-The first command prints a thread reference. Store it as `<THREAD>`, then add
-`--title '<SPEC_NAME>' --thread '<THREAD>'` to every later command. Pass DAG node ids to `--stage`.
-`references/config.md` owns the `notifier` config and its errors.
-
-A person outside the team reads these messages. Write each `--body` in plain words. Say what
-happened and what it means. Do not paste a verdict code, a raw metric, or a stage report.
-
-`run-started`'s ticket URL comes from `TASK_CONTEXT`; drop the ` : <ticket URL>` suffix when the task
-names no ticket.
-
-| When | Command |
-|------|---------|
-| Stage 0 starts | `<NOTIFY> --event run-started --title '<SPEC_NAME>' --body '<one-line task> : <ticket URL>'` |
-| you enter a stage | `<NOTIFY> --event stage-started --stage <id>` |
-| you leave a stage | `<NOTIFY> --event stage-completed --stage <id> --body '<what the stage did, in plain words>' --artifact <that stage's artifact>` |
-| before each `AskUserQuestion` or asking any question to the developer | `<NOTIFY> --event question-pending --stage <id> --body '<the question and its options>'` |
-| you halt on a Terminal BLOCK/FAIL condition | `<NOTIFY> --event run-interrupted --stage <id> --body '<what failed, in plain words>'` |
-| Stage 6 ends | `<NOTIFY> --event run-completed --body '<PR_URL>'` |
+**Events:** fire an event at every moment `references/events.md` names, and act on what each fire
+prints exactly as that file says — read it during Stage 0. It owns `<HOOKS>` and the fire table.
+A fire's `status` is never a stage verdict: `halt` pauses for the developer and `invalid` means
+re-send a corrected command. Neither fails the stage, and under `--auto` a `halt` is recorded in
+the stage report and the run goes on. A required *prompt* hook you cannot complete is different —
+that is a Terminal halt, in the table below.
 
 **Documents a person reads** — `plan.html` copy, phase files, the README index, review reports. Every stage that writes one loads the `writing-style` skill first, and runs its ship-check before shipping. Sub-agents that write documents get the same instruction in their dispatch prompt. Agent-only files like `design.md` skip it.
 
@@ -221,7 +200,7 @@ On the first successful join, `write-report baseline` and `set-status baseline d
 1. `set-status planning running`.
 2. Invoke `planning` via `Skill`. Pass `TASK_CONTEXT` (the prompt or document).
 3. The skill owns the whole arc: understand → question loop → solution review → **inline checkpoint** (pause 1) → recorder writes `design.md` → phase design → **plan gate** on `.harness/<SPEC_NAME>/plan.html` (pause 2) → payload extraction. The orchestrator adds no `AskUserQuestion` of its own; the PreToolUse hook handles the `waiting` status. The skill's step 0 scales the flow itself — trivial work skips the checkpoint. Do not pre-empt that call.
-4. After the skill returns, verify the outputs: `.harness/<SPEC_NAME>/plan.html` and extracted `plan.md` + `phases/phase-*.md`.
+4. After the skill returns, verify the outputs: `.harness/<SPEC_NAME>/plan.html` and extracted `plan.md` + `phases/phase-*.md`. Once verified, fire `artifact-created --kind plan` (`references/events.md`).
 5. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `write-report planning`, `set-status planning done`.
 
 **If planning routed to `implement` instead of writing a plan.** Its step-0 gate may hand genuinely atomic work straight to the `implement` skill, producing **no `plan.html` and no phase files**. That is a valid outcome, not a stage failure — and the orchestrator never pre-empts that gate by making the call itself. When it happens:
@@ -267,7 +246,7 @@ Bash("
 ")
 ```
 
-If the file is missing → verification FAILED regardless of the returned verdict; stop the pipeline. A "PASSED" verdict without the artifact means the gate was skipped.
+If the file is missing → verification FAILED regardless of the returned verdict; stop the pipeline. A "PASSED" verdict without the artifact means the gate was skipped. Once the check passes, fire `artifact-created --kind proof-report` (`references/events.md`).
 
 **The e2e evidence is quality-gate's job, not a second check here.** Its Check 9 reads every phase's runner report and blocks on a missing, failed, or unrun suite — it runs inside this stage, so re-checking the same files after the sub-agent returns proves nothing new.
 
@@ -287,9 +266,9 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
 `set-status commit-pr running`. Do these directly (no sub-agent):
 
 1. **Generate `.harness/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict stated inline; one-paragraph summary; TOC naming each artifact (`plan.html` first — the review surface — then `design.md`, `plan.md`, `phases/`); PR link placeholder. Reviewers read this index and its artifacts out-of-band (directly, or uploaded to the tracker), since nothing under `.harness/` reaches the PR.
-2. Invoke `git-commit` via `Skill` for the feature changes. `.harness/` paths are gitignored and never staged — if `git status` shows them, fix `.gitignore` instead of committing.
+2. Invoke `git-commit` via `Skill` for the feature changes. `.harness/` paths are gitignored and never staged — if `git status` shows them, fix `.gitignore` instead of committing. Once it returns, fire `artifact-created --kind commit --data '{"sha":"<HEAD sha>"}'` (`references/events.md`).
 3. `git push -u origin <BRANCH_NAME>`.
-4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`.
+4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`. As soon as it prints the URL, fire `artifact-created --kind pr --data '{"url":"<PR_URL>"}'` (`references/events.md`).
 5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md.
 6. **Attach the spec directory to the ticket** — a zip of `.harness/<SPEC_NAME>/`, a **second**
    attachment beside functional-verify's `verification/` zip, not a replacement. Runs after step 5 so
@@ -341,6 +320,7 @@ This table is Invariant 3's halt set — the whole of it. Stop the pipeline and 
 | Quality gate BLOCKED | Report what failed |
 | Quality gate STAGNATION | Do NOT retry — report the stagnated check, repeated error signature, need for manual intervention |
 | Library-probe BLOCKED | No viable alternative; or `BLOCKED:repeated-lib-failure` after 2 loopbacks |
+| Required prompt hook not completed | A fire returned a `prompts` entry with `required: true` that you cannot carry out |
 | Review hard-standards failure | `REQUEST CHANGES` **and** `review.md` has a hard violation (a breach of a documented standard, cited to its source file + rule) → stop; report the cited rule + `file:line` |
 
 `REQUEST CHANGES` with only judgement-call defects (no cited standard) → **log a warning but proceed** to Stage 5; verification and gate catch the rest. On any halt, the worktree is preserved for manual intervention — present what was accomplished and suggest next steps.
