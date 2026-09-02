@@ -1,0 +1,28 @@
+{
+  "stages": {
+    "setup": {},
+    "worktree": {},
+    "baseline": {},
+    "planning": {},
+    "coder": {},
+    "code-review": {},
+    "verify-finalize": {},
+    "commit-pr": {},
+    "retro": {}
+  },
+  "commands": {
+    "test_all": "node --test \"skills/**/*.test.ts\" \"skills/**/*.test.mjs\" \"scripts/**/*.test.ts\" \"hooks/**/*.test.mjs\" \"extensions/**/*.test.mjs\"",
+    "test_file": "node --test {FILE}"
+  },
+  "packages": {
+    "harness": {
+      "path": ".",
+      "runner": "node-test",
+      "commands": {
+        "test_all": "node --test \"skills/**/*.test.ts\" \"skills/**/*.test.mjs\" \"scripts/**/*.test.ts\" \"hooks/**/*.test.mjs\" \"extensions/**/*.test.mjs\"",
+        "test_file": "node --test {FILE}"
+      }
+    }
+  },
+  "notifier": { "enabled": false, "provider": "slack" }
+}

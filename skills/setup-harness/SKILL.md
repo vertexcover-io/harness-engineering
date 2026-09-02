@@ -87,6 +87,10 @@ recipe — declare it as `doctor` so Step 1 folds its rows in on every run. Do n
 
 Print what you wrote and name anything you guessed.
 
+A `hooks` block is optional — UNSET is a fine state. When the config carries one, run
+`node --experimental-strip-types <plugin-root>/skills/_shared/hooks.ts doctor` and fix entries
+until no FAIL row remains — a FAIL means the pipeline will skip or halt on that hook mid-run.
+
 ## Step 5 — Report
 
 Print the doctor's table from the last run, then one line per item still red with the command the user

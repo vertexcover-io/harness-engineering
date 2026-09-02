@@ -42,6 +42,25 @@
 
   "notifier": { "enabled": true, "provider": "slack" },
 
+  "hooks": {
+    "stage-completed": [
+      { "name": "page-me", "when": { "stage": "coder", "result": "fail" },
+        "cmd": "scripts/page-me.sh", "required": true },
+      { "name": "stage-log", "report": true,
+        "fn": { "module": "harness/hooks.ts", "export": "onStageDone" } }
+    ],
+    "artifact-created": [
+      { "name": "link-pr", "when": { "kind": "pr" },
+        "fn": { "module": "harness/hooks.ts", "export": "linkPr" } }
+    ],
+    "run-completed": [
+      { "name": "cleanup", "cmd": "scripts/teardown.sh" }
+    ],
+    "hook-failed": [
+      { "name": "page-oncall", "cmd": "scripts/page-oncall.sh" }
+    ]
+  },
+
   "commands": {
     "typecheck": "pnpm typecheck",
     "lint": "pnpm eslint .",
