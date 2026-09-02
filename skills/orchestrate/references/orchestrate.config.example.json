@@ -1,4 +1,6 @@
 {
+  "doctor": "bun bin/doctor.ts",
+
   "stages": {
     "setup": {},
     "worktree": {},
