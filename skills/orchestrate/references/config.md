@@ -38,7 +38,7 @@ key rather than guessing which stage was meant.
 | `baseline` | `pipeline-setup` (`baseline` branch) | `baseline.json` |
 | `planning` | `planning` | `plan.html` + extracted `plan.md`/`phases/` (or the `implement` route) |
 | `coder` | `implement` | phase `…-e2e.json` runner output (executed>0, failed=0), or a skip note |
-| `code-review` | `code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
+| `code-review` | `harness:code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
 | `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
 | `commit-pr` | — (Stage 6 hand-rolls the commit and PR) | PR URL |
 | `retro` | `harness-retro` | — (never gates; Stage 7 cannot fail the run) |
@@ -66,10 +66,12 @@ Stage 7 is skipped. Every other stage stays mandatory.
 Look the entry up by stage id; call it `CFG`. An **absent key, an empty object, and an empty string
 all mean the same thing: use the default.** Then, per stage:
 
-- **skill** = `CFG.skill` → a project skill named exactly like the default (the `Skill` tool already
-  prefers project/plugin over global, so no path lookup) → global default. `CFG.skill` is a skill
-  **name only**; a value with `/` is ignored (log it). Log the resolved override:
-  `"Using custom skill for stage <id>: <skill-name>"`. On `verify-finalize`, resolve each of the
+- **skill** = `CFG.skill` → a project skill named exactly like the default → the default. Names in
+  the table above are used **verbatim** — a default carrying a `harness:` prefix keeps it. Claude
+  Code's own built-in skills share names with some of ours (`code-review` is one), a built-in wins a
+  bare name, and the built-in `code-review` sets `disable-model-invocation`, so a bare name there
+  hard-blocks the stage. `CFG.skill` is a skill **name only**; a value with `/` is ignored (log it).
+  Log the resolved override: `"Using custom skill for stage <id>: <skill-name>"`. On `verify-finalize`, resolve each of the
   stage's three `<SKILL:…>` slots through `CFG.skills` by the slot's default name instead.
 - **model** (sub-agent stages `baseline`/`coder`/`verify-finalize` only) = `CFG.model` → the
   dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model` on a

@@ -220,7 +220,7 @@ DAG: `set-status coder running` before dispatch; per phase `set-status <phase-no
 
 ### Stage 4: Code Review
 
-The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>` **in this conversation** — it dispatches its own reviewer personas, so there is no sub-agent to dispatch and no model to retarget. After writing the report it applies the fixes and records them in it; Stage 5's quality gate runs after, so those edits are gated. Pass what only this run knows:
+The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>`, defaulting to `harness:code-review`, **in this conversation**. The tag is the stage id, not a skill name — resolve it and invoke the qualified default; the bare `code-review` is Claude Code's built-in and refuses model invocation. It dispatches its own reviewer personas, so there is no sub-agent to dispatch and no model to retarget. After writing the report it applies the fixes and records them in it; Stage 5's quality gate runs after, so those edits are gated. Pass what only this run knows:
 
 - Plan `--plan .harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
 - `--output .harness/<SPEC_NAME>/review/review.md`
