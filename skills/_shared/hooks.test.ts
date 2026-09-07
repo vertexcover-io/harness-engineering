@@ -1146,3 +1146,29 @@ test("samskara SC16 (regression): the notifier still runs first and still upload
   }
   assert.deepEqual(uploaded.sort(), ["a.md", "b.md"]);
 });
+
+test("samskara SC9: a failed upload never halts the stage and never blocks a later hook", async () => {
+  const dir = tmp();
+  writeConfig(dir, {
+    samskara: { enabled: true },
+    hooks: { "stage-completed": [{ name: "after", cmd: "printf later" }] },
+  });
+  const importModule: FireDeps["importModule"] = async () => ({
+    samskaraHook: async () => {
+      throw new Error("samskara upload failed (exit 1): session not found");
+    },
+  });
+  const { exec } = makeFakeExec([{ stdout: "later" }]);
+  const { out } = await runFire(
+    {
+      event: "stage-completed",
+      data: { artifacts: [{ name: "review", path: ".harness/t/review.md" }] },
+    },
+    baseDeps(dir, { exec, importModule }),
+  );
+
+  assert.notEqual(out.status, "halt");
+  assert.equal(out.results?.["samskara"]?.status, "failure");
+  assert.match(out.results?.["samskara"]?.result ?? "", /session not found/);
+  assert.equal(out.results?.["after"]?.status, "success");
+});
