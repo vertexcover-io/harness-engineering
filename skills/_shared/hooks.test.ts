@@ -860,6 +860,23 @@ test("SC44: the notifier mentions a person on a required failure, and stays quie
   );
 });
 
+test("SC44b: with no SLACK_MEMBER_ID set, a mentioning event sends untagged", () => {
+  const message = formatMessage({
+    event: "question-pending",
+    stage: "planning",
+    title: "t",
+    body: null,
+    questions: [],
+    failure: null,
+    thread: null,
+    artifacts: [],
+  });
+
+  assert.equal(message.mention, true);
+  assert.equal(slackText(message, ""), "*Waiting for you · stage planning*");
+  assert.equal(slackText(message, "U1"), "<@U1> *Waiting for you · stage planning*");
+});
+
 test("SC45: a half-written fn entry is a FAIL row, not a throw — and fire skips it", async () => {
   const dir = tmp();
   execFileSync("git", ["init", "-q"], { cwd: dir });

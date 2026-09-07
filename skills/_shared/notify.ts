@@ -163,7 +163,9 @@ const slackFailure = (f: HookFailure): string => `*${f.name}* failed on ${f.even
 
 export const slackText = (msg: Message, memberId: string): string => {
   // Outside the bold marker: Slack renders `<@ID>` as a name, and bold-wrapping it reads as shouting.
-  const heading = msg.mention ? `<@${memberId}> *${msg.title}*` : `*${msg.title}*`;
+  const heading = msg.mention && memberId !== ""
+    ? `<@${memberId}> *${msg.title}*`
+    : `*${msg.title}*`;
   const questions = msg.questions.map(slackQuestion).join("\n\n");
   const failure = msg.failure === null ? "" : slackFailure(msg.failure);
   return [heading, msg.body, questions, failure].filter((part) => part !== "").join("\n");
@@ -182,7 +184,7 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
 
   const token = need("SLACK_BOT_TOKEN");
   const channel = need("SLACK_CHANNEL_ID");
-  const memberId = need("SLACK_MEMBER_ID");
+  const memberId = secrets["SLACK_MEMBER_ID"] ?? "";
   const thread = (msg: Message): Record<string, string> =>
     msg.threadRef === null ? {} : { thread_ts: msg.threadRef };
 
