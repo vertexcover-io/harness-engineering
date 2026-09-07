@@ -223,3 +223,20 @@ test("SC21: a CLI that is not on PATH reports 127 with the reason", () => {
   assert.equal(result.exit, 127);
   assert.notEqual(result.stderr, "");
 });
+
+test("SC22: a CLI that prints the flag but exits non-zero is not treated as capable", () => {
+  // A broken or half-installed CLI can print usage text on its way to failing. Only stdout
+  // carrying the flag AND a clean exit means the command is really there.
+  const { deps, calls } = fakeDeps({
+    run: () => ({ exit: 1, stdout: "usage: samskara artifacts upload SESSION PATH... --base-dir DIR", stderr: "boom" }),
+  });
+  const input: UploadInput = {
+    repoRoot: "/repo",
+    artifacts: [{ name: "review", path: ".harness/spec/review.md" }],
+  };
+  const result = uploadStageArtifacts(input, deps);
+
+  assert.equal(calls.filter((c) => c.args[2] !== "--help").length, 0, "no upload may be attempted");
+  assert.equal(result.status, "skipped");
+  assert.match(result.detail, /artifacts upload/);
+});
