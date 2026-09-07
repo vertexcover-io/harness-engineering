@@ -70,6 +70,28 @@ export function readSessionId(): string | null {
   return newestTranscriptId(join(homedir(), ".claude", "projects", encoded));
 }
 
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+function sessionFromManifest(artifactDir: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(artifactDir, "manifest.json"), "utf8"));
+    if (!isRecord(parsed) || !isRecord(parsed["run_info"])) return null;
+    const session = parsed["run_info"]["session"];
+    return typeof session === "string" && session !== "" ? session : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The session a run belongs to: the one its manifest recorded, or failing that the one
+ * readSessionId detects. One function so a caller cannot take half the rule by accident. */
+export function readRunSessionId(artifactDir?: string): string | null {
+  const recorded = artifactDir === undefined ? null : sessionFromManifest(artifactDir);
+  return recorded ?? readSessionId();
+}
+
 function newestTranscriptId(projectDir: string): string | null {
   try {
     const newest = readdirSync(projectDir)

@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { formatMessage, loadConfig, resolveProvider } from "./notify.ts";
 import type { Args, HookFailure, PendingQuestion, Provider } from "./notify.ts";
-import { readSessionId } from "./collect-run-info.ts";
+import { readRunSessionId } from "./collect-run-info.ts";
 import { spawnRunner, uploadStageArtifacts } from "./samskara.ts";
 import type { UploadDeps } from "./samskara.ts";
 
@@ -708,8 +708,7 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
 const productionUploadDeps = (): UploadDeps => ({
   run: spawnRunner(SAMSKARA_TIMEOUT_MS),
   exists: existsSync,
-  readText: (path) => readFileSync(path, "utf8"),
-  sessionFallback: () => readSessionId(),
+  session: readRunSessionId,
 });
 
 // A plain fn-hook handler like notifierHook, delegating to samskara.ts for the upload logic.

@@ -21,8 +21,7 @@ const fakeDeps = (overrides: Partial<UploadDeps> = {}): { deps: UploadDeps; call
       return { exit: 0, stdout: "", stderr: "" };
     },
     exists: () => true,
-    readText: () => "",
-    sessionFallback: () => "sess-fallback",
+    session: () => "sess-fallback",
     ...overrides,
   };
   return { deps, calls };
@@ -47,13 +46,7 @@ test("SC2: a finished stage's reported files reach the CLI in one call", () => {
 });
 
 test("SC3: the upload names the session id the run recorded", () => {
-  const { deps, calls } = fakeDeps({
-    exists: (path) => path.endsWith("manifest.json") || path.endsWith("review.md"),
-    readText: () => JSON.stringify({ run_info: { session: "sess-abc" } }),
-    sessionFallback: () => {
-      throw new Error("fallback must not be called when the manifest has a session");
-    },
-  });
+  const { deps, calls } = fakeDeps({ session: (artifactDir) => (artifactDir === "/repo/.harness/spec" ? "sess-abc" : null) });
   const input: UploadInput = {
     repoRoot: "/repo",
     artifactDir: "/repo/.harness/spec",
@@ -66,11 +59,8 @@ test("SC3: the upload names the session id the run recorded", () => {
   assert.equal(result.status, "uploaded");
 });
 
-test("SC4: with no manifest, the session id comes from the fallback", () => {
-  const { deps, calls } = fakeDeps({
-    exists: (path) => !path.endsWith("manifest.json"),
-    sessionFallback: () => "sess-xyz",
-  });
+test("SC4: the artifact directory is what the session lookup is asked about", () => {
+  const { deps, calls } = fakeDeps({ session: () => "sess-xyz" });
   const input: UploadInput = {
     repoRoot: "/repo",
     artifactDir: "/repo/.harness/spec",
@@ -83,10 +73,7 @@ test("SC4: with no manifest, the session id comes from the fallback", () => {
 });
 
 test("SC5: with no session id anywhere, nothing uploads and the hook says why", () => {
-  const { deps, calls } = fakeDeps({
-    exists: (path) => !path.endsWith("manifest.json"),
-    sessionFallback: () => null,
-  });
+  const { deps, calls } = fakeDeps({ session: () => null });
   const input: UploadInput = {
     repoRoot: "/repo",
     artifactDir: "/repo/.harness/spec",

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export type Runner = (
   cmd: string,
@@ -9,8 +9,7 @@ export type Runner = (
 export type UploadDeps = {
   readonly run: Runner;
   readonly exists: (path: string) => boolean;
-  readonly readText: (path: string) => string;
-  readonly sessionFallback: () => string | null;
+  readonly session: (artifactDir: string | undefined) => string | null;
 };
 
 export type UploadResult = {
@@ -41,9 +40,6 @@ export const spawnRunner =
     };
   };
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-
 // v0.3.0 exits 0 on an unknown subcommand and prints the top-level help, so the exit code
 // says nothing. The flag only appears in the subcommand's own help.
 const PROBE_FLAG = "--base-dir";
@@ -51,25 +47,6 @@ const PROBE_FLAG = "--base-dir";
 const supportsUpload = (deps: UploadDeps): boolean => {
   const probe = deps.run("samskara", ["artifacts", "upload", "--help"]);
   return probe.exit === 0 && probe.stdout.includes(PROBE_FLAG);
-};
-
-const sessionFromManifest = (deps: UploadDeps, artifactDir: string): string | null => {
-  const manifest = join(artifactDir, "manifest.json");
-  if (!deps.exists(manifest)) return null;
-  try {
-    const parsed: unknown = JSON.parse(deps.readText(manifest));
-    if (!isRecord(parsed) || !isRecord(parsed["run_info"])) return null;
-    const session = parsed["run_info"]["session"];
-    return typeof session === "string" && session !== "" ? session : null;
-  } catch {
-    return null;
-  }
-};
-
-const resolveSession = (input: UploadInput, deps: UploadDeps): string | null => {
-  const fromManifest =
-    input.artifactDir === undefined ? null : sessionFromManifest(deps, input.artifactDir);
-  return fromManifest ?? deps.sessionFallback();
 };
 
 /** A reported path is a free string an agent wrote into the event; nothing upstream checks where
@@ -94,7 +71,7 @@ export const uploadStageArtifacts = (input: UploadInput, deps: UploadDeps): Uplo
     return { status: "skipped", detail: "installed samskara has no `artifacts upload` command" };
   }
 
-  const session = resolveSession(input, deps);
+  const session = deps.session(input.artifactDir);
   if (session === null) return { status: "skipped", detail: "no session id for this run" };
 
   const result = deps.run("samskara", ["artifacts", "upload", session, ...paths, "--base-dir", input.repoRoot]);
