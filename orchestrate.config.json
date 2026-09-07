@@ -24,5 +24,6 @@
       }
     }
   },
-  "notifier": { "enabled": false, "provider": "slack" }
+  "notifier": { "enabled": false, "provider": "slack" },
+  "samskara": { "enabled": true }
 }

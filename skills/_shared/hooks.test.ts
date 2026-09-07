@@ -1049,3 +1049,100 @@ test("samskara SC13: the fire command uploads through a real subprocess", () => 
   assert.ok(recorded[0]?.includes("sess-real"));
   assert.ok(recorded[0]?.includes(reportPath));
 });
+
+test("samskara SC14: the conventions name the design record and the verification folder", () => {
+  const eventsPath = fileURLToPath(new URL("../orchestrate/references/events.md", import.meta.url));
+  const text = readFileSync(eventsPath, "utf8");
+  const planningRow = text.split("\n").find((line) => line.trim().startsWith("- planning"));
+  const verifyRow = text.split("\n").find((line) => line.trim().startsWith("- verify-finalize"));
+  assert.match(planningRow ?? "", /`design`/);
+  assert.match(verifyRow ?? "", /`verification`/);
+});
+
+test("samskara SC15: the Slack notifier skips a folder and still uploads the files beside it", async () => {
+  const dir = tmp();
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  writeFileSync(join(dir, "review.md"), "# review");
+  mkdirSync(join(dir, "verification"));
+
+  const uploaded: string[] = [];
+  const provider: Provider = {
+    send: async () => "1.1",
+    upload: async (file) => {
+      uploaded.push(file);
+    },
+  };
+  const importModule: FireDeps["importModule"] = async () => ({
+    notifierHook: (payload: LifecyclePayload) => notifierHook(payload, provider),
+  });
+
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    const { out } = await runFire(
+      {
+        event: "stage-completed",
+        spec: "t",
+        data: {
+          title: "t",
+          artifacts: [
+            { name: "review", path: "review.md" },
+            { name: "verification", path: "verification" },
+          ],
+        },
+      },
+      baseDeps(dir, { importModule }),
+    );
+    assert.equal(out.results?.["notifier"]?.status, "success");
+  } finally {
+    process.chdir(cwd);
+  }
+  assert.deepEqual(uploaded, ["review.md"]);
+});
+
+test("samskara SC16 (regression): the notifier still runs first and still uploads every file", async () => {
+  const dir = tmp();
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  writeConfig(dir, {
+    notifier: { enabled: true, provider: "slack" },
+    hooks: { "stage-completed": [{ name: "ping", cmd: "printf pong" }] },
+  });
+  writeFileSync(join(dir, "a.md"), "a");
+  writeFileSync(join(dir, "b.md"), "b");
+
+  const uploaded: string[] = [];
+  const provider: Provider = {
+    send: async () => "1.1",
+    upload: async (file) => {
+      uploaded.push(file);
+    },
+  };
+  const importModule: FireDeps["importModule"] = async () => ({
+    notifierHook: (payload: LifecyclePayload) => notifierHook(payload, provider),
+  });
+  const { exec } = makeFakeExec([{ stdout: "pong" }]);
+
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    const { out } = await runFire(
+      {
+        event: "stage-completed",
+        spec: "t",
+        data: {
+          title: "t",
+          artifacts: [
+            { name: "a", path: "a.md" },
+            { name: "b", path: "b.md" },
+          ],
+        },
+      },
+      baseDeps(dir, { exec, importModule }),
+    );
+    assert.deepEqual(Object.keys(out.results ?? {}), ["notifier", "ping"]);
+  } finally {
+    process.chdir(cwd);
+  }
+  assert.deepEqual(uploaded.sort(), ["a.md", "b.md"]);
+});

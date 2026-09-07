@@ -50,11 +50,11 @@ receives as `payload.data` is only what the event means.
 Every stage that produces files reports them the same way, as `data.artifacts`:
 `[{"name": "...", "path": "..."}]`. The conventional names:
 
-- planning → `plan`, `plan-html`
+- planning → `plan`, `plan-html`, `design`
 - baseline → `baseline`
 - coder → `phase-<N>-e2e`, one per phase
 - code-review → `review`
-- verify-finalize → `proof-report`, `gate-report`
+- verify-finalize → `proof-report`, `gate-report`, `verification` (the folder, not a file)
 - retro → `retro-report`
 
 Setup, worktree, and commit-pr produce no files of their own — they send no `artifacts`.

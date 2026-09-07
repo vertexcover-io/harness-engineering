@@ -1,7 +1,7 @@
 #!/usr/bin/env node --experimental-strip-types
 
 import { execFileSync, execSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { formatMessage, loadConfig, resolveProvider } from "./notify.ts";
@@ -643,6 +643,16 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
+// Resolved against the repo root only for this check — the provider still gets the original
+// path, since it already reads relative to the working directory.
+const isFilePath = (repoRoot: string, path: string): boolean => {
+  try {
+    return statSync(isAbsolute(path) ? path : join(repoRoot, path)).isFile();
+  } catch {
+    return false;
+  }
+};
+
 // A plain fn-hook handler: (payload) => Promise<string>, the exact contract every user fn hook
 // has. `provider` is a second parameter only tests use, to inject a fake in place of Slack.
 // --data is parsed at the fire boundary, so payload.data arrives typed and true — but this is
@@ -656,7 +666,12 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   // No thread file yet reads as unthreaded — today's behavior for a run with no prior thread.
   const thread =
     !starting && threadFile !== null && existsSync(threadFile) ? readFileSync(threadFile, "utf8").trim() : null;
-  const artifacts = payload.event === "stage-completed" ? (payload.data.artifacts ?? []).map((a) => a.path) : [];
+  const artifacts =
+    payload.event === "stage-completed"
+      ? (payload.data.artifacts ?? [])
+          .map((a) => a.path)
+          .filter((path) => isFilePath(payload.repoRoot, path))
+      : [];
 
   const args: Args = {
     event: payload.event,
