@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -149,7 +149,7 @@ test("SC10: a reported folder is passed to the CLI as one argument", () => {
   uploadStageArtifacts(input, deps);
 
   const uploadCall = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help");
-  assert.equal(uploadCall?.args.filter((a) => a === folder).length, 1);
+  assert.equal(uploadCall?.args.filter((a) => a === realpathSync(folder)).length, 1);
 });
 
 test("SC11: paths are anchored at the repo root", () => {
@@ -236,4 +236,31 @@ test("SC22: a CLI that prints the flag but exits non-zero is not treated as capa
   assert.equal(calls.filter((c) => c.args[2] !== "--help").length, 0, "no upload may be attempted");
   assert.equal(result.status, "skipped");
   assert.match(result.detail, /artifacts upload/);
+});
+
+test("SC23: a symlink inside the repo that points outside it is not uploaded", () => {
+  const root = tmp();
+  const secret = join(tmp(), "id_rsa");
+  writeFileSync(secret, "PRIVATE KEY");
+  mkdirSync(join(root, ".harness", "spec"), { recursive: true });
+  symlinkSync(secret, join(root, ".harness", "spec", "evidence.txt"));
+  writeFileSync(join(root, ".harness", "spec", "plan.md"), "# plan\n");
+
+  const { deps, calls } = fakeDeps({ exists: existsSync });
+  const result = uploadStageArtifacts(
+    {
+      repoRoot: root,
+      artifacts: [
+        { name: "evidence", path: ".harness/spec/evidence.txt" },
+        { name: "plan", path: ".harness/spec/plan.md" },
+      ],
+    },
+    deps,
+  );
+
+  const upload = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help");
+  assert.ok(upload, "the real file should still upload");
+  assert.ok(!upload.args.some((a) => a.includes("evidence.txt")));
+  assert.ok(upload.args.some((a) => a.endsWith("plan.md")));
+  assert.equal(result.status, "uploaded");
 });

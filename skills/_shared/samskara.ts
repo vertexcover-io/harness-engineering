@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export type Runner = (
@@ -43,9 +44,17 @@ const supportsUpload = (deps: UploadDeps): boolean => {
   return probe.exit === 0 && probe.stdout.includes(PROBE_FLAG);
 };
 
+const realOrSelf = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
 const containedPath = (repoRoot: string, path: string): string | null => {
-  const absolute = resolve(repoRoot, path);
-  const rel = relative(repoRoot, absolute);
+  const absolute = realOrSelf(resolve(repoRoot, path));
+  const rel = relative(realOrSelf(repoRoot), absolute);
   const escapes = rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
   return escapes ? null : absolute;
 };
@@ -64,7 +73,14 @@ export const uploadStageArtifacts = (input: UploadInput, deps: UploadDeps): Uplo
   const session = deps.session(input.artifactDir);
   if (session === null) return { status: "skipped", detail: "no session id for this run" };
 
-  const result = deps.run("samskara", ["artifacts", "upload", session, ...paths, "--base-dir", input.repoRoot]);
+  const result = deps.run("samskara", [
+    "artifacts",
+    "upload",
+    session,
+    ...paths,
+    "--base-dir",
+    realOrSelf(input.repoRoot),
+  ]);
   if (result.exit !== 0) {
     throw new Error(`samskara upload failed (exit ${result.exit}): ${result.stderr.trim() || result.stdout.trim()}`);
   }
