@@ -6,9 +6,10 @@
 // run info is a record of a run, never a gate on one.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type RunInfo = {
   readonly harness: string | null;
@@ -58,7 +59,7 @@ function readAndromedaVersion(): string | null {
   return branch ? `${branch}@${sha}` : sha;
 }
 
-function readSessionId(): string | null {
+export function readSessionId(): string | null {
   const injected = process.env["SESSION_ID"];
   if (injected) return injected;
   // Derive from the main repo, never the worktree: a worktree path encodes to a different
@@ -67,6 +68,26 @@ function readSessionId(): string | null {
   if (!commonDir) return null;
   const encoded = dirname(commonDir).replaceAll("/", "-");
   return newestTranscriptId(join(homedir(), ".claude", "projects", encoded));
+}
+
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+function sessionFromManifest(artifactDir: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(artifactDir, "manifest.json"), "utf8"));
+    if (!isRecord(parsed) || !isRecord(parsed["run_info"])) return null;
+    const session = parsed["run_info"]["session"];
+    return typeof session === "string" && session !== "" ? session : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readRunSessionId(artifactDir?: string): string | null {
+  const recorded = artifactDir === undefined ? null : sessionFromManifest(artifactDir);
+  return recorded ?? readSessionId();
 }
 
 function newestTranscriptId(projectDir: string): string | null {
@@ -81,22 +102,33 @@ function newestTranscriptId(projectDir: string): string | null {
   }
 }
 
-const info: RunInfo = {
-  harness: readHarnessVersion(),
-  andromeda: readAndromedaVersion(),
-  session: readSessionId(),
+const invokedScript = (): string => {
+  const argv1 = resolve(process.argv[1] ?? "");
+  try {
+    return realpathSync(argv1);
+  } catch {
+    return argv1;
+  }
 };
 
-if (process.argv[2] === "--json") {
-  console.log(JSON.stringify(info));
-} else {
-  console.log(
-    [
-      info.harness && `harness ${info.harness}`,
-      info.andromeda && `andromeda ${info.andromeda}`,
-      info.session && `session ${info.session}`,
-    ]
-      .filter((segment): segment is string => segment !== null)
-      .join(" · "),
-  );
+if (fileURLToPath(import.meta.url) === invokedScript()) {
+  const info: RunInfo = {
+    harness: readHarnessVersion(),
+    andromeda: readAndromedaVersion(),
+    session: readSessionId(),
+  };
+
+  if (process.argv[2] === "--json") {
+    console.log(JSON.stringify(info));
+  } else {
+    console.log(
+      [
+        info.harness && `harness ${info.harness}`,
+        info.andromeda && `andromeda ${info.andromeda}`,
+        info.session && `session ${info.session}`,
+      ]
+        .filter((segment): segment is string => segment !== null)
+        .join(" · "),
+    );
+  }
 }

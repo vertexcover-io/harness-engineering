@@ -42,6 +42,8 @@
 
   "notifier": { "enabled": true, "provider": "slack" },
 
+  "samskara": { "enabled": true },
+
   "hooks": {
     "stage-completed": [
       { "name": "page-me", "when": { "stage": "coder", "result": "fail" },
