@@ -1,4 +1,4 @@
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type Runner = (
   cmd: string,
@@ -56,9 +56,21 @@ const resolveSession = (input: UploadInput, deps: UploadDeps): string | null => 
   return fromManifest ?? deps.sessionFallback();
 };
 
+/** A reported path is a free string an agent wrote into the event; nothing upstream checks where
+ * it points. Anything resolving outside the repo root is dropped rather than sent to a remote
+ * service. Containment also keeps every emitted argument absolute, so no path can be read as a
+ * CLI flag. */
+const containedPath = (repoRoot: string, path: string): string | null => {
+  const absolute = resolve(isAbsolute(path) ? path : join(repoRoot, path));
+  const rel = relative(repoRoot, absolute);
+  const escapes = rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  return escapes ? null : absolute;
+};
+
 export const uploadStageArtifacts = (input: UploadInput, deps: UploadDeps): UploadResult => {
   const paths = input.artifacts
-    .map((artifact) => (isAbsolute(artifact.path) ? artifact.path : join(input.repoRoot, artifact.path)))
+    .map((artifact) => containedPath(input.repoRoot, artifact.path))
+    .filter((path): path is string => path !== null)
     .filter(deps.exists);
   if (paths.length === 0) return { status: "skipped", detail: "no artifacts to upload" };
 

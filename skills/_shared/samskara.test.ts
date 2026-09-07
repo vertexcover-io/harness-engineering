@@ -176,3 +176,47 @@ test("SC11: paths are anchored at the repo root", () => {
   assert.equal(args[args.length - 1], "/repo/root");
   assert.ok(args.includes("/repo/root/.harness/spec/plan.html"));
 });
+
+test("SC17: a reported path that climbs out of the repo root is never uploaded", () => {
+  const { deps, calls } = fakeDeps();
+  const input: UploadInput = {
+    repoRoot: "/repo",
+    artifacts: [
+      { name: "escape", path: "../../.ssh/id_rsa" },
+      { name: "plan", path: ".harness/spec/plan.html" },
+    ],
+  };
+  const result = uploadStageArtifacts(input, deps);
+
+  const upload = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help");
+  assert.ok(upload, "the contained path should still upload");
+  assert.ok(!upload.args.some((a) => a.includes("id_rsa")));
+  assert.ok(upload.args.includes("/repo/.harness/spec/plan.html"));
+  assert.equal(result.status, "uploaded");
+});
+
+test("SC18: an absolute path outside the repo root is never uploaded", () => {
+  const { deps, calls } = fakeDeps();
+  const input: UploadInput = {
+    repoRoot: "/repo",
+    artifacts: [{ name: "creds", path: "/Users/someone/.aws/credentials" }],
+  };
+  const result = uploadStageArtifacts(input, deps);
+
+  assert.equal(calls.length, 0, "nothing is left to upload, so not even the probe should run");
+  assert.equal(result.status, "skipped");
+});
+
+test("SC19: a path whose name would read as a CLI flag cannot reach the argument list", () => {
+  const { deps, calls } = fakeDeps();
+  const input: UploadInput = {
+    repoRoot: "/repo",
+    artifacts: [{ name: "flag", path: "--base-dir" }],
+  };
+  uploadStageArtifacts(input, deps);
+
+  const upload = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help");
+  // Contained paths are always emitted absolute, so no argument can begin with a dash.
+  const paths = upload?.args.slice(3, -2) ?? [];
+  assert.ok(paths.every((a) => a.startsWith("/")));
+});
