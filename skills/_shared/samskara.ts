@@ -77,7 +77,7 @@ const resolveSession = (input: UploadInput, deps: UploadDeps): string | null => 
  * service. Containment also keeps every emitted argument absolute, so no path can be read as a
  * CLI flag. */
 const containedPath = (repoRoot: string, path: string): string | null => {
-  const absolute = resolve(isAbsolute(path) ? path : join(repoRoot, path));
+  const absolute = resolve(repoRoot, path);
   const rel = relative(repoRoot, absolute);
   const escapes = rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
   return escapes ? null : absolute;

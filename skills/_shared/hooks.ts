@@ -650,7 +650,7 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
 // path, since it already reads relative to the working directory.
 const isFilePath = (repoRoot: string, path: string): boolean => {
   try {
-    return statSync(isAbsolute(path) ? path : join(repoRoot, path)).isFile();
+    return statSync(resolveFromRoot(repoRoot, path)).isFile();
   } catch {
     return false;
   }
