@@ -590,11 +590,13 @@ const switchedOn = (raw: Record<string, unknown>, key: string): boolean => {
   return isRecord(block) && block["enabled"] === true;
 };
 
+// entry is typed as the union member actually being constructed. RawEntry is `unknown`, so
+// Omit<RawEntry & object, "name"> collapses to {} and would accept a misspelled field.
+// `name` doubles as the config block's key: both built-ins read one flag named for themselves.
 type Builtin = {
   readonly name: string;
   readonly events: ReadonlySet<string>;
-  readonly configKey: string;
-  readonly entry: Omit<RawEntry & object, "name">;
+  readonly entry: Omit<FnEntry, "name">;
 };
 
 const SAMSKARA_TIMEOUT_MS = 300_000;
@@ -603,13 +605,11 @@ const BUILTINS: readonly Builtin[] = [
   {
     name: "notifier",
     events: NOTIFIER_EVENTS,
-    configKey: "notifier",
     entry: { fn: { module: SELF, export: "notifierHook" } },
   },
   {
     name: "samskara",
     events: SAMSKARA_EVENTS,
-    configKey: "samskara",
     // Uploading a folder of screen recordings outruns the 120s default. spawnRunner puts the
     // same bound on the child, which is the one that can actually stop a hung upload.
     entry: { fn: { module: SELF, export: "samskaraHook" }, timeoutMs: SAMSKARA_TIMEOUT_MS, report: true },
@@ -617,7 +617,7 @@ const BUILTINS: readonly Builtin[] = [
 ];
 
 export const defaultHooks = (event: string, raw: Record<string, unknown>): RawEntry[] =>
-  BUILTINS.filter((b) => b.events.has(event) && switchedOn(raw, b.configKey)).map((b) => ({
+  BUILTINS.filter((b) => b.events.has(event) && switchedOn(raw, b.name)).map((b) => ({
     name: b.name,
     ...b.entry,
   }));
