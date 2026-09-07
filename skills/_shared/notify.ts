@@ -94,8 +94,17 @@ export const parseArgs = (argv: readonly string[]): Args => {
 
 const CONFIG_FILE = "orchestrate.config.json";
 
-type NotifierBlock = {
+type ConfigFile = {
   readonly notifier?: { readonly enabled?: boolean; readonly provider?: string };
+  readonly env?: Readonly<Record<string, string>>;
+};
+
+const readEnvFile = (dir: string, name: string): Record<string, string> => {
+  try {
+    return parseEnv(readFileSync(join(dir, name), "utf8")) as Record<string, string>;
+  } catch {
+    return {};
+  }
 };
 
 export const loadConfig = (cwd: string = process.cwd()): Config | null => {
@@ -118,19 +127,17 @@ export const loadConfig = (cwd: string = process.cwd()): Config | null => {
     throw new NotifierError(`${CONFIG_FILE} not found at ${repoRoot}. Run setup-harness to create it.`);
   }
 
-  const { notifier } = JSON.parse(readFileSync(configFile, "utf8")) as NotifierBlock;
+  const { notifier, env } = JSON.parse(readFileSync(configFile, "utf8")) as ConfigFile;
   if (notifier?.enabled !== true) return null;
-
-  let fromDotenv: Record<string, string> = {};
-  try {
-    fromDotenv = parseEnv(readFileSync(join(mainCheckout, ".env"), "utf8")) as Record<string, string>;
-  } catch {
-    fromDotenv = {};
-  }
 
   return {
     provider: notifier.provider ?? "",
-    secrets: { ...fromDotenv, ...process.env } as Record<string, string>,
+    secrets: {
+      ...readEnvFile(mainCheckout, ".env.local"),
+      ...readEnvFile(mainCheckout, ".env"),
+      ...process.env,
+      ...(env ?? {}),
+    } as Record<string, string>,
   };
 };
 

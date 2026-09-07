@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { FireDeps, LifecyclePayload } from "./hooks.ts";
 import { notifierHook, parseFireArgv, runDoctor, runFire } from "./hooks.ts";
-import { formatMessage, slackText } from "./notify.ts";
+import { formatMessage, loadConfig, slackText } from "./notify.ts";
 import type { Message, Provider } from "./notify.ts";
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), "hooks-test-"));
@@ -1237,4 +1237,59 @@ test("samskara SC24: the Slack notifier never uploads a path from outside the re
 
   assert.equal(uploaded.length, 1);
   assert.match(uploaded[0] ?? "", /review\.md$/);
+});
+
+const envRepo = (files: Readonly<Record<string, string>>): string => {
+  const dir = tmp();
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body);
+  return dir;
+};
+
+test("SC50: config env wins over process.env, then .env, and .env.local is the last fallback", () => {
+  const dir = envRepo({
+    ".env": "T_CONFIG=from-dotenv\nT_PROC=from-dotenv\nT_DOTENV=from-dotenv\n",
+    ".env.local": "T_CONFIG=from-local\nT_PROC=from-local\nT_DOTENV=from-local\nT_LOCAL=from-local\n",
+  });
+  writeConfig(dir, {
+    notifier: { enabled: true, provider: "slack" },
+    env: { T_CONFIG: "from-config" },
+  });
+
+  process.env["T_CONFIG"] = "from-proc";
+  process.env["T_PROC"] = "from-proc";
+  try {
+    const config = loadConfig(dir);
+
+    assert.equal(config?.secrets["T_CONFIG"], "from-config");
+    assert.equal(config?.secrets["T_PROC"], "from-proc");
+    assert.equal(config?.secrets["T_DOTENV"], "from-dotenv");
+    assert.equal(config?.secrets["T_LOCAL"], "from-local");
+  } finally {
+    delete process.env["T_CONFIG"];
+    delete process.env["T_PROC"];
+  }
+});
+
+test("SC51: a config without an env block still resolves .env and .env.local", () => {
+  const dir = envRepo({
+    ".env": "T_DOTENV=from-dotenv\n",
+    ".env.local": "T_LOCAL=from-local\n",
+  });
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+
+  const config = loadConfig(dir);
+
+  assert.equal(config?.secrets["T_DOTENV"], "from-dotenv");
+  assert.equal(config?.secrets["T_LOCAL"], "from-local");
+});
+
+test("SC52: neither env file present is not an error", () => {
+  const dir = envRepo({});
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" }, env: { T_CONFIG: "from-config" } });
+
+  const config = loadConfig(dir);
+
+  assert.equal(config?.secrets["T_CONFIG"], "from-config");
+  assert.equal(config?.secrets["T_DOTENV"], undefined);
 });
