@@ -136,10 +136,10 @@ Optional. A flat map of name to value, read by the scripts that need it.
 "env": { "SLACK_CHANNEL_ID": "C09XXXXXXXX", "SLACK_MEMBER_ID": "U09XXXXXXXX" }
 ```
 
-Resolution order, highest first: this block, the process environment, `.env`, then `.env.local` —
-both files at the **main checkout** root, so a worktree resolves the same values as the checkout it
-came from. A missing file is not an error. `.env.local` is the last fallback and belongs in `.gitignore`:
-put a developer-specific value there and it applies wherever nothing else names that key.
+Two sources only, highest first: this block, then `.env.local` at the **main checkout** root, so a
+worktree resolves the same values as the checkout it came from. A missing file is not an error.
+Neither `.env` nor the process environment is read. `.env.local` is the fallback and belongs in
+`.gitignore`: put a developer-specific value there and it applies wherever this block is silent.
 
 ## Notifier
 

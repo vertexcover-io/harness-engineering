@@ -134,8 +134,6 @@ export const loadConfig = (cwd: string = process.cwd()): Config | null => {
     provider: notifier.provider ?? "",
     secrets: {
       ...readEnvFile(mainCheckout, ".env.local"),
-      ...readEnvFile(mainCheckout, ".env"),
-      ...process.env,
       ...(env ?? {}),
     } as Record<string, string>,
   };
@@ -183,7 +181,7 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
     const value = secrets[key];
     if (!value) {
       throw new NotifierError(
-        `notifier: provider "slack" needs ${key}. Export it, or add it to .env at the repo root.`,
+        `notifier: provider "slack" needs ${key}. Add it to the env block in ${CONFIG_FILE}, or to .env.local at the main checkout root.`,
       );
     }
     return value;

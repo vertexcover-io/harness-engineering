@@ -1246,10 +1246,10 @@ const envRepo = (files: Readonly<Record<string, string>>): string => {
   return dir;
 };
 
-test("SC50: config env wins over process.env, then .env, and .env.local is the last fallback", () => {
+test("SC50: the config env block wins over .env.local, and .env and the process env are ignored", () => {
   const dir = envRepo({
     ".env": "T_CONFIG=from-dotenv\nT_PROC=from-dotenv\nT_DOTENV=from-dotenv\n",
-    ".env.local": "T_CONFIG=from-local\nT_PROC=from-local\nT_DOTENV=from-local\nT_LOCAL=from-local\n",
+    ".env.local": "T_CONFIG=from-local\nT_PROC=from-local\nT_LOCAL=from-local\n",
   });
   writeConfig(dir, {
     notifier: { enabled: true, provider: "slack" },
@@ -1262,8 +1262,8 @@ test("SC50: config env wins over process.env, then .env, and .env.local is the l
     const config = loadConfig(dir);
 
     assert.equal(config?.secrets["T_CONFIG"], "from-config");
-    assert.equal(config?.secrets["T_PROC"], "from-proc");
-    assert.equal(config?.secrets["T_DOTENV"], "from-dotenv");
+    assert.equal(config?.secrets["T_PROC"], "from-local");
+    assert.equal(config?.secrets["T_DOTENV"], undefined);
     assert.equal(config?.secrets["T_LOCAL"], "from-local");
   } finally {
     delete process.env["T_CONFIG"];
@@ -1271,7 +1271,7 @@ test("SC50: config env wins over process.env, then .env, and .env.local is the l
   }
 });
 
-test("SC51: a config without an env block still resolves .env and .env.local", () => {
+test("SC51: a config without an env block still resolves .env.local", () => {
   const dir = envRepo({
     ".env": "T_DOTENV=from-dotenv\n",
     ".env.local": "T_LOCAL=from-local\n",
@@ -1280,11 +1280,11 @@ test("SC51: a config without an env block still resolves .env and .env.local", (
 
   const config = loadConfig(dir);
 
-  assert.equal(config?.secrets["T_DOTENV"], "from-dotenv");
   assert.equal(config?.secrets["T_LOCAL"], "from-local");
+  assert.equal(config?.secrets["T_DOTENV"], undefined);
 });
 
-test("SC52: neither env file present is not an error", () => {
+test("SC52: no .env.local present is not an error", () => {
   const dir = envRepo({});
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" }, env: { T_CONFIG: "from-config" } });
 
