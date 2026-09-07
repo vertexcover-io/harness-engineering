@@ -3,7 +3,7 @@
   "evals": [
     {
       "id": 1,
-      "name": "python-api-no-plan",
+      "name": "python-api-defects",
       "prompt": "Review this Python API code for bugs. The diff is at skills/code-review/evals/files/eval1.diff and the full source is at skills/code-review/evals/files/eval1_api.py.",
       "expected_output": "A review report identifying mutable default argument in validate_email, bare except in delete_user, thread-safety issues on _users dict (lock imported but never used), naive datetime.now() calls, and get_user returning None without caller warning. Verdict should be REQUEST CHANGES due to critical defects.",
       "files": [
@@ -33,30 +33,33 @@
     },
     {
       "id": 2,
-      "name": "typescript-with-plan",
+      "name": "typescript-against-plan",
       "prompt": "Review this TypeScript task manager against its plan. Plan is at skills/code-review/evals/files/eval2_plan.md, diff at skills/code-review/evals/files/eval2.diff, and full source at skills/code-review/evals/files/eval2_task_manager.ts.",
-      "expected_output": "A review report with spec compliance section showing: runTask fails to await handler (acceptance criterion #2 violated), runAllPending uses forEach with async instead of Promise.all (criterion #3), parseTaskConfig has no input validation (criterion #4), == used instead of === (criterion #5), findTask return type mismatch (criterion #6). Also flags prototype pollution in mergeTaskMetadata via Object.assign with user input. Verdict should be REQUEST CHANGES.",
+      "expected_output": "A review report with a Spec section checking the change against each acceptance criterion: runTask does not await handler (criterion 2), runAllPending uses forEach with an async callback instead of Promise.all (criterion 3), parseTaskConfig does not validate input (criterion 4), == used instead of === (criterion 5), findTask declares Task but can return undefined (criterion 6). A Security section flags prototype pollution in mergeTaskMetadata via Object.assign on user input, and unvalidated JSON.parse in parseTaskConfig. Verdict is REQUEST CHANGES.",
       "files": [
         "skills/code-review/evals/files/eval2.diff",
         "skills/code-review/evals/files/eval2_task_manager.ts",
         "skills/code-review/evals/files/eval2_plan.md"
       ],
       "expectations": [
-        "Review includes a Summary section summarizing the plan's intent",
-        "Review includes a Spec Compliance section with Implemented, Missing or Incomplete, and Deviations subsections",
-        "Review identifies missing await on handler() call in runTask (async function result assigned without await)",
-        "Review identifies forEach with async callback in runAllPending does not actually await tasks — plan requires Promise.all or equivalent",
-        "Review identifies JSON.parse on untrusted input without validation in parseTaskConfig (plan criterion #4)",
-        "Review identifies == used instead of === for status comparisons in runAllPending and deleteCompletedTasks (plan criterion #5)",
-        "Review identifies findTask return type mismatch: function declares return type Task but can return undefined (plan criterion #6)",
-        "Review identifies prototype pollution risk in mergeTaskMetadata via Object.assign with user-controlled input",
-        "Every defect finding includes a file:line reference",
-        "Verdict is REQUEST CHANGES due to critical spec compliance failures",
+        "The plan text is passed to the Spec agent, and the Spec agent is the one reporting the criterion failures",
+        "Review includes a '### Spec' section separate from '### Defects'",
+        "Spec section identifies the missing await on handler() in runTask against acceptance criterion 2",
+        "Spec section identifies forEach with an async callback in runAllPending against acceptance criterion 3",
+        "Spec section identifies missing input validation in parseTaskConfig against acceptance criterion 4",
+        "Spec section identifies == used instead of === against acceptance criterion 5",
+        "Spec section identifies findTask returning undefined from a Task return type against acceptance criterion 6",
+        "Every spec finding quotes the acceptance criterion text it came from",
+        "Review includes a '### Security' section flagging prototype pollution in mergeTaskMetadata via Object.assign on user-controlled input",
+        "Security section names the entry point the untrusted data arrives through, not just the vulnerability class",
+        "Every finding includes a file:line reference",
+        "Verdict is REQUEST CHANGES",
         "Prints the review inline (invoked directly, no --output given), not only a path to a file"
       ],
       "anti_expectations": [
+        "Does not fold the spec findings into the Defects section",
+        "Does not critique the plan's own architecture as a defect against the code",
         "Does not flag style issues, formatting, or naming conventions",
-        "Does not critique the plan's architecture — only checks code against the plan",
         "Does not suggest running tests"
       ]
     },
@@ -81,26 +84,60 @@
     },
     {
       "id": 4,
-      "name": "reports-without-fixing",
-      "prompt": "Copy skills/code-review/evals/files/eval2_task_manager.ts and eval2.diff into a scratch working directory, then run /code-review on that copy with the plan at skills/code-review/evals/files/eval2_plan.md and --output <scratch>/review.md. Do not modify the fixtures in skills/code-review/evals/files/.",
+      "name": "reports-then-fixes",
+      "prompt": "Copy skills/code-review/evals/files/eval2_task_manager.ts and eval2.diff into a scratch working directory, then run /code-review on that copy with --output <scratch>/review.md. Do not modify the fixtures in skills/code-review/evals/files/.",
       "files": [
         "skills/code-review/evals/files/eval2.diff",
-        "skills/code-review/evals/files/eval2_task_manager.ts",
-        "skills/code-review/evals/files/eval2_plan.md"
+        "skills/code-review/evals/files/eval2_task_manager.ts"
       ],
-      "expected_output": "A review.md with a REQUEST CHANGES verdict and per-axis '###' sections naming the blocking defects (missing await in runTask, forEach-with-async in runAllPending, unvalidated JSON.parse, == comparisons, findTask return type, prototype pollution in mergeTaskMetadata). No source file is edited.",
+      "expected_output": "A review.md with a REQUEST CHANGES verdict and per-axis '###' sections naming the blocking defects (missing await in runTask, forEach-with-async in runAllPending, unvalidated JSON.parse, == comparisons, findTask return type, prototype pollution in mergeTaskMetadata), written before any edit. Then a fix pass on the scratch copy applying every finding, each repair recorded in review.md under a 'Fixes applied' heading, closing with the verdict restated.",
       "expectations": [
         "review.md verdict is REQUEST CHANGES",
         "Findings are grouped under per-axis '###' headings rather than merged into one ranked list",
         "Every blocking defect carries a file:line and a reason it matters",
         "Judgement-call findings are recorded and marked as non-blocking",
-        "Reviewer personas are dispatched as sub-agents"
+        "All eight reviewer personas are dispatched as eight separate sub-agents in one message",
+        "Empty axes are presented as empty rather than dropped from the report",
+        "Cleanup findings appear under their own per-angle '###' headings (Reuse, Simplification, Efficiency, Altitude)",
+        "Cleanup findings are recorded as non-blocking judgement calls and do not by themselves drive the verdict",
+        "review.md is written before the scratch copy is edited",
+        "The fix pass edits the scratch copy for every finding, including ones that change behaviour",
+        "Each repair is recorded in review.md under a 'Fixes applied' heading with file:line and what changed",
+        "Closes by accounting for every finding and restating the verdict"
       ],
       "anti_expectations": [
-        "Does not edit the scratch copy of eval2_task_manager.ts or any other source file",
+        "Does not edit the scratch copy before review.md is written",
+        "Does not ask the user which findings to apply before editing",
+        "Does not alter or remove the findings already written in review.md",
         "Does not re-dispatch the personas for a second review pass",
         "Does not modify the fixture files under skills/code-review/evals/files/",
         "Does not read the changed source files before dispatching the personas"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "multi-package-single-fanout",
+      "prompt": "Review the change at skills/code-review/evals/files/eval5_multipkg.diff. It spans packages/api and packages/auth.",
+      "expected_output": "One review covering both packages, produced by exactly eight sub-agents. Findings include the exp unit mismatch across the package boundary (packages/api writes milliseconds, packages/auth compares against seconds, so tokens never expire), the TOKEN_SECRET fallback to a hardcoded 'dev-secret', JSON.parse running before signature verification, and the unchecked destructure of raw.split('.'). Verdict is REQUEST CHANGES.",
+      "files": [
+        "skills/code-review/evals/files/eval5_multipkg.diff"
+      ],
+      "expectations": [
+        "Exactly eight sub-agents are dispatched for the whole diff, not eight per package",
+        "Each sub-agent receives the full diff covering both packages/api and packages/auth",
+        "Review identifies the exp unit mismatch between packages/api/src/session.ts and packages/auth/src/token.ts, which stops tokens expiring",
+        "The unit-mismatch finding cites a file:line in both packages, showing the agent read across the boundary",
+        "Security section flags the TOKEN_SECRET fallback to the hardcoded 'dev-secret' value and names what it lets an attacker do",
+        "Security section flags JSON.parse on the token body running before the HMAC signature is checked",
+        "Review identifies that raw.split('.') is destructured without checking it produced two parts",
+        "Findings for both packages appear under one set of per-axis '###' headings",
+        "Verdict is REQUEST CHANGES"
+      ],
+      "anti_expectations": [
+        "Does not dispatch a separate persona set per package",
+        "Does not produce a separate review report per package",
+        "Does not review one package and defer the other",
+        "Does not treat the two packages as unrelated changes"
       ]
     }
   ]

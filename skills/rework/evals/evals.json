@@ -20,7 +20,7 @@
       ],
       "anti_expectations": [
         "Does not halt because no prior run exists",
-        "Does not copy a baseline.json or claims.json from another spec dir",
+        "Does not copy a baseline.json from another spec dir",
         "Does not infer, generate or substitute a plan when none is found",
         "Does not ask the user anything after orchestrate is invoked",
         "Does not write a design doc or a plan",

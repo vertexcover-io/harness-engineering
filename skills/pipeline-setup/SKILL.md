@@ -60,7 +60,7 @@ Store: `WORKTREE_PATH`, `BRANCH_NAME`
 ### 2. Create the Feature Directory
 
 One directory holds everything — `.harness/<SPEC_NAME>/` (design.md, plan.html, plan.md, phases/,
-baseline.json, manifest.json, e2e-report.json, gate-report-*.md, review/,
+baseline.json, manifest.json, phase-*-e2e.json, gate-report-*.md, review/,
 probes/, verification/). The whole `.harness/` tree is gitignored (knowledge/ excepted);
 reviewers read artifacts out-of-band.
 

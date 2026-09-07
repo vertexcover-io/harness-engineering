@@ -71,7 +71,7 @@ One block per package per check; the marker carries the check's union verdict.
 **Mutations:**
 | Behavior ID | File | Mutation | Killing test | Result |
 |-------------|------|----------|--------------|--------|
-| R3 | validator.py | inverted `if amount > 0` | `S7: rejects a negative amount` | KILLED |
+| R3 | validator.py | inverted `if amount > 0` | `SC7: rejects a negative amount` | KILLED |
 | R5 | pricing.py | return constant `0` | — | SURVIVED |
 
 **BLOCKED:** R5's test passed against a mutant returning 0 — the test does not verify the pricing behavior.

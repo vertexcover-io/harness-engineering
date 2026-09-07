@@ -42,6 +42,10 @@ returning a JSON array of results — is the workhorse.
   thing. `{n: nodes.length, ok: nodes.every(...)}`.
 - **Match `innerText` after `.replace(/\s+/g,' ')`** — it inserts newlines at layout boundaries.
 - **Measure in the batch *after* the one that moved things.** Act, `wait` on the condition, then measure.
+- **Return `location.pathname + location.search` from that same assert**, never a batch of its own — it is the
+  `url` a navigating step carries in the report, and a round trip per step is the one cost this run cannot afford.
+  **Add `location.hash` where the app routes on the fragment**: an app whose routes read `#/reports/gstr2b` returns
+  `/` from `pathname` on every screen, so every scenario records the same useless path and nothing fails to say so.
 - **`wait` on the real condition** — `wait --text`, `--url`, `--load networkidle`, or `wait @eN` return the moment
   the state holds.
 

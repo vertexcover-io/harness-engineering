@@ -67,7 +67,6 @@ Claude-Code AskUserQuestion hook is mapped to PI's turn boundary instead:
 | Claude Code hook | PI event | Bridged call | Effect |
 |---|---|---|---|
 | PreToolUse (AskUserQuestion) | `agent_end` | `ask-user-hook.run(["pre"])` | dashboard node → waiting |
-| SubagentStop | `agent_end` | `coder-e2e-gate.run([])` | exit 2 → `ctx.ui.notify(..., "error")` |
 | PostToolUse (AskUserQuestion) | `input` | `ask-user-hook.run(["post"])` | dashboard node → running |
 | Stop / SessionEnd | `session_shutdown` | `dag-update.run(["finalize","interrupted"])` | finalize the dag |
 

@@ -7,6 +7,7 @@
 - [Stage 0 — Baseline](#stage-0--baseline)
 - [Stage 3 — Coder](#stage-3--coder)
 - [Stage 5 — Verify & Finalize](#stage-5--verify--finalize)
+- [Stage 7 — Retro](#stage-7--retro)
 - [What belongs in the prompt vs the skill](#what-belongs-in-the-prompt-vs-the-skill)
 
 Each sub-agent stage does one thing: **invoke its skill**. The skill carries the contract. This file
@@ -69,8 +70,8 @@ run's unit is the checkout:** one agent per `TARGETS[]` entry, all in one messag
 **The coder agent invokes `<SKILL:coder>` and nothing else.** That skill reaches `tdd`,
 `code-quality`, and `references/coder-contracts.md` itself; naming them in the dispatch would be a
 second source of truth for what the skill already owns (Invariant 6). Pass the phase file — that is
-what puts the skill in pipeline mode and makes the claims artifacts mandatory. A spec dir with no
-phase file puts it in review-fix mode instead, where it owes no claims.
+what puts the skill in pipeline mode and makes the phase e2e runner report mandatory. A spec dir
+with no phase file puts it in review-fix mode instead, where it owes no report.
 
 **Its first action is invoking `<SKILL:coder>` — before any Read or Grep.** The skill and its
 contracts shape the whole phase; an agent that explores first is working before it knows the rules.
@@ -80,7 +81,7 @@ contracts shape the whole phase; an agent that explores first is working before 
   `.harness/<SPEC_NAME>/plan.md` (extracted from plan.html), phase file
   `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md` — **resumed:** the caller's feedback stands in
   for the phase file, and the plan is the original run's
-- Claims report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-claims.json` — phases only
+- E2E runner report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-e2e.json` — phases only
 - The `PACKAGES` entry this phase's work sits under, and `ENVIRONMENT` — no phase file says which
   unit or which stack it belongs to
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
@@ -96,7 +97,7 @@ names has been read — in that sweep, not one round each.
 **Return:** files created/modified, test counts, phase completed or blocked (and why). **Resumed:**
 each feedback item's disposition too.
 
-The orchestrator verifies the claims report independently — do not take the agent's word for it.
+The orchestrator parses the phase e2e runner report itself — do not take the agent's word for it.
 
 ---
 
@@ -120,15 +121,11 @@ that entry's own `baseline.json` and config, and a BLOCKED on any entry blocks t
 - Design record `.harness/<SPEC_NAME>/design.md` (when the full flow ran), plan
   `.harness/<SPEC_NAME>/plan.md`, phase files `.harness/<SPEC_NAME>/phases/phase-*.md` —
   **resumed:** these live in the original spec dir, as does the prior `proof-report.html`
-- Claims `.harness/<SPEC_NAME>/claims.json` (aggregated), verification output dir
+- Phase e2e runner reports `.harness/<SPEC_NAME>/phase-*-e2e.json`, verification output dir
   `.harness/<SPEC_NAME>/verification/`
 - Baseline `.harness/<SPEC_NAME>/baseline.json`, harness dir
   `.harness/<SPEC_NAME>/`, stage `post-tdd`, spec name `<SPEC_NAME>`
 - `PACKAGES: <PACKAGES>`, `ENVIRONMENT: <ENVIRONMENT>`
-- Artifact-publish session id: tell the agent to `export SESSION_ID=<SESSION_ID>` before running
-  `<SKILL:functional-verify>`, so its publish steps target the real top-level session instead of
-  deriving it from the worktree cwd (which encodes to the wrong transcript directory). If
-  `<SESSION_ID>` is empty, omit this — the skill falls back to deriving.
 
 **Return:** verification verdict, gate verdict, docs updated.
 
@@ -137,11 +134,33 @@ The orchestrator enforces the artifact and UI-proof contracts itself after the a
 
 ---
 
+## Stage 7 — Retro
+
+**Skill:** `<SKILL:harness-retro>` · **Model:** `CFG.model` → `sonnet`
+
+Runs after the PR exists, so it sees the whole run including Stage 6.
+
+**Pass:**
+- Session id `<SESSION_ID>` and launch directory `<LAUNCH_DIR>` — the transcripts live under the
+  directory the run started in, never the worktree. When `<SESSION_ID>` is empty, pass only
+  `<LAUNCH_DIR>` and let the skill take that project's newest session.
+- Output dir `.harness/<SPEC_NAME>/retro`, spec name `<SPEC_NAME>`, harness dir
+  `.harness/<SPEC_NAME>/`
+- Plugin skills root `${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills` — recommendations name
+  files under it
+- `PR: <PR_URL>`, `BRANCH: <BRANCH_NAME>`, `BASE: <BASE_BRANCH>`
+
+**Return:** issue count, MISSED count, report path.
+
+This stage has no gate and no verdict. See SKILL.md Stage 7.
+
+---
+
 ## What belongs in the prompt vs the skill
 
 | Belongs in the dispatch | Belongs in the skill |
 |---|---|
-| `<WORKTREE_PATH>`, `<SPEC_NAME>`, `<PHASE_N>` | what a phase claims file must contain |
+| `<WORKTREE_PATH>`, `<SPEC_NAME>`, `<PHASE_N>` | what a phase e2e report must contain, and who writes it |
 | `--commits <BASE_BRANCH>..HEAD` | how to review, what a verdict means |
 | where to write an artifact | what the artifact must say, and its gate |
 | which skill, which model | the procedure the skill performs |

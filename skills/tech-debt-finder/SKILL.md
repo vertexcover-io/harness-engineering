@@ -19,6 +19,10 @@ Note: `$ARGUMENTS` is reserved for scan scope (path or 'full'), not reference fi
 
 # Tech Debt Finder
 
+Load the `writing-style` skill before you write the Tech Debt Report or the
+GitHub issue body. Run its ship-check before you print either one.
+Scanner sub-agents get the same instruction in their dispatch prompt.
+
 Scans the codebase for architectural and code-level technical debt, producing a prioritized report and creating a GitHub issue with actionable findings.
 
 **Announce at start:** "Using tech-debt-finder to scan for technical debt..."

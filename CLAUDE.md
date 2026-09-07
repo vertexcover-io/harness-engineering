@@ -21,3 +21,6 @@
 ## Communication
 Ask clarifying questions before architectural changes
 Explain reasoning for non-obvious decisions
+
+## Pipeline exemption
+- The `ask before committing to git` rule does not apply to the orchestrate pipeline's Stage 6. When a run is driven by `/harness:orchestrate`, Stage 6 commits, pushes, and opens the PR without pausing. The rule still governs all other, manual git changes.

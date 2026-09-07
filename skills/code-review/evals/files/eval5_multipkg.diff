@@ -1,0 +1,55 @@
+diff --git a/packages/api/src/session.ts b/packages/api/src/session.ts
+index 3a1f0c2..9d4b7e1 100644
+--- a/packages/api/src/session.ts
++++ b/packages/api/src/session.ts
+@@ -8,14 +8,17 @@ import { signToken } from "@acme/auth";
+ 
+ export interface Session {
+   userId: string;
+-  expiresAt: Date;
++  expiresAt: number;
+ }
+ 
+ export function createSession(userId: string, ttlSeconds = 3600): Session {
+-  return { userId, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
++  return { userId, expiresAt: Date.now() + ttlSeconds * 1000 };
+ }
+ 
+ export function issue(userId: string): string {
+-  return signToken({ sub: userId, exp: createSession(userId).expiresAt.getTime() });
++  return signToken({ sub: userId, exp: createSession(userId).expiresAt });
+ }
+diff --git a/packages/auth/src/token.ts b/packages/auth/src/token.ts
+index 7c2e5a8..b1f9d33 100644
+--- a/packages/auth/src/token.ts
++++ b/packages/auth/src/token.ts
+@@ -1,20 +1,24 @@
+ import { createHmac } from "node:crypto";
+ 
+-const SECRET = process.env.TOKEN_SECRET;
++const SECRET = process.env.TOKEN_SECRET ?? "dev-secret";
+ 
+ export interface Claims {
+   sub: string;
+   exp: number;
+ }
+ 
+ export function signToken(claims: Claims): string {
+   const body = Buffer.from(JSON.stringify(claims)).toString("base64url");
+   const sig = createHmac("sha256", SECRET).update(body).digest("base64url");
+   return `${body}.${sig}`;
+ }
+ 
+ export function verifyToken(raw: string): Claims | null {
+   const [body, sig] = raw.split(".");
+-  const expected = createHmac("sha256", SECRET).update(body).digest("base64url");
+-  if (expected !== sig) return null;
+-  const claims = JSON.parse(Buffer.from(body, "base64url").toString()) as Claims;
+-  if (claims.exp < Date.now()) return null;
+-  return claims;
++  const claims = JSON.parse(Buffer.from(body, "base64url").toString()) as Claims;
++  const expected = createHmac("sha256", SECRET).update(body).digest("base64url");
++  if (expected !== sig) return null;
++  if (claims.exp < Date.now() / 1000) return null;
++  return claims;
+ }

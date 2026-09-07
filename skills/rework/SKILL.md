@@ -22,9 +22,9 @@ verified fix. It reads the feedback, judges each item, and hands the ones worth 
 and act on the answer before asking the next: an answer can change the approach. Once Step 5 invokes
 `orchestrate`, stop asking and stop pausing: the run is orchestrate's.
 
-**Notifications.** Follow the Notifications section of `skills/orchestrate/SKILL.md`, reading
-`notifier` from the primary entry's config: `question-pending` before each `AskUserQuestion`,
-`run-interrupted` before any row of the Halts table.
+**Events.** Fire them as `skills/orchestrate/references/events.md` defines, from the primary entry's
+worktree: `question-pending` before each `AskUserQuestion`, `run-interrupted` before any row of the
+Halts table.
 
 ## Step 1 — Resolve the ticket
 

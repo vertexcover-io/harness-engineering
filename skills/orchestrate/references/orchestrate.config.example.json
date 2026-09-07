@@ -1,4 +1,6 @@
 {
+  "doctor": "bun bin/doctor.ts",
+
   "stages": {
     "setup": {},
     "worktree": {},
@@ -7,7 +9,12 @@
     "coder": { "skill": "my-implement", "model": "opus" },
     "code-review": { "skill": "strict-review" },
     "verify-finalize": { "model": "haiku", "skills": { "quality-gate": "my-gate" } },
-    "commit-pr": {}
+    "commit-pr": {},
+    "retro": {}
+  },
+
+  "extensions": {
+    "planning": "harness/planning.md"
   },
 
   "environments": {
@@ -34,6 +41,25 @@
   },
 
   "notifier": { "enabled": true, "provider": "slack" },
+
+  "hooks": {
+    "stage-completed": [
+      { "name": "page-me", "when": { "stage": "coder", "result": "fail" },
+        "cmd": "scripts/page-me.sh", "required": true },
+      { "name": "stage-log", "report": true,
+        "fn": { "module": "harness/hooks.ts", "export": "onStageDone" } }
+    ],
+    "artifact-created": [
+      { "name": "link-pr", "when": { "kind": "pr" },
+        "fn": { "module": "harness/hooks.ts", "export": "linkPr" } }
+    ],
+    "run-completed": [
+      { "name": "cleanup", "cmd": "scripts/teardown.sh" }
+    ],
+    "hook-failed": [
+      { "name": "page-oncall", "cmd": "scripts/page-oncall.sh" }
+    ]
+  },
 
   "commands": {
     "typecheck": "pnpm typecheck",

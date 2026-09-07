@@ -13,6 +13,9 @@ user-invocable: true
 
 # Functional Verify: The Gate
 
+Load the `writing-style` skill before you write `verification/proof-report.html`. Run its
+ship-check before you call the feature verified.
+
 **First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
 
 ## Your Contract
@@ -50,6 +53,13 @@ skipping" and stop.
   toast duration, where a triggered email lands, what the stack shares). This lives in the **project's own skills**
   and `CLAUDE.md`. This skill mandates no dedicated file for it — only that Step 1's two unknowns come back
   answered.
+- **The coder's e2e runner reports** at `.harness/<SPEC_NAME>/phase-*-e2e.json` — the raw JSON its
+  runner wrote, listing every test that actually executed. Test titles carry a scenario id
+  (`SC3: …`), not a requirement id, so read the report in two hops: title id → the phase file's
+  matching scenario heading → the requirement ids that heading traces to (`**SC3 — …** · R2, EC1`).
+  A requirement no executed scenario traces to was never covered end to end; one whose scenarios all
+  sit under `### Unit` was covered at the wrong altitude. Nobody hands you that list — deriving it is
+  this skill's job.
 - **A level allocation is not a scope limit.** Where a doc assigns requirements to test levels — a test matrix, a
   "proven at unit level" column, a phase file claiming a scenario — it tells you where *tests* live. Read it for
   what the feature must do, and take your scope from *Scope* below. Passing unit and integration tests are the
@@ -64,6 +74,10 @@ a scoping decision.
 
 One walk often proves several requirements at once, and should. **Scenario count is not the target**; an id with
 nothing behind it is what you are looking for.
+
+**Name the holes, not just the walks.** The report's coverage table accounts for every id, so where a requirement
+was proven only by a unit test, only by an API call, or not at all, say which and why — that gap list is what a
+reviewer reads to decide whether the feature is really done.
 
 ## Output Layout
 
@@ -101,7 +115,8 @@ names), else to the codebase. Follow that skill for procedure, never for proof: 
 to match a project's conventions.
 
 **Take the base URL from the entry's own command** and hold it for the session — a URL assembled from an assumed
-port is the wrong stack.
+port is the wrong stack. It is the run's one host, and it goes in the report's `fields[]` as `Base URL`; every
+scenario records only the path it opened on.
 
 **Step 1 is done when the route you came to drive returns the page you expect**, every service a scenario needs is
 up — including the sink a side effect lands in, often a separate service the stack-up does not launch — and two
@@ -136,6 +151,12 @@ not the setup that reached it — a fixture you find missing mid-walk is seeded 
 re-driven. Read `references/driving-the-browser.md` before your first `open` — batching, the `eval` laws, the
 capture loop and the phone replay are all there.
 
+**Record the path each scenario opened on** — the path with its query, not the host — and, where a step is what
+moved the browser, the path it moved to. They are the scenario's `url` and its steps' `url`, and they are what lets
+a reader open the same screen you drove. A path reached by clicking comes back in the assert batch you already run,
+never a batch of its own. **Redact the value of any auth or identity parameter as `<redacted>`**: the report is
+published, and a driven URL carries live credentials more often than not.
+
 **Every flow on the surface the change landed on is replayed on a phone**, as its own numbered scenario in the same
 session. Whether this app is meant to work on a phone at all is a project fact like any other.
 
@@ -147,8 +168,8 @@ in `extra[]`. A screen nobody drew is not a failure.
 
 **A frame is evidence only once its assert passed and your own eyes confirmed it shows what you think** — read at
 the moment you shoot, since frames lag renders. **Done when every behaviour the docs claim is reached by some flow;
-every UI scenario's `NN_<slug>` frames in `screenshots/` tell its whole story; every screen a design defines
-carries its comparison in `reason`; and every flow on the surface the change landed on has a phone replay driven
+every UI scenario names the path it opened on; every UI scenario's `NN_<slug>` frames in `screenshots/` tell its
+whole story; every screen a design defines carries its comparison in `reason`; and every flow on the surface the change landed on has a phone replay driven
 to its closing assert, whatever it returned.**
 
 ## Step 3 — API, DB & Side-Effects: Proving What Has No Screen
@@ -158,7 +179,8 @@ verification and carries the whole scope** from *Scope* above. Read `references/
 your first request: it holds the shape of a headless walk, and the traps that make one look green when the code
 under test never ran.
 
-Run curl with `-w '\n%{http_code}'` and keep the **verbatim exchange**, which a dev re-runs to check you: it goes
+A headless scenario names its path the same way: the request path it drove is its `url`. Run curl with
+`-w '\n%{http_code}'` and keep the **verbatim exchange**, which a dev re-runs to check you: it goes
 **inline and whole** into a `proofs[]` entry (shape in `references/writing-the-report.md`) rather than into a file.
 Record the verdict by exact-matching the expected response the design or plan describes. Read the written state back
 through the product's own API and quote the fields; where the database is directly reachable (an MCP tool, else the
@@ -254,16 +276,13 @@ verification pays the same cost from scratch.
 
 ## Step 7 — Publish, Then Clean Up
 
-Publish so a reviewer finds the evidence without hunting through a worktree. Two homes, both **best-effort — they
-never fail the verification**; both implementations are in `references/publish.md`:
+Publish so a reviewer finds the evidence without hunting through a worktree. **Best-effort — it never fails the
+verification**; the implementation is in `references/publish.md`.
 
-- **The feature's tracker** — one attachment: a zip of the whole `verification/` folder, so the report, its frames
-  and its videos all resolve once unzipped. That zip is the whole delivery; the ticket keeps the PR link, design and
-  plan a human put there. Which tracker and how a branch maps to a ticket are project facts. When the config says
-  `none`, is absent, or its token is unset, skip in one line.
-- **Claude Sessions** — the report and videos, so they show in the Sessions Artifacts tab. Use the injected
-  `SESSION_ID` (orchestrate exports it) verbatim; on a standalone run, derive it from the newest transcript under
-  the cwd. Not installed / not authenticated → skip in one line.
+**The feature's tracker** takes one attachment: a zip of the whole `verification/` folder, so the report, its frames
+and its videos all resolve once unzipped. That zip is the whole delivery; the ticket keeps the PR link, design and
+plan a human put there. Which tracker and how a branch maps to a ticket are project facts. When the config says
+`none`, is absent, or its token is unset, skip in one line.
 
 Then close the session (`agent-browser --session <SPEC_NAME> close`), remove the fixtures you created, and
 **release the stack**: the teardown step of the environment you brought up, else the way the stack skill says.

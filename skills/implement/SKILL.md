@@ -31,10 +31,11 @@ Two rules from the manual flow are **suspended**, in both cases:
 
 **With a phase file, read `skills/orchestrate/references/coder-contracts.md` before you open any
 source file.** It carries the phase-input mapping, the mandatory E2E leg and its gate, the report
-artifacts (`phase-<N>-claims.json` and `e2e-report.json`). A phase
-that ends without those artifacts is blocked by the `coder-e2e-gate` hook, however green its tests
-are. A review-fix agent owes none of them — it is fixing inside phases that already reported.
+artifact (`phase-<N>-e2e.json`, written by the runner). A phase that ends without it is not done,
+however green its tests are. A review-fix agent owes none of it — it is fixing inside phases that
+already reported.
 
 ## Manual mode — everything else
 
-When green, use `code-review` to review the work. Ask before committing.
+When green, use `code-review` to review the work — it applies the fixes it finds, so expect a
+changed tree. Ask before committing.

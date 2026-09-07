@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import registerHarnessHooks from "./harness-hooks.ts";
@@ -19,12 +18,6 @@ const makeFakeCtx = (cwd) => {
     ctx: { cwd: cwd ?? process.cwd(), ui: { notify: (message, type) => notifications.push({ message, type }) } },
     notifications,
   };
-};
-
-const gitInit = (dir) => {
-  for (const args of [["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"], ["commit", "--allow-empty", "-q", "-m", "i"]]) {
-    spawnSync("git", args, { cwd: dir });
-  }
 };
 
 const makeDagDir = (nodes) => {
@@ -67,46 +60,6 @@ test("S8: input flips the waiting node back to running (ask-user post)", async (
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(BREADCRUMB, { force: true });
-  }
-});
-
-test("S8: agent_end maps coder-e2e-gate exit 2 to an error notify (block), never process.exit", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-ext-gate-"));
-  gitInit(dir);
-  mkdirSync(join(dir, ".harness", "runtime"), { recursive: true });
-  writeFileSync(join(dir, ".harness", "runtime", "current-phase"), "SPEC_NAME=s\nPHASE_N=1\nSTART_SHA=HEAD\n");
-  const { pi, handlers } = makeFakePi();
-  registerHarnessHooks(pi);
-  const { ctx, notifications } = makeFakeCtx(dir);
-  const prev = process.env.HARNESS_CURRENT_PHASE_FILE;
-  process.env.HARNESS_CURRENT_PHASE_FILE = join(dir, ".harness", "runtime", "current-phase");
-  try {
-    await handlers.agent_end({ type: "agent_end" }, ctx);
-    const err = notifications.find((n) => n.type === "error");
-    assert.ok(err, `expected an error notify, got ${JSON.stringify(notifications)}`);
-    assert.ok(err.message.includes("MISSING_PHASE_CLAIMS") || err.message.includes("BLOCK"));
-  } finally {
-    if (prev === undefined) delete process.env.HARNESS_CURRENT_PHASE_FILE;
-    else process.env.HARNESS_CURRENT_PHASE_FILE = prev;
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("S8: agent_end is silent (no error notify) when there is no active phase breadcrumb", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pi-ext-nogate-"));
-  gitInit(dir);
-  const { pi, handlers } = makeFakePi();
-  registerHarnessHooks(pi);
-  const { ctx, notifications } = makeFakeCtx(dir);
-  const prev = process.env.HARNESS_CURRENT_PHASE_FILE;
-  process.env.HARNESS_CURRENT_PHASE_FILE = join(dir, "nope");
-  try {
-    await handlers.agent_end({ type: "agent_end" }, ctx);
-    assert.equal(notifications.filter((n) => n.type === "error").length, 0);
-  } finally {
-    if (prev === undefined) delete process.env.HARNESS_CURRENT_PHASE_FILE;
-    else process.env.HARNESS_CURRENT_PHASE_FILE = prev;
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
