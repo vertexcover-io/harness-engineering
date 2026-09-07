@@ -71,6 +71,7 @@ The report opens on the first scenario; there is no prose preamble. The run's co
 {
   "title": "GSTR-2B monetary match",
   "drivenOn": "The reconciliation report at `/app/<business>/reports/gstr2breconciliation`, June 2026.",
+  "fields": [{ "label": "Base URL", "value": "http://localhost:3000" }],
   "scenarios": [
     {
       "n": "01",
@@ -78,9 +79,12 @@ The report opens on the first scenario; there is no prose preamble. The run's co
       "short": "Float artefact matches",
       "title": "An invoice whose tax total carries a floating-point artefact still reconciles against the supplier's filed entry",
       "verdict": "Success",
+      "url": "/app/6a59f2c1/reports/gstr2breconciliation?period=062026",
       "expected": "An invoice whose books total is `7127.200000000001` and whose filed entry is `7127.20` reads **Complete Match**, both sides rendering ₹7,127.20.",
       "reason": "Books stored `7127.200000000001`; both sides render ₹7,127.20 and the pair reads **Complete Match**.",
-      "steps": ["Open the June 2026 reconciliation report", "Switch to Detailed View",
+      "steps": ["Open the June 2026 reconciliation report",
+                { "text": "Switch to Detailed View",
+                  "url": "/app/6a59f2c1/reports/gstr2breconciliation/detailedview?period=062026" },
                 "Find invoice `INV-4417`, books ₹7,127.200000000001 against filed ₹7,127.20"],
       "video": "01_float_artefact_still_matches.mp4",
       "frames": [{ "src": "screenshots/01_float_artefact_still_matches__01_report_open.png",
@@ -89,6 +93,19 @@ The report opens on the first scenario; there is no prose preamble. The run's co
   ]
 }
 ```
+
+**`url` is the path the scenario opened on** — the path with its query string, never the host:
+`/app/6a59f2c1/reports/gstr2breconciliation?period=062026`. The host is one `fields[]` row, `Base URL`, written once
+for the whole run, because it changes with the stack while the path is the thing under test. A headless scenario's
+`url` is the request path it drove. One path per scenario: where a step is what moved the browser, write that step as
+`{text, url}` and its path renders under it, so a reader following the walk sees where each move landed and no path
+is written twice.
+
+**Redact what the query carries.** This report is zipped and published (`publish.md`), and a driven URL routinely
+carries a live credential — an SSO `?code=`, a `?token=`, a pre-signed `X-Amz-Signature`, an `?email=`. Keep the
+parameters that select what was under test (`?period=062026`) and write the value of any auth or identity parameter
+as `<redacted>`; a scenario reached through a callback or pre-signed URL records the path alone. A session token is
+not what makes a screen reproducible.
 
 **`n` is the scenario's stable number** and `slug` is the prefix every one of its artifacts carries, so a reader
 reaches its files from the scenario alone. **Write `title` as a sentence** a QA would use, and `short` as the three
@@ -256,6 +273,12 @@ sentence above passes it. `attempted` is what you actually ran, distinct approac
   the `expected` and `reason` the entry leans on.
 - Every scenario carries an `expected` taken from the docs, `steps` naming the values it sent, and a `reason` that
   reads as the diff between the two.
+- `fields[]` carries a `Base URL` row; every scenario that drove a page or a request carries the `url` it opened on,
+  path and query and no host; and every step that moved the browser to another path carries that path. A scenario a
+  reader cannot reopen from the report alone is not reproducible.
+- No `url` in the report carries a live credential. Walk them and check, because this file leaves the machine: an
+  auth or identity parameter's value reads `<redacted>`, and a path reached through a callback or a pre-signed URL
+  records no query at all.
 - Every `capture` shows a request a dev could paste and the complete response it returned, inline — nothing about an
   exchange is left in a file for the reader to go and open.
 - Every scenario has a stable `n`, a `verdict`, and a `reason`, and every behaviour the docs describe is covered. One
