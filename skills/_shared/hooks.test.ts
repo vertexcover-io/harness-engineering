@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join } from "node:path";
@@ -1171,4 +1171,53 @@ test("samskara SC9: a failed upload never halts the stage and never blocks a lat
   assert.equal(out.results?.["samskara"]?.status, "failure");
   assert.match(out.results?.["samskara"]?.result ?? "", /session not found/);
   assert.equal(out.results?.["after"]?.status, "success");
+});
+
+test("samskara SC24: the Slack notifier never uploads a path from outside the repo", async () => {
+  const dir = tmp();
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  writeFileSync(join(dir, "review.md"), "# review");
+
+  const outside = tmp();
+  const secret = join(outside, "credentials");
+  writeFileSync(secret, "aws_secret_access_key = hunter2");
+  symlinkSync(secret, join(dir, "creds"));
+
+  const uploaded: string[] = [];
+  const provider: Provider = {
+    send: async () => "1.1",
+    upload: async (file) => {
+      uploaded.push(file);
+    },
+  };
+  const importModule: FireDeps["importModule"] = async () => ({
+    notifierHook: (payload: LifecyclePayload) => notifierHook(payload, provider),
+  });
+
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    await runFire(
+      {
+        event: "stage-completed",
+        spec: "t",
+        data: {
+          title: "t",
+          artifacts: [
+            { name: "review", path: "review.md" },
+            { name: "escape", path: "creds" },
+            { name: "climb", path: "../../etc/hosts" },
+            { name: "absolute", path: secret },
+          ],
+        },
+      },
+      baseDeps(dir, { importModule }),
+    );
+  } finally {
+    process.chdir(cwd);
+  }
+
+  assert.equal(uploaded.length, 1);
+  assert.match(uploaded[0] ?? "", /review\.md$/);
 });

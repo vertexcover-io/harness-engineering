@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { formatMessage, loadConfig, resolveProvider } from "./notify.ts";
 import type { Args, HookFailure, PendingQuestion, Provider } from "./notify.ts";
 import { readRunSessionId } from "./collect-run-info.ts";
-import { spawnRunner, uploadStageArtifacts } from "./samskara.ts";
+import { containedPath, spawnRunner, uploadStageArtifacts } from "./samskara.ts";
 import type { UploadDeps } from "./samskara.ts";
 
 export const EVENTS = [
@@ -636,9 +636,11 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
-const isFilePath = (repoRoot: string, path: string): boolean => {
+const isUploadableFile = (repoRoot: string, path: string): boolean => {
+  const contained = containedPath(repoRoot, path);
+  if (contained === null) return false;
   try {
-    return statSync(resolveFromRoot(repoRoot, path)).isFile();
+    return statSync(contained).isFile();
   } catch {
     return false;
   }
@@ -661,7 +663,7 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
     payload.event === "stage-completed"
       ? (payload.data.artifacts ?? [])
           .map((a) => a.path)
-          .filter((path) => isFilePath(payload.repoRoot, path))
+          .filter((path) => isUploadableFile(payload.repoRoot, path))
       : [];
 
   const args: Args = {
