@@ -60,11 +60,23 @@ export const containedPath = (repoRoot: string, path: string): string | null => 
   return escapes ? null : absolute;
 };
 
+const isInside = (parent: string, child: string): boolean => {
+  const rel = relative(parent, child);
+  return rel !== "" && !rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel);
+};
+
+const pruneNested = (paths: readonly string[]): readonly string[] => {
+  const unique = [...new Set(paths)];
+  return unique.filter((path) => !unique.some((other) => isInside(other, path)));
+};
+
 export const uploadStageArtifacts = (input: UploadInput, deps: UploadDeps): UploadResult => {
-  const paths = input.artifacts
-    .map((artifact) => containedPath(input.repoRoot, artifact.path))
-    .filter((path): path is string => path !== null)
-    .filter(deps.exists);
+  const paths = pruneNested(
+    input.artifacts
+      .map((artifact) => containedPath(input.repoRoot, artifact.path))
+      .filter((path): path is string => path !== null)
+      .filter(deps.exists),
+  );
   if (paths.length === 0) return { status: "skipped", detail: "no artifacts to upload" };
 
   if (!supportsUpload(deps)) {

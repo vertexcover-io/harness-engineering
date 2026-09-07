@@ -306,3 +306,28 @@ test("SC26: an artifact the stage named but never wrote is dropped before the CL
   assert.ok(args.some((a) => a.endsWith("plan.md")));
   assert.equal(result.status, "uploaded");
 });
+
+test("SC27: a folder and a file inside it are not both sent, which the CLI refuses as a collision", () => {
+  const root = tmp();
+  const folder = join(root, "verification");
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "proof-report.html"), "<h1>proof</h1>");
+  writeFileSync(join(root, "review.md"), "# review\n");
+
+  const { deps, calls } = fakeDeps({ exists: existsSync });
+  uploadStageArtifacts(
+    {
+      repoRoot: root,
+      artifacts: [
+        { name: "proof-report", path: "verification/proof-report.html" },
+        { name: "verification", path: "verification" },
+        { name: "review", path: "review.md" },
+      ],
+    },
+    deps,
+  );
+
+  const args = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help")?.args ?? [];
+  const paths = args.slice(3, -2);
+  assert.deepEqual(paths.toSorted(), [realpathSync(folder), join(realpathSync(root), "review.md")].toSorted());
+});
