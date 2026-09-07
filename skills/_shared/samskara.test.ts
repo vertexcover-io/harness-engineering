@@ -203,7 +203,6 @@ test("SC19: a path whose name would read as a CLI flag cannot reach the argument
   uploadStageArtifacts(input, deps);
 
   const upload = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help");
-  // Contained paths are always emitted absolute, so no argument can begin with a dash.
   const paths = upload?.args.slice(3, -2) ?? [];
   assert.ok(paths.every((a) => a.startsWith("/")));
 });
@@ -225,8 +224,6 @@ test("SC21: a CLI that is not on PATH reports 127 with the reason", () => {
 });
 
 test("SC22: a CLI that prints the flag but exits non-zero is not treated as capable", () => {
-  // A broken or half-installed CLI can print usage text on its way to failing. Only stdout
-  // carrying the flag AND a clean exit means the command is really there.
   const { deps, calls } = fakeDeps({
     run: () => ({ exit: 1, stdout: "usage: samskara artifacts upload SESSION PATH... --base-dir DIR", stderr: "boom" }),
   });

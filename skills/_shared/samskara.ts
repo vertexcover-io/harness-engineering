@@ -25,10 +25,6 @@ export type UploadInput = {
   readonly artifacts: readonly StageArtifact[];
 };
 
-/** Uploading a folder of screen recordings outruns any short bound, so the hook declares a long
- * one. It has to sit on the child process: spawnSync blocks the event loop, so the timer race in
- * hooks.ts's runFn cannot preempt it and a hung upload would otherwise stall the stage forever.
- * `error` is set both by that kill and by a missing binary, and carries the reason for each. */
 export const spawnRunner =
   (timeoutMs: number): Runner =>
   (cmd, args) => {
@@ -40,8 +36,6 @@ export const spawnRunner =
     };
   };
 
-// v0.3.0 exits 0 on an unknown subcommand and prints the top-level help, so the exit code
-// says nothing. The flag only appears in the subcommand's own help.
 const PROBE_FLAG = "--base-dir";
 
 const supportsUpload = (deps: UploadDeps): boolean => {
@@ -49,10 +43,6 @@ const supportsUpload = (deps: UploadDeps): boolean => {
   return probe.exit === 0 && probe.stdout.includes(PROBE_FLAG);
 };
 
-/** A reported path is a free string an agent wrote into the event; nothing upstream checks where
- * it points. Anything resolving outside the repo root is dropped rather than sent to a remote
- * service. Containment also keeps every emitted argument absolute, so no path can be read as a
- * CLI flag. */
 const containedPath = (repoRoot: string, path: string): string | null => {
   const absolute = resolve(repoRoot, path);
   const rel = relative(repoRoot, absolute);

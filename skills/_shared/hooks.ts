@@ -580,9 +580,6 @@ const parseData = (flags: FireFlags, base: PayloadBase): Parsed<Payload> => {
   return flags.event === "artifact-created" ? ARTIFACT[flags.kind](base, d) : DATA[flags.event](base, d);
 };
 
-// The harness's own shipped hooks — same fields, same loop, same envelope as a config hook.
-// Each resolves through the ordinary fn machinery (SELF + export name), so nothing in the
-// dispatch loop knows it's special.
 const SAMSKARA_EVENTS: ReadonlySet<string> = new Set(["stage-completed"]);
 
 const switchedOn = (raw: Record<string, unknown>, key: string): boolean => {
@@ -590,9 +587,6 @@ const switchedOn = (raw: Record<string, unknown>, key: string): boolean => {
   return isRecord(block) && block["enabled"] === true;
 };
 
-// entry is typed as the union member actually being constructed. RawEntry is `unknown`, so
-// Omit<RawEntry & object, "name"> collapses to {} and would accept a misspelled field.
-// `name` doubles as the config block's key: both built-ins read one flag named for themselves.
 type Builtin = {
   readonly name: string;
   readonly events: ReadonlySet<string>;
@@ -610,8 +604,6 @@ const BUILTINS: readonly Builtin[] = [
   {
     name: "samskara",
     events: SAMSKARA_EVENTS,
-    // Uploading a folder of screen recordings outruns the 120s default. spawnRunner puts the
-    // same bound on the child, which is the one that can actually stop a hung upload.
     entry: { fn: { module: SELF, export: "samskaraHook" }, timeoutMs: SAMSKARA_TIMEOUT_MS, report: true },
   },
 ];
@@ -622,8 +614,6 @@ export const defaultHooks = (event: string, raw: Record<string, unknown>): RawEn
     ...b.entry,
   }));
 
-/** Built-in names are reserved whether or not they are switched on: turning one on later must
- * not silently steal a name a project already picked. */
 export const reservedNames = (event: string): readonly string[] =>
   BUILTINS.filter((b) => b.events.has(event)).map((b) => b.name);
 
@@ -646,8 +636,6 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
-// Resolved against the repo root only for this check — the provider still gets the original
-// path, since it already reads relative to the working directory.
 const isFilePath = (repoRoot: string, path: string): boolean => {
   try {
     return statSync(resolveFromRoot(repoRoot, path)).isFile();
@@ -711,8 +699,6 @@ const productionUploadDeps = (): UploadDeps => ({
   session: readRunSessionId,
 });
 
-// A plain fn-hook handler like notifierHook, delegating to samskara.ts for the upload logic.
-// The optional second parameter exists only so tests can inject a fake CLI.
 export const samskaraHook = async (
   payload: StageCompletedPayload,
   deps?: UploadDeps,
@@ -929,9 +915,6 @@ export const runDoctor = (cwd: string): DoctorReport => {
       lines.push(doctorRow(event, "FAIL", `unknown event "${event}"`));
       failed = true;
     }
-    // Default hook names are reserved on the events they could fire on, whether or not the
-    // built-in is currently enabled — turning it on later shouldn't silently steal a name a
-    // project already picked.
     const names = new Set<string>(eventKnown ? reservedNames(event) : []);
 
     entries.forEach((entry, i) => {

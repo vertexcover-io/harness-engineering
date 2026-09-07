@@ -21,9 +21,6 @@ test("collect-run-info prints its line when run directly", () => {
 });
 
 test("collect-run-info prints its line when reached through a symlink", () => {
-  // Plugin installs are commonly symlinked, and this file is documented as a hand-run
-  // diagnostic. import.meta.url is already realpath'd, so comparing it against a raw argv[1]
-  // silently makes the whole script a no-op.
   const link = join(mkdtempSync(join(tmpdir(), "cri-link-")), "linked");
   symlinkSync(SELF_DIR, link);
 

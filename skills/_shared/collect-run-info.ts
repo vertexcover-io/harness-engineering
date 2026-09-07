@@ -85,8 +85,6 @@ function sessionFromManifest(artifactDir: string): string | null {
   }
 }
 
-/** The session a run belongs to: the one its manifest recorded, or failing that the one
- * readSessionId detects. One function so a caller cannot take half the rule by accident. */
 export function readRunSessionId(artifactDir?: string): string | null {
   const recorded = artifactDir === undefined ? null : sessionFromManifest(artifactDir);
   return recorded ?? readSessionId();
@@ -104,10 +102,6 @@ function newestTranscriptId(projectDir: string): string | null {
   }
 }
 
-// Guarded so importing readSessionId (an in-process caller, e.g. the samskara hook) never
-// re-runs this file's CLI output as a side effect of the import. Both sides are realpath'd:
-// import.meta.url already is, and a plugin install is commonly reached through a symlink, so
-// comparing it against a raw argv[1] would turn the whole script into a silent no-op.
 const invokedScript = (): string => {
   const argv1 = resolve(process.argv[1] ?? "");
   try {
