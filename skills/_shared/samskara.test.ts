@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { UploadDeps, UploadInput } from "./samskara.ts";
-import { uploadStageArtifacts } from "./samskara.ts";
+import { spawnRunner, uploadStageArtifacts } from "./samskara.ts";
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), "samskara-test-"));
 
@@ -219,4 +219,20 @@ test("SC19: a path whose name would read as a CLI flag cannot reach the argument
   // Contained paths are always emitted absolute, so no argument can begin with a dash.
   const paths = upload?.args.slice(3, -2) ?? [];
   assert.ok(paths.every((a) => a.startsWith("/")));
+});
+
+test("SC20: a CLI call that outruns its bound is killed instead of blocking the run", () => {
+  const started = Date.now();
+  const result = spawnRunner(200)("sleep", ["5"]);
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 4000, `the child must be killed at the bound, took ${elapsed}ms`);
+  assert.notEqual(result.exit, 0);
+});
+
+test("SC21: a CLI that is not on PATH reports 127 with the reason", () => {
+  const result = spawnRunner(2000)("samskara-does-not-exist", ["--help"]);
+
+  assert.equal(result.exit, 127);
+  assert.notEqual(result.stderr, "");
 });

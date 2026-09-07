@@ -1,13 +1,13 @@
 #!/usr/bin/env node --experimental-strip-types
 
-import { execFileSync, execSync, spawnSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { formatMessage, loadConfig, resolveProvider } from "./notify.ts";
 import type { Args, HookFailure, PendingQuestion, Provider } from "./notify.ts";
 import { readSessionId } from "./collect-run-info.ts";
-import { uploadStageArtifacts } from "./samskara.ts";
+import { spawnRunner, uploadStageArtifacts } from "./samskara.ts";
 import type { UploadDeps } from "./samskara.ts";
 
 export const EVENTS = [
@@ -597,6 +597,8 @@ type Builtin = {
   readonly entry: Omit<RawEntry & object, "name">;
 };
 
+const SAMSKARA_TIMEOUT_MS = 300_000;
+
 const BUILTINS: readonly Builtin[] = [
   {
     name: "notifier",
@@ -608,8 +610,9 @@ const BUILTINS: readonly Builtin[] = [
     name: "samskara",
     events: SAMSKARA_EVENTS,
     configKey: "samskara",
-    // Uploading a folder of screen recordings outruns the 120s default.
-    entry: { fn: { module: SELF, export: "samskaraHook" }, timeoutMs: 300_000, report: true },
+    // Uploading a folder of screen recordings outruns the 120s default. spawnRunner puts the
+    // same bound on the child, which is the one that can actually stop a hung upload.
+    entry: { fn: { module: SELF, export: "samskaraHook" }, timeoutMs: SAMSKARA_TIMEOUT_MS, report: true },
   },
 ];
 
@@ -703,10 +706,7 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
 };
 
 const productionUploadDeps = (): UploadDeps => ({
-  run: (cmd, args) => {
-    const r = spawnSync(cmd, [...args], { encoding: "utf8" });
-    return { exit: r.status ?? 127, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
-  },
+  run: spawnRunner(SAMSKARA_TIMEOUT_MS),
   exists: existsSync,
   readText: (path) => readFileSync(path, "utf8"),
   sessionFallback: () => readSessionId(),

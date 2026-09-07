@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type Runner = (
@@ -24,6 +25,21 @@ export type UploadInput = {
   readonly artifactDir?: string;
   readonly artifacts: readonly StageArtifact[];
 };
+
+/** Uploading a folder of screen recordings outruns any short bound, so the hook declares a long
+ * one. It has to sit on the child process: spawnSync blocks the event loop, so the timer race in
+ * hooks.ts's runFn cannot preempt it and a hung upload would otherwise stall the stage forever.
+ * `error` is set both by that kill and by a missing binary, and carries the reason for each. */
+export const spawnRunner =
+  (timeoutMs: number): Runner =>
+  (cmd, args) => {
+    const r = spawnSync(cmd, [...args], { encoding: "utf8", timeout: timeoutMs });
+    return {
+      exit: r.status ?? 127,
+      stdout: r.stdout ?? "",
+      stderr: r.error === undefined ? (r.stderr ?? "") : r.error.message,
+    };
+  };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
