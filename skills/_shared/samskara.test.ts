@@ -264,3 +264,22 @@ test("SC23: a symlink inside the repo that points outside it is not uploaded", (
   assert.ok(upload.args.some((a) => a.endsWith("plan.md")));
   assert.equal(result.status, "uploaded");
 });
+
+test("SC25: a symlinked repo root is resolved before it becomes --base-dir", () => {
+  const real = tmp();
+  mkdirSync(join(real, ".harness", "spec"), { recursive: true });
+  writeFileSync(join(real, ".harness", "spec", "plan.md"), "# plan\n");
+  const link = join(tmp(), "root-link");
+  symlinkSync(real, link);
+
+  const { deps, calls } = fakeDeps({ exists: existsSync });
+  uploadStageArtifacts(
+    { repoRoot: link, artifacts: [{ name: "plan", path: ".harness/spec/plan.md" }] },
+    deps,
+  );
+
+  const args = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help")?.args ?? [];
+  assert.equal(args[args.length - 2], "--base-dir");
+  assert.equal(args[args.length - 1], realpathSync(real));
+  assert.ok(args.some((a) => a === join(realpathSync(real), ".harness", "spec", "plan.md")));
+});
