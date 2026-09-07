@@ -146,6 +146,20 @@ output map and the run continues. See `## Hooks` below for the entry shape that 
 
 `orchestrate/SKILL.md` owns which event fires where.
 
+## Samskara
+
+Optional. Absent, or `enabled: false`, and nothing uploads.
+
+```json
+"samskara": { "enabled": true }
+```
+
+When on, every `stage-completed` fire hands the stage's reported `data.artifacts` paths to
+`samskara artifacts upload` in one call, against the session recorded in the run's
+`manifest.json` (or, absent that, the session `skills/_shared/collect-run-info.ts` detects). A
+directory path uploads whole — the CLI walks it. The hook is a no-op, reporting why, whenever
+the installed `samskara` CLI lacks the `artifacts upload` verb; it never blocks the stage.
+
 ## Hooks
 
 Optional. A `hooks` block maps **event names** to ordered arrays of hook entries. The pipeline
@@ -157,7 +171,10 @@ whenever a hook fails — hook it to page someone, and never fire it by hand.
 
 Entries run in the order you write them, with one exception: the harness ships its own hooks and
 runs them first. Today that is the Slack notifier, on the six lifecycle events and on
-`hook-failed` when `notifier.enabled` is true — so a hook you declare first still runs after it.
+`hook-failed` when `notifier.enabled` is true, and the samskara upload, on `stage-completed`
+when `samskara.enabled` is true — so a hook you declare first still runs after them. Their names
+(`notifier`, `samskara`) are reserved on those events whether or not the built-in is switched
+on, so a project hook cannot collide with one turned on later.
 A `hook-failed` notice mentions a person only when the hook that broke was `required`.
 
 ```json

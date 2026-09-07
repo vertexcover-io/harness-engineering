@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join } from "node:path";
@@ -952,4 +952,100 @@ test("SC49: a payload carries the event's own fields and nothing else", async ()
   );
   const seen: { data: Record<string, unknown> } = JSON.parse(calls[0]?.input ?? "{}");
   assert.deepEqual(seen.data, { title: "t", body: "b" });
+});
+
+test("samskara SC1: with no samskara block in the config, no samskara hook runs", async () => {
+  const dir = tmp();
+  writeConfig(dir, { hooks: { "stage-completed": [] } });
+  let importCalls = 0;
+  const importModule: FireDeps["importModule"] = async () => {
+    importCalls += 1;
+    return {};
+  };
+  const { out } = await runFire(
+    {
+      event: "stage-completed",
+      data: {
+        artifacts: [
+          { name: "a", path: "a.md" },
+          { name: "b", path: "b.md" },
+        ],
+      },
+    },
+    baseDeps(dir, { importModule }),
+  );
+  assert.equal("samskara" in (out.results ?? {}), false);
+  assert.equal(importCalls, 0);
+});
+
+test("samskara SC12: a project hook named samskara on stage-completed is rejected", () => {
+  const dir = tmp();
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  writeConfig(dir, {
+    hooks: { "stage-completed": [{ name: "samskara", cmd: "printf nope" }] },
+  });
+  const hooksPath = fileURLToPath(new URL("./hooks.ts", import.meta.url));
+  const res = spawnSync(process.execPath, ["--experimental-strip-types", hooksPath, "doctor"], {
+    cwd: dir,
+    encoding: "utf8",
+  });
+  assert.equal(res.status, 1, res.stdout + res.stderr);
+  assert.match(res.stdout, /duplicate name "samskara"/);
+});
+
+test("samskara SC13: the fire command uploads through a real subprocess", () => {
+  const dir = tmp();
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  const specDir = join(dir, ".harness", "t");
+  mkdirSync(specDir, { recursive: true });
+  writeFileSync(join(specDir, "manifest.json"), JSON.stringify({ run_info: { session: "sess-real" } }));
+  const reportPath = join(specDir, "review.md");
+  writeFileSync(reportPath, "# review\n");
+  writeConfig(dir, { samskara: { enabled: true } });
+
+  const stubDir = tmp();
+  const recordPath = join(stubDir, "calls.jsonl");
+  const stub = join(stubDir, "samskara");
+  writeFileSync(
+    stub,
+    [
+      "#!/bin/sh",
+      'if [ "$1 $2 $3" = "artifacts upload --help" ]; then',
+      '  echo "usage: samskara artifacts upload SESSION PATH... --base-dir DIR"',
+      "  exit 0",
+      "fi",
+      `printf '%s\\n' "$*" >> "${recordPath}"`,
+      "exit 0",
+    ].join("\n"),
+  );
+  chmodSync(stub, 0o755);
+
+  const hooksPath = fileURLToPath(new URL("./hooks.ts", import.meta.url));
+  const res = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      hooksPath,
+      "fire",
+      "--event",
+      "stage-completed",
+      "--spec",
+      "t",
+      "--data",
+      JSON.stringify({ artifacts: [{ name: "review", path: ".harness/t/review.md" }] }),
+    ],
+    {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${stubDir}:${process.env["PATH"] ?? ""}` },
+    },
+  );
+  assert.equal(res.status, 0, res.stdout + res.stderr);
+  const out: { results?: Record<string, { status: string; result?: string }> } = JSON.parse(res.stdout);
+  assert.equal(out.results?.["samskara"]?.status, "success");
+
+  const recorded = readFileSync(recordPath, "utf8").trim().split("\n");
+  assert.equal(recorded.length, 1);
+  assert.ok(recorded[0]?.includes("sess-real"));
+  assert.ok(recorded[0]?.includes(reportPath));
 });

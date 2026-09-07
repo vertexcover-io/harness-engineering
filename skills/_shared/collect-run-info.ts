@@ -8,7 +8,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 type RunInfo = {
   readonly harness: string | null;
@@ -58,7 +59,7 @@ function readAndromedaVersion(): string | null {
   return branch ? `${branch}@${sha}` : sha;
 }
 
-function readSessionId(): string | null {
+export function readSessionId(): string | null {
   const injected = process.env["SESSION_ID"];
   if (injected) return injected;
   // Derive from the main repo, never the worktree: a worktree path encodes to a different
@@ -81,22 +82,26 @@ function newestTranscriptId(projectDir: string): string | null {
   }
 }
 
-const info: RunInfo = {
-  harness: readHarnessVersion(),
-  andromeda: readAndromedaVersion(),
-  session: readSessionId(),
-};
+// Guarded so importing readSessionId (an in-process caller, e.g. the samskara hook) never
+// re-runs this file's CLI output as a side effect of the import.
+if (fileURLToPath(import.meta.url) === resolve(process.argv[1] ?? "")) {
+  const info: RunInfo = {
+    harness: readHarnessVersion(),
+    andromeda: readAndromedaVersion(),
+    session: readSessionId(),
+  };
 
-if (process.argv[2] === "--json") {
-  console.log(JSON.stringify(info));
-} else {
-  console.log(
-    [
-      info.harness && `harness ${info.harness}`,
-      info.andromeda && `andromeda ${info.andromeda}`,
-      info.session && `session ${info.session}`,
-    ]
-      .filter((segment): segment is string => segment !== null)
-      .join(" · "),
-  );
+  if (process.argv[2] === "--json") {
+    console.log(JSON.stringify(info));
+  } else {
+    console.log(
+      [
+        info.harness && `harness ${info.harness}`,
+        info.andromeda && `andromeda ${info.andromeda}`,
+        info.session && `session ${info.session}`,
+      ]
+        .filter((segment): segment is string => segment !== null)
+        .join(" · "),
+    );
+  }
 }
