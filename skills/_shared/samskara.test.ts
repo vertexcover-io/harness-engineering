@@ -283,3 +283,26 @@ test("SC25: a symlinked repo root is resolved before it becomes --base-dir", () 
   assert.equal(args[args.length - 1], realpathSync(real));
   assert.ok(args.some((a) => a === join(realpathSync(real), ".harness", "spec", "plan.md")));
 });
+
+test("SC26: an artifact the stage named but never wrote is dropped before the CLI call", () => {
+  const root = tmp();
+  mkdirSync(join(root, ".harness", "spec"), { recursive: true });
+  writeFileSync(join(root, ".harness", "spec", "plan.md"), "# plan\n");
+
+  const { deps, calls } = fakeDeps({ exists: existsSync });
+  const result = uploadStageArtifacts(
+    {
+      repoRoot: root,
+      artifacts: [
+        { name: "plan", path: ".harness/spec/plan.md" },
+        { name: "ghost", path: ".harness/spec/never-written.md" },
+      ],
+    },
+    deps,
+  );
+
+  const args = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help")?.args ?? [];
+  assert.ok(!args.some((a) => a.includes("never-written")));
+  assert.ok(args.some((a) => a.endsWith("plan.md")));
+  assert.equal(result.status, "uploaded");
+});

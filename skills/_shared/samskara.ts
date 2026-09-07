@@ -53,8 +53,9 @@ const realOrSelf = (path: string): string => {
 };
 
 export const containedPath = (repoRoot: string, path: string): string | null => {
-  const absolute = realOrSelf(resolve(repoRoot, path));
-  const rel = relative(realOrSelf(repoRoot), absolute);
+  const root = realOrSelf(repoRoot);
+  const absolute = realOrSelf(resolve(root, path));
+  const rel = relative(root, absolute);
   const escapes = rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
   return escapes ? null : absolute;
 };
