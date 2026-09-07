@@ -43,8 +43,15 @@ An override on either is recorded and logged, not yet honoured.
 
 ## Entry stage (resumed runs)
 
-`coder` is the only valid entry stage. It presumes the worktree, `baseline.json`, and `claims.json`
-are in place before the stage starts, and that the caller names the prior run's `plan.md`.
+`coder` is the only valid entry stage. It presumes the worktree and `baseline.json` are in place
+before the stage starts, and that the caller names the prior run's `plan.md`.
+
+A resumed run works a **set of checkouts**, not one. The caller passes `TARGETS[]`, each entry one
+branch of one repository, carrying `repository`, `worktree`, `branch`, `spec_name`, `plan`,
+`base_sha` and `packages`, and resolving its commands from its own repository's root
+`orchestrate.config.json`. **The first entry is primary:** it owns the DAG, the dashboard, and every
+per-run artifact. Stages 3, 4 and 6 run once per entry; Stage 5 takes the whole set. A single-PR
+resume passes a one-entry `TARGETS[]`.
 
 Its gate contract shifts: a resumed `coder` runs `implement` in review-fix mode, which produces no
 `phase-<N>-claims.json`. The gate is the caller's disposition table — every feedback item carries a

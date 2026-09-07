@@ -4,10 +4,14 @@ Which of the feature's proven behaviours the fix could have broken. Verification
 
 ## Trace it
 
-**Dispatch one general-purpose subagent.** The trace reads phase files, plan sections, and a prior
-report; what comes back is a list of ids. Give it these four steps and the two spec dirs:
+**Once per checkout, and only where it holds a prior run.** The trace reads that run's phase files,
+plan and proof report; a checkout carrying none has no radius to narrow, and its scope is the files
+this fix changed.
 
-1. **Changed files** — `git diff <PRE_REWORK_SHA>..HEAD --name-only`.
+**Dispatch one general-purpose subagent** per traced checkout. What comes back is a list of ids. Give it
+these four steps and the two spec dirs:
+
+1. **Changed files** — `git diff <base_sha>..HEAD --name-only`.
 2. **Files → phases** — grep the original run's `phases/phase-*.md` for each changed path. A phase
    whose `## Implementation` names the file owns it.
 3. **Phases → scenarios** — those phases' `## Test Scenarios` ids (`S<n>`).

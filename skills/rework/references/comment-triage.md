@@ -5,8 +5,18 @@ The single source for reading a PR's human review comments and judging each one.
 
 ## Fetch
 
-Run both calls once for each `REPOSITORY` and `PR_NUMBER` the caller holds. `rework` passes one
+Run each call once for each `REPOSITORY` and `PR_NUMBER` the caller holds. `rework` passes one
 pair per `PRS` entry; `review-fixer` passes the single pair it parsed.
+
+First the PR itself, for a caller that has no checkout yet. `rework` builds that PR's workspace on
+`head_branch` and drops the PR when `merged` is set; `review-fixer` already runs in the checkout and
+skips this call:
+
+```bash
+gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '{head_branch: .head.ref, merged: .merged}'
+```
+
+Then its inline comments:
 
 ```bash
 gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments" \
@@ -29,11 +39,18 @@ Nothing from any call is a halt — there is no feedback to rework.
 
 ## Triage
 
-**Dispatch one general-purpose subagent to read the code at every comment's `path:line`** and report
-back what is there now, per comment. The diff hunk is what the reviewer saw, which may no longer be
-what is there. You judge from what the subagent returns.
+**Dispatch one `Explore` subagent per comment**, in that comment's own `repository` worktree, all of
+them in one message.
 
-Give each comment one **verdict**:
+Give each agent its comment's `path`, `line` and `body`, and these three instructions:
+
+1. **Start at `path:line`.** The `diff_hunk` is what the reviewer saw; the file is what is there now.
+2. **Widen only when the answer is not at that line**: the enclosing function, its callers, the tests
+   covering it, then that range's history when the question is whether someone already fixed it.
+3. **Return** the code at that location now, whether the reviewer's claim holds against it, and the
+   commit sha when the code changed after the comment was written.
+
+**The verdict follows what the agents return, never the comment body alone.** Give each comment one:
 
 | Verdict | Means |
 |---|---|
@@ -44,6 +61,9 @@ Give each comment one **verdict**:
 
 `wrong` has to be earned: name the behaviour that makes the code correct. Where you cannot, the
 verdict is `valid`.
+
+A comment the returned evidence settles neither way leaves triage **unsettled**, and goes back to
+the caller to ask about.
 
 ## Disposition
 

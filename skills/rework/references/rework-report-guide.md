@@ -1,7 +1,7 @@
 # Writing the Rework Report
 
 **Read this when:** the pipeline has returned and you are writing
-`<REWORK_SPEC_DIR>/rework-report.html`, the run's one artifact.
+`rework-report.html` in the primary repo's spec dir, the run's one artifact.
 
 Copy `references/rework-report-template.html` there and **fill its JSON island, the
 `<script type="application/json" id="report-data">` block. Change nothing else in the file.** The
@@ -18,8 +18,8 @@ it in that order and the page needs no navigation.
 
 `header[]` holds five rows, in this order: Task, PR, Reason for rework, Verification, Fix.
 
-`Fix` is a count of comments fixed over comments received, not prose. `PR` names every repo when
-the rework spans more than one.
+`Fix` is a count of comments fixed over comments received, not prose. `PR`, `Verification` and `Fix`
+each carry one entry per repo when the rework spans more than one.
 
 ## 3. The summary is the whole run in 3-4 lines
 
@@ -58,6 +58,9 @@ the report instead of opening the file.
 The same holds for a change: `changes[].file` is `path:line-range`, and `changes[].diff` is the
 actual diff.
 
+When the rework spans more than one repo, `where` and `changes[].file` open with the repo
+(`owner/repo path/to/file.ts:88`).
+
 ## 7. Link every external URL, and only those
 
 The page renders an anchor when a value starts `http://` or `https://`, and plain text otherwise.
@@ -77,8 +80,8 @@ a `caveats[].detail` that repeats its own `title`, is the reader's time for no i
 - **Use the number of items there are.** Do not pad a list to reach three.
 
 Write a caveat only when a reader has to act on it or know it before trusting the run: a partial
-proof, a red baseline, work left open. A check that passed is not a caveat. When every check
-passed and the proof is complete, omit the `caveats` key.
+proof, a red baseline, work left open, one repo blocked while another passed. A check that passed is
+not a caveat. When every check passed and the proof is complete, omit the `caveats` key.
 
 ## 9. Plain sentences, in a developer's words
 

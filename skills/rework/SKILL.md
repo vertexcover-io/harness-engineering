@@ -1,22 +1,32 @@
 ---
 name: rework
-description: Apply QA or PR-review feedback to a ticket that already went through the pipeline.
+description: Apply QA or PR-review feedback to a ticket, across every PR it carries.
 disable-model-invocation: true
-argument-hint: "<asana-url | pr-url>"
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
+argument-hint: "<asana-url | pr-url | prompt>"
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestion
 ---
 
 # Rework
 
 **Announce at start:** "Using the rework skill to apply feedback to `<ticket-id>`."
 
-You **resume** a run that already exists. Its worktree, baseline, plan, and claims are all on disk.
+## Purpose
 
-**This runs unattended — ask the user nothing.** Every call is yours; record it in the report.
+The purpose of this skill is to turn review comments or a QA report on a shipped ticket into a
+verified fix. It reads the feedback, judges each item, and hands the ones worth acting on to
+`orchestrate`, which owns the fix from there.
 
-## Step 1 — Resume
+## Rules
 
-Resolve each of these, in order:
+**Ask whatever you need, whenever you need it, up to Step 5.** One `AskUserQuestion` per question,
+and act on the answer before asking the next: an answer can change the approach. Once Step 5 invokes
+`orchestrate`, stop asking and stop pausing: the run is orchestrate's.
+
+**Notifications.** Follow the Notifications section of `skills/orchestrate/SKILL.md`, reading
+`notifier` from the primary entry's config: `question-pending` before each `AskUserQuestion`,
+`run-interrupted` before any row of the Halts table.
+
+## Step 1 — Resolve the ticket
 
 1. `PRS` — each entry `{repository, pr_number}`.
 
@@ -32,59 +42,82 @@ Resolve each of these, in order:
    curl -s "$API/tasks/$GID/attachments?opt_fields=name,view_url" -H "Authorization: Bearer $ASANA_PAT"
    ```
 
-   An empty `PRS` from an Asana task is not a halt. Step 2 reads it as QA.
-
 2. `TICKET_REF` — from the Asana task `name`, or from the PR's branch.
 
-3. `SPEC_NAME` — search `.harness/*/manifest.json` for any `PRS` entry's `pr_number`, then for
-   `TICKET_REF` in `spec_name` or `branch`. Two matches is a halt: say which.
+3. Run the **Fetch** section of `references/comment-triage.md` once per `PRS` entry. It returns that
+   PR's `head_branch`, whether it is merged, and its review comments.
 
-4. `WORKTREE_PATH`, `BRANCH_NAME` — from that manifest. `cd` to the worktree.
-5. `REWORK_SPEC_DIR` — `.harness/<SPEC_NAME>-rework-<N>`, `N` one above the highest already there.
-   Create it.
-6. `PRE_REWORK_SHA` — `git rev-parse HEAD`. Every later stage scopes its diff from here.
+Drop a merged PR from `PRS` and name it in the report. An empty `PRS`, or one that empties here, is
+not a halt: the task's `name` and `notes` are the reported issue instead.
 
-Then seed it:
+## Step 2 — Build the workspace
 
-```bash
-cp .harness/<SPEC_NAME>/{baseline.json,claims.json} <REWORK_SPEC_DIR>/
-rm -f .harness/current-phase
-```
+**One workspace holds every checkout this ticket needs**, side by side, so a fix that spans PRs is
+built and proven in one place. A ticket's PRs may share a repository or not; each PR is its own
+branch, so each gets its own checkout.
 
-Leave the feature docs where they are — a `plan.md` in this dir puts the whole feature back into
-verification's scope.
+Per `PRS` entry, or for the launch repo when `PRS` is empty:
 
-**Done when** you hold `SPEC_NAME`, `WORKTREE_PATH`, `BRANCH_NAME`, `REWORK_SPEC_DIR`, and can read
-the original run's `plan.md`, `claims.json`, and `verification/proof-report.html`.
+1. Read that entry's `repository` root `orchestrate.config.json`. Every command for this checkout
+   comes from that file, resolved per `skills/orchestrate/references/config.md`.
+2. **Do not make the checkout yourself.** Invoke the worktree skill that config's `stages.worktree`
+   resolves to, placing the checkout in the workspace on the PR's `head_branch` **as the remote has
+   it now**. A QA ticket with no PR gets a new branch off the remote's default branch.
+3. Install with that config's `bootstrap` command.
+4. Create `.harness/<spec_name>/`, delete `.harness/current-phase`, and copy no prior document in: a
+   `plan.md` there puts the whole feature back into verification's scope.
 
-## Step 2 — Read the feedback
+Record per entry, for Step 5:
 
-**PR review** — `PRS` is not empty. Read `references/comment-triage.md` and follow it. It
-**triages** every comment from every entry to a verdict.
+| Field | Value |
+|---|---|
+| `worktree`, `branch` | what the worktree skill returned |
+| `packages` | the `packages` keys this PR's changed files sit under, empty for the root `commands` map |
+| `spec_name` | `<TICKET_REF>-rework-<N>`, `N` one above the highest `.harness/<TICKET_REF>-rework-*` already in that checkout |
+| `base_sha` | the checkout's head |
+| `plan` | the prior run's `plan.md`, when a `.harness/*/manifest.json` in that checkout matches this `pr_number` or `TICKET_REF`. Two matches, or none, is a question |
 
-**QA** — `PRS` is empty. The Asana task's `name` and `notes` are the reported issue. Reproduce it as
-a failing test first. That **red** test is the proof the report was real, and going green is the
-proof the fix landed.
+**The first `PRS` entry is primary.**
 
-## Step 3 — Run the pipeline
+## Step 3 — Baseline every checkout, in the background
 
-Invoke `orchestrate` via `Skill`, passing:
+The moment a checkout is ready, dispatch one background sub-agent for it from the Stage 0 Baseline
+block in `skills/orchestrate/references/stage-prompts.md`, with its worktree, spec dir and
+`packages`. Do not wait for it; Step 5 collects them.
 
-- `SPEC_NAME=<REWORK_SPEC_DIR basename>`, `WORKTREE_PATH`, `PRE_REWORK_SHA`, entry stage `coder`
-- The feedback from Step 2 — the triaged comments, or the reported issue and its red test
-- Plan `.harness/<SPEC_NAME>/plan.md` — the original, for Stage 4's `--plan`
+## Step 4 — Triage the feedback
 
-Orchestrate owns every stage from here — the fix, the review, the gate, the verification. Report
-what it returns.
+**PR review.** Follow the **Triage** section of `references/comment-triage.md`, reading each comment
+in its own PR's checkout.
 
-## Step 4 — Write the report
+**QA.** Reproduce the reported issue as a failing test first. That **red** test is the proof the
+report was real, and going green is the proof the fix landed.
 
-Write `<REWORK_SPEC_DIR>/rework-report.html` once the pipeline returns. Follow
-`references/rework-report-guide.md`.
+## Step 5 — Run the pipeline
+
+**First, collect Step 3's baselines**: wait for each sub-agent, then check its `baseline.json` with
+the join command in `skills/orchestrate/SKILL.md` Stage 0. Nothing may still be unresolved either:
+an entry with no `plan`, a comment triage could not settle. A plan is required, so ask for it rather
+than inferring one.
+
+Then invoke `orchestrate` **once**, via `Skill`, in this conversation, entry stage `coder`. Pass
+`TARGETS[]`, one entry per Step 2 checkout, primary first, carrying `repository`, `worktree`, `branch`,
+`spec_name`, `plan`, `base_sha` and `packages`.
+
+With each entry pass its **`valid` items only**, inline, each one as: `path:line`, what the reviewer
+asked in one sentence, what to change, and the test that shows it done. A comment with any other
+verdict never reaches orchestrate.
+
+Orchestrate owns every stage from here. Report what it returns.
+
+## Step 6 — Write the report
+
+Write `rework-report.html` into the primary entry's `.harness/<spec_name>/` once the pipeline
+returns, following `references/rework-report-guide.md`. It is this skill's only artifact.
 
 Each item's `sourceHref` is
 `https://github.com/<repository>/pull/<pr_number>#discussion_r<id>`, from that comment's own
-`repository`, `pr_number` and `id` Step 2 fetched.
+`repository`, `pr_number` and `id`.
 
 ## Halts
 
@@ -92,9 +125,8 @@ Each item's `sourceHref` is
 |-----------|--------|
 | Argument is not a URL | The argument is neither an Asana task URL nor a GitHub PR URL |
 | `ASANA_PAT` unset | The argument is an Asana URL and the token is absent from the environment |
-| No prior run | No `manifest.json` matches any `PRS` entry or `TICKET_REF` — name it and stop |
-| Ambiguous ticket | Two or more manifests match — name both spec dirs |
-| Worktree gone | The manifest's `worktree` path does not exist |
-| Branch merged | `BRANCH_NAME` is already merged — the fix belongs on a new run, not this one. A merged PR among several in `PRS` is not a halt; skip it and say so in the report |
-| Prior artifacts missing | `plan.md`, `claims.json`, or `proof-report.html` absent from the original spec dir |
-| No feedback resolved | Step 2 produced no item to act on — say what it read |
+| Config missing | A `PRS` entry's repository has no `orchestrate.config.json` at its root — name it and `setup-harness`, which writes it |
+| No checkout | The worktree skill could not produce that repository on that branch — name both |
+| Baseline unusable | An entry's `baseline.json` is missing, unparseable, or carries no metrics |
+| Plan unresolved | You asked, and an entry holding `valid` items still has no plan |
+| No feedback resolved | Step 4 produced no `valid` item anywhere — say what it read |

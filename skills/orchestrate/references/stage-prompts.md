@@ -63,7 +63,8 @@ PACKAGES: <PACKAGES>
 **Skill:** `<SKILL:coder>` · **Model:** `CFG.model` → `sonnet`
 
 Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one commit). **A resumed
-run has one unit, the fix:** a single agent, `NODE_ID=coder`.
+run's unit is the checkout:** one agent per `TARGETS[]` entry, all in one message, each
+`NODE_ID=coder`, each in that entry's worktree with that entry's feedback items and `plan`.
 
 **The coder agent invokes `<SKILL:coder>` and nothing else.** That skill reaches `tdd`,
 `code-quality`, and `references/coder-contracts.md` itself; naming them in the dispatch would be a
@@ -107,9 +108,13 @@ The orchestrator verifies the claims report independently — do not take the ag
 Tell the agent to run them in order and stop on the first failure.
 
 **On a resumed run, trace the blast radius before dispatching** — follow
-`skills/rework/references/blast-radius.md`. Its in-radius list replaces the plan below as
-`<SKILL:functional-verify>`'s requirement enumeration, and is the run's whole scope: a rework spec
-dir carries no feature doc.
+`skills/rework/references/blast-radius.md`, which traces per entry and only where that entry holds
+a prior run. Its in-radius list replaces the plan below as `<SKILL:functional-verify>`'s requirement
+enumeration, and is the run's whole scope: a rework spec dir carries no feature doc.
+
+One sub-agent takes the whole `TARGETS[]` set. Give it every entry's worktree, spec dir, `packages`
+and traced ids, and tell it which entry is primary: `<SKILL:quality-gate>` runs per entry against
+that entry's own `baseline.json` and config, and a BLOCKED on any entry blocks the run.
 
 **Pass:**
 - Design record `.harness/<SPEC_NAME>/design.md` (when the full flow ran), plan
