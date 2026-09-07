@@ -6,7 +6,7 @@
 // run info is a record of a run, never a gate on one.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -83,8 +83,19 @@ function newestTranscriptId(projectDir: string): string | null {
 }
 
 // Guarded so importing readSessionId (an in-process caller, e.g. the samskara hook) never
-// re-runs this file's CLI output as a side effect of the import.
-if (fileURLToPath(import.meta.url) === resolve(process.argv[1] ?? "")) {
+// re-runs this file's CLI output as a side effect of the import. Both sides are realpath'd:
+// import.meta.url already is, and a plugin install is commonly reached through a symlink, so
+// comparing it against a raw argv[1] would turn the whole script into a silent no-op.
+const invokedScript = (): string => {
+  const argv1 = resolve(process.argv[1] ?? "");
+  try {
+    return realpathSync(argv1);
+  } catch {
+    return argv1;
+  }
+};
+
+if (fileURLToPath(import.meta.url) === invokedScript()) {
   const info: RunInfo = {
     harness: readHarnessVersion(),
     andromeda: readAndromedaVersion(),
