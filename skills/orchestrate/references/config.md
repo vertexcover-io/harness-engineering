@@ -155,9 +155,9 @@ fires seven events — `run-started`, `stage-started`, `stage-completed`, `quest
 whenever a hook fails — hook it to page someone, and never fire it by hand.
 `skills/_shared/hooks.ts` is the dispatcher; `orchestrate/SKILL.md` owns which event fires where.
 
-Entries run in the order you write them, with one exception: the harness ships its own hooks and
-runs them first. Today that is the Slack notifier, on the six lifecycle events and on
-`hook-failed` when `notifier.enabled` is true — so a hook you declare first still runs after it.
+Entries run in the order you write them, after the harness's own built-ins: the Slack notifier
+(`notifier.enabled`) and the samskara upload (`samskara.enabled`).
+
 A `hook-failed` notice mentions a person only when the hook that broke was `required`.
 
 ```json

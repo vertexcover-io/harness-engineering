@@ -1,11 +1,14 @@
 #!/usr/bin/env node --experimental-strip-types
 
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { formatMessage, loadConfig, resolveProvider } from "./notify.ts";
 import type { Args, HookFailure, PendingQuestion, Provider } from "./notify.ts";
+import { readRunSessionId } from "./collect-run-info.ts";
+import { containedPath, spawnRunner, uploadStageArtifacts } from "./samskara.ts";
+import type { UploadDeps } from "./samskara.ts";
 
 export const EVENTS = [
   "run-started",
@@ -577,16 +580,42 @@ const parseData = (flags: FireFlags, base: PayloadBase): Parsed<Payload> => {
   return flags.event === "artifact-created" ? ARTIFACT[flags.kind](base, d) : DATA[flags.event](base, d);
 };
 
-// The harness's own shipped hooks — same fields, same loop, same envelope as a config hook.
-// The notifier is the only one today; it resolves through the ordinary fn machinery (SELF +
-// export name), so nothing in the dispatch loop knows it's special.
-export const defaultHooks = (event: string, raw: Record<string, unknown>): RawEntry[] => {
-  const notifier = raw.notifier;
-  const enabled = isRecord(notifier) && notifier.enabled === true;
-  return enabled && NOTIFIER_EVENTS.has(event)
-    ? [{ name: "notifier", fn: { module: SELF, export: "notifierHook" } }]
-    : [];
+const SAMSKARA_EVENTS: ReadonlySet<string> = new Set(["stage-completed"]);
+
+const switchedOn = (raw: Record<string, unknown>, key: string): boolean => {
+  const block = raw[key];
+  return isRecord(block) && block["enabled"] === true;
 };
+
+type Builtin = {
+  readonly name: string;
+  readonly events: ReadonlySet<string>;
+  readonly entry: Omit<FnEntry, "name">;
+};
+
+const SAMSKARA_TIMEOUT_MS = 300_000;
+
+const BUILTINS: readonly Builtin[] = [
+  {
+    name: "notifier",
+    events: NOTIFIER_EVENTS,
+    entry: { fn: { module: SELF, export: "notifierHook" } },
+  },
+  {
+    name: "samskara",
+    events: SAMSKARA_EVENTS,
+    entry: { fn: { module: SELF, export: "samskaraHook" }, timeoutMs: SAMSKARA_TIMEOUT_MS, report: true },
+  },
+];
+
+export const defaultHooks = (event: string, raw: Record<string, unknown>): RawEntry[] =>
+  BUILTINS.filter((b) => b.events.has(event) && switchedOn(raw, b.name)).map((b) => ({
+    name: b.name,
+    ...b.entry,
+  }));
+
+export const reservedNames = (event: string): readonly string[] =>
+  BUILTINS.filter((b) => b.events.has(event)).map((b) => b.name);
 
 // notifierHook is exported, so callers can hand it anything — it reads defensively even
 // though fire-time --data parsing already guarantees the shapes.
@@ -607,6 +636,16 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
+const isUploadableFile = (repoRoot: string, path: string): boolean => {
+  const contained = containedPath(repoRoot, path);
+  if (contained === null) return false;
+  try {
+    return statSync(contained).isFile();
+  } catch {
+    return false;
+  }
+};
+
 // A plain fn-hook handler: (payload) => Promise<string>, the exact contract every user fn hook
 // has. `provider` is a second parameter only tests use, to inject a fake in place of Slack.
 // --data is parsed at the fire boundary, so payload.data arrives typed and true — but this is
@@ -620,7 +659,12 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   // No thread file yet reads as unthreaded — today's behavior for a run with no prior thread.
   const thread =
     !starting && threadFile !== null && existsSync(threadFile) ? readFileSync(threadFile, "utf8").trim() : null;
-  const artifacts = payload.event === "stage-completed" ? (payload.data.artifacts ?? []).map((a) => a.path) : [];
+  const artifacts =
+    payload.event === "stage-completed"
+      ? (payload.data.artifacts ?? [])
+          .map((a) => a.path)
+          .filter((path) => isUploadableFile(payload.repoRoot, path))
+      : [];
 
   const args: Args = {
     event: payload.event,
@@ -649,6 +693,27 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
     writeFileSync(threadFile, ts);
   }
   return ts ?? "sent";
+};
+
+const productionUploadDeps = (): UploadDeps => ({
+  run: spawnRunner(SAMSKARA_TIMEOUT_MS),
+  exists: existsSync,
+  session: readRunSessionId,
+});
+
+export const samskaraHook = async (
+  payload: StageCompletedPayload,
+  deps?: UploadDeps,
+): Promise<string> => {
+  const result = uploadStageArtifacts(
+    {
+      repoRoot: payload.repoRoot,
+      ...(payload.artifactDir === undefined ? {} : { artifactDir: payload.artifactDir }),
+      artifacts: payload.data.artifacts ?? [],
+    },
+    deps ?? productionUploadDeps(),
+  );
+  return `${result.status}: ${result.detail}`;
 };
 
 type HookOutcome = { readonly failed: boolean; readonly detail: string; readonly output: string };
@@ -852,10 +917,7 @@ export const runDoctor = (cwd: string): DoctorReport => {
       lines.push(doctorRow(event, "FAIL", `unknown event "${event}"`));
       failed = true;
     }
-    // Default hook names (only "notifier" today) are reserved on the events they could fire
-    // on, whether or not the notifier is currently enabled — turning it on later shouldn't
-    // silently steal a name a project already picked.
-    const names = new Set<string>(eventKnown && NOTIFIER_EVENTS.has(event) ? ["notifier"] : []);
+    const names = new Set<string>(eventKnown ? reservedNames(event) : []);
 
     entries.forEach((entry, i) => {
       const label = `${event}/${rawName(entry) ?? `#${i}`}`;
