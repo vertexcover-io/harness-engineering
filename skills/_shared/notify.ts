@@ -93,9 +93,19 @@ export const parseArgs = (argv: readonly string[]): Args => {
 };
 
 const CONFIG_FILE = "orchestrate.config.json";
+const DOTENV_FILE = ".env.local";
+
+const readDotenv = (dir: string): Record<string, string> => {
+  try {
+    return parseEnv(readFileSync(join(dir, DOTENV_FILE), "utf8")) as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
 
 type NotifierBlock = {
   readonly notifier?: { readonly enabled?: boolean; readonly provider?: string };
+  readonly env?: Readonly<Record<string, string>>;
 };
 
 export const loadConfig = (cwd: string = process.cwd()): Config | null => {
@@ -118,19 +128,14 @@ export const loadConfig = (cwd: string = process.cwd()): Config | null => {
     throw new NotifierError(`${CONFIG_FILE} not found at ${repoRoot}. Run setup-harness to create it.`);
   }
 
-  const { notifier } = JSON.parse(readFileSync(configFile, "utf8")) as NotifierBlock;
+  const { notifier, env: fromConfig } = JSON.parse(readFileSync(configFile, "utf8")) as NotifierBlock;
   if (notifier?.enabled !== true) return null;
-
-  let fromDotenv: Record<string, string> = {};
-  try {
-    fromDotenv = parseEnv(readFileSync(join(mainCheckout, ".env"), "utf8")) as Record<string, string>;
-  } catch {
-    fromDotenv = {};
-  }
 
   return {
     provider: notifier.provider ?? "",
-    secrets: { ...fromDotenv, ...process.env } as Record<string, string>,
+    // .env.local wins: the config file is committed, so a local, uncommitted
+    // value has to be able to override the shared one.
+    secrets: { ...process.env, ...fromConfig, ...readDotenv(mainCheckout) } as Record<string, string>,
   };
 };
 
@@ -176,7 +181,8 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
     const value = secrets[key];
     if (!value) {
       throw new NotifierError(
-        `notifier: provider "slack" needs ${key}. Export it, or add it to .env at the repo root.`,
+        `notifier: provider "slack" needs ${key}. Set it in the "env" block of ${CONFIG_FILE}, ` +
+          `add it to ${DOTENV_FILE} at the repo root, or export it.`,
       );
     }
     return value;

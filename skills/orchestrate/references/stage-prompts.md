@@ -63,12 +63,15 @@ PACKAGES: <PACKAGES>
 
 **Skill:** `<SKILL:coder>` · **Model:** `CFG.model` → `sonnet`
 
-Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one commit).
+Dispatch one agent per phase — the phase file is the unit (one TDD cycle, one commit). **A resumed
+run's unit is the checkout:** one agent per `TARGETS[]` entry, all in one message, each
+`NODE_ID=coder`, each in that entry's worktree with that entry's feedback items and `plan`.
 
 **The coder agent invokes `<SKILL:coder>` and nothing else.** That skill reaches `tdd`,
 `code-quality`, and `references/coder-contracts.md` itself; naming them in the dispatch would be a
 second source of truth for what the skill already owns (Invariant 6). Pass the phase file — that is
-what puts the skill in pipeline mode and makes the phase e2e runner report mandatory.
+what puts the skill in pipeline mode and makes the phase e2e runner report mandatory. A spec dir
+with no phase file puts it in review-fix mode instead, where it owes no report.
 
 **Its first action is invoking `<SKILL:coder>` — before any Read or Grep.** The skill and its
 contracts shape the whole phase; an agent that explores first is working before it knows the rules.
@@ -76,8 +79,9 @@ contracts shape the whole phase; an agent that explores first is working before 
 **Pass:**
 - Design record `.harness/<SPEC_NAME>/design.md` (when the full flow ran), plan
   `.harness/<SPEC_NAME>/plan.md` (extracted from plan.html), phase file
-  `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md`
-- E2E runner report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-e2e.json`
+  `.harness/<SPEC_NAME>/phases/phase-<PHASE_N>.md` — **resumed:** the caller's feedback stands in
+  for the phase file, and the plan is the original run's
+- E2E runner report path: `.harness/<SPEC_NAME>/phase-<PHASE_N>-e2e.json` — phases only
 - The `PACKAGES` entry this phase's work sits under, and `ENVIRONMENT` — no phase file says which
   unit or which stack it belongs to
 - Dashboard: `HARNESS_DIR=<HARNESS_DIR>`, `NODE_ID=<phase-node-id>`, `DAG_SCRIPT=<DAG_SCRIPT>`
@@ -85,12 +89,13 @@ contracts shape the whole phase; an agent that explores first is working before 
 **Then, verbatim — how to orient in this run:**
 
 ```
-Request every file and call site your phase file names in a single tool call block. Extra
-calls in a round are nearly free; a round is not. Orientation is done when every file the
-phase names has been read — in that sweep, not one round each.
+Request every file and call site your input names in a single tool call block. Extra calls
+in a round are nearly free; a round is not. Orientation is done when every file the input
+names has been read — in that sweep, not one round each.
 ```
 
-**Return:** files created/modified, test counts, phase completed or blocked (and why).
+**Return:** files created/modified, test counts, phase completed or blocked (and why). **Resumed:**
+each feedback item's disposition too.
 
 The orchestrator parses the phase e2e runner report itself — do not take the agent's word for it.
 
@@ -103,9 +108,19 @@ The orchestrator parses the phase e2e runner report itself — do not take the a
 
 Tell the agent to run them in order and stop on the first failure.
 
+**On a resumed run, trace the blast radius before dispatching** — follow
+`skills/rework/references/blast-radius.md`, which traces per entry and only where that entry holds
+a prior run. Its in-radius list replaces the plan below as `<SKILL:functional-verify>`'s requirement
+enumeration, and is the run's whole scope: a rework spec dir carries no feature doc.
+
+One sub-agent takes the whole `TARGETS[]` set. Give it every entry's worktree, spec dir, `packages`
+and traced ids, and tell it which entry is primary: `<SKILL:quality-gate>` runs per entry against
+that entry's own `baseline.json` and config, and a BLOCKED on any entry blocks the run.
+
 **Pass:**
 - Design record `.harness/<SPEC_NAME>/design.md` (when the full flow ran), plan
-  `.harness/<SPEC_NAME>/plan.md`, phase files `.harness/<SPEC_NAME>/phases/phase-*.md`
+  `.harness/<SPEC_NAME>/plan.md`, phase files `.harness/<SPEC_NAME>/phases/phase-*.md` —
+  **resumed:** these live in the original spec dir, as does the prior `proof-report.html`
 - Phase e2e runner reports `.harness/<SPEC_NAME>/phase-*-e2e.json`, verification output dir
   `.harness/<SPEC_NAME>/verification/`
 - Baseline `.harness/<SPEC_NAME>/baseline.json`, harness dir

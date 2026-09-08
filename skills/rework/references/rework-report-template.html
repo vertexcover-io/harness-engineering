@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rework Report</title>
+
+<!-- ==========================================================================
+     REWORK REPORT · fill the JSON island below, change nothing else.
+     One page, read top to bottom, no navigation. Omit any key you have
+     nothing for and its section disappears.
+
+     ORDER ON THE PAGE
+       bar       title and verdict
+       header[]  Task, PR, Reason for rework, Verification, Fix.
+       summary   the TLDR: what came back, what got fixed, what is left.
+                 2 to 3 short paragraphs.
+       items[]   one card per comment, everything about it inside the card.
+                 The first opens, the rest collapse to their header and the
+                 first line of `said`.
+       caveats[] optional. Only what a reader has to act on.
+
+     TOP LEVEL
+       title      the ticket id and the word rework, short
+       verdict    PASS | ATTENTION | FAIL, the badge in the bar
+       header[]   {label,value,href} in this order: Task, PR, Reason for
+                  rework, Verification, Fix. PR names every repo. Fix is the
+                  count of comments fixed over comments received, per repo.
+       summary    2 to 3 paragraphs. What the reviewer asked, what changed,
+                  what is still open, the commit sha, and whether it is pushed.
+       caveats[]  {title,detail,href} optional. One entry per thing a reader
+                  has to act on or know before they trust the run: partial
+                  proof, a red baseline, work left open.
+
+     ITEM · everything a developer needs about one comment
+       n            the item's number, counting from 1
+       source       who it came from: the reviewer, the PR and the comment id
+       sourceHref   link straight to that comment
+       said         their words, verbatim
+       where        the file and line they wrote it against
+       context      {from,code,mark} the code that is there NOW.
+                    from  the first line number in code, code the excerpt,
+                    mark  the line to highlight.
+       verdict      valid | stale | out-of-scope | wrong
+       disposition  applied | deferred | dropped  (the coloured badge)
+       why          the reasoning from their comment to that outcome. Its
+                    heading follows `verdict`, so write the answer to that
+                    question and nothing else:
+                      valid         "Why this is an issue"
+                      wrong         "Why this is not an issue"
+                      stale         "Why this no longer applies"
+                      out-of-scope  "Why this is not for this ticket"
+                    On a valid item, say what the fix does about it. Name the
+                    other sites carrying the same defect here too.
+       changes[]    {file,diff}  file is "path:line-range", diff is unified
+                    text with + and - line prefixes. Omit when nothing changed.
+       proof        {command,result} the test that now covers it
+       followUp     what a deferred item needs, and from whom
+
+     LINKS
+       Only an external URL becomes a link. `href` and `[text](url)` are
+       ignored unless they start http:// or https://.
+       Link every commit, PR and ticket. Write a path to a local file as
+       `code` instead.
+
+     `code` and **bold** work in every prose field.
+     ========================================================================== -->
+
+<script type="application/json" id="report-data">
+{
+  "title": "<ticket-id> rework",
+  "verdict": "ATTENTION",
+  "header": [
+    {
+      "label": "Task",
+      "value": "<ticket-id> — <what the original ticket did, one line>",
+      "href": "<ticket url, omit the key when there is none>"
+    },
+    {
+      "label": "PR",
+      "value": "<Repo #N>, one entry per repo",
+      "href": "https://github.com/<REPOSITORY>/pull/<N>"
+    },
+    {
+      "label": "Reason for rework",
+      "value": "Fix code review comments"
+    },
+    {
+      "label": "Verification",
+      "value": "`verification/proof-report.html`"
+    },
+    {
+      "label": "Fix",
+      "value": "<n>/<m> comments fixed in <repo>. <n> deferred, <n> dropped."
+    }
+  ],
+  "summary": "<Paragraph 1: what the reviewer asked for and what changed. Name the files and the counts.>\n\n<Paragraph 2: what is still open and who decides.>\n\n<Paragraph 3: the commit sha, linked, and whether it is pushed.>",
+  "items": [
+    {
+      "n": "1",
+      "source": "Reviewer, PR #<N> comment <comment-id>",
+      "sourceHref": "https://github.com/<REPOSITORY>/pull/<N>#discussion_r<comment-id>",
+      "said": "<their comment, verbatim>",
+      "where": "<path/to/file.ts:88>",
+      "context": {
+        "from": 84,
+        "mark": 88,
+        "code": "<the lines that are there now, starting at `from`>"
+      },
+      "verdict": "valid",
+      "disposition": "applied",
+      "why": "<Why this is an issue: what breaks, and what the fix does about it. Name the other sites carrying the same defect here too.>",
+      "changes": [
+        {
+          "file": "<path/to/file.ts:88-91>",
+          "diff": "- <the line as it was>\n+ <the line as it is>"
+        }
+      ],
+      "proof": {
+        "command": "<the test command>",
+        "result": "<its output, trimmed to the line that settles it>"
+      }
+    },
+    {
+      "n": "2",
+      "source": "Reviewer, PR #<N> comment <comment-id>",
+      "sourceHref": "https://github.com/<REPOSITORY>/pull/<N>#discussion_r<comment-id>",
+      "said": "<their comment, verbatim>",
+      "where": "<path/to/other.ts:12>",
+      "verdict": "out-of-scope",
+      "disposition": "deferred",
+      "why": "<Why this is not for this ticket: what makes it real but another ticket's work.>",
+      "followUp": "<what has to happen, and who decides>"
+    }
+  ],
+  "caveats": [
+    {
+      "title": "<what a reader has to act on or know before trusting this run>",
+      "detail": "<what to do about it. Omit the whole caveats key when there is nothing.>"
+    }
+  ]
+}
+</script>
+
+<style>
+:root {
+  --bg:      #F4F6F8;
+  --pane:    #FFFFFF;
+  --bar:     #FFFFFF;
+  --line:    #DFE4EA;
+  --line-2:  #EDF0F3;
+  --fg:      #16202B;
+  --fg-2:    #59677A;
+  --fg-3:    #8A97A6;
+  --accent:  #2F5BD0;
+  --pass:    #16794C;
+  --fail:    #C03221;
+  --hold:    #96660A;
+  --skip:    #6B7885;
+  --rail:    #FAFBFC;
+  --pass-w:  #E7F4ED;
+  --hold-w:  #FBF2DF;
+  --pre-bg:  #171C24;
+  --pre-fg:  #D6DEE8;
+  --code-bg: #F1F4F7;
+
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Liberation Sans", Arial, sans-serif;
+  --mono: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --bar-h: 46px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151A; --pane: #1A1E25; --bar: #1A1E25;
+    --line: #2B313A; --line-2: #232830;
+    --fg: #E3E8EE; --fg-2: #98A4B3; --fg-3: #6E7C8C;
+    --accent: #7FA0FF;
+    --pass: #4FBF8B; --fail: #F1705C;
+    --hold: #E0A93B; --skip: #8895A5;
+    --rail: #15181E; --pass-w: #172B24; --hold-w: #2C2517;
+    --pre-bg: #0E1218; --pre-fg: #C6D1DE;
+    --code-bg: #232A33;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151A; --pane: #1A1E25; --bar: #1A1E25;
+  --line: #2B313A; --line-2: #232830;
+  --fg: #E3E8EE; --fg-2: #98A4B3; --fg-3: #6E7C8C;
+  --accent: #7FA0FF;
+  --pass: #4FBF8B; --fail: #F1705C;
+  --hold: #E0A93B; --skip: #8895A5;
+  --rail: #15181E; --pass-w: #172B24; --hold-w: #2C2517;
+  --pre-bg: #0E1218; --pre-fg: #C6D1DE;
+  --code-bg: #232A33;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 13.5px/1.55 var(--ui); -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+a { color: var(--accent); }
+code {
+  font: .875em/1.4 var(--mono); background: var(--code-bg);
+  padding: 1px 4px; border-radius: 3px;
+}
+
+/* bar */
+.bar {
+  position: sticky; top: 0; z-index: 20; height: var(--bar-h);
+  display: flex; align-items: center; gap: 12px; padding: 0 18px;
+  background: var(--bar); border-bottom: 1px solid var(--line);
+}
+.bar__t { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
+.bar__v {
+  font: 600 10.5px/1 var(--ui); letter-spacing: .08em; text-transform: uppercase;
+  padding: 5px 8px; border: 1px solid currentColor; border-radius: 4px;
+}
+.bar__sp { flex: 1; }
+.btn {
+  background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--fg-2); font: 11px/1 var(--ui); letter-spacing: .04em;
+  padding: 7px 10px; cursor: pointer; text-transform: uppercase;
+}
+.btn:hover { color: var(--fg); border-color: var(--fg-3); }
+
+/* page */
+.page { max-width: 940px; margin-inline: auto; padding: 26px 18px 90px; }
+
+/* header · one field per line, set large. Task first, Fix last. */
+.head { margin: 0; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.head__r {
+  display: grid; grid-template-columns: 170px 1fr; gap: 16px;
+  align-items: baseline; padding: 7px 0;
+}
+.head dt {
+  font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--fg-3); margin: 0;
+}
+.head dd { font-size: 17px; line-height: 1.45; margin: 0; }
+.head__r:first-child dd { font-size: 19px; font-weight: 600; }
+
+.summary { font-size: 15px; line-height: 1.6; max-width: 76ch; }
+.summary p { margin: 0 0 11px; }
+.summary p:last-child { margin: 0; }
+
+.sec { margin-top: 32px; }
+.sec__h {
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--fg-3); margin: 0 0 13px; display: flex; align-items: center; gap: 10px;
+}
+.sec__h::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+
+
+/* comment card · a details element, so a long report opens one at a time */
+.tally { font-size: 12.5px; color: var(--fg-2); margin: -4px 0 14px; }
+.item {
+  background: var(--pane); border: 1px solid var(--line); border-left: 3px solid var(--skip);
+  border-radius: 5px; margin-bottom: 12px; scroll-margin-top: 58px;
+}
+.item--pass { border-left-color: var(--pass); }
+.item--hold { border-left-color: var(--hold); }
+.item > summary { cursor: pointer; list-style: none; padding: 12px 16px; }
+.item > summary::-webkit-details-marker { display: none; }
+.item > summary:hover { background: var(--rail); }
+.item[open] > summary { border-bottom: 1px solid var(--line-2); }
+.item__b { padding: 4px 16px 16px; }
+.item__h { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.item__h::before { content: "\25b8"; color: var(--fg-3); font-size: 10px; flex: none; }
+.item[open] .item__h::before { content: "\25be"; }
+.item__peek {
+  margin: 5px 0 0 18px; font-size: 12.5px; line-height: 1.5; color: var(--fg-2);
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
+.item[open] .item__peek { display: none; }
+.item__n { font: 600 12px/1.5 var(--mono); color: var(--fg-3); }
+.item__src { font-size: 13px; font-weight: 650; }
+.item__src a { text-decoration: none; }
+.item__src a:hover { text-decoration: underline; }
+.item__badges { margin-left: auto; display: flex; gap: 6px; }
+.tag {
+  font: 700 9.5px/1.6 var(--ui); letter-spacing: .09em; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: 3px; padding: 1px 6px;
+}
+.tag--pass { color: var(--pass); background: var(--pass-w); }
+.tag--hold { color: var(--hold); background: var(--hold-w); }
+.tag--skip { color: var(--skip); }
+.tag--o { color: var(--fg-2); border-style: dashed; }
+
+.said {
+  border-left: 2px solid var(--line); padding: 2px 0 2px 12px;
+  margin: 12px 0 0; font-size: 14px; max-width: 86ch;
+}
+.said p { margin: 0 0 8px; }
+.said p:last-child { margin: 0; }
+
+.row { margin-top: 14px; }
+.row__l {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fg-3); margin: 0 0 6px;
+}
+.row p { margin: 0 0 9px; font-size: 13.5px; line-height: 1.55; max-width: 86ch; }
+.row p:last-child { margin: 0; }
+
+/* code blocks */
+.src { border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.src__f {
+  font: 11.5px/1.5 var(--mono); color: var(--fg-2); background: var(--rail);
+  padding: 5px 10px; border-bottom: 1px solid var(--line);
+}
+.src__b {
+  margin: 0; padding: 8px 0; background: var(--pre-bg); color: var(--pre-fg);
+  font: 11.5px/1.65 var(--mono); overflow-x: auto;
+}
+.ln { display: grid; grid-template-columns: 46px 1fr; white-space: pre; }
+.ln i { color: #5C6B7E; font-style: normal; text-align: right; padding-right: 12px; user-select: none; }
+.ln--mark { background: rgba(127,160,255,.16); }
+.ln--mark i { color: #9FB6FF; }
+.ln--add { background: rgba(79,191,139,.15); }
+.ln--del { background: rgba(241,112,92,.15); }
+.cap {
+  font: 11.5px/1.6 var(--mono); background: var(--pre-bg); color: var(--pre-fg);
+  border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; white-space: pre-wrap;
+}
+.cmd { color: var(--fg-2); font: 11.5px/1.6 var(--mono); margin: 0 0 5px; }
+.cmd::before { content: "$ "; color: var(--fg-3); }
+
+/* caveats */
+.cav {
+  background: var(--pane); border: 1px solid var(--line); border-left: 3px solid var(--hold);
+  border-radius: 5px; padding: 13px 16px; margin-bottom: 11px;
+}
+.cav__t { font-size: 14.5px; font-weight: 650; margin: 0 0 6px; }
+.cav__a { font: 11px/1 var(--ui); letter-spacing: .04em; text-transform: uppercase; margin-left: 6px; }
+.cav p { margin: 0 0 8px; font-size: 13.5px; line-height: 1.55; color: var(--fg-2); max-width: 78ch; }
+.cav p:last-child { margin: 0; }
+
+@media (max-width: 640px) {
+  .bar { gap: 8px; padding: 0 12px; }
+  .bar__t { display: none; }
+  .page { padding: 16px 12px 60px; }
+  .head__r { grid-template-columns: 1fr; gap: 2px; }
+  .head dd { font-size: 16px; }
+}
+@media print {
+  .bar { position: static; }
+  .btn { display: none; }
+  .cav, .item { break-inside: avoid; }
+  .item > summary { cursor: auto; }
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <h1 class="bar__t" id="b-t"></h1>
+  <span class="bar__v" id="b-v" hidden></span>
+  <span class="bar__sp"></span>
+  <button class="btn" id="b-x" hidden>Expand all</button>
+  <button class="btn" id="b-theme" title="Toggle theme">Theme</button>
+</header>
+
+<main class="page" id="page"></main>
+
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById('report-data').textContent);
+
+  const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
+  const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  /* `code`, **bold** and [text](url) in every prose field */
+  const rich = s => esc(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  const paras = (h, s) => String(s).split(/\n\n+/).forEach(p => { const n = el('p'); n.innerHTML = rich(p); h.appendChild(n); });
+
+  /* Only an external URL becomes a link. A relative path is a local file the
+     reader opens from disk, so it renders as code, not as a dead anchor. */
+  const link = (text, href) => {
+    if (!/^https?:\/\//i.test(href || '')) { const sp = el('span'); sp.innerHTML = rich(text); return sp; }
+    const a = el('a'); a.href = href; a.innerHTML = rich(text);
+    a.target = '_blank'; a.rel = 'noopener';
+    return a;
+  };
+
+  const page = document.getElementById('page');
+
+  /* bar */
+  document.getElementById('b-t').textContent = D.title || 'Rework Report';
+  document.title = D.title || 'Rework Report';
+  if (D.verdict) {
+    const v = document.getElementById('b-v');
+    v.textContent = D.verdict;
+    v.style.color = `var(--${/^pass/i.test(D.verdict) ? 'pass' : /^fail/i.test(D.verdict) ? 'fail' : 'hold'})`;
+    v.hidden = false;
+  }
+  const root = document.documentElement;
+  document.getElementById('b-theme').addEventListener('click', () => {
+    const cur = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  });
+
+  function section(heading) {
+    const s = el('div', 'sec');
+    s.appendChild(el('p', 'sec__h', heading));
+    page.appendChild(s);
+    return s;
+  }
+
+  /* header · one field per line, large. This is what the reader came for. */
+  if ((D.header || []).length) {
+    const dl = el('dl', 'head');
+    D.header.forEach(f => {
+      const d = el('div', 'head__r');
+      d.appendChild(el('dt', null, f.label));
+      const dd = el('dd');
+      dd.appendChild(link(f.value, f.href));
+      d.appendChild(dd);
+      dl.appendChild(d);
+    });
+    page.appendChild(dl);
+  }
+
+  /* summary · the TLDR */
+  if (D.summary) {
+    const sec = section('Summary');
+    const s = el('div', 'summary');
+    paras(s, D.summary);
+    sec.appendChild(s);
+  }
+
+  /* A labelled block inside a card. `body` is a node or prose. */
+  function row(host, label, body) {
+    const r = el('div', 'row');
+    if (label) r.appendChild(el('p', 'row__l', label));
+    if (typeof body === 'string') paras(r, body); else r.appendChild(body);
+    host.appendChild(r);
+  }
+
+  /* A code excerpt with real line numbers, so `file:line` needs no lookup.
+     `from` numbers the first line; `mark` highlights the line under discussion. */
+  function excerpt(file, code, from, mark) {
+    const box = el('div', 'src');
+    box.appendChild(el('div', 'src__f')).appendChild(el('span', null, file));
+    const pre = el('pre', 'src__b');
+    String(code).replace(/\n$/, '').split('\n').forEach((line, i) => {
+      const no = from ? from + i : null;
+      const d = el('div', 'ln' + (mark && no === mark ? ' ln--mark' : ''));
+      d.appendChild(el('i', null, no == null ? '' : String(no)));
+      d.appendChild(el('span', null, line));
+      pre.appendChild(d);
+    });
+    box.appendChild(pre);
+    return box;
+  }
+
+  /* A unified diff. + and - lines carry their own background; nothing else moves. */
+  function diff(file, text) {
+    const box = el('div', 'src');
+    box.appendChild(el('div', 'src__f')).appendChild(el('span', null, file));
+    const pre = el('pre', 'src__b');
+    String(text).replace(/\n$/, '').split('\n').forEach(line => {
+      const k = line[0] === '+' ? ' ln--add' : line[0] === '-' ? ' ln--del' : '';
+      const d = el('div', 'ln' + k);
+      d.appendChild(el('i', null, ''));
+      d.appendChild(el('span', null, line));
+      pre.appendChild(d);
+    });
+    box.appendChild(pre);
+    return box;
+  }
+
+  /* items · one card per comment. No index: the cards are the section. */
+  const ITEMS = D.items || [];
+  if (ITEMS.length) {
+    const tone = d => ({ applied: 'pass', deferred: 'hold', dropped: 'skip' }[String(d || '').toLowerCase()] || 'skip');
+
+    /* The `why` field answers a different question per verdict, so the heading
+       has to say which one. A reviewer who was wrong gets "why this is not an
+       issue"; one who was right gets "why this is an issue". */
+    const WHY_LABEL = {
+      valid: 'Why this is an issue',
+      wrong: 'Why this is not an issue',
+      stale: 'Why this no longer applies',
+      'out-of-scope': 'Why this is not for this ticket'
+    };
+    const whyLabel = it =>
+      WHY_LABEL[String(it.verdict || '').toLowerCase()] ||
+      (String(it.disposition || '').toLowerCase() === 'deferred' ? 'Why this is deferred' : 'Why');
+    const sec = section('Comments');
+
+    const n = { applied: 0, deferred: 0, dropped: 0 };
+    ITEMS.forEach(i => { const k = String(i.disposition || '').toLowerCase(); if (k in n) n[k]++; });
+    sec.appendChild(el('p', 'tally',
+      [['applied', n.applied], ['deferred', n.deferred], ['dropped', n.dropped]]
+        .filter(([, c]) => c).map(([k, c]) => c + ' ' + k).join(' · ')));
+
+    ITEMS.forEach((it, i) => {
+      const t = tone(it.disposition);
+      const card = el('details', 'item item--' + t);
+      card.id = 'item-' + it.n;
+      card.open = i === 0;
+
+      /* closed, a card shows who it is from, what it ended on, and the first
+         line of what they said, which is enough to decide whether to open it */
+      const sum = el('summary');
+      const h = el('div', 'item__h');
+      h.appendChild(el('span', 'item__n', '#' + it.n));
+      const src = el('span', 'item__src');
+      src.appendChild(link(it.source || '', it.sourceHref));
+      h.appendChild(src);
+      const b = el('div', 'item__badges');
+      if (it.verdict) b.appendChild(el('span', 'tag tag--o', it.verdict));
+      if (it.disposition) b.appendChild(el('span', 'tag tag--' + t, it.disposition));
+      h.appendChild(b);
+      sum.appendChild(h);
+      if (it.said) sum.appendChild(el('div', 'item__peek', String(it.said).replace(/[`*]/g, '').split(/\n\n/)[0]));
+      card.appendChild(sum);
+
+      const body = el('div', 'item__b');
+      if (it.said) { const q = el('div', 'said'); paras(q, it.said); body.appendChild(q); }
+
+      const c = it.context;
+      if (c && c.code) row(body, 'The code they wrote it against', excerpt(it.where || '', c.code, c.from, c.mark));
+      else if (it.where) row(body, 'Where', (() => { const p = el('p'); p.innerHTML = rich('`' + it.where + '`'); return p; })());
+
+      if (it.why) row(body, whyLabel(it), it.why);
+
+      (it.changes || []).forEach((ch, j) => row(body, j ? '' : 'What changed', diff(ch.file || '', ch.diff || '')));
+
+      if (it.proof) {
+        const w = el('div');
+        if (it.proof.command) w.appendChild(el('p', 'cmd', it.proof.command));
+        if (it.proof.result) w.appendChild(el('pre', 'cap', it.proof.result));
+        row(body, 'Proof', w);
+      }
+      if (it.followUp) row(body, 'Follow-up', it.followUp);
+
+      card.appendChild(body);
+      sec.appendChild(card);
+    });
+
+    const cards = [...sec.querySelectorAll('details.item')];
+    const x = document.getElementById('b-x');
+    x.hidden = false;
+    x.addEventListener('click', () => {
+      const open = cards.some(c => !c.open);
+      cards.forEach(c => { c.open = open; });
+      x.textContent = open ? 'Collapse all' : 'Expand all';
+    });
+
+    /* a closed details prints blank, so open every one and put them back after */
+    let reopened = [];
+    addEventListener('beforeprint', () => {
+      reopened = cards.filter(c => !c.open);
+      reopened.forEach(c => { c.open = true; });
+    });
+    addEventListener('afterprint', () => {
+      reopened.forEach(c => { c.open = false; });
+      reopened = [];
+    });
+  }
+
+  /* caveats · only what the reader has to act on */
+  if ((D.caveats || []).length) {
+    const sec = section('Read before you trust this run');
+    D.caveats.forEach(c => {
+      const box = el('div', 'cav');
+      const h = el('p', 'cav__t');
+      h.innerHTML = rich(c.title || '');
+      if (c.href) { h.appendChild(document.createTextNode(' ')); const a = link('open', c.href); a.className = 'cav__a'; h.appendChild(a); }
+      box.appendChild(h);
+      if (c.detail) paras(box, c.detail);
+      sec.appendChild(box);
+    });
+  }
+})();
+</script>
+</body>
+</html>
