@@ -93,19 +93,17 @@ export const parseArgs = (argv: readonly string[]): Args => {
 };
 
 const CONFIG_FILE = "orchestrate.config.json";
-const DOTENV_FILE = ".env.local";
+type ConfigFile = {
+  readonly notifier?: { readonly enabled?: boolean; readonly provider?: string };
+  readonly env?: Readonly<Record<string, string>>;
+};
 
-const readDotenv = (dir: string): Record<string, string> => {
+const readEnvFile = (dir: string, name: string): Record<string, string> => {
   try {
-    return parseEnv(readFileSync(join(dir, DOTENV_FILE), "utf8")) as Record<string, string>;
+    return parseEnv(readFileSync(join(dir, name), "utf8")) as Record<string, string>;
   } catch {
     return {};
   }
-};
-
-type NotifierBlock = {
-  readonly notifier?: { readonly enabled?: boolean; readonly provider?: string };
-  readonly env?: Readonly<Record<string, string>>;
 };
 
 export const loadConfig = (cwd: string = process.cwd()): Config | null => {
@@ -128,14 +126,15 @@ export const loadConfig = (cwd: string = process.cwd()): Config | null => {
     throw new NotifierError(`${CONFIG_FILE} not found at ${repoRoot}. Run setup-harness to create it.`);
   }
 
-  const { notifier, env: fromConfig } = JSON.parse(readFileSync(configFile, "utf8")) as NotifierBlock;
+  const { notifier, env } = JSON.parse(readFileSync(configFile, "utf8")) as ConfigFile;
   if (notifier?.enabled !== true) return null;
 
   return {
     provider: notifier.provider ?? "",
-    // .env.local wins: the config file is committed, so a local, uncommitted
-    // value has to be able to override the shared one.
-    secrets: { ...process.env, ...fromConfig, ...readDotenv(mainCheckout) } as Record<string, string>,
+    secrets: {
+      ...readEnvFile(mainCheckout, ".env.local"),
+      ...(env ?? {}),
+    } as Record<string, string>,
   };
 };
 
@@ -181,8 +180,7 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
     const value = secrets[key];
     if (!value) {
       throw new NotifierError(
-        `notifier: provider "slack" needs ${key}. Set it in the "env" block of ${CONFIG_FILE}, ` +
-          `add it to ${DOTENV_FILE} at the repo root, or export it.`,
+        `notifier: provider "slack" needs ${key}. Add it to the env block in ${CONFIG_FILE}, or to .env.local at the main checkout root.`,
       );
     }
     return value;

@@ -40,9 +40,12 @@
     }
   },
 
-  "notifier": { "enabled": true, "provider": "slack" },
-  "env": { "SLACK_CHANNEL_ID": "C0123456789" },
+  "env": {
+    "SLACK_CHANNEL_ID": "C09XXXXXXXX",
+    "SLACK_MEMBER_ID": "U09XXXXXXXX"
+  },
 
+  "notifier": { "enabled": true, "provider": "slack" },
   "samskara": { "enabled": true },
 
   "hooks": {

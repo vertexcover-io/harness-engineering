@@ -4,8 +4,8 @@ Required, at the **repo root**, committed. Being tracked, it is present at the w
 too — either path reads the same content. Orchestrate reads it once during Stage 0 and passes the
 result forward. A worked example lives in `references/orchestrate.config.example.json`.
 
-One file carries seven things: this project's **doctor**, its **stage overrides**, its **commands**, its
-**environments**, its **notifier**, its **extensions**, and its **hooks**. It is self-describing — read it
+One file carries eight things: this project's **doctor**, its **stage overrides**, its **commands**, its
+**environments**, its **env**, its **notifier**, its **extensions**, and its **hooks**. It is self-describing — read it
 directly. Nothing here restates what its keys mean, and a command it does not name is a command
 there is nothing to run for.
 
@@ -144,6 +144,23 @@ in `references/stage-prompts.md`) and, for **gated** stages, MUST emit the same 
 markers/artifacts so orchestrate can parse the result — a missing verdict is treated as a stage
 FAILURE/BLOCKED.
 
+## Env
+
+Optional. A flat map of name to value, read by the scripts that need it.
+
+```json
+"env": { "SLACK_CHANNEL_ID": "C09XXXXXXXX", "SLACK_MEMBER_ID": "U09XXXXXXXX" }
+```
+
+Two sources only, highest first: this block, then `.env.local` at the **main checkout** root, so a
+worktree resolves the same values as the checkout it came from. A missing file is not an error.
+Neither `.env` nor the process environment is read. `.env.local` is the fallback and belongs in
+`.gitignore`: put a developer-specific value there and it applies wherever this block is silent.
+
+This file is committed, so keep tokens and other secrets out of it and in `.env.local`. The `env`
+block is the right home for the shared, non-secret half — a channel id, say — and it wins per key,
+so a value it names is not overridable locally.
+
 ## Notifier
 
 Optional. Absent, or `enabled: false`, and the pipeline sends nothing.
@@ -152,26 +169,8 @@ Optional. Absent, or `enabled: false`, and the pipeline sends nothing.
 "notifier": { "enabled": true, "provider": "slack" }
 ```
 
-`provider` names one entry in the provider table in `skills/_shared/notify.ts`. Its keys come from the
-optional top-level `env` block below, from `.env.local` at the main repo root, or from the
-environment.
-
-## Env
-
-Optional. A flat map of the keys the notifier and hooks read.
-
-```json
-"env": { "SLACK_CHANNEL_ID": "C0123456789" }
-```
-
-Three sources are merged per key, and **`.env.local` wins**: `process.env` first, then this block,
-then `.env.local` at the main repo root. A key present in only one source is used as-is; a key in
-more than one resolves to the last source that defines it. A worktree reads the main checkout's
-`.env.local`, so every worktree of a repo resolves the same keys.
-
-This file is committed, so keep tokens and other secrets in `.env.local`, which is not. The `env`
-block is the right home for the shared, non-secret half — like a channel id — and `.env.local` can
-override any of it locally without touching a tracked file.
+`provider` names one entry in the provider table in `skills/_shared/notify.ts`. Each provider reads
+its own keys through the resolution order in `## Env` above.
 
 Every event fails soft, `run-started` included: the notifier rides the pipeline as a default hook
 with `required` unset, so a provider outage never halts a stage — `fire` records the failure in its
@@ -223,8 +222,9 @@ A required hook's failure is `halt`: the caller pauses, and exit stays 0, becaus
 the stage. `references/events.md` has the table. `hooks.ts doctor` validates the block and exits
 1 on any FAIL row; setup-harness runs it.
 
-A hook reads its own keys the same way the notifier does — the `env` block, `.env.local`, or the
-environment. This file is committed, so keep secrets in `.env.local`.
+A hook entry carries no keys of its own. A `cmd` hook runs as its own process and inherits only the
+environment the harness was launched with — the `env` block above is not exported to it. A script
+that needs a value reads this file for itself, exactly as `notify.ts` does.
 
 ## When the file is missing
 
