@@ -18,9 +18,10 @@ verified fix. It reads the feedback, judges each item, and hands the ones worth 
 
 ## Rules
 
-**Ask whatever you need, whenever you need it, up to Step 5.** One `AskUserQuestion` per question,
-and act on the answer before asking the next: an answer can change the approach. Once Step 5 invokes
-`orchestrate`, stop asking and stop pausing: the run is orchestrate's.
+**Ask whatever you need, whenever you need it, up to and including the Step 5 checkpoint.** One
+`AskUserQuestion` per question, and act on the answer before asking the next: an answer can change
+the approach. Once Step 6 invokes `orchestrate`, stop asking and stop pausing: the run is
+orchestrate's.
 
 **Events.** Fire them as `skills/orchestrate/references/events.md` defines, from the primary entry's
 worktree: `question-pending` before each `AskUserQuestion`, `run-interrupted` before any row of the
@@ -62,7 +63,7 @@ Per `PRS` entry, or for the launch repo when `PRS` is empty:
 4. Create `.harness/<spec_name>/`, delete `.harness/current-phase`, and copy no prior document in: a
    `plan.md` there puts the whole feature back into verification's scope.
 
-Record per entry, for Step 5:
+Record per entry, for Step 6:
 
 | Field | Value |
 |---|---|
@@ -88,24 +89,44 @@ in its own PR's checkout.
 **QA.** Reproduce the reported issue as a failing test first. That **red** test is the proof the
 report was real, and going green is the proof the fix landed.
 
-## Step 5 — Run the pipeline
+## Step 5 — The checkpoint
 
 **First, collect Step 3's baselines**: wait for each sub-agent, then check its `baseline.json` with
 the join command in `skills/orchestrate/SKILL.md` Stage 0. Nothing may still be unresolved either:
-an entry with no `plan`, a comment triage could not settle. A plan is required, so ask for it rather
-than inferring one.
+an entry with no `plan`, a comment triage could not settle.
 
-Then invoke `orchestrate` **once**, via `Skill`, in this conversation, entry stage `coder`. Pass
+Then present the plan inline, opening with one sentence saying this is the plan to review and
+nothing runs until they approve it. Every sentence per the writing style:
+
+1. **Ticket** — `TICKET_REF`, where the feedback came from, how many comments were read, and each
+   PR in scope with the branch it is checked out on. Name every PR dropped as merged, and every
+   `plan` you inferred rather than found, as *(inferred — confirm)*.
+2. **What will change** — every `valid` item as `path:line`, what the reviewer asked in one
+   sentence, what to change, and the test that shows it done.
+3. **What will not** — every other item in one line with its verdict and reason.
+4. **Risks** — blast radius per `references/blast-radius.md`, one line each. Omit when none.
+5. **Next** — one sentence: orchestrate runs from entry stage `coder` and owns every stage after.
+
+Then `AskUserQuestion`: header `Approve?`, options `Approve — run the pipeline (Recommended)` /
+`Adjust scope` / `Revise`. **Adjust scope** re-triages only the items the user names, per Step 4.
+**Revise** corrects a plan, a target, or a fix's approach. Either one re-presents and asks again.
+
+When the **same item** is revised twice, stop and ask about it directly — its verdict is unresolved,
+not its wording. If adjusting scope empties the `valid` set, that is the **No feedback resolved**
+halt. In `--auto`, skip the question and proceed.
+
+## Step 6 — Run the pipeline
+
+Invoke `orchestrate` **once**, via `Skill`, in this conversation, entry stage `coder`. Pass
 `TARGETS[]`, one entry per Step 2 checkout, primary first, carrying `repository`, `worktree`, `branch`,
 `spec_name`, `plan`, `base_sha` and `packages`.
 
-With each entry pass its **`valid` items only**, inline, each one as: `path:line`, what the reviewer
-asked in one sentence, what to change, and the test that shows it done. A comment with any other
-verdict never reaches orchestrate.
+With each entry pass its **`valid` items only**, inline, exactly as Step 5 presented them. A comment
+with any other verdict never reaches orchestrate.
 
 Orchestrate owns every stage from here. Report what it returns.
 
-## Step 6 — Write the report
+## Step 7 — Write the report
 
 Write `rework-report.html` into the primary entry's `.harness/<spec_name>/` once the pipeline
 returns, following `references/rework-report-guide.md`. It is this skill's only artifact.
@@ -123,4 +144,5 @@ Each item's `sourceHref` is
 | No checkout | The worktree skill could not produce that repository on that branch — name both |
 | Baseline unusable | An entry's `baseline.json` is missing, unparseable, or carries no metrics |
 | Plan unresolved | You asked, and an entry holding `valid` items still has no plan |
-| No feedback resolved | Step 4 produced no `valid` item anywhere — say what it read |
+| No feedback resolved | Triage produced no `valid` item anywhere — say what it read |
+| Checkpoint not approved | The user declined the run at Step 5 rather than revising — say what was presented |
