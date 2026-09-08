@@ -11,6 +11,7 @@ dev-docs
 .env
 .env.local
 .env.harness
+.env.local
 
 # Python bytecode
 __pycache__/

@@ -41,6 +41,26 @@ Every file below is one hop from here. Read the one whose condition you are in �
 
 ## Initialization (do these first, in order, before anything else)
 
+### Resume
+
+When the invocation supplies `TARGETS[]` and an entry stage, this run **resumes**.
+`references/config.md` owns that structure, the primary entry, and which stages run per entry.
+
+- Run Step 1's doctor for its `VERDICT` only. The caller's feedback is `TASK_CONTEXT`.
+- Skip Step 2 and Stage 0. `cd` to the primary entry's `worktree` — the caller built every workspace
+  and seeded every harness dir already.
+- **Never re-baseline.** Each entry's `baseline.json` measures its repo before this work, the bar
+  this run still has to clear, and the caller has already joined it.
+- Build the DAG from the rework init block in `references/dag-commands.md`, in the primary worktree.
+- Start at the entry stage and run every stage after it. `<SPEC_NAME>` in a stage below means the
+  entry's `spec_name`.
+- Scope every stage's diff `<base_sha>..HEAD` **in that entry's own worktree** — Stage 4 reviews this
+  run's fix, not the whole feature again. Its `--plan` is that entry's `plan`; a rework `spec_name`
+  holds no plan of its own.
+
+A resumed run has no Stage 1 and therefore no gate: it runs from the entry stage through Stage 7
+without pausing.
+
 ### Step 1: Run the Doctor and Detect the Input
 
 One script does both. A stale harness runs stale contracts and a missing tool fails a stage half an hour in, so the check runs **before the worktree exists** — a halt here leaves nothing to clean up. Pass the raw argument through, `--auto` and all:
@@ -225,6 +245,10 @@ The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>
 - Plan `--plan .harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
 - `--output .harness/<SPEC_NAME>/review/review.md`
 
+**Resumed:** one review per `TARGETS[]` entry, each scoped `--commits <base_sha>..HEAD` in that
+entry's worktree against that entry's `plan`, all writing into the primary's `review/` as
+`review-<spec_name>.md`. A `REQUEST CHANGES` on any entry is the run's verdict.
+
 `set-status code-review done`.
 
 **Verdict parsing:** match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
@@ -275,6 +299,11 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
    node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/scripts/upload-bundle.ts" '.harness/<SPEC_NAME>' 'harness-<SPEC_NAME>.zip'
    ```
 7. `write-report commit-pr`, `set-status commit-pr done`.
+
+**On a resumed run the PR already exists.** Skip steps 4 and 5, and run steps 2 and 3 once per
+`TARGETS[]` entry, in that entry's worktree on that entry's `branch`. An entry whose fix produced no
+change is committed nowhere and named in the run's report. Step 1's README and step 6's bundle stay
+with the primary entry.
 
 **Extract:** commits, `PR_URL`.
 
@@ -332,7 +361,7 @@ Present ONLY after Stage 6 completes, or after a genuine BLOCK/FAIL halt — nev
 ## Pipeline Complete
 
 **Task:** <TASK_CONTEXT summary>
-**Worktree:** <WORKTREE_PATH> (branch: <BRANCH_NAME>)
+**Worktree:** <WORKTREE_PATH> (branch: <BRANCH_NAME>) — resumed: one line per `TARGETS[]` entry
 
 | Stage | Result |
 |-------|--------|

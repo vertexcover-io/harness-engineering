@@ -46,7 +46,6 @@
   },
 
   "notifier": { "enabled": true, "provider": "slack" },
-
   "samskara": { "enabled": true },
 
   "hooks": {

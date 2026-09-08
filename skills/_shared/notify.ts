@@ -93,7 +93,6 @@ export const parseArgs = (argv: readonly string[]): Args => {
 };
 
 const CONFIG_FILE = "orchestrate.config.json";
-
 type ConfigFile = {
   readonly notifier?: { readonly enabled?: boolean; readonly provider?: string };
   readonly env?: Readonly<Record<string, string>>;
