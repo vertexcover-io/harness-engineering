@@ -290,20 +290,12 @@ A bug carrying neither disposition halts the pipeline. "I judged it" is not a di
 3. `git push -u origin <BRANCH_NAME>`.
 4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`. As soon as it prints the URL, fire `artifact-created --kind pr --data '{"url":"<PR_URL>"}'` (`references/events.md`).
 5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md.
-6. **Attach the spec directory to the ticket** — a zip of `.harness/<SPEC_NAME>/`, a **second**
-   attachment beside functional-verify's `verification/` zip, not a replacement. Runs after step 5 so
-   the bundle carries the README index and the PR link. Needs `ASANA_PAT` and `ASANA_WORKSPACE_GID`
-   in the environment; best-effort, prints one line and always exits 0.
-
-   ```bash
-   node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/skills/orchestrate/scripts/upload-bundle.ts" '.harness/<SPEC_NAME>' 'harness-<SPEC_NAME>.zip'
-   ```
-7. `write-report commit-pr`, `set-status commit-pr done`.
+6. `write-report commit-pr`, `set-status commit-pr done`.
 
 **On a resumed run the PR already exists.** Skip steps 4 and 5, and run steps 2 and 3 once per
 `TARGETS[]` entry, in that entry's worktree on that entry's `branch`. An entry whose fix produced no
-change is committed nowhere and named in the run's report. Step 1's README and step 6's bundle stay
-with the primary entry.
+change is committed nowhere and named in the run's report. Step 1's README stays with the primary
+entry.
 
 **Extract:** commits, `PR_URL`.
 

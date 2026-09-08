@@ -101,7 +101,7 @@ for the whole run, because it changes with the stack while the path is the thing
 `{text, url}` and its path renders under it, so a reader following the walk sees where each move landed and no path
 is written twice.
 
-**Redact what the query carries.** This report is zipped and published (`publish.md`), and a driven URL routinely
+**Redact what the query carries.** This report is read and shared beyond this run, and a driven URL routinely
 carries a live credential — an SSO `?code=`, a `?token=`, a pre-signed `X-Amz-Signature`, an `?email=`. Keep the
 parameters that select what was under test (`?period=062026`) and write the value of any auth or identity parameter
 as `<redacted>`; a scenario reached through a callback or pre-signed URL records the path alone. A session token is

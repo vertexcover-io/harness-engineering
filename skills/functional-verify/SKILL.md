@@ -155,7 +155,7 @@ capture loop and the phone replay are all there.
 moved the browser, the path it moved to. They are the scenario's `url` and its steps' `url`, and they are what lets
 a reader open the same screen you drove. A path reached by clicking comes back in the assert batch you already run,
 never a batch of its own. **Redact the value of any auth or identity parameter as `<redacted>`**: the report is
-published, and a driven URL carries live credentials more often than not.
+read and shared beyond this run, and a driven URL carries live credentials more often than not.
 
 **Every flow on the surface the change landed on is replayed on a phone**, as its own numbered scenario in the same
 session. Whether this app is meant to work on a phone at all is a project fact like any other.
@@ -274,17 +274,9 @@ gone. Write
 those as durable facts a later run can act on, not as an account of your afternoon: without them the next
 verification pays the same cost from scratch.
 
-## Step 7 — Publish, Then Clean Up
+## Step 7 — Clean Up
 
-Publish so a reviewer finds the evidence without hunting through a worktree. **Best-effort — it never fails the
-verification**; the implementation is in `references/publish.md`.
-
-**The feature's tracker** takes one attachment: a zip of the whole `verification/` folder, so the report, its frames
-and its videos all resolve once unzipped. That zip is the whole delivery; the ticket keeps the PR link, design and
-plan a human put there. Which tracker and how a branch maps to a ticket are project facts. When the config says
-`none`, is absent, or its token is unset, skip in one line.
-
-Then close the session (`agent-browser --session <SPEC_NAME> close`), remove the fixtures you created, and
+Close the session (`agent-browser --session <SPEC_NAME> close`), remove the fixtures you created, and
 **release the stack**: the teardown step of the environment you brought up, else the way the stack skill says.
 Anything already running when you arrived stays running, and **release only what you brought up**.
 
