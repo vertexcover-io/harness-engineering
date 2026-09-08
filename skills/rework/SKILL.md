@@ -2,7 +2,7 @@
 name: rework
 description: Apply QA or PR-review feedback to a ticket, across every PR it carries.
 disable-model-invocation: true
-argument-hint: "<asana-url | pr-url | prompt>"
+argument-hint: "<ticket-url | pr-url | prompt>"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestion
 ---
 
@@ -32,23 +32,18 @@ Halts table.
 
    From a PR URL: one entry, `repository` is `<owner>/<repo>`, `pr_number` follows `/pull/`.
 
-   From an Asana URL: `GID` is the last numeric path segment. Take every distinct
-   `github.com/<owner>/<repo>/pull/<n>` URL in the task's notes, stories, and attachments.
+   From a ticket URL or id: read the ticket through whatever the project uses to reach its
+   tracker, and take every distinct `github.com/<owner>/<repo>/pull/<n>` URL the ticket's own
+   text carries. Ask which command or tool reads a ticket here when the project or the
+   orchestrate config does not make it obvious.
 
-   ```bash
-   API="https://app.asana.com/api/1.0"
-   curl -s "$API/tasks/$GID?opt_fields=name,notes" -H "Authorization: Bearer $ASANA_PAT"
-   curl -s "$API/tasks/$GID/stories?opt_fields=text" -H "Authorization: Bearer $ASANA_PAT"
-   curl -s "$API/tasks/$GID/attachments?opt_fields=name,view_url" -H "Authorization: Bearer $ASANA_PAT"
-   ```
-
-2. `TICKET_REF` — from the Asana task `name`, or from the PR's branch.
+2. `TICKET_REF` — from the ticket's title, or from the PR's branch.
 
 3. Run the **Fetch** section of `references/comment-triage.md` once per `PRS` entry. It returns that
    PR's `head_branch`, whether it is merged, and its review comments.
 
 Drop a merged PR from `PRS` and name it in the report. An empty `PRS`, or one that empties here, is
-not a halt: the task's `name` and `notes` are the reported issue instead.
+not a halt: the ticket's title and body are the reported issue instead.
 
 ## Step 2 — Build the workspace
 
@@ -123,8 +118,7 @@ Each item's `sourceHref` is
 
 | Condition | Detail |
 |-----------|--------|
-| Argument is not a URL | The argument is neither an Asana task URL nor a GitHub PR URL |
-| `ASANA_PAT` unset | The argument is an Asana URL and the token is absent from the environment |
+| Ticket unreadable | The argument is not a PR URL, and asking did not produce a way to read the ticket |
 | Config missing | A `PRS` entry's repository has no `orchestrate.config.json` at its root — name it and `setup-harness`, which writes it |
 | No checkout | The worktree skill could not produce that repository on that branch — name both |
 | Baseline unusable | An entry's `baseline.json` is missing, unparseable, or carries no metrics |
