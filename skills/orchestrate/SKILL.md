@@ -188,15 +188,16 @@ Parallelism is **graph-driven**, not file-count-driven. Under vertical slicing (
 
 Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
-1. **Invoke `pipeline-setup` via `Skill` with its `setup` branch** — it owns the spec artifact directory (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
-2. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
-3. Create the directory `pipeline-setup` does not: `.harness/<SPEC_NAME>/verify-staging/`. The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
-4. **Load the config.** `orchestrate.config.json` lives at the repo root and is tracked, so it is in the worktree too. `Read` it and store it as `CONFIG`; resolve each stage's `skill`/`model` from `references/config.md`, which owns every rule about that file and none are restated here. A missing file is a halt, not a default — `pipeline-setup` reports it and names `setup-harness`.
+1. **Fire `run-started` first.** Read `references/events.md` now — not later in the run — and fire the `run-started` row before anything else in this stage. It opens the thread every later message replies to, and no other event opens one. A run that skips it scatters every message it sends.
+2. **Invoke `pipeline-setup` via `Skill` with its `setup` branch** — it owns the spec artifact directory (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
+3. Store what it returns: `RUN_ROOT`, `SPEC_NAME`, `SPEC_DIR` (`<RUN_ROOT>/.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
+4. Create the directory `pipeline-setup` does not: `.harness/<SPEC_NAME>/verify-staging/`. The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
+5. **Load the config.** `orchestrate.config.json` lives at the root the checkouts were made from — the repo root in a single-repo project, the root holding them in a multi-repo workspace. `Read` it and store it as `CONFIG`; resolve each stage's `skill`/`model` from `references/config.md`, which owns every rule about that file and none are restated here. A missing file is a halt, not a default — `pipeline-setup` reports it and names `setup-harness`.
 
    Resolve two more values here, once, and pass both in every dispatch that runs a command. No stage can infer either, and resolving them per stage is how the verify stage ends up on a different stack than the coder's e2e:
    - `PACKAGES` — the `packages` keys this run touches, from the task's repos or the worktree set.
    - `ENVIRONMENT` — the `environments` key this run drives, from the request, else `environments.default`.
-5. `set-status setup done`, `set-status baseline running`, then **dispatch the `baseline` sub-agent** (block in `references/stage-prompts.md`) and go straight to Stage 1 without waiting for it.
+6. `set-status setup done`, `set-status baseline running`, then **dispatch the `baseline` sub-agent** (block in `references/stage-prompts.md`) and go straight to Stage 1 without waiting for it.
 
 **The join.** The baseline runs while the developer answers Stage 1's questions, so every stage that reads `baseline.json` joins it first — before the Stage 3 coder dispatch, before the Stage 5 dispatch, and before planning's `implement` route hands off. That route is the one path where Stage 1 does not take minutes, and the only one that starts editing source while the suite may still be running against the same tree.
 

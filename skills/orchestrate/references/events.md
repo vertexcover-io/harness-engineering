@@ -40,6 +40,21 @@ not read the run.
 `run-started`'s ticket URL comes from `TASK_CONTEXT`; drop the ` : <ticket URL>` suffix when the
 task names no ticket.
 
+**`run-started` must be the run's first fire.** It opens the thread every later message replies to,
+and it is the only event that opens one. Fire it at Stage 0, before any other event. A later event
+that finds no thread reports:
+
+```
+notifier: no thread at <path>. Trigger run-started before any other event.
+```
+
+That message still reached the channel, and the run now threads under it — but the run started
+wrong. The error is on your line only, not in Slack. Fire `run-started` and carry on; do not resend
+the message.
+
+Pass `--spec <SPEC_NAME>` on every fire. Without it the notifier has no thread to resolve, and each
+message lands loose in a channel other runs are posting to.
+
 `--data` is checked against the event before any hook fires. A `--data` that doesn't fit —
 a `pr` with no `url`, a `questions` that isn't a list — is `invalid`: rejected with nothing
 fired, safe to fix and send again. Fields the event doesn't carry are dropped, so what a hook
@@ -93,10 +108,15 @@ The rest of the line:
 ## When a hook fails
 
 You never fire `hook-failed` — the dispatcher does it for you, for every failed hook, required or
-not. Its handlers' results come back on the same line under `hook-failed:<name>`, and the notifier
-is one of them, so a broken hook reaches Slack without the pipeline doing anything. A handler that
+not. Its handlers' results come back on the same line under `hook-failed:<name>`. A handler that
 fails while handling `hook-failed` is recorded and dropped; the event never re-enters.
 
+**Failures never reach the channel.** The notifier does not handle `hook-failed`: a failure is
+yours to read on the line `fire` prints, under `results`. What reaches Slack is the run itself —
+started, each stage, questions, completion — for people who are not watching this terminal.
+
 There is no thread id to carry between commands — the old `<THREAD>` bookkeeping is gone. The
-notifier hook persists it itself, in `.harness/<SPEC_NAME>/hooks/thread`, and reads it back on
-every later fire.
+notifier hook persists it itself, in `<RUN_ROOT>/.harness/<SPEC_NAME>/hooks/thread`, and reads it
+back on every later fire. `RUN_ROOT` is the multi-repo workspace holding this run when there is one,
+else the repo root, so a fire from any checkout in the workspace resolves the same thread. Fire from
+wherever the stage left you; you never need to `cd` back to open the thread.

@@ -2,9 +2,10 @@
 
 import { execFileSync, execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { formatMessage, loadConfig, resolveProvider } from "./notify.ts";
+import { findConfigFile, formatMessage, loadConfig, NotifierError, resolveProvider } from "./notify.ts";
 import type { Args, HookFailure, PendingQuestion, Provider } from "./notify.ts";
 import { readRunSessionId } from "./collect-run-info.ts";
 import { containedPath, spawnRunner, uploadStageArtifacts } from "./samskara.ts";
@@ -54,6 +55,7 @@ export type PayloadBase = {
   readonly spec?: string;
   readonly branch: string;
   readonly repoRoot: string;
+  readonly runRoot: string;
   readonly artifactDir?: string;
 };
 
@@ -182,7 +184,6 @@ export type HooksConfig = {
 };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
-const CONFIG_FILE = "orchestrate.config.json";
 const SELF = fileURLToPath(import.meta.url);
 const NOTIFIER_EVENTS: ReadonlySet<string> = new Set([
   "run-started",
@@ -191,21 +192,39 @@ const NOTIFIER_EVENTS: ReadonlySet<string> = new Set([
   "question-pending",
   "run-interrupted",
   "run-completed",
-  "hook-failed",
 ]);
 
-const findRepoRoot = (cwd: string): string => {
+const gitRoots = (cwd: string): { repoRoot: string; mainCheckout: string } => {
   try {
     const lines = execFileSync(
       "git",
       ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
       { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     ).trim().split("\n");
-    return lines[0] ?? cwd;
+    return { repoRoot: lines[0] ?? cwd, mainCheckout: dirname(lines[1] ?? cwd) };
   } catch {
-    return cwd;
+    return { repoRoot: cwd, mainCheckout: cwd };
   }
 };
+
+const findRepoRoot = (cwd: string): string => gitRoots(cwd).repoRoot;
+
+export const WORKSPACE_MARKER = ".harness-workspace";
+
+const findWorkspaceRoot = (cwd: string): string | null => {
+  const stop = homedir();
+  let dir = resolve(cwd);
+  while (dir !== stop) {
+    if (existsSync(join(dir, WORKSPACE_MARKER))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+};
+
+export const findRunRoot = (cwd: string, repoRoot: string): string =>
+  findWorkspaceRoot(cwd) ?? repoRoot;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -220,9 +239,9 @@ const toHooksBlock = (raw: Record<string, unknown>): Record<string, readonly Raw
 };
 
 export const loadHooks = (cwd: string): HooksConfig => {
-  const repoRoot = findRepoRoot(cwd);
-  const configFile = join(repoRoot, CONFIG_FILE);
-  if (!existsSync(configFile)) return { hooks: {}, raw: {}, repoRoot };
+  const { repoRoot, mainCheckout } = gitRoots(cwd);
+  const configFile = findConfigFile(repoRoot, mainCheckout);
+  if (configFile === null) return { hooks: {}, raw: {}, repoRoot };
   try {
     const raw = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
     return { hooks: toHooksBlock(raw), raw, repoRoot };
@@ -243,13 +262,15 @@ export const buildPayload = (flags: FireFlags, repoRoot: string, cwd: string): P
     branch = "";
   }
 
+  const runRoot = findRunRoot(cwd, repoRoot);
   const base: PayloadBase = {
     ...(flags.stage !== undefined ? { stage: flags.stage } : {}),
     ...(flags.result !== undefined ? { result: flags.result } : {}),
     ...(flags.spec !== undefined ? { spec: flags.spec } : {}),
     branch,
     repoRoot,
-    ...(flags.spec !== undefined ? { artifactDir: join(repoRoot, ".harness", flags.spec) } : {}),
+    runRoot,
+    ...(flags.spec !== undefined ? { artifactDir: join(runRoot, ".harness", flags.spec) } : {}),
   };
 
   const parsed = parseData(flags, base);
@@ -573,7 +594,7 @@ const ARTIFACT = {
 
 // A base for the parse call parseFireArgv makes purely to reject bad --data — its value is
 // thrown away, and no field of the base is involved in any check.
-const PARSE_ONLY_BASE: PayloadBase = { branch: "", repoRoot: "" };
+const PARSE_ONLY_BASE: PayloadBase = { branch: "", repoRoot: "", runRoot: "" };
 
 const parseData = (flags: FireFlags, base: PayloadBase): Parsed<Payload> => {
   const d = flags.data ?? {};
@@ -636,13 +657,15 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
-const isUploadableFile = (repoRoot: string, path: string): boolean => {
-  const contained = containedPath(repoRoot, path);
-  if (contained === null) return false;
+// Returns the absolute path to upload: a stage names its artifacts relative to the run root, and
+// the fire can come from any checkout in it, so the resolved path is what the uploader must read.
+const uploadableFile = (runRoot: string, path: string): string | null => {
+  const contained = containedPath(runRoot, path);
+  if (contained === null) return null;
   try {
-    return statSync(contained).isFile();
+    return statSync(contained).isFile() ? contained : null;
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -656,14 +679,16 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
 
   const threadFile = payload.artifactDir === undefined ? null : join(payload.artifactDir, "hooks", "thread");
   const starting = payload.event === "run-started";
-  // No thread file yet reads as unthreaded — today's behavior for a run with no prior thread.
-  const thread =
-    !starting && threadFile !== null && existsSync(threadFile) ? readFileSync(threadFile, "utf8").trim() : null;
+  const recorded =
+    !starting && threadFile !== null && existsSync(threadFile) ? readFileSync(threadFile, "utf8").trim() : "";
+  const thread = recorded === "" ? null : recorded;
+  const orphaned = !starting && payload.event !== "hook-failed" && thread === null;
   const artifacts =
     payload.event === "stage-completed"
-      ? (payload.data.artifacts ?? [])
-          .map((a) => a.path)
-          .filter((path) => isUploadableFile(payload.repoRoot, path))
+      ? (payload.data.artifacts ?? []).flatMap((a) => {
+          const file = uploadableFile(payload.runRoot, a.path);
+          return file === null ? [] : [file];
+        })
       : [];
 
   const args: Args = {
@@ -688,10 +713,20 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
 
   // Threading is self-managed: run-started writes the returned ts, every later event reads it.
   // A re-run overwrites the file, so each run threads fresh.
-  if (starting && ts !== null && threadFile !== null) {
+  if ((starting || orphaned) && ts !== null && threadFile !== null) {
     mkdirSync(dirname(threadFile), { recursive: true });
     writeFileSync(threadFile, ts);
   }
+
+  if (orphaned) {
+    throw new NotifierError(
+      threadFile === null
+        ? `--spec is absent. Pass --spec on every fire. See references/events.md.`
+        : `no thread at ${threadFile}. Trigger run-started before any other event. ` +
+          `See references/events.md.`,
+    );
+  }
+
   return ts ?? "sent";
 };
 
@@ -707,7 +742,7 @@ export const samskaraHook = async (
 ): Promise<string> => {
   const result = uploadStageArtifacts(
     {
-      repoRoot: payload.repoRoot,
+      runRoot: payload.runRoot,
       ...(payload.artifactDir === undefined ? {} : { artifactDir: payload.artifactDir }),
       artifacts: payload.data.artifacts ?? [],
     },
@@ -1092,9 +1127,13 @@ const runDoctorCommand = (cwd: string): number => {
 export const main = async (argv: readonly string[], deps: FireDeps = productionDeps()): Promise<number> => {
   const [command, ...rest] = argv;
   if (command === "doctor") return runDoctorCommand(deps.cwd);
+  if (command === "run-root") {
+    process.stdout.write(`${findRunRoot(deps.cwd, findRepoRoot(deps.cwd))}\n`);
+    return 0;
+  }
 
   if (command !== "fire") {
-    return invalid(`unknown command "${command ?? ""}". Supported: fire, doctor.`);
+    return invalid(`unknown command "${command ?? ""}". Supported: fire, run-root, doctor.`);
   }
 
   let flags: FireFlags;

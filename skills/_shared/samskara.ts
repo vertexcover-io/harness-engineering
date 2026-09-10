@@ -21,7 +21,7 @@ export type UploadResult = {
 export type StageArtifact = { readonly name: string; readonly path: string };
 
 export type UploadInput = {
-  readonly repoRoot: string;
+  readonly runRoot: string;
   readonly artifactDir?: string;
   readonly artifacts: readonly StageArtifact[];
 };
@@ -73,7 +73,7 @@ const pruneNested = (paths: readonly string[]): readonly string[] => {
 export const uploadStageArtifacts = (input: UploadInput, deps: UploadDeps): UploadResult => {
   const paths = pruneNested(
     input.artifacts
-      .map((artifact) => containedPath(input.repoRoot, artifact.path))
+      .map((artifact) => containedPath(input.runRoot, artifact.path))
       .filter((path): path is string => path !== null)
       .filter(deps.exists),
   );
@@ -92,7 +92,7 @@ export const uploadStageArtifacts = (input: UploadInput, deps: UploadDeps): Uplo
     session,
     ...paths,
     "--base-dir",
-    realOrSelf(input.repoRoot),
+    realOrSelf(input.runRoot),
   ]);
   if (result.exit !== 0) {
     throw new Error(`samskara upload failed (exit ${result.exit}): ${result.stderr.trim() || result.stdout.trim()}`);

@@ -2,6 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
@@ -106,6 +107,23 @@ const readEnvFile = (dir: string, name: string): Record<string, string> => {
   }
 };
 
+// A checkout inside a multi-repo workspace is its own repo with no config of its own — the run's
+// config sits at the root the checkouts were cloned into. Walk up from the main checkout to reach
+// it, after honouring a config the checkout does carry.
+export const findConfigFile = (repoRoot: string, mainCheckout: string): string | null => {
+  const own = join(repoRoot, CONFIG_FILE);
+  if (existsSync(own)) return own;
+  let dir = mainCheckout;
+  while (dir !== homedir()) {
+    const candidate = join(dir, CONFIG_FILE);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+};
+
 export const loadConfig = (cwd: string = process.cwd()): Config | null => {
   let roots: string[] = [];
   try {
@@ -121,9 +139,9 @@ export const loadConfig = (cwd: string = process.cwd()): Config | null => {
   const repoRoot = roots[0] ?? "";
   const mainCheckout = dirname(roots[1] ?? "");
 
-  const configFile = join(repoRoot, CONFIG_FILE);
-  if (!existsSync(configFile)) {
-    throw new NotifierError(`${CONFIG_FILE} not found at ${repoRoot}. Run setup-harness to create it.`);
+  const configFile = findConfigFile(repoRoot, mainCheckout);
+  if (configFile === null) {
+    throw new NotifierError(`${CONFIG_FILE} not found at or above ${repoRoot}. Run setup-harness to create it.`);
   }
 
   const { notifier, env } = JSON.parse(readFileSync(configFile, "utf8")) as ConfigFile;
@@ -190,7 +208,7 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
   const channel = need("SLACK_CHANNEL_ID");
   const memberId = secrets["SLACK_MEMBER_ID"] ?? "";
   const thread = (msg: Message): Record<string, string> =>
-    msg.threadRef === null ? {} : { thread_ts: msg.threadRef };
+    msg.threadRef ? { thread_ts: msg.threadRef } : {};
 
   return {
     send: async (msg) => {

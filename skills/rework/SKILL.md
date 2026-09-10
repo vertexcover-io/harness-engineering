@@ -69,9 +69,9 @@ Record per entry, for Step 6:
 |---|---|
 | `worktree`, `branch` | what the worktree skill returned |
 | `packages` | the `packages` keys this PR's changed files sit under, empty for the root `commands` map |
-| `spec_name` | `<TICKET_REF>-rework-<N>`, `N` one above the highest `.harness/<TICKET_REF>-rework-*` already in that checkout |
+| `spec_name` | `<TICKET_REF>-rework-<N>`, `N` one above the highest `.harness/<TICKET_REF>-rework-*` already under the run root (`hooks.ts run-root`) |
 | `base_sha` | the checkout's head |
-| `plan` | the prior run's `plan.md`, when a `.harness/*/manifest.json` in that checkout matches this `pr_number` or `TICKET_REF`. Two matches, or none, is a question |
+| `plan` | the prior run's `plan.md`, when a `.harness/*/manifest.json` under the run root matches this `pr_number` or `TICKET_REF`. Two matches, or none, is a question |
 
 **The first `PRS` entry is primary.**
 
