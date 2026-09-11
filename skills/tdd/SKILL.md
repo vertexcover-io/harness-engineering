@@ -26,8 +26,8 @@ TDD governs the *order* you write in; `code-quality` governs *what you write*.
 - `references/integration-e2e.md` — when unit tests aren't enough, and how to write the rest
 - `references/hermetic-e2e.md` — e2e suites that provision themselves and fail fast
 
-Dispatched by orchestrate? Your preamble carries the pipeline contracts
-(`skills/orchestrate/references/coder-contracts.md`): phase inputs, claims, report artifacts.
+Dispatched by orchestrate? `implement` owns the pipeline side: phase inputs, the E2E report
+artifact, and what may be skipped.
 
 ---
 
@@ -88,7 +88,7 @@ Re-run the affected test file and confirm it passes. Run the full suite — the 
 **once**, only when the task's behaviors are all green, not after every iteration.
 
 **A package declaring no `test_all` has no runner.** Its artifact is proven by the scenario in the
-package that consumes it (`skills/orchestrate/references/coder-contracts.md`).
+package that consumes it.
 
 **Test still fails?** Fix the implementation, not the test. **Other tests broke?** Fix them now.
 
@@ -145,10 +145,9 @@ test exercising that effect end-to-end (real services, no mocks at the boundary)
 run it, the work is blocked — say so plainly; never silently downgrade the scenario to a unit
 test to claim completion.
 
-The suite must be hermetic (`references/hermetic-e2e.md`). A **published library** proves its
-e2e leg in the consumer repo that mounts it — and the consumer runs its *installed* copy, so
-sync your build into the consumer's `node_modules` first or the run proves nothing (pipeline
-details: `skills/orchestrate/references/coder-contracts.md`).
+The suite must be hermetic (`references/hermetic-e2e.md`). Code that ships as an artifact another
+program consumes proves its e2e leg in that consumer — and a consumer loads its *installed* copy,
+so sync your build in first or the run proves nothing (same file, *Testing through a consumer*).
 
 ## Test Budget
 
