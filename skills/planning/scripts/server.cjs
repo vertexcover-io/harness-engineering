@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const commentStore = require('./comment-store.cjs');
 
 // ========== WebSocket Protocol (RFC 6455) ==========
 
@@ -205,7 +206,10 @@ location.replace('/');
 
 const frameTemplate = fs.readFileSync(path.join(__dirname, 'frame-template.html'), 'utf-8');
 const helperScript = fs.readFileSync(path.join(__dirname, 'helper.js'), 'utf-8');
-const helperInjection = '<script>\n' + helperScript + '\n</script>';
+// Separate from helper.js, which is vendored upstream. Must load after it.
+const commentsScript = fs.readFileSync(path.join(__dirname, 'comments-ui.js'), 'utf-8');
+const helperInjection = '<script>\n' + helperScript + '\n</script>\n' +
+  '<script>\n' + commentsScript + '\n</script>';
 
 // ========== Helper Functions ==========
 
@@ -464,6 +468,13 @@ function handleUpgrade(req, socket) {
 
   let buffer = Buffer.alloc(0);
   clients.add(socket);
+  // Hand a fresh connection the current threads. Also re-syncs on reconnect,
+  // which a one-shot fetch on page load would not.
+  try {
+    socket.write(encodeFrame(OPCODES.TEXT, Buffer.from(JSON.stringify({
+      type: 'comments', ...commentStore.readOrEmpty(STATE_DIR)
+    }))));
+  } catch (e) { clients.delete(socket); }
 
   socket.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
@@ -517,10 +528,31 @@ function handleMessage(text) {
   }
   touchActivity();
   console.log(JSON.stringify({ source: 'user-event', ...event }));
-  if (event && event.choice) {
-    const eventsFile = path.join(STATE_DIR, 'events');
-    fs.appendFileSync(eventsFile, JSON.stringify(event) + '\n');
+
+  if (event && event.type === 'comments') {
+    let saved;
+    try {
+      saved = commentStore.submit(STATE_DIR, event.comments);
+    } catch (e) {
+      console.error('comment submit failed:', e.message);
+      return;
+    }
+    // comments.json is the record; this line is only the fallback wake-up the
+    // agent reads, so a rejected re-send must not leave one. No broadcast here —
+    // the write trips the watcher, which does it.
+    if (saved.length) appendEvent({ type: 'comments', count: saved.length, timestamp: Date.now() });
+    return;
   }
+
+  if (event && event.choice) appendEvent(event);
+}
+
+function appendEvent(record) {
+  fs.appendFileSync(path.join(STATE_DIR, 'events'), JSON.stringify(record) + '\n');
+}
+
+function broadcastComments() {
+  broadcast({ type: 'comments', ...commentStore.readOrEmpty(STATE_DIR) });
 }
 
 function broadcast(msg) {
@@ -621,6 +653,20 @@ function startServer() {
   });
   watcher.on('error', (err) => console.error('fs.watch error:', err.message));
 
+  // The agent replies by writing comments.json directly, so watching it is what
+  // puts those answers in the tab without a reload.
+  // Shares the debounce map; the store's name cannot collide with *.html keys.
+  const commentsWatcher = fs.watch(STATE_DIR, (eventType, filename) => {
+    if (filename !== commentStore.STORE_NAME) return;
+    if (debounceTimers.has(filename)) clearTimeout(debounceTimers.get(filename));
+    debounceTimers.set(filename, setTimeout(() => {
+      debounceTimers.delete(filename);
+      touchActivity();
+      broadcastComments();
+    }, 100));
+  });
+  commentsWatcher.on('error', (err) => console.error('comments watch error:', err.message));
+
   function shutdown(reason) {
     console.log(JSON.stringify({ type: 'server-stopped', reason }));
     const infoFile = path.join(STATE_DIR, 'server-info');
@@ -630,6 +676,7 @@ function startServer() {
       JSON.stringify({ reason, timestamp: Date.now() }) + '\n'
     );
     watcher.close();
+    commentsWatcher.close();
     clearInterval(lifecycleCheck);
     // Close any upgraded WebSocket sockets so server.close() can complete and
     // the process actually exits instead of lingering on an open connection.
@@ -726,6 +773,8 @@ module.exports = {
   encodeFrame,
   decodeFrame,
   browserLauncherForPlatform,
+  handleMessage,
+  STATE_DIR,
   OPCODES,
   MAX_FRAME_PAYLOAD_BYTES
 };

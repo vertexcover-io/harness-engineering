@@ -37,6 +37,8 @@ the coder gets.
 
 The shell's `SLOT:content` comment lists the section order. Rules the slots don't carry:
 
+- **Every block carries an `id`** — cards, table rows, callouts, phase cards, `.unlock` boxes,
+  drill-down steps.
 - **Hero `.links`** — the ticket, PRs and PRD, then one last item recording what produced this
   run: `harness <version> · andromeda <branch@sha> · session <id>`. Plain text, not a link.
   Generate it with `node --experimental-strip-types ../_shared/collect-run-info.ts` and paste the
@@ -44,8 +46,7 @@ The shell's `SLOT:content` comment lists the section order. Rules the slots don'
   has to reconstruct. The script drops any value it cannot read, so a short line is a valid state.
 - **Banner** (`.callout.warn`) — only when a real known-gap or risk exists. State what is
   unverified, why, and what fixes it. Never pad; no banner is a valid state.
-- **Requirements** — one card per acceptance criterion, `id` on each so xrefs can jump to it.
-  Cite the PRD's own ids.
+- **Requirements** — one card per acceptance criterion. Cite the PRD's own ids.
 - **Design** — the decisions table uses three columns: *What we do · Instead of · Because*.
   Every row gets `id="D<n>"`. Mark inferred decisions *(inferred — confirm)*. The page holds
   the final state only — how a decision was reached lives in `design.md`, never here.
@@ -77,6 +78,12 @@ requirement ids, decision ids, flow/edge-case ids, and error codes. Mechanics:
 An id with no `X` entry renders as plain text — scan the finished page for un-tooltipped ids
 before presenting it. Scenario ids are the exception: they name a heading in the phase file,
 not a target on the page, so they carry no `X` entry and stay plain.
+
+## The comment layer
+
+The server injects the comment UI into every page it serves; no plan authors it. Comments live
+in `<state-dir>/comments.json`, not in plan.html, so rewriting the page during a revision keeps
+them.
 
 ## The payload blocks
 
