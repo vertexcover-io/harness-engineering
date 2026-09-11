@@ -3,8 +3,10 @@
 Write the report to `.harness/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` (e.g.
 `gate-report-post-tdd-001.md`). Increment `<NNN>` from the existing reports in that directory.
 
-The orchestrator greps the machine-parseable markers `<!-- QG:VERDICT:… -->` and
-`<!-- QG:CHECK:N:… -->` (N ∈ {1,2,3,4,6,7,9,10} — 5 and 8 are retired) — always emit them.
+Emit `<!-- QG:VERDICT:PASS -->`, `<!-- QG:VERDICT:BLOCKED -->`, or
+`<!-- QG:VERDICT:STAGNATION -->` for the overall verdict. Per-check markers use
+`<!-- QG:CHECK:N:PASS -->` or `<!-- QG:CHECK:N:BLOCKED -->` for N ∈ {1,2,3,7,9,10}, with
+`NOT_APPLICABLE` for a justified skip. Checks 4, 5, 6 and 8 are retired. Custom quality-gate replacements owe the same markers.
 
 ## Report structure
 
@@ -22,7 +24,6 @@ One row per package in `PACKAGES` per tool. `Command` is copied from the config,
 | web | Type Checker | DECLARED | \<its `typecheck`\> |
 | web | Linter | DECLARED | \<its `lint`\> |
 | web | Test Suite | DECLARED | \<its `test_all`\> |
-| web | Coverage | NOT_APPLICABLE | declares no `coverage_all` |
 | api | Type Checker | DECLARED | \<its `typecheck`\> |
 
 ### Results
@@ -33,8 +34,6 @@ One row per check, the verdict being the union across packages. Name the failing
 | 1 | Type Checker | exit=0, errors=0 | exit=0, errors=0 (web, api) | PASS |
 | 2 | Linter | exit=0, warnings=3 | exit=0, warnings=3 | PASS |
 | 3 | Test Suite + Behavior Coverage | exit=0, 42 passed | exit=0, 38 passed, 12/12 matrix IDs covered | PASS |
-| 4 | Coverage (diagnostic) | 85.5% | 87.3% (+1.8%) (api; web NOT_APPLICABLE) | INFO |
-| 6 | Plan Compliance | — | 5/5 items verified | PASS |
 | 7 | Comment Audit | — | 0 new ignore directives · 3 comments removed | PASS |
 | 9 | E2E Tests | — | 12 passed, 0 failed | PASS |
 | 10 | Mutation Spot-Check | — | 4/4 mutants killed | PASS |
@@ -60,14 +59,9 @@ One block per package per check; the marker carries the check's union verdict.
 
 ...
 
-#### Check 4: Coverage (diagnostic example)
-<!-- QG:CHECK:4:INFO -->
-**Command:** parsed from the Check 3 run (the package's `coverage_all`)
-**Summary:** 78.2% (baseline: 85.5%, -7.3%)
-**INFO:** Coverage dropped 7.3% → what behavior is missing from the matrix? (never blocks on its own)
 
 #### Check 10: Mutation Spot-Check (FAIL example)
-<!-- QG:CHECK:10:FAIL -->
+<!-- QG:CHECK:10:BLOCKED -->
 **Mutations:**
 | Behavior ID | File | Mutation | Killing test | Result |
 |-------------|------|----------|--------------|--------|
@@ -84,7 +78,7 @@ Every check command runs with: `<command> 2>&1; echo "EXIT_CODE=$?"`
 For each check, the report includes:
 1. **Command run** — copy-pasteable
 2. **Exit code** — extracted from `EXIT_CODE=`
-3. **Summary metrics** — pass/fail/skip counts, coverage %, error count. Parse from tool output; do not dump raw output.
+3. **Summary metrics** — pass/fail/skip counts, error count. Parse from tool output; do not dump raw output.
 4. **Full output only on FAILURE** — on a fail, include the first 20 lines of error output to diagnose. On a pass, summary metrics are enough.
 
 ## State snapshot
