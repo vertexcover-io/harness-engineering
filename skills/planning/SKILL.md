@@ -53,7 +53,9 @@ Pick the route before doing anything:
   across 30 files takes this route.
 - **Hand to `implement`** — decided *after* step 1, never before: one file · one obvious
   edit · nothing to sequence · no test-level judgment. Pass the step-1 findings in the
-  hand-off prompt.
+  hand-off. When `CALLER=orchestrate`, return the atomic route and findings without invoking
+  `implement`; the caller must join its baseline before starting edits. When invoked standalone,
+  invoke `implement` with `IMPLEMENT_MODE=manual` and those findings.
 
 Watch for work that sounds mechanical but is not: "add caching to this endpoint" hides four
 open decisions — TTL, invalidation, key shape, backing store. Full flow.

@@ -1,130 +1,108 @@
 # `orchestrate.config.json`
 
-Required, at the **repo root**, committed. Being tracked, it is present at the worktree root
-too — either path reads the same content. Orchestrate reads it once during Stage 0 and passes the
-result forward. A worked example lives in `references/orchestrate.config.example.json`.
-
-One file carries eight things: this project's **doctor**, its **stage overrides**, its **commands**, its
-**environments**, its **env**, its **notifier**, its **extensions**, and its **hooks**. It is self-describing — read it
-directly. Nothing here restates what its keys mean, and a command it does not name is a command
-there is nothing to run for.
-
-Does NOT apply to `orchestrate` itself (no recursive override).
+Required at the repo root and committed, so it is also present in the worktree.
+A missing file halts with `CONFIG_MISSING` and names `setup-harness`, which writes it. There is no
+run-time fallback: discovering commands instead would put a different toolchain behind the same
+spec name on the next run.
+See [orchestrate.config.example.json](orchestrate.config.example.json) for a worked example.
 
 ## Doctor
 
-Optional, top level. One command that checks what this project's own commands rely on — tools,
-credentials, datastores, layout. `skills/_shared/doctor.ts` runs it from the repo root with `--json`
-appended and folds its rows into its own table, so one verdict covers both.
+Optional. One command that checks what this project's own commands rely on — tools, credentials,
+datastores, layout. Its rows join the harness's own checks, so one verdict covers both.
 
 ```json
 "doctor": "bun bin/doctor.ts"
 ```
 
-Expected stdout: `{ "results": [ { "name", "status": "ok" | "warn" | "fail", "optional"?, "detail"?, "fix"?: [] } ] }`.
-A command that prints anything else is one row, `project-doctor`, judged by its exit code. One that
-does not resolve (exit 127) is a `fail` row naming the command. Absent or `null`: no rows.
+It is run from the repo root with `--json` appended, and should print
+`{ "results": [ { "name", "status": "ok" | "warn" | "fail", "optional"?, "detail"?, "fix"?: [] } ] }`.
+A command that prints anything else becomes a single row judged by its exit code.
 
 ## Stage overrides
 
-`stages` keys are **exactly** the DAG node ids created by the init block in
-`references/dag-commands.md`. No other spelling resolves; log a warning and ignore an unrecognised
-key rather than guessing which stage was meant.
+`stages` keys match the node IDs in [dashboard.md](dashboard.md). Warn and ignore unknown keys.
 
-| Stage id | Default skill | Gate contract (gated stages only) |
-|----------|---------------|------------------------------------|
-| `setup` | `pipeline-setup` (`setup` branch) | spec artifact directory + `manifest.json` |
-| `worktree` | the project's own worktree skill, else `using-git-worktrees` | — |
-| `baseline` | `pipeline-setup` (`baseline` branch) | `baseline.json` |
-| `planning` | `planning` | `plan.html` + extracted `plan.md`/`phases/` (or the `implement` route) |
-| `coder` | `implement` | phase `…-e2e.json` runner output (executed>0, failed=0), or a skip note |
-| `code-review` | `harness:code-review` | `review/review.md`; `APPROVE` / `APPROVE WITH SUGGESTIONS` / `REQUEST CHANGES` verdict |
-| `verify-finalize` | `functional-verify` + `quality-gate` + `sync-docs` | `proof-report.html`; `<!-- QG:VERDICT:PASS -->` / `BLOCKED` |
-| `commit-pr` | — (Stage 6 hand-rolls the commit and PR) | PR URL |
-| `retro` | `harness-retro` | — (never gates; Stage 7 cannot fail the run) |
+| Stage id | Default skill | Output contract |
+|---|---|---|
+| `worktree` | `using-git-worktrees` | a checkout on a new branch; `WORKTREE_PATH` and `BRANCH_NAME` |
+| `planning` | `planning` | plan.html + extracted plan.md/phases, or implement route |
+| `coder` | `implement` | phase runner E2E report with executed > 0, failed = 0, or skip note |
+| `code-review` | `harness:code-review` | review/review.md and review verdict |
+| `verify` | `functional-verify` | proof-report.html and a verification verdict |
+| `quality-gate` | `quality-gate` | a gate report carrying a verdict |
+| `sync-docs` | `sync-docs` | the documents updated and created |
+| `commit-pr` | — (the stage commits, pushes and opens the PR itself) | commits, and a PR URL or a stated reason there is none |
+| `retro` | `harness-retro` | retro/report.md; never gates |
 
-Quality-gate-class skills also emit `<!-- QG:CHECK:N:PASS|BLOCKED -->` (N ∈ {1,2,3,4,7,9,10}).
+`setup` and `baseline` are valid IDs but take no override, because they are one deterministic
+script: log an override without honoring it.
 
-`verify-finalize` runs three skills in sequence, so one `skill` cannot stand in for the stage — set
-`skills` instead, a map from the sub-skill being replaced to its replacement. Each named replacement
-inherits that sub-skill's gate contract. `skill` on this stage is ignored (log it).
-
-```json
-"verify-finalize": { "skills": { "quality-gate": "my-gate" } }
-```
-
-`worktree` and `commit-pr` are valid keys and resolve, but neither stage dispatches a resolved skill
-yet: worktree creation runs during Initialization before this file is read, and Stage 6 hand-rolls.
-An override on either is recorded and logged, not yet honoured.
-
-`retro` is the one stage `disabled` is honoured on. It runs after the PR and produces no artifact
-any later stage reads, so a project that does not want it sets `"retro": { "disabled": true }` and
-Stage 7 is skipped. Every other stage stays mandatory.
-
-## Entry stage (resumed runs)
-
-`coder` is the only valid entry stage. It presumes the worktree and `baseline.json` are in place
-before the stage starts, and that the caller names the prior run's `plan.md`.
-
-A resumed run works a **set of checkouts**, not one. The caller passes `TARGETS[]`, each entry one
-branch of one repository, carrying `repository`, `worktree`, `branch`, `spec_name`, `plan`,
-`base_sha` and `packages`, and resolving its commands from its own repository's root
-`orchestrate.config.json`. **The first entry is primary:** it owns the DAG, the dashboard, and every
-per-run artifact. Stages 3, 4 and 6 run once per entry; Stage 5 takes the whole set. A single-PR
-resume passes a one-entry `TARGETS[]`.
-
-Its gate contract shifts: a resumed `coder` runs `implement` in review-fix mode, which produces no
-phase `…-e2e.json`. The gate is the caller's disposition table — every feedback item carries a
-terminal disposition. Every later stage gates as written above.
+A skill named for `commit-pr` replaces the commit, push and PR steps, for a project that ships
+differently: stacked PRs, Gerrit, a release bot.
 
 ## Resolving a stage
 
-Look the entry up by stage id; call it `CFG`. An **absent key, an empty object, and an empty string
-all mean the same thing: use the default.** Then, per stage:
+Read `stages.<id>`. A missing entry, `{}`, and `""` all mean the same thing: use the default.
 
-- **skill** = `CFG.skill` → a project skill named exactly like the default → the default. Names in
-  the table above are used **verbatim** — a default carrying a `harness:` prefix keeps it. Claude
-  Code's own built-in skills share names with some of ours (`code-review` is one), a built-in wins a
-  bare name, and the built-in `code-review` sets `disable-model-invocation`, so a bare name there
-  hard-blocks the stage. `CFG.skill` is a skill **name only**; a value with `/` is ignored (log it).
-  Log the resolved override: `"Using custom skill for stage <id>: <skill-name>"`. On `verify-finalize`, resolve each of the
-  stage's three `<SKILL:…>` slots through `CFG.skills` by the slot's default name instead.
-- **model** (sub-agent stages `baseline`/`coder`/`verify-finalize` only) = `CFG.model` → the
-  dispatch block's `sonnet` default. Passed verbatim to `Agent`'s `model`. `model` on a
-  main-conversation stage has no Agent to retarget — ignore it (log).
-- **disabled** = every stage is mandatory, so `disabled` is always rejected
-  (`"Cannot disable mandatory stage <id> — ignoring"`). Planning scales itself — its step 0 collapses
-  the question loop for trivial work, and its own gate is the only route to `implement`.
+- **Skill:** `stages.<id>.skill`, else a project skill whose name matches the default exactly,
+  else the default. Names are used verbatim, `harness:` prefix included — bare `code-review`
+  resolves to Claude Code's built-in, which refuses model invocation. A value containing `/` is
+  ignored and logged. Log a chosen override as
+  "Using custom skill for stage <id>: <skill-name>".
+- **Model:** `stages.<id>.model` for the sub-agent stages `coder`, `verify`, `quality-gate` and
+  `retro`, else `sonnet`,
+  passed verbatim to `Agent.model`. A model on a main-conversation stage has no worker to
+  retarget: log and ignore it.
+- **Disabled:** only `retro` honors `disabled: true`. Otherwise log
+  "Cannot disable mandatory stage <id> — ignoring".
+
+Custom skills receive the arguments in their stage reference and owe the same artifacts/verdicts.
+Missing required output is `STAGE_CONTRACT_FAILED`.
 
 ## Commands
 
-Every runnable command lives under a `commands` map — the root one, or a package's — and nowhere
-else. `bootstrap`, `e2e` and the rest are keys in it, not siblings of it, and a command is a plain
-string: whatever an e2e run needs to be up is the runner config's business, not this file's. **A
-command the project lacks is omitted**, and an older config may carry it as `null` instead.
+Every runnable command is one string under a `commands` map — the root one, or a package's.
+`bootstrap`, `typecheck`, `e2e` and the rest are keys **inside** that map, never siblings of it.
 
-### Resolving a command
+```json
+"commands": { "typecheck": "pnpm typecheck", "test_all": "pnpm vitest run" },
+"packages": {
+  "api": {
+    "path": "packages/api",
+    "runner": "vitest",
+    "commands": { "test_all": "pnpm --filter api test", "e2e": "pnpm --filter api test:e2e" }
+  }
+}
+```
 
-Given a key and the package the run named (`PACKAGES`, resolved in Stage 0):
+Resolve a key for the package the run named: `packages.<PKG>.commands`, then root `commands`, stop.
 
-1. `packages.<PKG>.commands.<key>`, then root `commands.<key>`. Stop there.
-2. **Absent or `null` means this project has no such command.** Report `NOT_APPLICABLE` naming the
-   package and the key. Never substitute a neighbouring key, and never go looking for a runner.
-3. **Declared but unresolvable** — exit 127, a missing script — means the config is stale, not the
-   code: halt/BLOCKED naming the command. A command that ran and came back red is a result.
+| What you find | Verdict |
+|---|---|
+| the key, with a command | run it |
+| no key, or `null` | `NOT_APPLICABLE` — the project has no such command. Name the package and key; never substitute a neighbouring key or go looking for a runner |
+| a command that will not run: exit 127, a missing script or binary | `CONFIG_STALE` — the config is stale, not the code. Halt, naming the command and its package |
+| a command that ran and came back failing | a measurement. Record it; a red suite is a result, not a config problem |
 
-`packages.<PKG>.path` is the working directory. `packages.<PKG>.runner` is the only tool name a
-skill may hold, and only to parse that runner's output, never to build a command.
+`packages.<PKG>.path` is the directory to run in. `runner` names the tool only so its output can be
+parsed — never build a command from it.
 
-**Placeholders.** `{NAME...}` takes zero or more values, and `[...]` is a segment to include only
-when the run asks for what it carries. **A `test_file` without `{FILE}` runs the whole suite** — its
-caller reads the named test's line, not the exit code.
+Placeholders: `{NAME}` or `{NAME...}` take one or more values, and `[...]` is a segment included
+only when the run asks for what it carries. So
+`scripts/stack.sh up {BRANCH} {SERVICE...} [--seed-demo]` runs as
+`scripts/stack.sh up feat/auth api web` when no seed was requested.
+
+A `test_file` carrying no `{FILE}` runs the whole suite; its caller reads the named test's result
+out of the output rather than the exit code.
+
+Bringing a stack up is the `environments` block's job, not a command's.
 
 ## Environments
 
-**This project names its own stack steps.** Read the entry for the environment you are using and
-run the steps it declares, resolving each as above. Where one declares no readiness step, poll its
-status step instead.
+**This project names its own stack steps.** Read the entry for the environment the run chose and
+run the steps it declares, resolving each command as above. Where an entry declares no readiness
+step, poll its status step instead.
 
 ## Extensions
 
@@ -137,13 +115,6 @@ extend it for the same flow with project instructions.
 "extensions": { "planning": "harness/planning.md" }
 ```
 
-## Custom skills
-
-A custom skill is invoked with the **same arguments** the default would get (see each dispatch block
-in `references/stage-prompts.md`) and, for **gated** stages, MUST emit the same verdict
-markers/artifacts so orchestrate can parse the result — a missing verdict is treated as a stage
-FAILURE/BLOCKED.
-
 ## Env
 
 Optional. A flat map of name to value, read by the scripts that need it.
@@ -152,81 +123,41 @@ Optional. A flat map of name to value, read by the scripts that need it.
 "env": { "SLACK_CHANNEL_ID": "C09XXXXXXXX", "SLACK_MEMBER_ID": "U09XXXXXXXX" }
 ```
 
-Two sources only, highest first: this block, then `.env.local` at the **main checkout** root, so a
-worktree resolves the same values as the checkout it came from. A missing file is not an error.
-Neither `.env` nor the process environment is read. `.env.local` is the fallback and belongs in
-`.gitignore`: put a developer-specific value there and it applies wherever this block is silent.
-
-This file is committed, so keep tokens and other secrets out of it and in `.env.local`. The `env`
-block is the right home for the shared, non-secret half — a channel id, say — and it wins per key,
-so a value it names is not overridable locally.
+Two sources only, this block first, then `.env.local` at the **main checkout** root, so a worktree
+resolves the same values as the checkout it came from. A missing file is not an error, and neither
+`.env` nor the process environment is read.
 
 ## Notifier
 
-Optional. Absent, or `enabled: false`, and the pipeline sends nothing.
-
-```json
-"notifier": { "enabled": true, "provider": "slack" }
-```
-
-`provider` names one entry in the provider table in `skills/_shared/notify.ts`. Each provider reads
-its own keys through the resolution order in `## Env` above.
-
-Every event fails soft, `run-started` included: the notifier rides the pipeline as a default hook
-with `required` unset, so a provider outage never halts a stage — `fire` records the failure in its
-output map and the run continues. See `## Hooks` below for the entry shape that guarantee comes from.
-
-`orchestrate/SKILL.md` owns which event fires where.
+Absent `notifier`, or `enabled: false`, sends nothing. With
+`{"enabled":true,"provider":"slack"}`, the provider resolves through the table in
+`skills/_shared/notify.ts` and reads its keys through Env above.
+The notifier is a non-required built-in hook; outages are recorded and do not halt stages.
 
 ## Hooks
 
-Optional. A `hooks` block maps **event names** to ordered arrays of hook entries. The pipeline
-fires seven events — `run-started`, `stage-started`, `stage-completed`, `question-pending`,
-`run-interrupted`, `run-completed`, and `artifact-created` (which carries a `kind`: `pr`,
-`commit`, `plan`, `proof-report`). An eighth, `hook-failed`, is fired by the dispatcher itself
-whenever a hook fails — hook it to page someone, and never fire it by hand.
-`skills/_shared/hooks.ts` is the dispatcher; `orchestrate/SKILL.md` owns which event fires where.
-
-Entries run in the order you write them, after the harness's own built-ins: the Slack notifier
-(`notifier.enabled`) and the samskara upload (`samskara.enabled`).
-
-A `hook-failed` notice mentions a person only when the hook that broke was `required`.
+`hooks` maps event names to ordered entry arrays. Which events exist, when each fires, what its
+payload carries, and how to act on the result all live in [events.md](events.md).
+Entries run after the built-ins, the notifier and the samskara upload. A `hook-failed` notice
+mentions a person only when the failed hook was required.
 
 ```json
 "hooks": {
-  "stage-completed": [
-    { "name": "page-me", "when": { "stage": "coder", "result": "fail" },
-      "cmd": "scripts/page-me.sh", "required": true }
-  ],
   "artifact-created": [
-    { "name": "link-pr", "when": { "kind": "pr" },
-      "fn": { "module": "harness/hooks.ts", "export": "linkPr" } }
+    {"name":"link-pr","when":{"kind":"pr"},"fn":{"module":"harness/hooks.ts","export":"linkPr"}}
   ]
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `name` | required, unique within its event — the key the hook's output appears under |
-| exactly one of `fn` / `cmd` / `prompt` | `fn` {module, export} is imported and called in-process; `cmd` is spawned with the payload JSON on stdin; `prompt` is a markdown/skill file the orchestrator executes inline |
-| `when` | optional filter — `stage`, `result` (pass\|fail), `kind`; every given key must equal the fired payload's value |
-| `required` | default false. A failing required hook halts the stage (`HOOK_HALT`) |
-| `report` | default false. A hook's output text reaches the orchestrator only when set — or whenever the hook failed |
-| `timeoutMs` | default 120000; a timeout is a failure under the `required` rule |
+| `name` | required, unique per event; output map key |
+| exactly one of `fn` / `cmd` / `prompt` | fn imports {module, export}; cmd receives payload JSON on stdin; prompt names a Markdown/skill file executed inline |
+| `when` | optional exact-match filters: stage, result (pass\|fail), kind |
+| `required` | false by default; failure returns HOOK_HALT, handled by events.md |
+| `report` | false by default; forward output text when set, or on failure |
+| `timeoutMs` | 120000 by default; timeout is a failure |
 
-`fire` prints one JSON line: `status` (the verdict — `success`, `skipped`, `failure`, `halt`, or
-`invalid`), `result` (why, on `halt` and `invalid`), `results` (name → {status, result}), and
-`prompts` (prompt hooks for the orchestrator to execute). It exits non-zero for `invalid` alone
-— a command it could not act on, rejected before any hook fired, safe to correct and send again.
-A required hook's failure is `halt`: the caller pauses, and exit stays 0, because a hook is not
-the stage. `references/events.md` has the table. `hooks.ts doctor` validates the block and exits
-1 on any FAIL row; setup-harness runs it.
-
-A hook entry carries no keys of its own. A `cmd` hook runs as its own process and inherits only the
-environment the harness was launched with — the `env` block above is not exported to it. A script
-that needs a value reads this file for itself, exactly as `notify.ts` does.
-
-## When the file is missing
-
-Stage 0 halts and tells the user to run `setup-harness`, which writes it. There is no run-time
-fallback: detection would put a different toolchain behind the same spec name on the next run.
+`hooks.ts doctor` validates this block and exits 1 on FAIL; setup-harness runs it.
+A cmd hook inherits the launch process environment;
+the config's `env` block is not exported. Scripts needing those values read the config themselves.

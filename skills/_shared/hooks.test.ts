@@ -1071,7 +1071,7 @@ test("samskara SC14: the conventions name the design record and the verification
   const eventsPath = fileURLToPath(new URL("../orchestrate/references/events.md", import.meta.url));
   const text = readFileSync(eventsPath, "utf8");
   const planningRow = text.split("\n").find((line) => line.trim().startsWith("- planning"));
-  const verifyRow = text.split("\n").find((line) => line.trim().startsWith("- verify-finalize"));
+  const verifyRow = text.split("\n").find((line) => line.trim().startsWith("- verify "));
   assert.match(planningRow ?? "", /`design`/);
   assert.match(verifyRow ?? "", /`verification`/);
 });
