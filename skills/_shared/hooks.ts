@@ -597,7 +597,6 @@ const BUILTINS: readonly Builtin[] = [
   {
     name: "notifier",
     events: NOTIFIER_EVENTS,
-    // report: every fire prints the thread id its message landed in.
     entry: { fn: { module: SELF, export: "notifierHook" }, report: true },
   },
   {
@@ -635,8 +634,6 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
-// Returns the absolute path to upload: a stage names its artifacts relative to the repo root,
-// and the uploader must read a resolved path.
 const uploadableFile = (repoRoot: string, path: string): string | null => {
   const contained = containedPath(repoRoot, path);
   if (contained === null) return null;
@@ -647,8 +644,6 @@ const uploadableFile = (repoRoot: string, path: string): string | null => {
   }
 };
 
-// The thread id lives in the run's manifest, which pipeline-setup writes before the first fire.
-// The notifier owns its `thread` field and touches nothing else in there.
 const readManifest = (path: string): Record<string, unknown> | null => {
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -663,8 +658,6 @@ const readThread = (path: string): string | null => {
   return typeof thread === "string" && thread.trim() !== "" ? thread.trim() : null;
 };
 
-// Re-reads before writing: a stage appending `stages.*` during the Slack round-trip would
-// otherwise be clobbered. A missing manifest is never created — that run was never set up.
 const writeThread = (path: string, ts: string): void => {
   const current = readManifest(path);
   if (current === null) return;
@@ -689,7 +682,11 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   const manifest = payload.artifactDir === undefined ? null : join(payload.artifactDir, "manifest.json");
   const starting = payload.event === "run-started";
   const thread = !starting && manifest !== null ? readThread(manifest) : null;
-  const orphaned = !starting && payload.event !== "hook-failed" && thread === null;
+
+  if (!starting && payload.event !== "hook-failed" && thread === null) {
+    throw new NotifierError(`${missingThreadDetail(manifest)} See references/events.md and rerun the command with fix`);
+  }
+
   const artifacts =
     payload.event === "stage-completed"
       ? (payload.data.artifacts ?? []).flatMap((a) => {
@@ -718,11 +715,7 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   // round-trips, so serializing them would make that stage wait for N of them in turn.
   await Promise.all(artifacts.map((file) => p.upload(file, message)));
 
-  // Threading is self-managed: run-started writes the returned ts, every later event reads it.
-  // A re-run overwrites the field, so each run threads fresh.
-  if ((starting || orphaned) && ts !== null && manifest !== null) writeThread(manifest, ts);
-
-  if (orphaned) throw new NotifierError(`${missingThreadDetail(manifest)} See references/events.md.`);
+  if (starting && ts !== null && manifest !== null) writeThread(manifest, ts);
 
   return ts ?? "sent";
 };

@@ -57,9 +57,8 @@ notifier: no thread in <path>. Trigger run-started before any other event.
 `no manifest at <path>` instead means `pipeline-setup` has not run, or this command was sent from a
 different checkout than the one holding the run.
 
-That message still reached the channel, and the run now threads under it — but the run started
-wrong. The error is on your line only, not in Slack. Fire `run-started` and carry on; do not resend
-the message.
+Either way **nothing was sent** — a message with no thread would land at the channel root. Fire
+`run-started`, then re-fire the event you were sending.
 
 Pass `--spec <SPEC_NAME>` on every fire. Without it the notifier has no thread to resolve, and each
 message lands loose in a channel other runs are posting to.
@@ -91,7 +90,7 @@ Setup, worktree, and commit-pr produce no files of their own — they send no `a
 |---|---|---|
 | `success` | Hooks ran, none failed | Carry on |
 | `skipped` | Nothing was configured for this event | Carry on |
-| `failure` | A hook failed, but none of them was required | Carry on; `results` says which |
+| `failure` | A hook failed, but none of them was required | Apply the fix `results` names, then fire the same event again |
 | `halt` | A required hook failed | Pause — see below |
 | `invalid` | The command was wrong. Nothing fired | Fix it and fire again |
 
@@ -103,6 +102,9 @@ nobody is there to answer: record the halt in the stage report and carry on.
 
 **On `invalid`** — the fire was rejected before a single hook ran, so re-firing repeats nothing.
 `result` names what was wrong. Fix the command and send it again.
+
+**On `failure`** — a failed hook did not do its work, so it is yours to re-run: every `result` names
+the fix it needs, and the event is not sent until you apply it and fire again.
 
 The rest of the line:
 

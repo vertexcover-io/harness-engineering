@@ -36,8 +36,6 @@ const makeFakeExec = (script: readonly ExecStep[]) => {
   return { exec, calls };
 };
 
-// The manifest pipeline-setup writes before the first fire. `thread` is null until
-// run-started fills it, exactly as the skeleton ships.
 const seedManifest = (root: string, spec: string, thread: string | null = null): string => {
   const artifactDir = join(root, ".harness", spec);
   mkdirSync(artifactDir, { recursive: true });
@@ -321,8 +319,6 @@ test("SC15 (regression): the six lifecycle messages match formatMessage's own ou
   process.chdir(dir);
   try {
     for (const event of events) {
-      // run-started overwrites the manifest's thread with its own returned ts — reset it
-      // before each event so this loop tests one event's mapping in isolation.
       seedManifest(dir, "t", "999.1");
       const data =
         event === "question-pending"
@@ -1209,8 +1205,9 @@ test("samskara SC9: a failed upload never halts the stage and never blocks a lat
 
 test("samskara SC24: the Slack notifier never uploads a path from outside the repo", async () => {
   const dir = tmp();
-  execFileSync("git", ["init", "-q"], { cwd: dir });
+  const repoRoot = gitRepo(dir);
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  seedManifest(repoRoot, "t", "999.1");
   writeFileSync(join(dir, "review.md"), "# review");
 
   const outside = tmp();
@@ -1393,11 +1390,10 @@ test("SC55: an event fired before run-started fails and names the missing fire",
   assert.equal(result.out.results?.["notifier"]?.status, "failure");
   assert.match(String(result.out.results?.["notifier"]?.result), /Trigger run-started before any other event/);
   assert.match(String(result.out.results?.["notifier"]?.result), /events\.md/);
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0]?.threadRef, null);
+  assert.equal(sent.length, 0);
 });
 
-test("SC56: an orphaned event adopts its own ts so the rest of the run threads", async () => {
+test("SC56: an event before run-started sends nothing; the run threads once it fires", async () => {
   const dir = tmp();
   const repoRoot = gitRepo(dir);
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
@@ -1409,16 +1405,17 @@ test("SC56: an orphaned event adopts its own ts so the rest of the run threads",
   process.chdir(dir);
   try {
     await runFire({ event: "stage-started", stage: "coder", spec: "t", data: { title: "t" } }, deps);
+    assert.equal(sent.length, 0);
+    await runFire({ event: "run-started", spec: "t", data: { title: "t" } }, deps);
     await runFire({ event: "stage-completed", stage: "coder", spec: "t", data: { title: "t" } }, deps);
   } finally {
     process.chdir(cwd);
   }
 
-  assert.equal(sent.length, 2);
   assert.deepEqual(sent.map((m) => m.threadRef), [null, "123.45"]);
 });
 
-test("SC57: an empty thread reads as no thread, never as an empty thread_ts", async () => {
+test("SC57: an empty thread reads as no thread, and nothing is sent on it", async () => {
   const dir = tmp();
   const repoRoot = gitRepo(dir);
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
@@ -1436,8 +1433,7 @@ test("SC57: an empty thread reads as no thread, never as an empty thread_ts", as
     process.chdir(cwd);
   }
 
-  assert.equal(sent[0]?.threadRef, null);
-  assert.equal(manifestOf(repoRoot, "t")["thread"], "123.45");
+  assert.equal(sent.length, 0);
 });
 
 test("SC58: a hook failure never reaches the notifier — errors stay out of the channel", async () => {
@@ -1467,7 +1463,7 @@ test("SC58: a hook failure never reaches the notifier — errors stay out of the
   assert.equal(sent.length, 0);
 });
 
-test("SC59: a notifier event with no --spec reports the missing flag, and still sends", async () => {
+test("SC59: a notifier event with no --spec reports the missing flag and sends nothing", async () => {
   const dir = tmp();
   gitRepo(dir);
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
@@ -1487,7 +1483,7 @@ test("SC59: a notifier event with no --spec reports the missing flag, and still 
 
   assert.equal(result.out.results?.["notifier"]?.status, "failure");
   assert.match(String(result.out.results?.["notifier"]?.result), /--spec/);
-  assert.deepEqual(sent.map((m) => m.threadRef), [null]);
+  assert.equal(sent.length, 0);
 });
 
 test("SC60: with no manifest the notifier names it and creates nothing", async () => {
@@ -1512,7 +1508,7 @@ test("SC60: with no manifest the notifier names it and creates nothing", async (
   assert.match(String(result.out.results?.["notifier"]?.result), /no manifest at/);
   assert.match(String(result.out.results?.["notifier"]?.result), /pipeline-setup/);
   assert.equal(existsSync(join(repoRoot, ".harness", "t")), false);
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 0);
 });
 
 test("SC61: writing the thread keeps every other field a stage wrote meanwhile", async () => {
@@ -1522,7 +1518,6 @@ test("SC61: writing the thread keeps every other field a stage wrote meanwhile",
   const artifactDir = seedManifest(repoRoot, "t");
   const manifestPath = join(artifactDir, "manifest.json");
 
-  // A stage writes the manifest during the Slack round-trip, after the hook has read it.
   const provider: Provider = {
     send: async () => {
       const during = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;

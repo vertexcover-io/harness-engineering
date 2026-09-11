@@ -24,8 +24,10 @@ the approach. Once Step 6 invokes `orchestrate`, stop asking and stop pausing: t
 orchestrate's.
 
 **Events.** Fire them as `skills/orchestrate/references/events.md` defines, from the primary entry's
-worktree: `question-pending` before each `AskUserQuestion`, `run-interrupted` before any row of the
-Halts table. Never redirect a fire's output away.
+worktree: `run-started` as soon as Step 2 has written the primary entry's `manifest.json` and before
+any other event — a resumed run skips Stage 0, so `orchestrate` never fires it and nothing this
+skill sends would reach a thread; then `question-pending` before each `AskUserQuestion`, and
+`run-interrupted` before any row of the Halts table. Never redirect a fire's output away.
 
 ## Step 1 — Resolve the ticket
 
