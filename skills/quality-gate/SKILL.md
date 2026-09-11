@@ -68,28 +68,20 @@ Each tool resolves to one of three states:
 - **Fail:** New warnings introduced (count > baseline)
 - Report: per package, exit code, warning count, delta from baseline
 
-### Check 3: Test Suite + Behavior Coverage (ONE run, feeds both Check 3 and Check 4)
+### Check 3: Test Suite + Behavior Coverage
 
-- Where the package declares `coverage_all`, run it: one invocation of the **unit** suite with
-  coverage enabled, feeding both Check 3 (pass/fail) and Check 4 (coverage). Coverage runs the tests,
-  so a plain test run followed by a separate coverage run executes the whole suite twice — do NOT do
-  that.
-- Where it does not, run `test_all` and mark Check 4 `NOT_APPLICABLE` for that package: "declares no
-  coverage command". A package without coverage tooling is not a block.
-- Either way this is the unit suite only: it must **not** invoke the package's `e2e` command, which
+- Run each package's `test_all`. This is the unit suite only: it must **not** invoke the package's `e2e` command, which
   the coder already ran.
 - **Pass:** Exit code 0
 - **Fail:** Non-zero exit code
 - Test count is NOT compared — consolidation may legitimately reduce it.
 - Report: per package, exit code, pass/fail/skip counts
 
-### Check 4: Coverage (diagnostic only — parsed from the Check 3 run, do NOT re-run the suite)
+### Check 4 — removed
 
-- Parse the coverage percentage from the Check 3 run's output. Do not invoke the suite again.
-- **Report only — this check never fails.** Line coverage is a diagnostic, not a gate.
-- On a drop vs baseline, emit an INFO line: "Coverage dropped X% → what behavior is missing from the matrix?"
-- No package declares `coverage_all` → INFO note, not BLOCKED
-- Report: per package, coverage percentage, delta from baseline, verdict INFO
+Line coverage as a percentage. No runner's output format was pinned down, so the number was parsed
+out of a text table and compared against a baseline parsed the same way. Behaviour coverage is
+Check 3's job and does not depend on it. `coverage-guard` remains for anyone who wants the number.
 
 ### Check 5 — removed
 
@@ -177,9 +169,9 @@ Detects tautological / written-to-pass tests — the only check that proves test
 
 ## When It Runs
 
-The gate runs once, at `post-tdd` — after implementation is complete and before commit. All ten checks
-run: Checks 1–3, 6, 7, and 10 are mandatory, Check 9 always runs, and Check 4 is diagnostic (never
-blocks). Checks 5 and 8 are retired — their numbers stay unassigned.
+The gate runs once, at `post-tdd` — after implementation is complete and before commit.
+Checks 1–3, 7, and 10 are mandatory and Check 9 always runs. Checks 4, 5, 6 and 8 are retired —
+their numbers stay unassigned.
 
 If the gate returns **BLOCKED**, the pipeline stops there — the orchestrator reports what failed and does
 not proceed.
@@ -189,9 +181,8 @@ not proceed.
 ## Gate report
 
 Write the report to `.harness/<SPEC_NAME>/gate-report-<stage>-<NNN>.md` following
-`references/gate-report-format.md` (Toolchain + Results tables, then per-check evidence). It carries
-the markers `<!-- QG:VERDICT:… -->` and `<!-- QG:CHECK:N:… -->` (N ∈ {1,2,3,4,6,7,9,10}) that the orchestrator
-greps — always emit them.
+`references/gate-report-format.md` (Toolchain + Results tables, then per-check evidence).
+That reference owns the verdict and per-check markers; always emit them.
 
 ---
 
@@ -199,7 +190,7 @@ greps — always emit them.
 
 Binary verdicts — no WARN tier:
 
-- **`PASS`** — all mandatory checks pass **in every package in `PACKAGES`** (Checks 1-3, 6, 7, and 10, plus Check 9 where a package declares `e2e`; Check 4 is diagnostic and never blocks)
+- **`PASS`** — all mandatory checks pass **in every package in `PACKAGES`** (Checks 1-3, 7, and 10, plus Check 9 where a package declares `e2e`)
 - **`BLOCKED`** — any mandatory check fails (with specific reasons listed)
 - **`STAGNATION`** — same check failed 3 consecutive times across gate runs (special signal: stop entirely, don't retry)
 
