@@ -8,6 +8,7 @@
 | **Manual infra** | Agent spends 30–60 min starting services, guessing ports, hand-seeding the DB | Tests assume "someone already started the stack" — nothing brings it up or proves it's up |
 | **Slow hangs** | 120–360s stalls on a wrong selector or dead port | No fail-fast gate; per-test timeout is minutes, so every failure waits the full ceiling |
 | **No isolation** | Specs pass in isolation, fail in the suite | All specs share one DB with no reset between them; seeded rows pollute later specs |
+| **Stale artifact** | Suite is green, the change is absent; or it fails for reasons your diff cannot explain | The code under test ships as an artifact another program consumes, and the consumer loaded its *installed* copy, not your build |
 
 ## The invariants (true for every stack)
 
@@ -15,6 +16,7 @@
 2. **One source of truth.** Allocate ports/URLs/credentials **once**, export them, and have *every* consumer — app server, the test's seed client, the runner's base URL — read them. No spec carries a hardcoded fallback. Centralize them in one module every spec imports.
 3. **Fail-fast gates, not long timeouts.** Every wait has a tight deadline (~20–30s) that **throws** with a clear message. Per-test/assertion timeouts in seconds, not minutes. A wrong selector or dead port must surface fast, never wait out a multi-minute ceiling.
 4. **Per-spec isolation.** Each spec starts from a known state — truncate touched tables, roll back a per-test transaction, or use a fresh schema. A suite that resets per *run* (not per *spec*) passes file-by-file and fails as a whole.
+5. **The build under test is the one that runs.** Whatever the runner loads must be what you just built. Where the app runs from source this is free; where your code ships as an artifact someone else consumes, it is a provisioning step — see *Testing through a consumer* below.
 
 ## How to figure out the bring-up (don't assume a stack)
 
@@ -59,11 +61,79 @@ Two non-obvious traps worth checking on any framework:
 - **Is config evaluated once or per worker?** If the runner re-imports the config in each worker process, allocating ports inside the config makes workers disagree. Allocate in the entrypoint; the config only *reads* env.
 - **Does a one-off script resolve the project's DB driver?** In symlinked/monorepo layouts a bare `require('<driver>')` may not resolve. Invoke through the project's own tooling, or resolve the driver from the package that declares the dependency.
 
+## Testing through a consumer
+
+Some code has no drivable surface of its own. A UI component library, an SDK, a schema or config
+package, a shared container image: it is *loaded by* another program, and only that program has the
+route, the command, or the endpoint a scenario can drive. The altitude then splits across two
+places:
+
+- **Unit tests stay with the producer**, against its exported functions. If the producer has no
+  render or integration harness, do not build one — extract the logic into an exported function and
+  test that.
+- **The e2e runs in the consumer**, the program that mounts the artifact on a real surface. That is
+  the only place the journey exists.
+
+### The sync precondition
+
+A consumer resolves your code from an **installed** location, not from your working tree. Left
+alone, the run exercises the last published build and proves nothing about your change — and it
+usually goes green, which is the dangerous part.
+
+So provisioning the consumer means three steps, in order, before the suite is trusted:
+
+1. **Build** the producer's publishable output from your working tree.
+2. **Place** that output where the consumer resolves it from.
+3. **Prove** the consumer loaded yours — assert on something only your build has, or check the
+   file you placed is the file the consumer reads. A sync you did not verify is a sync that
+   silently did not happen.
+
+Where step 2 lands depends on the ecosystem. The shape is always "overwrite the resolved copy",
+and most ecosystems also offer a supported redirect that does it for you:
+
+| Ecosystem | Resolved location | Supported redirect |
+|---|---|---|
+| Node | `node_modules/<pkg>` | `npm link`, `yalc push`, a workspace entry |
+| Python | the consumer's environment | `pip install -e <producer>` |
+| Go | the module cache | a `replace` directive in `go.mod` |
+| JVM | the local artifact repository | install the snapshot, or a composite build |
+| Rust | the registry cache | a `[patch]` section in `Cargo.toml` |
+| Container image | the tag the consumer pulls | rebuild and retag locally |
+
+Prefer the redirect where the repo is set up for it; it survives a reinstall, while a hand copy does
+not.
+
+**A shared location is not a safe sync target.** Module caches, local artifact repositories and
+symlinks into a master checkout are shared by every checkout on the machine. Overwriting one
+corrupts the others, so a worktree that resolves through a shared copy cannot be synced at all.
+Give that checkout a real, isolated copy first.
+
+**Install preconditions are blockers, not failures.** The consumer may have nothing installed yet,
+and a private registry needs credentials. A missing token is a blocked precondition: say so and
+return control. Do not report it as a failing test.
+
+**An unsyncable consumer blocks the phase.** If you cannot produce an isolated copy or a working
+redirect, the scenario is `BLOCKED`. Never re-home it to unit altitude to claim it done — that
+trades the only real proof for a test that cannot fail the way the bug does.
+
+A producer that declares no test runner at all has no suite to write: its artifact is proven by the
+scenario in the package that consumes it, and the uncovered files are not a gap.
+
 ## Report from machine output, never by hand
 
 Derive any pass/fail report from the runner's JSON reporter, not hand-authored counts — that is
-what makes a gate trustworthy. Pipeline runs have a required schema and path: see
-`skills/orchestrate/references/coder-contracts.md`.
+what makes a gate trustworthy. In a pipeline the report goes to the path the caller supplies
+(`<HARNESS_DIR>/phase-<N>-e2e.json`). **A bare `--reporter=json` prints to stdout and writes no
+file**; each runner names its destination differently:
+
+| Runner | Invocation |
+|---|---|
+| Playwright | `PLAYWRIGHT_JSON_OUTPUT_NAME=<path> playwright test --reporter=json` |
+| vitest | `vitest run --reporter=json --outputFile=<path>` |
+| jest | `jest --json --outputFile=<path>` |
+
+Where the project wraps its runner (an `e2e` script, a custom entry point), pass the same env var
+or flag through it. The file on disk is what the gate reads, not the console output.
 
 ## Checklist before calling an e2e suite "done"
 
@@ -71,4 +141,5 @@ what makes a gate trustworthy. Pipeline runs have a required schema and path: se
 - [ ] The e2e command brings up its own infra and tears it down (works from a cold checkout, no manual start first)
 - [ ] Every wait fails fast (<30s) with a clear error
 - [ ] Each spec passes **both** alone and inside the full suite (proves isolation)
+- [ ] Where the suite drives a consumer, the producer's build was synced into it and the sync was verified
 - [ ] Runner emits `phase-<N>-e2e.json` via its own JSON reporter
