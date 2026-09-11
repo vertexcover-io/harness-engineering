@@ -358,7 +358,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/harness-retro` | Post-mortems a finished run: what broke, why, and which skill to fix |
 
 **Run automatically (no command needed):**
-`code-quality` · `refactor` · `quality-gate` · `pipeline-setup` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
+`code-quality` · `refactor` · `quality-gate` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
 
 ## Structure
 
@@ -385,7 +385,6 @@ harness/
     ├── implement/
     ├── learn/
     ├── orchestrate/
-    ├── pipeline-setup/
     ├── planning/
     ├── quality-gate/
     ├── refactor/
