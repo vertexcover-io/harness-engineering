@@ -189,6 +189,11 @@ export const HARNESS_CHECKS: readonly Check[] = [
   { name: "gh", optional: true, fix: ["brew install gh", "apt install gh", "gh auth login"], run: checkGhAuth },
   { name: "agent-browser", fix: ["npm i -g agent-browser", "agent-browser install"], run: checkBinary("agent-browser") },
   {
+    name: "ffmpeg",
+    fix: ["brew install ffmpeg", "apt install ffmpeg", "dnf install ffmpeg"],
+    run: checkBinary("ffmpeg", ["-version"]),
+  },
+  {
     name: "samskara",
     optional: true,
     fix: [
