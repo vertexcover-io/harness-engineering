@@ -1,8 +1,7 @@
 #!/usr/bin/env node --experimental-strip-types
 
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { findConfigFile, formatMessage, loadConfig, NotifierError, resolveProvider } from "./notify.ts";
@@ -55,7 +54,6 @@ export type PayloadBase = {
   readonly spec?: string;
   readonly branch: string;
   readonly repoRoot: string;
-  readonly runRoot: string;
   readonly artifactDir?: string;
 };
 
@@ -207,25 +205,6 @@ const gitRoots = (cwd: string): { repoRoot: string; mainCheckout: string } => {
   }
 };
 
-const findRepoRoot = (cwd: string): string => gitRoots(cwd).repoRoot;
-
-export const WORKSPACE_MARKER = ".harness-workspace";
-
-const findWorkspaceRoot = (cwd: string): string | null => {
-  const stop = homedir();
-  let dir = resolve(cwd);
-  while (dir !== stop) {
-    if (existsSync(join(dir, WORKSPACE_MARKER))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-  return null;
-};
-
-export const findRunRoot = (cwd: string, repoRoot: string): string =>
-  findWorkspaceRoot(cwd) ?? repoRoot;
-
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -262,15 +241,13 @@ export const buildPayload = (flags: FireFlags, repoRoot: string, cwd: string): P
     branch = "";
   }
 
-  const runRoot = findRunRoot(cwd, repoRoot);
   const base: PayloadBase = {
     ...(flags.stage !== undefined ? { stage: flags.stage } : {}),
     ...(flags.result !== undefined ? { result: flags.result } : {}),
     ...(flags.spec !== undefined ? { spec: flags.spec } : {}),
     branch,
     repoRoot,
-    runRoot,
-    ...(flags.spec !== undefined ? { artifactDir: join(runRoot, ".harness", flags.spec) } : {}),
+    ...(flags.spec !== undefined ? { artifactDir: join(repoRoot, ".harness", flags.spec) } : {}),
   };
 
   const parsed = parseData(flags, base);
@@ -594,7 +571,7 @@ const ARTIFACT = {
 
 // A base for the parse call parseFireArgv makes purely to reject bad --data — its value is
 // thrown away, and no field of the base is involved in any check.
-const PARSE_ONLY_BASE: PayloadBase = { branch: "", repoRoot: "", runRoot: "" };
+const PARSE_ONLY_BASE: PayloadBase = { branch: "", repoRoot: "" };
 
 const parseData = (flags: FireFlags, base: PayloadBase): Parsed<Payload> => {
   const d = flags.data ?? {};
@@ -620,7 +597,8 @@ const BUILTINS: readonly Builtin[] = [
   {
     name: "notifier",
     events: NOTIFIER_EVENTS,
-    entry: { fn: { module: SELF, export: "notifierHook" } },
+    // report: every fire prints the thread id its message landed in.
+    entry: { fn: { module: SELF, export: "notifierHook" }, report: true },
   },
   {
     name: "samskara",
@@ -657,16 +635,47 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
-// Returns the absolute path to upload: a stage names its artifacts relative to the run root, and
-// the fire can come from any checkout in it, so the resolved path is what the uploader must read.
-const uploadableFile = (runRoot: string, path: string): string | null => {
-  const contained = containedPath(runRoot, path);
+// Returns the absolute path to upload: a stage names its artifacts relative to the repo root,
+// and the uploader must read a resolved path.
+const uploadableFile = (repoRoot: string, path: string): string | null => {
+  const contained = containedPath(repoRoot, path);
   if (contained === null) return null;
   try {
     return statSync(contained).isFile() ? contained : null;
   } catch {
     return null;
   }
+};
+
+// The thread id lives in the run's manifest, which pipeline-setup writes before the first fire.
+// The notifier owns its `thread` field and touches nothing else in there.
+const readManifest = (path: string): Record<string, unknown> | null => {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const readThread = (path: string): string | null => {
+  const thread = readManifest(path)?.["thread"];
+  return typeof thread === "string" && thread.trim() !== "" ? thread.trim() : null;
+};
+
+// Re-reads before writing: a stage appending `stages.*` during the Slack round-trip would
+// otherwise be clobbered. A missing manifest is never created — that run was never set up.
+const writeThread = (path: string, ts: string): void => {
+  const current = readManifest(path);
+  if (current === null) return;
+  writeFileSync(path, `${JSON.stringify({ ...current, thread: ts }, null, 2)}\n`);
+};
+
+const missingThreadDetail = (manifest: string | null): string => {
+  if (manifest === null) return "--spec is absent. Pass --spec on every fire.";
+  return existsSync(manifest)
+    ? `no thread in ${manifest}. Trigger run-started before any other event.`
+    : `no manifest at ${manifest}. Run pipeline-setup, then fire run-started.`;
 };
 
 // A plain fn-hook handler: (payload) => Promise<string>, the exact contract every user fn hook
@@ -677,16 +686,14 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   const config = loadConfig();
   if (config === null) return "disabled";
 
-  const threadFile = payload.artifactDir === undefined ? null : join(payload.artifactDir, "hooks", "thread");
+  const manifest = payload.artifactDir === undefined ? null : join(payload.artifactDir, "manifest.json");
   const starting = payload.event === "run-started";
-  const recorded =
-    !starting && threadFile !== null && existsSync(threadFile) ? readFileSync(threadFile, "utf8").trim() : "";
-  const thread = recorded === "" ? null : recorded;
+  const thread = !starting && manifest !== null ? readThread(manifest) : null;
   const orphaned = !starting && payload.event !== "hook-failed" && thread === null;
   const artifacts =
     payload.event === "stage-completed"
       ? (payload.data.artifacts ?? []).flatMap((a) => {
-          const file = uploadableFile(payload.runRoot, a.path);
+          const file = uploadableFile(payload.repoRoot, a.path);
           return file === null ? [] : [file];
         })
       : [];
@@ -712,20 +719,10 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   await Promise.all(artifacts.map((file) => p.upload(file, message)));
 
   // Threading is self-managed: run-started writes the returned ts, every later event reads it.
-  // A re-run overwrites the file, so each run threads fresh.
-  if ((starting || orphaned) && ts !== null && threadFile !== null) {
-    mkdirSync(dirname(threadFile), { recursive: true });
-    writeFileSync(threadFile, ts);
-  }
+  // A re-run overwrites the field, so each run threads fresh.
+  if ((starting || orphaned) && ts !== null && manifest !== null) writeThread(manifest, ts);
 
-  if (orphaned) {
-    throw new NotifierError(
-      threadFile === null
-        ? `--spec is absent. Pass --spec on every fire. See references/events.md.`
-        : `no thread at ${threadFile}. Trigger run-started before any other event. ` +
-          `See references/events.md.`,
-    );
-  }
+  if (orphaned) throw new NotifierError(`${missingThreadDetail(manifest)} See references/events.md.`);
 
   return ts ?? "sent";
 };
@@ -742,7 +739,7 @@ export const samskaraHook = async (
 ): Promise<string> => {
   const result = uploadStageArtifacts(
     {
-      runRoot: payload.runRoot,
+      runRoot: payload.repoRoot,
       ...(payload.artifactDir === undefined ? {} : { artifactDir: payload.artifactDir }),
       artifacts: payload.data.artifacts ?? [],
     },
@@ -1127,13 +1124,9 @@ const runDoctorCommand = (cwd: string): number => {
 export const main = async (argv: readonly string[], deps: FireDeps = productionDeps()): Promise<number> => {
   const [command, ...rest] = argv;
   if (command === "doctor") return runDoctorCommand(deps.cwd);
-  if (command === "run-root") {
-    process.stdout.write(`${findRunRoot(deps.cwd, findRepoRoot(deps.cwd))}\n`);
-    return 0;
-  }
 
   if (command !== "fire") {
-    return invalid(`unknown command "${command ?? ""}". Supported: fire, run-root, doctor.`);
+    return invalid(`unknown command "${command ?? ""}". Supported: fire, doctor.`);
   }
 
   let flags: FireFlags;

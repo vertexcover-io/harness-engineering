@@ -59,27 +59,15 @@ Store: `WORKTREE_PATH`, `BRANCH_NAME`
 
 ### 2. Create the Feature Directory
 
-One directory holds everything — `<RUN_ROOT>/.harness/<SPEC_NAME>/` (design.md, plan.html, plan.md,
-phases/, baseline.json, manifest.json, phase-*-e2e.json, gate-report-*.md, review/,
+One directory holds everything — `.harness/<SPEC_NAME>/` at the repo root (design.md, plan.html,
+plan.md, phases/, baseline.json, manifest.json, phase-*-e2e.json, gate-report-*.md, review/,
 probes/, verification/). The whole `.harness/` tree is gitignored (knowledge/ excepted);
 reviewers read artifacts out-of-band.
 
-`RUN_ROOT` is the run's own root, and every later stage resolves it the same way — one run, one
-directory, whichever checkout a command happens to run from. Resolve it once, here, and store it:
-
-```
-RUN_ROOT=$(node --experimental-strip-types <plugin-root>/skills/_shared/hooks.ts run-root)
-```
-
-A multi-repo workspace answers with the workspace; a plain repo answers with the repo root. Every
-`.harness/<SPEC_NAME>/…` path below is under `RUN_ROOT`. `.harness/knowledge/` is not — it is the
-repo's lesson store, it outlives the run, and it stays where it is.
-
-What makes a directory a workspace is a `.harness-workspace` file sitting in it. `run-root` walks up
-from wherever it is called until it finds one, so every checkout under that directory — and the
-directory itself — answers with the same run root. Whoever creates a multi-repo workspace creates the
-marker with it (`touch <workspace>/.harness-workspace`), before the run's first fire. A workspace
-without one is not recognised, and each checkout falls back to its own repo root.
+Create it from the worktree, and run every later stage from there too: the repo root is what a
+hook fire resolves `.harness/<SPEC_NAME>/` against, so a command run from a different checkout
+looks somewhere else. `.harness/knowledge/` is the exception — it is the repo's lesson store, it
+outlives the run, and it stays where it is.
 
 Steps:
 
@@ -91,7 +79,9 @@ Steps:
    `.harness/<SPEC_NAME>/design/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`).
    The planning skill's design scout writes into `design/` during its own step 1 and creates nothing —
    so this call is what gives those files a home inside the worktree.
-4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`. Fill `run_info` from
+4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`. This file must exist before
+   the run's first hook fire — the notifier records the run's Slack thread in its `thread` field
+   and creates nothing itself. Fill `run_info` from
    `node --experimental-strip-types <plugin-root>/skills/_shared/collect-run-info.ts --json`,
    verbatim — it records what produced this run, and any value it could not read comes back
    `null`:
@@ -103,12 +93,15 @@ Steps:
   "worktree": "<WORKTREE_PATH>",
   "started_at": "<ISO8601>",
   "run_info": { "harness": "1.29.0", "andromeda": "master@a2bd8cc", "session": "<uuid>" },
+  "thread": null,
   "pr_number": null,
   "stages": {}
 }
 ```
 
 Downstream stages append `stages.<stage_name> = { started_at, completed_at, outcome }` entries.
+`thread` is the notifier's alone — no stage writes it, and a stage updating this file re-reads it
+first so it does not drop what the notifier put there.
 
 Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
 
@@ -154,7 +147,6 @@ After completion, the following variables are available for downstream stages:
 | `WORKTREE_PATH` | Absolute path to the git worktree |
 | `BRANCH_NAME` | Name of the worktree branch |
 | `SPEC_NAME` | Slugified task name |
-| `RUN_ROOT` | The run's root — a multi-repo workspace, else the repo root |
-| `SPEC_DIR` | Path to `<RUN_ROOT>/.harness/<SPEC_NAME>/` (all run artifacts, gitignored) |
+| `SPEC_DIR` | Path to `.harness/<SPEC_NAME>/` (all run artifacts, gitignored) |
 | `BASELINE_PATH` | Path to `.harness/<SPEC_NAME>/baseline.json` |
 | `MANIFEST_PATH` | Path to `.harness/<SPEC_NAME>/manifest.json` |

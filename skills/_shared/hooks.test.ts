@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { FireDeps, LifecyclePayload } from "./hooks.ts";
-import { buildPayload, findRunRoot, loadHooks, notifierHook, parseFireArgv, runDoctor, runFire, WORKSPACE_MARKER } from "./hooks.ts";
+import { buildPayload, loadHooks, notifierHook, parseFireArgv, runDoctor, runFire } from "./hooks.ts";
 import { formatMessage, loadConfig, slackText } from "./notify.ts";
 import type { Message, Provider } from "./notify.ts";
 
@@ -36,12 +36,22 @@ const makeFakeExec = (script: readonly ExecStep[]) => {
   return { exec, calls };
 };
 
-const seedThread = (root: string, spec: string, ts = "999.1"): string => {
+// The manifest pipeline-setup writes before the first fire. `thread` is null until
+// run-started fills it, exactly as the skeleton ships.
+const seedManifest = (root: string, spec: string, thread: string | null = null): string => {
   const artifactDir = join(root, ".harness", spec);
-  mkdirSync(join(artifactDir, "hooks"), { recursive: true });
-  writeFileSync(join(artifactDir, "hooks", "thread"), ts);
+  mkdirSync(artifactDir, { recursive: true });
+  writeFileSync(
+    join(artifactDir, "manifest.json"),
+    JSON.stringify({ spec_name: spec, thread, pr_number: null, stages: {} }, null, 2),
+  );
   return artifactDir;
 };
+
+const manifestOf = (root: string, spec: string): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(root, ".harness", spec, "manifest.json"), "utf8")) as Record<string, unknown>;
+
+const seedThread = (root: string, spec: string, ts = "999.1"): string => seedManifest(root, spec, ts);
 
 const baseDeps = (cwd: string, overrides: Partial<FireDeps> = {}): FireDeps => ({
   exec: () => ({ exit: 0, stdout: "", stderr: "" }),
@@ -300,9 +310,7 @@ test("SC15 (regression): the six lifecycle messages match formatMessage's own ou
   const dir = tmp();
   execFileSync("git", ["init", "-q"], { cwd: dir });
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
-  const artifactDir = join(dir, ".harness", "t");
-  const threadFile = join(artifactDir, "hooks", "thread");
-  mkdirSync(join(artifactDir, "hooks"), { recursive: true });
+  const artifactDir = seedManifest(dir, "t");
 
   const events = [
     "run-started", "stage-started", "stage-completed",
@@ -313,9 +321,9 @@ test("SC15 (regression): the six lifecycle messages match formatMessage's own ou
   process.chdir(dir);
   try {
     for (const event of events) {
-      // run-started overwrites the thread file with its own returned ts — reset it
+      // run-started overwrites the manifest's thread with its own returned ts — reset it
       // before each event so this loop tests one event's mapping in isolation.
-      writeFileSync(threadFile, "999.1");
+      seedManifest(dir, "t", "999.1");
       const data =
         event === "question-pending"
           ? { title: "t", questions: [{ question: "Ship it?", answers: ["yes", "no"] }] }
@@ -360,6 +368,7 @@ test("SC16: the thread id persists in the run's state, not in the agent", async 
     { cwd: dir, encoding: "utf8" },
   ).trim();
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  seedManifest(repoRoot, "t");
 
   const sent: Message[] = [];
   const provider: Provider = {
@@ -380,8 +389,7 @@ test("SC16: the thread id persists in the run's state, not in the agent", async 
       { event: "run-started", spec: "t", data: { title: "t" } },
       baseDeps(dir, { importModule }),
     );
-    const threadFile = join(repoRoot, ".harness", "t", "hooks", "thread");
-    assert.equal(readFileSync(threadFile, "utf8"), "123.45");
+    assert.equal(manifestOf(repoRoot, "t")["thread"], "123.45");
 
     await runFire(
       { event: "stage-started", spec: "t", data: { title: "t" } },
@@ -1327,46 +1335,16 @@ const gitRepo = (dir: string): string => {
   ).trim();
 };
 
-test("SC53: with no workspace configured the run root is the repo root", () => {
+test("SC53: the artifact dir is the run's directory under the repo root", () => {
   const dir = tmp();
   const repoRoot = gitRepo(dir);
+  mkdirSync(join(dir, "src"), { recursive: true });
 
-  assert.equal(findRunRoot(dir, repoRoot), repoRoot);
-});
+  const dirs = [dir, join(dir, "src")].map(
+    (cwd) => buildPayload({ event: "stage-started", spec: "t", data: {} }, repoRoot, cwd).artifactDir,
+  );
 
-test("SC54: every checkout in a workspace resolves one artifact dir", () => {
-  const dir = tmp();
-  const workspace = join(dir, "ws");
-  const main = gitRepo(dir);
-  for (const name of ["alpha", "beta"]) {
-    execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: main });
-    execFileSync("git", ["worktree", "add", "-q", join(workspace, name), "-b", name], { cwd: main });
-  }
-  mkdirSync(join(workspace, "alpha", "src"), { recursive: true });
-  writeFileSync(join(workspace, WORKSPACE_MARKER), "");
-
-  const dirs = [
-    workspace,
-    join(workspace, "alpha"),
-    join(workspace, "alpha", "src"),
-    join(workspace, "beta"),
-  ].map((cwd) => buildPayload({ event: "stage-started", spec: "t", data: {} }, main, cwd).artifactDir);
-
-  assert.deepEqual(new Set(dirs), new Set([join(workspace, ".harness", "t")]));
-  assert.equal(findRunRoot(main, main), main);
-});
-
-test("SC54b: a marker below the run root does not capture a sibling checkout", () => {
-  const dir = tmp();
-  const workspace = join(dir, "ws");
-  const main = gitRepo(dir);
-  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: main });
-  execFileSync("git", ["worktree", "add", "-q", join(workspace, "alpha"), "-b", "alpha"], { cwd: main });
-  mkdirSync(join(dir, "other"), { recursive: true });
-  writeFileSync(join(workspace, WORKSPACE_MARKER), "");
-
-  assert.equal(findRunRoot(join(workspace, "alpha"), main), workspace);
-  assert.equal(findRunRoot(join(dir, "other"), main), main);
+  assert.deepEqual(new Set(dirs), new Set([join(repoRoot, ".harness", "t")]));
 });
 
 test("SC54c: a workspace checkout finds the config at the root it was cloned into", () => {
@@ -1376,7 +1354,6 @@ test("SC54c: a workspace checkout finds the config at the root it was cloned int
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
   execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: main });
   execFileSync("git", ["worktree", "add", "-q", join(workspace, "alpha"), "-b", "alpha"], { cwd: main });
-  writeFileSync(join(workspace, WORKSPACE_MARKER), "");
 
   assert.equal(loadHooks(join(workspace, "alpha")).raw["notifier"] !== undefined, true);
 });
@@ -1396,8 +1373,9 @@ test("SC54d: a checkout carrying its own config keeps using it", () => {
 
 test("SC55: an event fired before run-started fails and names the missing fire", async () => {
   const dir = tmp();
-  gitRepo(dir);
+  const repoRoot = gitRepo(dir);
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  seedManifest(repoRoot, "t");
   const sent: Message[] = [];
 
   const cwd = process.cwd();
@@ -1421,8 +1399,9 @@ test("SC55: an event fired before run-started fails and names the missing fire",
 
 test("SC56: an orphaned event adopts its own ts so the rest of the run threads", async () => {
   const dir = tmp();
-  gitRepo(dir);
+  const repoRoot = gitRepo(dir);
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  seedManifest(repoRoot, "t");
   const sent: Message[] = [];
   const deps = notifierDeps(dir, threadingProvider(sent));
 
@@ -1439,12 +1418,11 @@ test("SC56: an orphaned event adopts its own ts so the rest of the run threads",
   assert.deepEqual(sent.map((m) => m.threadRef), [null, "123.45"]);
 });
 
-test("SC57: an empty thread file reads as no thread, never as an empty thread_ts", async () => {
+test("SC57: an empty thread reads as no thread, never as an empty thread_ts", async () => {
   const dir = tmp();
   const repoRoot = gitRepo(dir);
   writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
-  mkdirSync(join(repoRoot, ".harness", "t", "hooks"), { recursive: true });
-  writeFileSync(join(repoRoot, ".harness", "t", "hooks", "thread"), "  \n");
+  seedManifest(repoRoot, "t", "  \n");
   const sent: Message[] = [];
 
   const cwd = process.cwd();
@@ -1459,7 +1437,7 @@ test("SC57: an empty thread file reads as no thread, never as an empty thread_ts
   }
 
   assert.equal(sent[0]?.threadRef, null);
-  assert.equal(readFileSync(join(repoRoot, ".harness", "t", "hooks", "thread"), "utf8"), "123.45");
+  assert.equal(manifestOf(repoRoot, "t")["thread"], "123.45");
 });
 
 test("SC58: a hook failure never reaches the notifier — errors stay out of the channel", async () => {
@@ -1510,4 +1488,83 @@ test("SC59: a notifier event with no --spec reports the missing flag, and still 
   assert.equal(result.out.results?.["notifier"]?.status, "failure");
   assert.match(String(result.out.results?.["notifier"]?.result), /--spec/);
   assert.deepEqual(sent.map((m) => m.threadRef), [null]);
+});
+
+test("SC60: with no manifest the notifier names it and creates nothing", async () => {
+  const dir = tmp();
+  const repoRoot = gitRepo(dir);
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  const sent: Message[] = [];
+
+  const cwd = process.cwd();
+  process.chdir(dir);
+  let result;
+  try {
+    result = await runFire(
+      { event: "stage-started", stage: "coder", spec: "t", data: { title: "t" } },
+      notifierDeps(dir, threadingProvider(sent)),
+    );
+  } finally {
+    process.chdir(cwd);
+  }
+
+  assert.equal(result.out.results?.["notifier"]?.status, "failure");
+  assert.match(String(result.out.results?.["notifier"]?.result), /no manifest at/);
+  assert.match(String(result.out.results?.["notifier"]?.result), /pipeline-setup/);
+  assert.equal(existsSync(join(repoRoot, ".harness", "t")), false);
+  assert.equal(sent.length, 1);
+});
+
+test("SC61: writing the thread keeps every other field a stage wrote meanwhile", async () => {
+  const dir = tmp();
+  const repoRoot = gitRepo(dir);
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  const artifactDir = seedManifest(repoRoot, "t");
+  const manifestPath = join(artifactDir, "manifest.json");
+
+  // A stage writes the manifest during the Slack round-trip, after the hook has read it.
+  const provider: Provider = {
+    send: async () => {
+      const during = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+      writeFileSync(manifestPath, JSON.stringify({ ...during, pr_number: 42 }, null, 2));
+      return "123.45";
+    },
+    upload: async () => {},
+  };
+
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    await runFire({ event: "run-started", spec: "t", data: { title: "t" } }, notifierDeps(dir, provider));
+  } finally {
+    process.chdir(cwd);
+  }
+
+  const manifest = manifestOf(repoRoot, "t");
+  assert.equal(manifest["thread"], "123.45");
+  assert.equal(manifest["pr_number"], 42);
+  assert.equal(manifest["spec_name"], "t");
+});
+
+test("SC62: a fire reports the thread id it posted to", async () => {
+  const dir = tmp();
+  const repoRoot = gitRepo(dir);
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  seedManifest(repoRoot, "t");
+  const sent: Message[] = [];
+
+  const cwd = process.cwd();
+  process.chdir(dir);
+  let result;
+  try {
+    result = await runFire(
+      { event: "run-started", spec: "t", data: { title: "t" } },
+      notifierDeps(dir, threadingProvider(sent)),
+    );
+  } finally {
+    process.chdir(cwd);
+  }
+
+  assert.equal(result.out.results?.["notifier"]?.status, "success");
+  assert.equal(result.out.results?.["notifier"]?.result, "123.45");
 });

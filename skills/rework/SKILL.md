@@ -25,7 +25,7 @@ orchestrate's.
 
 **Events.** Fire them as `skills/orchestrate/references/events.md` defines, from the primary entry's
 worktree: `question-pending` before each `AskUserQuestion`, `run-interrupted` before any row of the
-Halts table.
+Halts table. Never redirect a fire's output away.
 
 ## Step 1 — Resolve the ticket
 
@@ -61,7 +61,9 @@ Per `PRS` entry, or for the launch repo when `PRS` is empty:
    it now**. A QA ticket with no PR gets a new branch off the remote's default branch.
 3. Install with that config's `bootstrap` command.
 4. Create `.harness/<spec_name>/`, delete `.harness/current-phase`, and copy no prior document in: a
-   `plan.md` there puts the whole feature back into verification's scope.
+   `plan.md` there puts the whole feature back into verification's scope. Write a
+   `manifest.json` beside it carrying `{"spec_name": "<spec_name>", "thread": null}`: this skill
+   fires events before `orchestrate` does, and the notifier records the thread there.
 
 Record per entry, for Step 6:
 
@@ -69,9 +71,9 @@ Record per entry, for Step 6:
 |---|---|
 | `worktree`, `branch` | what the worktree skill returned |
 | `packages` | the `packages` keys this PR's changed files sit under, empty for the root `commands` map |
-| `spec_name` | `<TICKET_REF>-rework-<N>`, `N` one above the highest `.harness/<TICKET_REF>-rework-*` already under the run root (`hooks.ts run-root`) |
+| `spec_name` | `<TICKET_REF>-rework-<N>`, `N` one above the highest `.harness/<TICKET_REF>-rework-*` already in the primary entry's repo |
 | `base_sha` | the checkout's head |
-| `plan` | the prior run's `plan.md`, when a `.harness/*/manifest.json` under the run root matches this `pr_number` or `TICKET_REF`. Two matches, or none, is a question |
+| `plan` | the prior run's `plan.md`, when a `.harness/*/manifest.json` in that checkout matches this `pr_number` or `TICKET_REF`. Two matches, or none, is a question |
 
 **The first `PRS` entry is primary.**
 

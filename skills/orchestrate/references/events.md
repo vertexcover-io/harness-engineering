@@ -16,9 +16,14 @@ notifier gates itself on `notifier.enabled`, and an unconfigured project just pr
 Fire one command per row, from the worktree root. Pass this run's DAG node id as `--stage` and
 its spec name as `--spec`.
 
+**Never discard a fire's output** — no `>/dev/null`, no `2>&1`, no `; echo done`. A redirected fire
+reports success whatever happened.
+
+**Send each fire in the same command block as its stage's `set-status`.**
+
 | When | Command |
 |---|---|
-| Stage 0 starts | `<HOOKS> fire --event run-started --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","body":"<one-line task> : <ticket URL>"}'` |
+| Stage 0, as soon as `pipeline-setup` returns | `<HOOKS> fire --event run-started --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","body":"<one-line task> : <ticket URL>"}'` |
 | you enter a stage | `<HOOKS> fire --event stage-started --stage <id> --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>"}'` |
 | you leave a stage | `<HOOKS> fire --event stage-completed --stage <id> --result pass --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","body":"<what the stage did, in plain words>","artifacts":[{"name":"<artifact name>","path":"<its path>"}]}'` |
 | before each `AskUserQuestion`, or any question to the developer | `<HOOKS> fire --event question-pending --stage <id> --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","questions":[{"question":"<the question>","answers":["<option>","<option>"]}]}'` |
@@ -41,12 +46,16 @@ not read the run.
 task names no ticket.
 
 **`run-started` must be the run's first fire.** It opens the thread every later message replies to,
-and it is the only event that opens one. Fire it at Stage 0, before any other event. A later event
-that finds no thread reports:
+and it is the only event that opens one. It needs `pipeline-setup`'s `manifest.json` to record the
+thread in, so it fires once that skill returns and not before. A later event that finds no thread
+reports:
 
 ```
-notifier: no thread at <path>. Trigger run-started before any other event.
+notifier: no thread in <path>. Trigger run-started before any other event.
 ```
+
+`no manifest at <path>` instead means `pipeline-setup` has not run, or this command was sent from a
+different checkout than the one holding the run.
 
 That message still reached the channel, and the run now threads under it — but the run started
 wrong. The error is on your line only, not in Slack. Fire `run-started` and carry on; do not resend
@@ -116,7 +125,8 @@ yours to read on the line `fire` prints, under `results`. What reaches Slack is 
 started, each stage, questions, completion — for people who are not watching this terminal.
 
 There is no thread id to carry between commands — the old `<THREAD>` bookkeeping is gone. The
-notifier hook persists it itself, in `<RUN_ROOT>/.harness/<SPEC_NAME>/hooks/thread`, and reads it
-back on every later fire. `RUN_ROOT` is the multi-repo workspace holding this run when there is one,
-else the repo root, so a fire from any checkout in the workspace resolves the same thread. Fire from
-wherever the stage left you; you never need to `cd` back to open the thread.
+notifier hook persists it itself, in the `thread` field of `.harness/<SPEC_NAME>/manifest.json`, and
+reads it back on every later fire. Every fire prints that id under `results.notifier.result`.
+
+Fire from the checkout `pipeline-setup` wrote the manifest in: the path resolves against the repo
+root of wherever the command runs.
