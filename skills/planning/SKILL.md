@@ -306,6 +306,8 @@ recommendation:
   in `IMG` · every `<details>` opens with a `<summary>` and wraps its panel in `.d-body` ·
   rows in `#matrix` == scenarios across all payloads, each carrying that
   scenario's id, heading, `Given` line and outcomes word for word.
+- **Every block has an `id`.** Cards, table rows, callouts, phase cards, `.unlock` boxes,
+  drill-down steps — none without one.
 - **The layers agree.** Every number, name, signature, and path in the human layer comes
   from a payload block · every internal id on the page has a tooltip entry · the
   above-the-fold view answers *what, why, what each phase unlocks* without a drill-down.
@@ -317,20 +319,57 @@ found nothing blocking.
 
 Present `plan.html` — the live-view URL when the server is running (the open tab already
 shows the finished page), plus its absolute path as a `file://` fallback — with a
-one-paragraph summary: the phase list and anything that changed since the checkpoint. One
-`AskUserQuestion`. In `--auto`, auto-approve.
+one-paragraph summary: the phase list and anything that changed since the checkpoint. Say in
+one line that they can comment on the page itself. One `AskUserQuestion`. In `--auto`,
+auto-approve.
 
-After any revision the user asks for: update plan.html — payloads included — re-run step 7's
-self-review, and re-present. Keep the server running through revisions; every save shows up
-in the user's tab on its own. A revision is not a confirmation; extract only after explicit
-approval.
+### Comments from the page
 
-On approval, extract the payloads and stop the server:
+The reviewer can mark up plan.html directly instead of describing a change in the terminal.
+Each comment arrives with the section, heading and quoted text it was written against.
+
+Arm the watcher backgrounded *before* you present. It exits when a batch lands, which is what
+wakes you, and re-arm after each batch you handle:
+
+```bash
+node <skill-dir>/scripts/comment-store.cjs wait <state-dir> --timeout-ms 3600000
+```
+
+Keep its job id — the approval block below kills it, or it fires into a later stage.
+
+The wake-up is not the contract. `comment-store.cjs list <state-dir>` returns every unanswered
+comment; read it whenever the user writes back, because a batch that landed while a question
+was open never reached you.
+
+Handle each comment by what it asks for:
+
+- **A question** — answer it, change nothing. Status `answered`.
+- **A change** — make it in plan.html *and* the payload blocks, then say what you changed.
+  Status `changed`.
+- **One you should not make** — give the reason. Status `declined`. Never leave a thread open
+  instead.
+
+```bash
+node <skill-dir>/scripts/comment-store.cjs reply <state-dir> --id <id> --text "<what you did>" --status changed
+```
+
+Clear the whole batch before presenting again: one unanswered thread reads as ignored. In
+`--auto` there is no reviewer — skip the watcher.
+
+After any revision, whether it came from a comment or the terminal: update plan.html —
+payloads included — re-run step 7's self-review, and re-present. Keep the server running
+through revisions; every save shows up in the user's tab on its own. A revision is not a
+confirmation, and neither is a resolved comment; extract only after explicit approval.
+
+On approval, extract the payloads, then stop the comment watcher and the server:
 
 ```bash
 node <skill-dir>/scripts/extract-plan.mjs .harness/<name>/plan.html
 bash <skill-dir>/scripts/stop-server.sh <session-dir>
 ```
+
+Kill the backgrounded `wait` job in the same breath — it is the one piece `stop-server.sh`
+does not own, and a watcher left armed fires into a later stage.
 
 The HTML is the source; the extracted files are build products. Never hand-edit them —
 re-run extraction after any HTML edit.

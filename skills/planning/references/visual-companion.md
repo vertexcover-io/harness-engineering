@@ -1,7 +1,12 @@
 <!-- Vendored from obra/superpowers (skills/brainstorming/visual-companion.md), MIT license.
-     Scripts in ../scripts/ are vendored from the same source, with one local addition:
-     start-server.sh/server.cjs accept --file <path> (env BRAINSTORM_FILE) to serve and
-     live-reload a single named file in place — used by SKILL.md step 7 for plan.html. -->
+     Scripts in ../scripts/ are vendored from the same source, with two local additions:
+     1. start-server.sh/server.cjs accept --file <path> (env BRAINSTORM_FILE) to serve and
+        live-reload a single named file in place — used by SKILL.md step 7 for plan.html.
+     2. The review-comment layer — comment-store.cjs (store + CLI) and comments-ui.js
+        (injected UI), plus the server's push of the threads on connect, its comments.json
+        watch, and one CustomEvent re-broadcast in helper.js. See SKILL.md step 8. Keep these
+        additions separable: helper.js is upstream's, so the UI lives in its own file. -->
+
 
 # Visual Companion Guide
 
@@ -125,6 +130,9 @@ Use `--url-host` to control what hostname is printed in the returned URL JSON.
    - Read `$STATE_DIR/events` if it exists — this contains the user's browser interactions (clicks, selections) as JSON lines
    - Merge with the user's terminal text to get the full picture
    - The terminal message is the primary feedback; `state_dir/events` provides structured interaction data
+   - **Read the comments too.** The comment layer is injected into these screens as well, and
+     nothing wakes you here. Run `node <skill-dir>/scripts/comment-store.cjs list $STATE_DIR`
+     on every turn the browser is open; answer with `reply`, per SKILL.md step 8.
 
 4. **Iterate or advance** — if feedback changes current screen, write a new file (e.g., `layout-v2.html`). Only move to the next question when the current step is validated.
 

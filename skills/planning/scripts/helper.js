@@ -97,6 +97,9 @@
     ws.onmessage = (msg) => {
       let data;
       try { data = JSON.parse(msg.data); } catch (e) { return; }
+      // Local addition: re-broadcast so companion layers (comments-ui.js) can
+      // act on server pushes without opening a second socket.
+      window.dispatchEvent(new CustomEvent('brainstorm:message', { detail: data }));
       if (data.type === 'reload') window.location.reload();
     };
 

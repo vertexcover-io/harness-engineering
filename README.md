@@ -142,7 +142,7 @@ Setup → Brainstorm → Planner → Coder → Quality Gate → Sync Docs → Le
 |-------|-------------|
 | **Setup** | Creates an isolated git worktree, runs baseline metrics |
 | **Brainstorm** | Interactive design session — you approve the architecture before any code |
-| **Planner** | Generates phased implementation plan with dependency graph |
+| **Planner** | Generates phased implementation plan with dependency graph — served as a page you review and comment on directly |
 | **Coder** | Dispatches parallel sub-agents running TDD (RED-GREEN-REFACTOR) per phase |
 | **Quality Gate** | Hard pass/fail verification — typecheck, lint, tests, coverage |
 | **Sync Docs** | Updates documentation to match the new code |
@@ -180,7 +180,7 @@ You can also run stages individually if you prefer more control:
 Run `/orchestrate` with a prompt or spec file. It runs the full pipeline:
 
 1. **Brainstorms** the problem with you and produces a design doc
-2. **Plans** the implementation — breaks work into phases (you approve before coding starts)
+2. **Plans** the implementation — breaks work into phases (you approve before coding starts, and can mark up the plan page itself instead of describing changes in the terminal)
 3. **Codes** each phase using TDD with parallel sub-agents
 4. **Runs quality checks** — typecheck, lint, tests, coverage
 5. **Updates docs** to match the new code
