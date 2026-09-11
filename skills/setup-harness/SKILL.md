@@ -26,8 +26,8 @@ node --experimental-strip-types "${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-.}}/
 Read the results and derive nothing you did not read. Each carries `status`, `optional`, `detail`, and a
 `fix` list of candidate commands. The rows are the harness's own checks followed by the project's, when
 `orchestrate.config.json` names a `doctor` (see `skills/orchestrate/references/config.md`). A red
-`optional` check costs one stage: `gh` skips the PR, `ffmpeg` skips the proof videos, `samskara` skips
-publish. A red required check halts everything.
+`optional` check costs one stage: `gh` skips the PR, `samskara` skips publish. A red required check halts
+everything.
 
 Report every check, passed and failed. Then for each failure, propose the entry from its `fix` matching
 this machine. The list is flat, so judge from the commands themselves which entries are alternatives and

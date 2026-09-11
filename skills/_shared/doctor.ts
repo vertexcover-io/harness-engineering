@@ -190,8 +190,6 @@ export const HARNESS_CHECKS: readonly Check[] = [
   { name: "agent-browser", fix: ["npm i -g agent-browser", "agent-browser install"], run: checkBinary("agent-browser") },
   {
     name: "ffmpeg",
-    // Only functional-verify needs it, and only to assemble the proof videos.
-    optional: true,
     fix: ["brew install ffmpeg", "apt install ffmpeg", "dnf install ffmpeg"],
     run: checkBinary("ffmpeg", ["-version"]),
   },
