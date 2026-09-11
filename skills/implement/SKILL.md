@@ -16,6 +16,21 @@ the end.
 Blocked — unclear instruction, missing dependency, a failing verification you can't explain?
 Stop and ask rather than guess.
 
+## ADRs — decisions that outlive the run
+
+Most coding decisions are reversible and need no record. When one passes the three gates
+in `skills/_shared/adr.md` — hard to reverse, surprising without context, a real
+trade-off — write an ADR to `docs/adr/` in the same commit as the change. Typical
+triggers here: a dependency swap the plan didn't foresee, a constraint discovered in the
+code, a deliberate deviation from the codebase's obvious pattern. In pipeline mode the
+phase's `## Commit` covers it — no extra gate; in manual mode it rides in the commit you
+already ask about.
+
+When a change comes directly from an ADR — one planning wrote, or one you just wrote —
+add a one-line comment at that spot pointing to the ADR file, e.g.
+`// See docs/adr/0003-tsvector-over-pgvector.md`. Only for decisions with a code site;
+repo-level decisions like "we use a monorepo" have no spot.
+
 ## Pipeline mode — when orchestrate dispatched you
 
 You are in pipeline mode when the invocation hands you a `phases/phase-N.md`, or when it names a
