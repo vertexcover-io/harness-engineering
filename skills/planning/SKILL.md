@@ -374,10 +374,28 @@ does not own, and a watcher left armed fires into a later stage.
 The HTML is the source; the extracted files are build products. Never hand-edit them —
 re-run extraction after any HTML edit.
 
-Hand off: orchestrate dispatches one coder per phase file in dependency order, or the user
-works through them directly.
+### Record the ADRs
 
-**Done when:** approval given, extraction ran, `plan.md` and `phases/` exist on disk.
+Offer ADRs sparingly
+
+Only offer to create an ADR when all three are true:
+
+1. Hard to reverse: the cost of changing your mind later is meaningful
+2. Surprising without context: a future reader will wonder "why did they do it this way?"
+3. The result of a real trade-off: there were genuine alternatives and you picked one for specific reasons
+If any of the three is missing, skip the ADR. Use the format in `../_shared/adr.md`.
+
+Test every approved decision against the three gates. Write each pass to `docs/adr/` per
+that doc, and list any written in the hand-off summary below — no question; the gates
+already did the filtering. The short flow rarely produces a pass — a rename across 30
+files fails all three gates — but run the scan anyway: it costs a thought, not a
+touchpoint.
+
+Hand off: orchestrate dispatches one coder per phase file in dependency order, or the user
+works through them directly. Name the ADRs written in that hand-off.
+
+**Done when:** approval given, extraction ran, `plan.md` and `phases/` exist on disk, and
+every gate-passing decision has an ADR in `docs/adr/`.
 
 ## Rationalizations
 
