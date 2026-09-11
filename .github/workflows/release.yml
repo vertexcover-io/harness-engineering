@@ -49,6 +49,8 @@ jobs:
 
       - run: npm run test:hooks
 
+      - run: npm run test:skills
+
       # A release cut on the wrong runtime is a silent no-op, so prove the
       # script actually rewrites both manifests before trusting it to tag.
       - name: Check the release script runs under both runtimes
