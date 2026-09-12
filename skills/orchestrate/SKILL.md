@@ -35,7 +35,7 @@ Every file below is one hop from here. Read the one whose condition you are in �
 | `references/stage-prompts.md` | dispatching a sub-agent (Stage 0 Baseline, Stage 3 Coder, Stage 5 Verify & Finalize) |
 | `references/coder-contracts.md` | you need the coder stage's wire protocol — phase-file inputs, mandatory E2E, report artifacts |
 | `references/consumer-repo-e2e.md` | a phase changes a published library whose end-to-end proof must run in a consumer repo |
-| `references/events.md` | firing a hook event — every moment orchestrate fires one, and how to act on what `fire` prints |
+| `references/events.md` | **Read it first**. firing a hook event — every moment orchestrate fires one, and how to act on what `fire` prints |
 
 ---
 
@@ -149,7 +149,8 @@ Stages 3, 5 and 7 are dispatched as sub-agents via `Agent`, as is Stage 0's `bas
 **DAG transitions:** `set-status running` before each stage, `done` after, `write-report` on completion. **Take every invocation verbatim from `references/dag-commands.md`** — read it before the first transition; a mistyped command silently writes nothing. Report bodies follow `references/dashboard-report-formats.md`.
 
 **Events:** fire an event at every moment `references/events.md` names, and act on what each fire
-prints exactly as that file says — read it during Stage 0. It owns `<HOOKS>` and the fire table.
+prints exactly as that file says. It owns `<HOOKS>` and the fire table. **Every `set-status` below
+carries its fire in the same command block.**
 A fire's `status` is never a stage verdict: `halt` pauses for the developer and `invalid` means
 re-send a corrected command. Neither fails the stage, and under `--auto` a `halt` is recorded in
 the stage report and the run goes on. A required *prompt* hook you cannot complete is different —
@@ -188,15 +189,17 @@ Parallelism is **graph-driven**, not file-count-driven. Under vertical slicing (
 
 Worktree already created in Step 2 (`WORKTREE_PATH`, `BRANCH_NAME` stored; in `--auto` the caller's cwd is used). Then:
 
-1. **Invoke `pipeline-setup` via `Skill` with its `setup` branch** — it owns the spec artifact directory (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
-2. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
-3. Create the directory `pipeline-setup` does not: `.harness/<SPEC_NAME>/verify-staging/`. The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
-4. **Load the config.** `orchestrate.config.json` lives at the repo root and is tracked, so it is in the worktree too. `Read` it and store it as `CONFIG`; resolve each stage's `skill`/`model` from `references/config.md`, which owns every rule about that file and none are restated here. A missing file is a halt, not a default — `pipeline-setup` reports it and names `setup-harness`.
+1. **Read `references/events.md` now** — not later in the run. It owns `<HOOKS>` and the fire table, and every stage below fires from it.
+2. **Invoke `pipeline-setup` via `Skill` with its `setup` branch** — it owns the spec artifact directory (Invariant 5). **Pass it `WORKTREE_PATH`**: the worktree already exists from Step 2, and the skill adopts a caller-supplied path instead of creating a second one.
+3. Store what it returns: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, and `MANIFEST_PATH`.
+4. **Fire `run-started`.** It is the only event that opens the run's thread, and it needs the `manifest.json` step 2 wrote.
+5. Create the directory `pipeline-setup` does not: `.harness/<SPEC_NAME>/verify-staging/`. The verification layout is functional-verify's — `verification/` flat with a single `screenshots/` under it, and `verify-staging/` as its **sibling**, not a child. The whole `.harness/` tree is gitignored.
+6. **Load the config.** `orchestrate.config.json` lives at the repo root and is tracked, so it is in the worktree too. `Read` it and store it as `CONFIG`; resolve each stage's `skill`/`model` from `references/config.md`, which owns every rule about that file and none are restated here. A missing file is a halt, not a default — `pipeline-setup` reports it and names `setup-harness`.
 
    Resolve two more values here, once, and pass both in every dispatch that runs a command. No stage can infer either, and resolving them per stage is how the verify stage ends up on a different stack than the coder's e2e:
    - `PACKAGES` — the `packages` keys this run touches, from the task's repos or the worktree set.
    - `ENVIRONMENT` — the `environments` key this run drives, from the request, else `environments.default`.
-5. `set-status setup done`, `set-status baseline running`, then **dispatch the `baseline` sub-agent** (block in `references/stage-prompts.md`) and go straight to Stage 1 without waiting for it.
+7. `set-status setup done`, `set-status baseline running`, then **dispatch the `baseline` sub-agent** (block in `references/stage-prompts.md`) and go straight to Stage 1 without waiting for it.
 
 **The join.** The baseline runs while the developer answers Stage 1's questions, so every stage that reads `baseline.json` joins it first — before the Stage 3 coder dispatch, before the Stage 5 dispatch, and before planning's `implement` route hands off. That route is the one path where Stage 1 does not take minutes, and the only one that starts editing source while the suite may still be running against the same tree.
 
@@ -213,11 +216,11 @@ On the first successful join, `write-report baseline` and `set-status baseline d
 
 ### Stage 1: Design & Plan (Main Conversation)
 
-1. `set-status planning running`.
+1. `set-status planning running` + `fire --event stage-started --stage planning`.
 2. Invoke `planning` via `Skill`. Pass `TASK_CONTEXT` (the prompt or document).
 3. The skill owns the whole arc: understand → question loop → solution review → **inline checkpoint** (pause 1) → recorder writes `design.md` → phase design → **plan gate** on `.harness/<SPEC_NAME>/plan.html` (pause 2) → payload extraction. The orchestrator adds no `AskUserQuestion` of its own; the PreToolUse hook handles the `waiting` status. The skill's step 0 scales the flow itself — trivial work skips the checkpoint. Do not pre-empt that call.
 4. After the skill returns, verify the outputs: `.harness/<SPEC_NAME>/plan.html` and extracted `plan.md` + `phases/phase-*.md`. Once verified, fire `artifact-created --kind plan` (`references/events.md`).
-5. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `write-report planning`, `set-status planning done`.
+5. Add phase DAG nodes as children of `coder` (see `references/dag-commands.md`), `write-report planning`, `set-status planning done` + `fire --event stage-completed --stage planning --result pass`, its `artifacts` naming `plan`, `plan-html` and `design`.
 
 **If planning routed to `implement` instead of writing a plan.** Its step-0 gate may hand genuinely atomic work straight to the `implement` skill, producing **no `plan.html` and no phase files**. That is a valid outcome, not a stage failure — and the orchestrator never pre-empts that gate by making the call itself. When it happens:
 
@@ -236,11 +239,15 @@ Dispatch from the phase graph (see "Parallel When Possible") using the Stage 3 b
 
 Coder writes one artifact per phase: `phase-<N>-e2e.json`, its e2e runner's own machine output, which quality-gate's Check 9 reads. Nothing in it is hand-authored. It is not an input to functional-verify — that skill derives its scenarios from the feature's docs, and treats anything the runner did not cover as unproven.
 
-DAG: `set-status coder running` before dispatch; per phase `set-status <phase-node> running`/`done`; after all phases `set-status coder done`.
+DAG, each transition with the fire that belongs to it (`references/events.md`):
+
+- before dispatch — `set-status coder running` + `fire --event stage-started --stage coder`
+- per phase — `set-status <phase-node> running`/`done`
+- after all phases — `set-status coder done` + `fire --event stage-completed --stage coder --result pass`, its `artifacts` naming each `phase-<N>-e2e.json`
 
 ### Stage 4: Code Review
 
-The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>`, defaulting to `harness:code-review`, **in this conversation**. The tag is the stage id, not a skill name — resolve it and invoke the qualified default; the bare `code-review` is Claude Code's built-in and refuses model invocation. It dispatches its own reviewer personas, so there is no sub-agent to dispatch and no model to retarget. After writing the report it applies the fixes and records them in it; Stage 5's quality gate runs after, so those edits are gated. Pass what only this run knows:
+The semantic gate. `set-status code-review running` + `fire --event stage-started --stage code-review`. Invoke `<SKILL:code-review>`, defaulting to `harness:code-review`, **in this conversation**. The tag is the stage id, not a skill name — resolve it and invoke the qualified default; the bare `code-review` is Claude Code's built-in and refuses model invocation. It dispatches its own reviewer personas, so there is no sub-agent to dispatch and no model to retarget. After writing the report it applies the fixes and records them in it; Stage 5's quality gate runs after, so those edits are gated. Pass what only this run knows:
 
 - Plan `--plan .harness/<SPEC_NAME>/plan.md`, scope `--commits <BASE_BRANCH>..HEAD`
 - `--output .harness/<SPEC_NAME>/review/review.md`
@@ -249,13 +256,13 @@ The semantic gate. `set-status code-review running`. Invoke `<SKILL:code-review>
 entry's worktree against that entry's `plan`, all writing into the primary's `review/` as
 `review-<spec_name>.md`. A `REQUEST CHANGES` on any entry is the run's verdict.
 
-`set-status code-review done`.
+`set-status code-review done` + `fire --event stage-completed --stage code-review --result pass|fail`, its `artifacts` naming `review/review.md`.
 
 **Verdict parsing:** match `REQUEST CHANGES` first, then `APPROVE WITH SUGGESTIONS`, then `APPROVE`.
 
 ### Stage 5: Verify & Finalize
 
-Single consolidated sub-agent: functional verification → quality gate → sync docs. `set-status verify-finalize running`. Dispatch the Stage 5 template from `references/stage-prompts.md`; model = verify-finalize model (`sonnet` default).
+Single consolidated sub-agent: functional verification → quality gate → sync docs. `set-status verify-finalize running` + `fire --event stage-started --stage verify-finalize`. Dispatch the Stage 5 template from `references/stage-prompts.md`; model = verify-finalize model (`sonnet` default).
 
 **After the sub-agent returns, enforce the artifact contract before trusting the verdict:**
 
@@ -279,18 +286,18 @@ If the file is missing → verification FAILED regardless of the returned verdic
 
 A bug carrying neither disposition halts the pipeline. "I judged it" is not a disposition; a bug nobody classified is unfinished work, not an accepted risk. A `FAILED` verdict halts regardless of how the individual bugs were dispositioned (Invariant 3).
 
-`set-status verify-finalize done`.
+`set-status verify-finalize done` + `fire --event stage-completed --stage verify-finalize --result pass`, its `artifacts` naming `proof-report`, `gate-report` and `verification`.
 
 ### Stage 6: Commit & PR (Main Conversation)
 
-`set-status commit-pr running`. Do these directly (no sub-agent):
+`set-status commit-pr running` + `fire --event stage-started --stage commit-pr`. Do these directly (no sub-agent):
 
 1. **Generate `.harness/<SPEC_NAME>/README.md`** — the reviewer index: title + the final verification verdict stated inline; one-paragraph summary; TOC naming each artifact (`plan.html` first — the review surface — then `design.md`, `plan.md`, `phases/`); PR link placeholder. Reviewers read this index and its artifacts out-of-band (directly, or uploaded to the tracker), since nothing under `.harness/` reaches the PR.
 2. Invoke `git-commit` via `Skill` for the feature changes. `.harness/` paths are gitignored and never staged — if `git status` shows them, fix `.gitignore` instead of committing. Once it returns, fire `artifact-created --kind commit --data '{"sha":"<HEAD sha>"}'` (`references/events.md`).
 3. `git push -u origin <BRANCH_NAME>`.
 4. If PR desired (not `--no-pr`): `gh pr create --title '<spec title>' --body '<one-paragraph summary; note that design/plan/verification artifacts live in .harness/<SPEC_NAME>/ on the worktree>' --base main --head <BRANCH_NAME>`. As soon as it prints the URL, fire `artifact-created --kind pr --data '{"url":"<PR_URL>"}'` (`references/events.md`).
-5. Update `manifest.json` with `pr_number` + `completed_at`. Backfill the PR URL into README.md.
-6. `write-report commit-pr`, `set-status commit-pr done`.
+5. Update `manifest.json` with `pr_number` + `completed_at` — merge into the file, never rewrite it: `thread` is the notifier's and the run's last events still need it. Backfill the PR URL into README.md.
+6. `write-report commit-pr`, `set-status commit-pr done` + `fire --event stage-completed --stage commit-pr --result pass`, then `fire --event run-completed` with the PR URL as its `body`.
 
 **On a resumed run the PR already exists.** Skip steps 4 and 5, and run steps 2 and 3 once per
 `TARGETS[]` entry, in that entry's worktree on that entry's `branch`. An entry whose fix produced no
