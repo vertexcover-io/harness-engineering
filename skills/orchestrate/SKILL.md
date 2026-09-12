@@ -46,7 +46,7 @@ precisely to open one. The commit-pr stage tells those apart by looking, so neit
 | Design & Plan | `planning` | main | design.md, plan.html, plan.md, phases/ | [stage-planning.md](references/stage-planning.md) |
 | Coder | `coder` | one sub-agent per phase | code, tests, phase-N-e2e.json | [stage-coder.md](references/stage-coder.md) |
 | Code Review | `code-review` | main | review/review.md | [stage-code-review.md](references/stage-code-review.md) |
-| Verify | `verify` | sub-agent | proof-report.html | [stage-verify.md](references/stage-verify.md) |
+| Verify | `verify` | sub-agent, plus a coder fix pass per auto-fix round on `FAIL` | proof-report.html | [stage-verify.md](references/stage-verify.md) |
 | Quality Gate | `quality-gate` | sub-agent | the gate report | [stage-quality-gate.md](references/stage-quality-gate.md) |
 | Sync Docs | `sync-docs` | main | updated docs | [stage-sync-docs.md](references/stage-sync-docs.md) |
 | Commit & PR | `commit-pr` | main | commits, PR URL | [stage-commit-pr.md](references/stage-commit-pr.md) |
@@ -82,7 +82,7 @@ For a resumed run, list each checkout and its results; mark stages not entered a
 | Design & Plan | <plan.html path>, <phase_count> phases, or implement route |
 | Coder | <files> files, <tests> tests |
 | Code Review | <verdict> (<findings> findings) |
-| Verify | <PASSED/FAILED>, <N> bugs dispositioned |
+| Verify | <PASS/PARTIAL/FAIL>, <N> bugs dispositioned, <N> auto-fixed over <R> round(s), <N> gaps carried |
 | Quality Gate | <PASS/BLOCKED/STAGNATION> |
 | Sync Docs | <N> updated, <N> created |
 | Commit & PR | <PR_URL, noting whether it was opened or already existed, or not created with reason> |
