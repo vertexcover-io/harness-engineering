@@ -42,15 +42,13 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
    Enter the checkout it produces and store `WORKTREE_PATH`, `BRANCH_NAME`, and `BASE_BRANCH`.
    If the skill fails or produces no usable worktree, stop and report the error and next action.
 
-6. **Fire `run-started`** and follow the lifecycle fire table in [events.md](events.md).
-
-7. **Initialize the dashboard inside the worktree.** Run the init block in
+6. **Initialize the dashboard inside the worktree.** Run the init block in
    [dashboard.md](dashboard.md#initialization), store its `HARNESS_DIR` and `DAG_SCRIPT`,
    then `serve-start`, `set-status setup running`, `write-report worktree`,
    `set-status worktree done`. Init uses cwd; starting it here keeps dashboard and artifacts together.
    If initialization fails, stop and report the command and error; preserve the worktree.
 
-8. **Create the spec directory:**
+7. **Create the spec directory:**
    ```
    Bash("node --experimental-strip-types '<SETUP_SCRIPT>' init '<SPEC_NAME>'")
    ```
@@ -59,6 +57,13 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
    `MANIFEST_PATH`; read `SESSION_ID` from `run_info.session` (empty is valid).
    Exit 2 with `CONFIG_MISSING` halts and names `setup-harness`.
    Any other init error or missing required setup output stops the stage with the script's error.
+
+8. **Fire `run-started` before any other event**, following the lifecycle fire table in
+   [events.md](events.md). The manifest step 7 wrote must exist first — it is where the notifier
+   records the run's thread.
+   ```
+   <HOOKS> fire --event run-started --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","body":"<one-line task> : <ticket URL>"}'
+   ```
 
 9. **Start the baseline.** `set-status setup done`, `set-status baseline running`, then:
    ```

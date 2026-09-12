@@ -45,6 +45,7 @@ test("init creates the artifact tree and manifest, and prints the paths", () => 
   assert.equal(manifest["spec_name"], "add-auth");
   assert.equal(manifest["branch"], "feat/test");
   assert.equal(manifest["worktree"], repo);
+  assert.equal(manifest["thread"], null);
   assert.equal(manifest["pr_number"], null);
   assert.deepEqual(manifest["stages"], {});
   assert.equal((manifest["run_info"] as Record<string, unknown>)["session"], "sess-test");
