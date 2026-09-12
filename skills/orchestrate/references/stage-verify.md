@@ -23,9 +23,14 @@ Invoke <SKILL:verify>. Pass:
 - Spec name: <SPEC_NAME>
 - PACKAGES: <PACKAGES>
 - ENVIRONMENT: <ENVIRONMENT>
+- Auto-fix rounds left after this attempt: <ROUNDS_LEFT>
 
-Return the verification verdict and every bug it reports.
+Return the verification verdict and every bug it reports, ending with the JSON block its Step 6
+defines.
 ```
+
+`ROUNDS_LEFT` is 3 on the first attempt and one fewer per auto-fix round. It decides nothing here;
+it tells the agent whether its report is owed yet, per the rounds below.
 
 For the implement route, pass the recon findings and task instead of the design, plan and phase
 files that route never produced. For a resumed run, trace each entry's affected requirements using
@@ -34,22 +39,74 @@ entry with its own plan, prior proof report, traced ids and environment. A faile
 
 ## After return
 
-1. Before trusting the verdict, check `<HARNESS_DIR>/verification/proof-report.html` exists — each
-   entry's own path for a resumed run. Its absence is `MISSING_VERIFICATION_ARTIFACTS` and the
-   verdict is `FAILED` whatever the agent said, because a pass without the artifact means the work
-   was skipped. Then fire `artifact-created` with kind `proof-report`, per [events.md](events.md).
-2. Give every reported bug exactly one disposition in this stage's report: `fixed` with the fix, or
-   `accepted` with the reason. A bug with neither is `UNDISPOSITIONED_BUG` — nobody classified it,
-   so it is unfinished work rather than an accepted risk. Dispositions never override a `FAILED`
-   verdict.
-3. `write-report verify`, then `set-status verify done`.
+1. Before trusting the verdict, check what the attempt owed. Note whether
+   `<HARNESS_DIR>/verification/proof-report.html` exists before each dispatch, and its timestamp —
+   each entry's own path for a resumed run, where a prior report is an input rather than this
+   attempt's output.
+   - An attempt that owed a report must have left one newer than that. Its absence, or the old
+     file unchanged, is `MISSING_VERIFICATION_ARTIFACTS` and halts: a verdict without the artifact
+     means the work was skipped, or the agent never reached the step that writes it. Then fire
+     `artifact-created` with kind `proof-report`, per [events.md](events.md).
+   - A deferred attempt — `FAIL` with a round left — owes no report, so require instead that it
+     drove something: at least one scenario artifact under `verification/` or `verify-staging/`,
+     which the capture steps produce before any report exists. Neither is the same halt, because a
+     bug list no run produced is fiction to fix against.
+2. Read the return's JSON block, never its prose. `status` is `PASS`, `PARTIAL`, `FAIL` or
+   `BLOCKED`; a block missing, unparseable, or carrying any other `status` is
+   `STAGE_CONTRACT_FAILED`. Where a report exists, its own derived `verdict` is the record and must
+   agree with `status` — a disagreement is `STAGE_CONTRACT_FAILED` too, because one of the two was
+   composed rather than derived.
+   - `BLOCKED` — halt with `reason`. No code fix reaches a stack that will not start.
+   - `PASS` — continue.
+   - `PARTIAL` — `gaps[]` holds one entry per `NOT VERIFIED` scenario: a hole in the proof, not a
+     defect in the code, so never auto-fix it. With one or two entries and the rest passing,
+     continue and carry each entry's `mechanism` into the stage report, so the unproven surface
+     stays visible downstream. More than two halts — that is too much of the feature taken on
+     trust.
+   - `FAIL` — run the auto-fix rounds below before halting.
+3. Give every `bugs[]` entry exactly one disposition in this stage's report: `fixed` with the fix,
+   or `accepted` with the reason. A bug with neither is `UNDISPOSITIONED_BUG` — nobody classified
+   it, so it is unfinished work rather than an accepted risk. An entry with `needsDecision: true`
+   halts here whatever else passed; a product question is not ours to answer.
+4. `write-report verify`, then `set-status verify done`.
+
+## Auto-fix rounds
+
+A `FAIL` whose bugs name their own cause and fix is work, not a question — the verify agent wrote
+that fix down itself. Do it and re-prove it before spending a human on it.
+
+At most **three rounds**, each one fix pass plus one re-verification:
+
+1. Take every `bugs[]` entry with `needsDecision: false`; each carries its own `scenario`, `cause`
+   and `fix`. If no entry qualifies, halt now — there is nothing a coder can act on.
+2. Dispatch the coder skill as [stage-coder.md](stage-coder.md) dispatches it, with
+   `IMPLEMENT_MODE=pipeline-review-fix` and one feedback item per entry, carrying its `scenario`,
+   `cause` and `fix` verbatim. That mode commits its own fixes, so each round lands as its own
+   commit. A worker error or `BLOCKED` halts the round.
+3. Re-dispatch verify unchanged but for a decremented `ROUNDS_LEFT`, and read the new verdict by
+   step 2 above.
+
+Only the terminal attempt writes the report, whatever its verdict — the attempt that passes, that
+proceeds on `PARTIAL`, or that exhausts the rounds. One report describes the feature as it finally
+stands, instead of a series describing code that no longer exists, and no superseded report can be
+mistaken for this attempt's proof.
+
+`PASS`, or a `PARTIAL` that proceeds, continues the pipeline. A `FAIL` after the last round halts
+and hands over every round's fixes, what still fails, and why. The quality gate runs after this
+stage, so these edits are gated like any others.
+
+Name in the stage report which bugs were auto-fixed and in which round; such a bug is `fixed`,
+with its round.
 
 ## Halts
 
 | Code | Meaning |
 |---|---|
-| Worker error or `BLOCKED` | report the evidence and the next action |
-| verification `FAILED` | the feature does not do what was asked; name the scenarios that failed |
-| `MISSING_VERIFICATION_ARTIFACTS` | `proof-report.html` is absent |
-| `UNDISPOSITIONED_BUG` | a reported bug carries neither disposition |
-| `STAGE_CONTRACT_FAILED` | no verdict came back, or one that is not `PASSED` / `FAILED` |
+| Worker error or `BLOCKED` | report the evidence and the next action; no code fix reaches it, so it never enters a round |
+| `FAIL` after three auto-fix rounds | name the scenarios still failing, and what each round changed |
+| `FAIL` with no fixable bug | every bug needs a decision, or none names a cause and a fix |
+| `PARTIAL` with more than two `NOT VERIFIED` | list every gap and the mechanism blocking it |
+| `MISSING_VERIFICATION_ARTIFACTS` | the terminal attempt left no new `proof-report.html`, or a deferred one captured no evidence |
+| A `bugs[]` entry with `needsDecision: true` | a product question, not a code fix |
+| `UNDISPOSITIONED_BUG` | a reported bug carries neither disposition in the stage report |
+| `STAGE_CONTRACT_FAILED` | no JSON block, an unreadable one, an unknown `status`, or a `status` the report's own verdict contradicts |

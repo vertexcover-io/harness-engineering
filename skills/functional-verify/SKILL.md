@@ -7,7 +7,8 @@ description: >
   review", "ready to ship", "ship it", "verify this", "is this working", "can we merge", or any other
   move toward calling a feature finished. The only proof this skill ran is
   .harness/<SPEC_NAME>/verification/proof-report.html — if that file does not exist for the
-  current spec, verification did not happen and the feature is not done.
+  current spec, verification did not happen and the feature is not done. A caller running its own
+  fix-and-retry rounds may defer it to the final attempt; Step 6 says when.
 user-invocable: true
 ---
 
@@ -265,6 +266,13 @@ field-by-field contract, the derivation of the overall verdict, and the completi
 left unproven is not a pass because the scenarios around it passed. **Done when every bullet of that checklist
 holds.**
 
+**One case defers the report.** A caller that fixes and re-verifies tells you how many of its rounds are left. When
+it gave a number above zero *and* your derived verdict is `FAIL`, write no report: the code is about to change, so a
+report on it would describe a feature that no longer exists, and the caller reads your returned verdict instead.
+Leave every captured frame and video in place — that evidence is what shows the run happened — and say in your
+return that the report is deferred. Every other case writes it, `FAIL` included: a `PASS`, a `PARTIAL`, and the
+final attempt whatever it found.
+
 Then **report back to whoever dispatched you** — everything the report excludes belongs here: the derived verdict
 and the verdict per scenario; whether the feature works; every bug and what needs a decision rather than a fix; the
 `verification/` path and its videos; **the stack you drove** — how it was brought up and at which commit, so a
@@ -273,6 +281,29 @@ wrong, service that would not boot, datastore that lied, fixture you had to buil
 gone. Write
 those as durable facts a later run can act on, not as an account of your afternoon: without them the next
 verification pays the same cost from scratch.
+
+**End the return with one JSON block**, so a pipeline caller reads fields instead of parsing prose. The prose above
+it stays — a person invoking this skill directly is reading that, not this.
+
+```json
+{
+  "status": "PASS | PARTIAL | FAIL | BLOCKED",
+  "reason": "one line, required unless PASS — what failed, or what stopped the run",
+  "report": "verification/proof-report.html, or null when this attempt deferred it",
+  "gaps": [{ "scenario": "07", "requirement": "R5", "mechanism": "what blocked it" }],
+  "bugs": [{ "scenario": "03", "cause": "why it breaks", "fix": "the change that fixes it", "needsDecision": false }]
+}
+```
+
+`status` repeats the report's derived verdict, or is `BLOCKED` when you could not drive the feature at all — a stack
+that would not come up, a tool that is not installed. `gaps[]` carries one entry per `NOT VERIFIED` scenario, and
+`bugs[]` one per bug, whatever the verdict.
+
+**`needsDecision` is yours to set, and the caller cannot infer it.** It is `true` where the fix is a product call
+rather than a code change: two requirements that contradict each other, or a "fix" that would change behaviour
+somebody intended. It is `false` where you can name a cause and a fix — then a caller may fix it without asking
+anyone. Guessing `false` on a judgement call is how intended behaviour gets quietly rewritten to make a scenario
+pass.
 
 ## Step 7 — Clean Up
 
