@@ -24,6 +24,7 @@ Invoke <SKILL:verify>. Pass:
 - PACKAGES: <PACKAGES>
 - ENVIRONMENT: <ENVIRONMENT>
 - Auto-fix rounds left after this attempt: <ROUNDS_LEFT>
+- Changed files this round (optional hint, omit on the first attempt): <CHANGED_FILES>
 
 Return the verification verdict and every bug it reports, ending with the JSON block its Step 6
 defines.
@@ -48,9 +49,12 @@ entry with its own plan, prior proof report, traced ids and environment. A faile
      means the work was skipped, or the agent never reached the step that writes it. Then fire
      `artifact-created` with kind `proof-report`, per [events.md](events.md).
    - A deferred attempt — `FAIL` with a round left — owes no report, so require instead that it
-     drove something: at least one scenario artifact under `verification/` or `verify-staging/`,
-     which the capture steps produce before any report exists. Neither is the same halt, because a
-     bug list no run produced is fiction to fix against.
+     drove something. Note the line count of `<HARNESS_DIR>/verification/run-log.jsonl` — the
+     append-only ledger the verify agent adds one line to per finished scenario — before each
+     dispatch, and require it to have grown: a round that drove nothing appends nothing, and no round
+     rewrites or deletes what an earlier one wrote. At least one scenario artifact under
+     `verification/` is the second signal. Neither is the same halt, because a bug list no run
+     produced is fiction to fix against.
 2. Read the return's JSON block, never its prose. `status` is `PASS`, `PARTIAL`, `FAIL` or
    `BLOCKED`; a block missing, unparseable, or carrying any other `status` is
    `STAGE_CONTRACT_FAILED`. Where a report exists, its own derived `verdict` is the record and must
@@ -83,8 +87,13 @@ At most **three rounds**, each one fix pass plus one re-verification:
    `IMPLEMENT_MODE=pipeline-review-fix` and one feedback item per entry, carrying its `scenario`,
    `cause` and `fix` verbatim. That mode commits its own fixes, so each round lands as its own
    commit. A worker error or `BLOCKED` halts the round.
-3. Re-dispatch verify unchanged but for a decremented `ROUNDS_LEFT`, and read the new verdict by
-   step 2 above.
+3. Re-dispatch verify with a decremented `ROUNDS_LEFT`. You may pass `Changed files this round:`
+   listing what that round's fix commit touched, as a convenience; the first attempt has nothing to
+   list, since nothing has been fixed yet. The verify agent derives its own list across every repo
+   in play and adds whatever you send to it, so a hint can only add work and sending none costs
+   nothing. This stage is the wrong place to compute it anyway: it sees one commit in one repo, and
+   a fix can span several. What to re-drive is the verify agent's call and not this stage's. Read
+   the new verdict by step 2 above.
 
 Only the terminal attempt writes the report, whatever its verdict — the attempt that passes, that
 proceeds on `PARTIAL`, or that exhausts the rounds. One report describes the feature as it finally

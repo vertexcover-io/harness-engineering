@@ -12,7 +12,7 @@
     "test:scripts": "node --test scripts/*.test.ts",
     "test:scripts:bun": "bun test scripts/",
     "test:hooks": "node --test hooks/*.test.mjs",
-    "test:skills": "node --experimental-strip-types --test skills/_shared/*.test.ts skills/orchestrate/scripts/*.test.ts skills/planning/scripts/*.test.ts skills/planning/scripts/*.test.mjs"
+    "test:skills": "node --experimental-strip-types --test skills/_shared/*.test.ts skills/functional-verify/scripts/*.test.ts skills/orchestrate/scripts/*.test.ts skills/planning/scripts/*.test.ts skills/planning/scripts/*.test.mjs"
   },
   "pi": {
     "skills": ["./skills"],
