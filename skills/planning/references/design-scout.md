@@ -23,6 +23,10 @@ resolve without rewriting the document. `design/INDEX.md` sits alongside:
 |---|---|---|---|
 | Checkout, empty cart | `design/checkout-empty.png` | Figma `…/node-id=41:88` | layout, empty-state copy |
 
+Name the viewport in `Screen` whenever a screen has more than one frame — `Checkout, empty cart —
+phone 390`. Two viewports are two rows: the plan reads them as two screens, and each one needs a
+step of its own.
+
 **Best-effort, exactly like publish.** No tracker configured, token unset, no ticket for this
 branch, no attachments — write no INDEX and return one line saying which. A missing design is a
 fact the plan can act on; a stalled scout is not.

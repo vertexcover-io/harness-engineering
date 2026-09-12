@@ -26,6 +26,9 @@ table lists the parts; it does not sequence them.
 **Parts are triggered, not filled.** An omitted part costs nothing. A padded part states
 "considered, nothing found" — a claim you did not mean to make.
 
+**One part is not triggered — it is owed.** Where `design/INDEX.md` names a frame for the surface
+a step builds, that step's Design part is required. See Designs below.
+
 **A step can say something that is none of them.** The parts are what recurs, not a grammar of
 everything a step may contain. An environment warning, or a note about how to see the change, is
 plain prose in both renderings.
@@ -66,6 +69,16 @@ A step that builds to a design embeds the frame, with a one-line caption naming 
 Two steps using the same frame both embed it — the shell embeds each file once and wires it to
 every use, so repeats cost nothing.
 
+Where a frame exists the panel is not optional, and prose is not a substitute for it. The PRD
+states the rule; the frame settles what the rule leaves open — spacing, order, variant, the exact
+words of an empty state. A step that cites the text and drops the frame hands the coder the half
+that does not constrain pixels.
+
+**The style facts a frame settles** — the list to read off it, and to carry in the step's
+contract: element order · spacing · type scale and weight · colour role · component variant ·
+divider placement · icon · empty-state copy word for word. Planning's steps 1 and 2 mean this
+list; it is defined here and nowhere else.
+
 In the drill-down the frame is a panel, and a panel is three parts — summary, `.d-body`, content:
 
 ```html
@@ -79,7 +92,13 @@ In the drill-down the frame is a panel, and a panel is three parts — summary, 
 ```
 
 The summary is what the reader clicks and the only thing they see closed, so it names the frame's
-subject, not the file. Drop it and the browser substitutes its own control, labelled "Details".
+subject, not the file. Drop it and the shell's engine derives one from the caption or the alt text
+— serviceable, never the line you would have written, and "Details" when there is nothing to
+derive from.
+
+The file a `data-img` names must also have an entry in the page's `IMG` map, or the panel renders
+blank. That map is generated, never typed: `scripts/inline-designs.ts` base64s every frame the
+steps reference into it.
 
 Where no design exists, say so in the step. A surface with no design is one the developer is
 authorized to invent, and that is worth one clause where the work happens.
