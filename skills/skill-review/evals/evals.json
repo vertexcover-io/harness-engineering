@@ -1,0 +1,72 @@
+{
+  "skill_name": "skill-review",
+  "evals": [
+    {
+      "id": 1,
+      "name": "catches-security-and-false-claims-over-nits",
+      "prompt": "review ~/.claude/skills/deploy-helper before I push it to the team repo",
+      "expected_output": "A report that ranks any credential leak, disabled TLS verification or unquoted shell variable above naming and formatting findings, with file:line and the offending text quoted for each. A skill-review.json sidecar written beside the skill. Findings the script already reported are carried through, not re-derived.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "security_findings_ranked_first",
+          "check": "Every security finding appears above every convention finding in the report."
+        },
+        {
+          "name": "every_finding_has_file_and_line",
+          "check": "Each finding cites a path and line number and quotes the triggering text."
+        },
+        {
+          "name": "json_sidecar_written",
+          "check": "skill-review.json exists and every entry has id, category, finding_type, severity, deterministic, location, evidence and fix."
+        },
+        {
+          "name": "no_invented_finding_types",
+          "check": "Every finding_type is one the rubric defines, or the finding sits under out_of_rubric."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "diagnoses-under-triggering-as-a-description-problem",
+      "prompt": "my changelog skill never fires unless I name it explicitly. what's wrong with it?",
+      "expected_output": "A diagnosis centred on the description: whether it states when to use the skill, leads with a verb, is written in third person, and contains the concrete words a user would actually type. A proposed replacement description. Body-level findings are reported but not offered as the cause of under-triggering.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "identifies_description_as_root_cause",
+          "check": "The report names the description field as the trigger mechanism and evaluates it against D1-D9."
+        },
+        {
+          "name": "proposes_concrete_replacement_text",
+          "check": "A rewritten description is supplied verbatim, not described in the abstract."
+        },
+        {
+          "name": "replacement_is_third_person_and_states_when",
+          "check": "The proposed description uses no first or second person and includes explicit trigger conditions."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "runs-the-script-before-the-judgment-pass",
+      "prompt": "audit every skill under .claude/skills in this repo and tell me which ones I can't ship",
+      "expected_output": "check.py run once per skill directory, its output used as the deterministic findings. A per-skill verdict driven by blocker count. Mechanical checks such as line counts and frontmatter limits are not re-derived by hand.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "script_invoked_per_skill",
+          "check": "scripts/check.py is executed for each directory containing a SKILL.md."
+        },
+        {
+          "name": "shippability_follows_blocker_count",
+          "check": "A skill is called unshippable when and only when it has at least one blocker."
+        },
+        {
+          "name": "mechanical_checks_not_duplicated",
+          "check": "The transcript shows no manual line counting or character counting for checks the script reports."
+        }
+      ]
+    }
+  ]
+}
