@@ -107,26 +107,22 @@ const readEnvFile = (dir: string, name: string): Record<string, string> => {
   }
 };
 
-// A checkout inside a multi-repo workspace is its own repo with no config of its own — the run's
-// config sits in the root repo the workspace was created in. A linked worktree's source repo
-// (mainCheckout) can live outside that root, so the walk goes up from the checkout first, then from
-// the source, for a branch that predates the config.
-const configAbove = (start: string): string | null => {
-  let dir = start;
-  while (dir !== homedir()) {
-    const candidate = join(dir, CONFIG_FILE);
-    if (existsSync(candidate)) return candidate;
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-  return null;
-};
-
+// After the checkout's own config: walk up from the checkout (a workspace member's source repo can
+// sit outside the root repo), then from the source, for a branch that predates the config.
 export const findConfigFile = (repoRoot: string, mainCheckout: string): string | null => {
   const own = join(repoRoot, CONFIG_FILE);
   if (existsSync(own)) return own;
-  return configAbove(repoRoot) ?? configAbove(mainCheckout);
+  for (const start of [repoRoot, mainCheckout]) {
+    let dir = start;
+    while (dir !== homedir()) {
+      const candidate = join(dir, CONFIG_FILE);
+      if (existsSync(candidate)) return candidate;
+      const parent = dirname(dir);
+      if (parent === dir) return null;
+      dir = parent;
+    }
+  }
+  return null;
 };
 
 export const loadConfig = (cwd: string = process.cwd()): Config | null => {
