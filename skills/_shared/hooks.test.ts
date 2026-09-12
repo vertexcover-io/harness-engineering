@@ -1400,7 +1400,9 @@ test("SC54f: the secrets load from beside the config the walk found, not the sou
 
 test("SC54g: a checkout outside the home dir still falls back to the source repo's config", () => {
   const dir = tmp();
-  const src = gitRepo(join(dir, "src"));
+  const src = join(dir, "src");
+  mkdirSync(src, { recursive: true });
+  gitRepo(src);
   execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: src });
   const tree = join(dir, "root", "ws", "wt");
   execFileSync("git", ["worktree", "add", "-q", tree, "-b", "wt"], { cwd: src });
