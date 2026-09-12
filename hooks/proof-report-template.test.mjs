@@ -48,3 +48,39 @@ test("the renderer and the scaffold agree on the key name", () => {
   assert.match(TEMPLATE, /pathChip\('step__u', step\.url\)/);
   assert.doesNotMatch(TEMPLATE, /\{path,label\}/);
 });
+
+// A screen nobody drew must render as "no design reference", not as silence:
+// absence of a check reading as a pass is the one way this section misleads.
+test("a null baseline has a rendered state of its own", () => {
+  assert.match(TEMPLATE, /vm\.baseline == null/);
+  assert.match(TEMPLATE, /no design reference/);
+});
+
+// The section is opt-in per scenario and hangs off one key. A guard reading a
+// different key than the scaffold writes renders nothing, silently.
+test("the renderer and the scaffold agree on the visualMatch key", () => {
+  assert.match(TEMPLATE, /\['visualMatch', s => s\.visualMatch,\s+renderVisualMatch\]/);
+  assert.ok(island().scenarios.some((s) => s.visualMatch));
+});
+
+test("the scaffold demonstrates every documented visualMatch field", () => {
+  const vm = island().scenarios.find((s) => s.visualMatch).visualMatch;
+  assert.deepEqual(Object.keys(vm), ["baseline", "fidelity", "matched", "findings"]);
+  assert.deepEqual(Object.keys(vm.findings[0]), [
+    "severity",
+    "what",
+    "baselineShows",
+    "buildShows",
+    "evidence",
+  ]);
+});
+
+// The whole point of the tier rule: a spacing delta against a hand-drawn
+// baseline is noise, and a scaffold showing a third severity invites it back.
+test("the scaffold offers no severity below HIGH", () => {
+  const vm = island().scenarios.find((s) => s.visualMatch).visualMatch;
+  for (const f of vm.findings) {
+    assert.match(f.severity, /BLOCKER \| HIGH|^(BLOCKER|HIGH)$/);
+  }
+  assert.doesNotMatch(TEMPLATE, /is-spacing|'SPACING'|"SPACING"/);
+});
