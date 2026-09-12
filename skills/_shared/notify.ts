@@ -108,12 +108,11 @@ const readEnvFile = (dir: string, name: string): Record<string, string> => {
 };
 
 // A checkout inside a multi-repo workspace is its own repo with no config of its own — the run's
-// config sits at the root the checkouts were cloned into. Walk up from the main checkout to reach
-// it, after honouring a config the checkout does carry.
-export const findConfigFile = (repoRoot: string, mainCheckout: string): string | null => {
-  const own = join(repoRoot, CONFIG_FILE);
-  if (existsSync(own)) return own;
-  let dir = mainCheckout;
+// config sits in the root repo the workspace was created in. A linked worktree's source repo
+// (mainCheckout) can live outside that root, so the walk goes up from the checkout first, then from
+// the source, for a branch that predates the config.
+const configAbove = (start: string): string | null => {
+  let dir = start;
   while (dir !== homedir()) {
     const candidate = join(dir, CONFIG_FILE);
     if (existsSync(candidate)) return candidate;
@@ -122,6 +121,12 @@ export const findConfigFile = (repoRoot: string, mainCheckout: string): string |
     dir = parent;
   }
   return null;
+};
+
+export const findConfigFile = (repoRoot: string, mainCheckout: string): string | null => {
+  const own = join(repoRoot, CONFIG_FILE);
+  if (existsSync(own)) return own;
+  return configAbove(repoRoot) ?? configAbove(mainCheckout);
 };
 
 export const loadConfig = (cwd: string = process.cwd()): Config | null => {
@@ -151,6 +156,7 @@ export const loadConfig = (cwd: string = process.cwd()): Config | null => {
     provider: notifier.provider ?? "",
     secrets: {
       ...readEnvFile(mainCheckout, ".env.local"),
+      ...readEnvFile(dirname(configFile), ".env.local"),
       ...(env ?? {}),
     } as Record<string, string>,
   };
@@ -198,7 +204,7 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
     const value = secrets[key];
     if (!value) {
       throw new NotifierError(
-        `notifier: provider "slack" needs ${key}. Add it to the env block in ${CONFIG_FILE}, or to .env.local at the main checkout root.`,
+        `notifier: provider "slack" needs ${key}. Add it to the env block in ${CONFIG_FILE}, or to .env.local beside the config or at the main checkout root.`,
       );
     }
     return value;

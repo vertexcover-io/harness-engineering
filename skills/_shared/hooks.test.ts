@@ -1368,6 +1368,36 @@ test("SC54d: a checkout carrying its own config keeps using it", () => {
   assert.deepEqual(loadHooks(tree).raw["notifier"], { enabled: true, provider: "slack" });
 });
 
+const memberOutsideTheRoot = (): { readonly root: string; readonly tree: string } => {
+  const dir = tmp();
+  const root = join(dir, "root");
+  const src = join(dir, "src");
+  mkdirSync(root, { recursive: true });
+  mkdirSync(src, { recursive: true });
+  gitRepo(src);
+  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: src });
+  const tree = join(root, "ws", "wt");
+  execFileSync("git", ["worktree", "add", "-q", tree, "-b", "wt"], { cwd: src });
+  return { root, tree };
+};
+
+test("SC54e: a member checkout whose source repo sits outside the run root finds the root's config", () => {
+  const { root, tree } = memberOutsideTheRoot();
+  writeConfig(root, { notifier: { enabled: true, provider: "slack" } });
+
+  assert.equal(loadHooks(tree).raw["notifier"] !== undefined, true);
+});
+
+test("SC54f: the secrets load from beside the config the walk found, not the source checkout", () => {
+  const { root, tree } = memberOutsideTheRoot();
+  writeConfig(root, { notifier: { enabled: true, provider: "slack" } });
+  writeFileSync(join(root, ".env.local"), "T_LOCAL=from-root\n");
+
+  const config = loadConfig(tree);
+
+  assert.equal(config?.secrets["T_LOCAL"], "from-root");
+});
+
 test("SC55: an event fired before run-started fails and names the missing fire", async () => {
   const dir = tmp();
   const repoRoot = gitRepo(dir);
