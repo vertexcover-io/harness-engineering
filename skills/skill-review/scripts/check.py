@@ -53,19 +53,27 @@ INSECURE = re.compile(
     r"|verify\s*=\s*False"
     r"|rejectUnauthorized\s*:\s*false"
     r"|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*0"
-    r"|GIT_SSL_NO_VERIFY",
+    r"|GIT_SSL_NO_VERIFY",  # skill-review: allow - this is the pattern table itself
     re.I,
 )
-SECRET_WORD = r"(?:TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|CREDENTIAL|PAT|PRIVATE[_-]?KEY)"
-SECRET_ECHO = re.compile(rf"\b(echo|print|printf|console\.log)\b[^\n]*\$?\{{?\w*{SECRET_WORD}", re.I)
+SECRET_PARTS = {"token", "secret", "password", "passwd", "credential", "credentials", "pat"}
+SECRET_PAIRS = {("api", "key"), ("private", "key"), ("access", "key"), ("secret", "key")}
+PRINTER = re.compile(r"\b(?:echo|print|printf|console\.log)\b")
+# `$VAR`, `${VAR}`, or a bare identifier. The sigil is captured separately because it is one of
+# the signals that a word is a variable at all.
+NAME_REF = re.compile(r"(\$\{?)?\b([A-Za-z_][A-Za-z0-9_]*)\b")
 # A real leak writes the secret somewhere durable. Discards (/dev/null) and file-descriptor
 # redirects (2>, 2>&1) carry no payload, and matching them produced false positives on scripts
 # that merely mention a token-shaped variable.
-SECRET_WRITE = re.compile(
-    rf"\$\{{?\w*{SECRET_WORD}\w*\}}?[^\n]*"
-    rf"(?:(?<!\d)>>?\s*(?!/dev/null|&\d)\S+|\|\s*tee)",
-    re.I,
-)
+# `->` and `=>` are not redirects: a python return type read as one turned every signature
+# naming a secret into a credential write.
+WRITE_TARGET = re.compile(r"(?<![\d=<>-])>>?\s*(?!/dev/null|&\d)\S+|\|\s*tee\b")
+SCRIPT_SUFFIXES = {".py", ".sh", ".js", ".ts"}
+TEST_FILENAME = re.compile(r"(^|[._-])(test|tests|spec)([._-]|$)", re.I)
+# Deliberately bad code belongs in a scanner's own fixtures. This marker says so on the line
+# itself, so the exemption is visible where it applies instead of hidden in an ignore list.
+ALLOW_LINE = re.compile(r"skill-review:\s*allow\b")
+
 VAR_REF = re.compile(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)")
 VOODOO = re.compile(r"^\s*([A-Z][A-Z0-9_]{2,})\s*[:=]\s*(\d+)\s*$")
 
@@ -212,19 +220,26 @@ class Checker:
             if lang is not None:
                 buf.append((i, line))
 
-    def scan_fence(self, lang, buf, filename, start):
-        shellish = lang in {"bash", "sh", "shell", "zsh", "console", "text", ""}
+    def scan_security(self, buf, filename, shellish: bool):
+        """X4, X1 and X3 over numbered lines, from a fence or from a bundled script."""
         for ln, line in buf:
+            if ALLOW_LINE.search(line):
+                continue
             if INSECURE.search(line):
                 self.add("X4", "security", "tls_verification_disabled", BLOCK,
                          f"{filename}:{ln}", line, "Never disable certificate verification.")
-            if SECRET_ECHO.search(line) or SECRET_WRITE.search(line):
+            if leaks_credential(line):
                 self.add("X1", "security", "credential_in_output", BLOCK,
                          f"{filename}:{ln}", line,
                          'Keep credentials in the command environment: eval "$(auth --machine <scope>)" && <cmd>')
             if shellish and unquoted_vars(line) and not line.lstrip().startswith("#"):
                 self.add("X3", "security", "unquoted_shell_variable", BLOCK,
                          f"{filename}:{ln}", line, 'Quote it: "$VAR". Unquoted values word-split.')
+
+    def scan_fence(self, lang, buf, filename, start):
+        shellish = lang in {"bash", "sh", "shell", "zsh", "console", "text", ""}
+        self.scan_security(buf, filename, shellish)
+        for ln, line in buf:
             m = VOODOO.match(line)
             if m and not any(c.strip().startswith(("#", "//")) for _, c in buf[: buf.index((ln, line))][-1:]):
                 self.add("K7", "cost", "voodoo_constant", MAJOR, f"{filename}:{ln}", line,
@@ -232,12 +247,22 @@ class Checker:
 
     # ---------- references ----------
 
+    def reference_files(self) -> set[Path]:
+        """Bundled references: markdown under references/, or beside SKILL.md.
+
+        `rglob("*.md")` also swept eval fixtures, so a markdown file that an eval case feeds to
+        the skill was reported as an orphan reference with a nested link — valid test data, a
+        major finding.
+        """
+        found = set(self.root.glob("references/**/*.md")) | set(self.root.glob("*.md"))
+        return {
+            p for p in found
+            if p.name != "SKILL.md" and ".git" not in p.parts and not is_test_data(p.relative_to(self.root))
+        }
+
     def check_references(self, body: str):
         top = mentioned_md(body)
-        ref_files = sorted(
-            p for p in self.root.rglob("*.md")
-            if p.name != "SKILL.md" and ".git" not in p.parts
-        )
+        ref_files = sorted(self.reference_files())
         for path in ref_files:
             rel = path.relative_to(self.root).as_posix()
             text = read(path)
@@ -295,6 +320,26 @@ class Checker:
                          ", ".join(p.name for p in scripts),
                          "A script that runs cleanly and returns the wrong answer is the worst failure mode.")
 
+    # ---------- scripts ----------
+
+    def check_scripts(self):
+        """Scan the code the skill actually ships.
+
+        Checking only that a test file exists (T8) let a bundled script disable TLS or write a
+        token to a file with nothing reported, while the judgment pass was told the deterministic
+        security checks were already settled. Test files and eval fixtures are skipped: their
+        contents are deliberately bad input, so a finding there describes the fixture rather than
+        anything the skill does.
+        """
+        for path in sorted(self.root.rglob("*")):
+            if not path.is_file() or path.suffix not in SCRIPT_SUFFIXES:
+                continue
+            if is_test_data(path.relative_to(self.root)):
+                continue
+            rel = path.relative_to(self.root).as_posix()
+            lines = list(enumerate(read(path).splitlines(), start=1))
+            self.scan_security(lines, rel, shellish=path.suffix == ".sh")
+
     # ---------- tools ----------
 
     def check_tools(self, fm: dict, body: str):
@@ -320,6 +365,7 @@ class Checker:
         self.check_fences(body, "SKILL.md", offset)
         self.check_references(body)
         self.check_tests()
+        self.check_scripts()
         self.check_tools(fm, body)
         return self.findings
 
@@ -340,32 +386,95 @@ def parse_frontmatter(block: str) -> dict[str, str]:
     return {k: v.strip().strip("\"'") for k, v in out.items()}
 
 
+def is_test_data(rel: Path) -> bool:
+    """Test files and eval fixtures. A finding in either describes the fixture, not the skill."""
+    if {"evals", "tests", "__tests__", "fixtures", "__pycache__"} & set(rel.parts):
+        return True
+    return bool(TEST_FILENAME.search(rel.stem))
+
+
+def is_variable(name: str, sigil: bool) -> bool:
+    """Does this word name a variable, or is it prose? A credential is always a variable, and
+    only a variable: `$TOKEN`, `api_key`, `apiKey`, `GITHUB_TOKEN`. A bare lowercase word in a
+    sentence is not, which is what separates a real leak from `echo "<path>"`."""
+    return bool(sigil or "_" in name or name.isupper() or re.search(r"[a-z][A-Z]", name))
+
+
+def is_secret_name(name: str) -> bool:
+    parts = [p.lower() for p in re.split(r"_|(?<=[a-z0-9])(?=[A-Z])", name) if p]
+    if any(p in SECRET_PARTS for p in parts):
+        return True
+    return any(pair in SECRET_PAIRS for pair in zip(parts, parts[1:]))
+
+
+def secret_names(text: str) -> list[str]:
+    """Credential-shaped variable names in `text`.
+
+    The old form matched SECRET_WORD as a bare substring, so `PAT` inside "path" and "pattern"
+    turned every `echo "<path>"` into a blocking X1. Splitting a candidate into its parts first
+    means a secret has to be named, not merely spelled by accident.
+    """
+    out = []
+    for m in NAME_REF.finditer(text):
+        name = m.group(2)
+        if is_variable(name, m.group(1) is not None) and is_secret_name(name):
+            out.append(name)
+    return out
+
+
+def leaks_credential(line: str) -> bool:
+    """Printed to stdout, or redirected somewhere durable."""
+    if PRINTER.search(line) and secret_names(line):
+        return True
+    target = WRITE_TARGET.search(line)
+    return bool(target and secret_names(line[: target.start()]))
+
+
 def unquoted_vars(line: str) -> list[str]:
     """Variable references that sit outside every quoted span on this line.
 
-    Quote state is tracked across the line: neighbour characters cannot tell `"${p}.mp4"`
-    (safe) from `$DIR/build` (word-splits). Single quotes do not interpolate at all.
+    Quote state is a stack, not a flag: `$( )` restarts quoting, so both `"` in
+    `"$(dirname "$F")"` open a string rather than the second one closing the first. Word
+    splitting applies inside a substitution the same way it does at the top level, which is why
+    the substitution is a fresh context and not part of the string around it. Single quotes do
+    not interpolate at all.
     """
-    found, quote, i = [], None, 0
+    found: list[str] = []
+    stack: list[str] = []
+    i = 0
     while i < len(line):
         ch = line[i]
-        if quote is None:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch in "\"'":
-                quote, i = ch, i + 1
-                continue
+        top = stack[-1] if stack else None
+        if top == "'":
+            if ch == "'":
+                stack.pop()
+            i += 1
+            continue
+        if ch == "\\":
+            i += 2
+            continue
+        if top == '"' and ch == '"':
+            stack.pop()
+            i += 1
+            continue
+        if line.startswith("$(", i):
+            stack.append("(")
+            i += 2
+            continue
+        if top == "(" and ch == ")":
+            stack.pop()
+            i += 1
+            continue
+        if ch in "\"'":
+            stack.append(ch)
+            i += 1
+            continue
+        if top != '"':
             m = VAR_REF.match(line, i)
             if m:
                 found.append(m.group(0))
                 i = m.end()
                 continue
-        elif ch == "\\" and quote == '"':
-            i += 2
-            continue
-        elif ch == quote:
-            quote = None
         i += 1
     return found
 

@@ -217,6 +217,13 @@ over-explaining to Opus.
 | X4 | Certificate verification never disabled | blocker | [script] |
 | X5 | Destructive operations gated behind confirmation or a dry run | blocker | [judgment] |
 
+X1, X3 and X4 cover two surfaces: fenced code in SKILL.md and its references, and the contents of
+the skill's own bundled scripts. Test files and fixtures under `evals/` are skipped — their bad
+code is deliberate input, so a finding there describes the fixture, not the skill. A line carrying
+`skill-review: allow <reason>` is skipped too; a scanner has to be able to name the patterns it
+hunts for. Treat an `allow` marker on anything that is not a pattern table as an X-category
+judgment finding of its own.
+
 The pattern X2 is asking for:
 
 ```bash

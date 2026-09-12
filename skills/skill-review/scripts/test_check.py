@@ -124,6 +124,26 @@ def test_quoted_variable_is_not_an_unquoted_shell_variable():
     assert "X3" not in got, f"quoted variables flagged: {[f.evidence for f in got['X3']]}"
 
 
+def test_command_substitution_restarts_quoting():
+    """`"$(dirname "$F")"` is fully quoted. Regression: the inner `"` was read as closing the
+    outer string, so five correctly quoted lines in the planning skill fired X3."""
+    for line in (
+        'if [[ ! -d "$(dirname "$SERVE_FILE")" ]]; then',
+        "OWNER_PID=\"$(ps -o ppid= -p \"$PPID\" 2>/dev/null | tr -d ' ')\"",
+        "id=\"$(tr -d '\\r\\n' < \"$SERVER_ID_FILE\" 2>/dev/null || true)\"",
+    ):
+        skill = CLEAN + f"\n```bash\n{line}\n```\n"
+        got = findings_for({"SKILL.md": skill})
+        assert "X3" not in got, f"quoted substitution flagged: {line}"
+
+
+def test_unquoted_variable_inside_substitution_still_fires():
+    """Word splitting applies inside `$( )` too, so the substitution is a fresh context."""
+    skill = CLEAN + '\n```bash\nDIR="$(dirname $SERVE_FILE)"\n```\n'
+    got = findings_for({"SKILL.md": skill})
+    assert "X3" in got, "unquoted variable inside a command substitution not caught"
+
+
 def test_bare_variable_in_command_position_still_fires():
     for snippet in ("rm -rf $DIR/build", "cp ${SRC} /tmp/out"):
         skill = CLEAN + f"\n```bash\n{snippet}\n```\n"
@@ -170,6 +190,89 @@ def test_reference_nothing_mentions_is_still_an_orphan():
     got = findings_for({"SKILL.md": CLEAN, "references/stray.md": "# Stray\n"})
     assert "S2" in got, "a reference nothing cites must still be an orphan"
     assert got["S2"][0].finding_type == "orphan_reference"
+
+
+def test_prose_word_containing_a_secret_word_is_not_a_credential():
+    """`PAT` lives inside "path" and "pattern". Regression: both fired X1 as blockers."""
+    for line in (
+        """echo '{"tool":"Write","files":["<path>"]}'""",
+        'print("pattern matched")',
+        'echo "tokens used: 5"',
+    ):
+        skill = CLEAN + f"\n```bash\n{line}\n```\n"
+        got = findings_for({"SKILL.md": skill})
+        assert "X1" not in got, f"prose flagged as a credential leak: {line}"
+
+
+def test_credential_variable_still_fires():
+    for line in (
+        'echo "$API_TOKEN"',
+        "echo ${GITHUB_TOKEN}",
+        "print(api_key)",
+        "console.log(apiKey)",
+        "echo $PAT",
+        "curl -H \"Authorization: $DEPLOY_SECRET\" https://x.test > creds.log",
+    ):
+        skill = CLEAN + f"\n```bash\n{line}\n```\n"
+        got = findings_for({"SKILL.md": skill})
+        assert "X1" in got, f"credential not caught: {line}"
+
+
+def test_type_hint_arrow_is_not_a_redirect():
+    """`-> list[str]` is a return type. Regression: the `>` read as a shell redirect, so any
+    python signature naming a secret fired X1."""
+    got = findings_for({
+        "SKILL.md": CLEAN,
+        "scripts/scan.py": "def secret_names(text: str) -> list[str]:\n    return []\n",
+        "scripts/test_scan.py": "pass\n",
+    })
+    assert "X1" not in got, f"type hint flagged as a credential write: {got.get('X1')}"
+
+
+def test_allow_marker_suppresses_one_line():
+    """A scanner has to name the patterns it hunts for. The marker keeps that exemption visible
+    on the line instead of exempting the whole file."""
+    got = findings_for({
+        "SKILL.md": CLEAN,
+        "scripts/patterns.sh": 'PAT="GIT_SSL_NO_VERIFY"  # skill-review: allow - pattern table\n',
+    })
+    assert "X4" not in got, f"allow marker ignored: {got.get('X4')}"
+
+
+def test_bundled_script_contents_are_scanned_for_security():
+    """A skill's own scripts are shipped code. Regression: only their existence was checked,
+    so a script could disable TLS or write a token to a file and the pass reported clean."""
+    got = findings_for({
+        "SKILL.md": CLEAN,
+        "scripts/deploy.sh": (
+            "#!/bin/sh\n"
+            "curl -k https://deploy.test/release\n"
+            "echo $API_TOKEN > debug.log\n"
+            "rm -rf $BUILD_DIR/out\n"
+        ),
+    })
+    for cid in ("X4", "X1", "X3"):
+        assert cid in got, f"{cid} not reported inside a bundled script"
+        assert any("scripts/deploy.sh" in f.location for f in got[cid]), got[cid][0].location
+
+
+def test_script_constant_is_not_a_voodoo_constant():
+    """K7 reads unexplained numbers in documentation. A named constant in code is not one."""
+    got = findings_for({
+        "SKILL.md": CLEAN,
+        "scripts/check.py": "MAX_NAME = 64\n",
+        "scripts/test_check.py": "pass\n",
+    })
+    assert "K7" not in got, f"named constant in a script flagged: {got.get('K7')}"
+
+
+def test_eval_fixture_markdown_is_not_a_reference():
+    """Fixtures under evals/ are test input cited by eval cases, not bundled references."""
+    got = findings_for({
+        "SKILL.md": CLEAN,
+        "evals/files/eval1_readme.md": "# Fixture\n\nSee [other.md](other.md).\n",
+    })
+    assert "S2" not in got, f"eval fixture flagged: {[f.evidence for f in got['S2']]}"
 
 
 def test_missing_skill_md_is_a_blocker():
