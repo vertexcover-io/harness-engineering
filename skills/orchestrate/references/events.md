@@ -8,8 +8,7 @@ with what `fire` prints back.
 <HOOKS> is: node --experimental-strip-types <plugin-root>/skills/_shared/hooks.ts
 ```
 
-`fire` is always safe to call, with or without a `hooks` block in `orchestrate.config.json`: the
-notifier gates itself on `notifier.enabled`, and an unconfigured project just prints `{}`.
+`fire` is always safe to call — a project with no `hooks` block just prints `{}`.
 
 ## When to fire
 
@@ -45,28 +44,8 @@ not read the run.
 `run-started`'s ticket URL comes from `TASK_CONTEXT`; drop the ` : <ticket URL>` suffix when the
 task names no ticket.
 
-**`run-started` must be the run's first fire.** It opens the thread every later message replies to,
-and it is the only event that opens one. It needs `pipeline-setup`'s `manifest.json` to record the
-thread in, so it fires once that skill returns and not before. A later event that finds no thread
-reports:
-
-```
-notifier: no thread in <path>. Trigger run-started before any other event.
-```
-
-`no manifest at <path>` instead means `pipeline-setup` has not run, or this command was sent from a
-different checkout than the one holding the run.
-
-Either way **nothing was sent** — a message with no thread would land at the channel root. Fire
-`run-started`, then re-fire the event you were sending.
-
-Pass `--spec <SPEC_NAME>` on every fire. Without it the notifier has no thread to resolve, and each
-message lands loose in a channel other runs are posting to.
-
-`--data` is checked against the event before any hook fires. A `--data` that doesn't fit —
-a `pr` with no `url`, a `questions` that isn't a list — is `invalid`: rejected with nothing
-fired, safe to fix and send again. Fields the event doesn't carry are dropped, so what a hook
-receives as `payload.data` is only what the event means.
+**`run-started` must be the run's first fire.** A later event that reports no thread or no
+manifest sent nothing — fire `run-started`, then re-fire that event.
 
 ## Reporting a stage's artifacts
 
@@ -122,13 +101,8 @@ You never fire `hook-failed` — the dispatcher does it for you, for every faile
 not. Its handlers' results come back on the same line under `hook-failed:<name>`. A handler that
 fails while handling `hook-failed` is recorded and dropped; the event never re-enters.
 
-**Failures never reach the channel.** The notifier does not handle `hook-failed`: a failure is
-yours to read on the line `fire` prints, under `results`. What reaches Slack is the run itself —
-started, each stage, questions, completion — for people who are not watching this terminal.
+There is no thread id to carry between commands — the notifier persists it itself in the `thread`
+field of `.harness/<SPEC_NAME>/manifest.json`.
 
-There is no thread id to carry between commands — the old `<THREAD>` bookkeeping is gone. The
-notifier hook persists it itself, in the `thread` field of `.harness/<SPEC_NAME>/manifest.json`, and
-reads it back on every later fire. Every fire prints that id under `results.notifier.result`.
-
-Fire from the checkout `pipeline-setup` wrote the manifest in: the path resolves against the repo
-root of wherever the command runs.
+Fire every event from the directory the Claude session started in — the manifest path resolves
+against that working directory.

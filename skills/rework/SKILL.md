@@ -27,7 +27,7 @@ orchestrate's.
 worktree: `run-started` as soon as Step 2 has written the primary entry's `manifest.json` and before
 any other event — a resumed run skips Stage 0, so `orchestrate` never fires it and nothing this
 skill sends would reach a thread; then `question-pending` before each `AskUserQuestion`, and
-`run-interrupted` before any row of the Halts table. Never redirect a fire's output away.
+`run-interrupted` before any row of the Halts table.
 
 ## Step 1 — Resolve the ticket
 

@@ -64,11 +64,6 @@ plan.md, phases/, baseline.json, manifest.json, phase-*-e2e.json, gate-report-*.
 probes/, verification/). The whole `.harness/` tree is gitignored (knowledge/ excepted);
 reviewers read artifacts out-of-band.
 
-Create it from the worktree, and run every later stage from there too: the repo root is what a
-hook fire resolves `.harness/<SPEC_NAME>/` against, so a command run from a different checkout
-looks somewhere else. `.harness/knowledge/` is the exception — it is the repo's lesson store, it
-outlives the run, and it stays where it is.
-
 Steps:
 
 1. Derive `SPEC_NAME` from task (slugified, e.g., `add-user-auth`). Delete any `baseline.json`
@@ -80,8 +75,7 @@ Steps:
    The planning skill's design scout writes into `design/` during its own step 1 and creates nothing —
    so this call is what gives those files a home inside the worktree.
 4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`. This file must exist before
-   the run's first hook fire — the notifier records the run's Slack thread in its `thread` field
-   and creates nothing itself. Fill `run_info` from
+   the run's first hook fire. Fill `run_info` from
    `node --experimental-strip-types <plugin-root>/skills/_shared/collect-run-info.ts --json`,
    verbatim — it records what produced this run, and any value it could not read comes back
    `null`:
@@ -100,8 +94,6 @@ Steps:
 ```
 
 Downstream stages append `stages.<stage_name> = { started_at, completed_at, outcome }` entries.
-`thread` is the notifier's alone — no stage writes it, and a stage updating this file re-reads it
-first so it does not drop what the notifier put there.
 
 Store: `SPEC_NAME`, `SPEC_DIR` (`.harness/<SPEC_NAME>/`), `BASELINE_PATH`, `MANIFEST_PATH`
 
