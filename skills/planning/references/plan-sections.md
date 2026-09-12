@@ -113,10 +113,10 @@ in isolation who needs to know that the checkout screen is already drawn, and wh
 
 The step that builds the surface carries the instruction — *build to `design/checkout-empty.png`* —
 and the index carries the paths. A screen here that no step builds is a finding, as in the
-signature index.
+signature index; where that is deliberate, the row records it as
+`design/<file> — not built: <reason>`, the one form `verify-plan.ts` reads as accounted for.
 
-Omit the section when no design exists. **Say so in the step instead**: a surface with no design
-is one the coder is authorized to invent, and that is worth one clause where the work happens.
+Omit the section when no design exists — and **say so in the step instead**, per `step-card.md`.
 
 ### Blockers
 
