@@ -265,9 +265,10 @@ if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement
 const X = {
 };
 
-/* SLOT:images — every design/mockup the steps embed, as "file.png": "data:image/png;base64,…".
-   Each file appears ONCE here however many steps use it; the engine wires it to every
-   <img data-img="file.png">. Omit the entry and that img stays blank — no other breakage. */
+/* SLOT:images — do not fill this by hand. Run scripts/inline-designs.ts on this file and it
+   writes every frame the steps reference, as "file.png": "data:image/png;base64,…". Each file
+   lands ONCE however many steps use it; the engine wires it to every
+   <img data-img="file.png">. A frame with no entry here renders blank — no other breakage. */
 const IMG = {
 };
 

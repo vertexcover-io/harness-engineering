@@ -9,14 +9,12 @@ them, so the human layer must stand alone.
 
 Copy `scripts/plan-shell.html` (resolve the path from this skill's own directory) to
 `.harness/<name>/plan.html`, then fill its `SLOT:` comments — extraction refuses
-unfilled slots. Fill incrementally, one save per section (order in SKILL.md step 7): the
-live server reloads the user's tab on every save, and any `SLOT:` comment still in the body
-renders as a spinner, so a half-built page reads as "in progress", never as broken. The
-shell carries the machinery —
-theme, left nav, scroll-spy, xref tooltips, drill-downs, the scenario table, the slot
-spinners — and it is not
-edited outside the slots. Regenerating machinery by hand is the failure mode this shell exists
-to prevent: wasted tokens and broken JS.
+unfilled slots. Fill incrementally, one save per section — SKILL.md step 7 carries the order
+and the streaming mechanics that make a half-built page read as "in progress" rather than as
+broken. The shell carries the machinery — theme, left nav, scroll-spy, xref tooltips,
+drill-downs, the scenario table, the slot spinners — and it is not edited outside the slots.
+Regenerating machinery by hand is the failure mode this shell exists to prevent: wasted tokens
+and broken JS.
 
 Write for a developer who has read nothing else. A reviewer who has to re-read a sentence to
 work out what it means will approve the plan without understanding it, or spend the review
