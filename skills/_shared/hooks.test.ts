@@ -1398,6 +1398,17 @@ test("SC54f: the secrets load from beside the config the walk found, not the sou
   assert.equal(config?.secrets["T_LOCAL"], "from-root");
 });
 
+test("SC54g: a checkout outside the home dir still falls back to the source repo's config", () => {
+  const dir = tmp();
+  const src = gitRepo(join(dir, "src"));
+  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: src });
+  const tree = join(dir, "root", "ws", "wt");
+  execFileSync("git", ["worktree", "add", "-q", tree, "-b", "wt"], { cwd: src });
+  writeConfig(src, { notifier: { enabled: true, provider: "slack" } });
+
+  assert.equal(loadHooks(tree).raw["notifier"] !== undefined, true);
+});
+
 test("SC55: an event fired before run-started fails and names the missing fire", async () => {
   const dir = tmp();
   const repoRoot = gitRepo(dir);

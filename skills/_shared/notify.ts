@@ -118,7 +118,7 @@ export const findConfigFile = (repoRoot: string, mainCheckout: string): string |
       const candidate = join(dir, CONFIG_FILE);
       if (existsSync(candidate)) return candidate;
       const parent = dirname(dir);
-      if (parent === dir) return null;
+      if (parent === dir) break;
       dir = parent;
     }
   }
