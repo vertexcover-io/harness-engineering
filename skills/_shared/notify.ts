@@ -2,7 +2,6 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
@@ -107,23 +106,6 @@ const readEnvFile = (dir: string, name: string): Record<string, string> => {
   }
 };
 
-// The checkout's own config, else the first one between it and its main checkout — the climb stops
-// at the repo the checkout was carved out of. A main checkout off that chain (the worktree sits
-// elsewhere) is checked on its own, for a branch that predates the config.
-export const findConfigFile = (repoRoot: string, mainCheckout: string): string | null => {
-  let dir = repoRoot;
-  while (dir !== homedir()) {
-    const candidate = join(dir, CONFIG_FILE);
-    if (existsSync(candidate)) return candidate;
-    if (dir === mainCheckout) return null;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  const source = join(mainCheckout, CONFIG_FILE);
-  return existsSync(source) ? source : null;
-};
-
 export const loadConfig = (cwd: string = process.cwd()): Config | null => {
   let roots: string[] = [];
   try {
@@ -139,9 +121,9 @@ export const loadConfig = (cwd: string = process.cwd()): Config | null => {
   const repoRoot = roots[0] ?? "";
   const mainCheckout = dirname(roots[1] ?? "");
 
-  const configFile = findConfigFile(repoRoot, mainCheckout);
-  if (configFile === null) {
-    throw new NotifierError(`${CONFIG_FILE} not found at or above ${repoRoot}. Run setup-harness to create it.`);
+  const configFile = join(repoRoot, CONFIG_FILE);
+  if (!existsSync(configFile)) {
+    throw new NotifierError(`${CONFIG_FILE} not found at ${repoRoot}. Run setup-harness to create it.`);
   }
 
   const { notifier, env } = JSON.parse(readFileSync(configFile, "utf8")) as ConfigFile;
@@ -151,7 +133,6 @@ export const loadConfig = (cwd: string = process.cwd()): Config | null => {
     provider: notifier.provider ?? "",
     secrets: {
       ...readEnvFile(mainCheckout, ".env.local"),
-      ...readEnvFile(dirname(configFile), ".env.local"),
       ...(env ?? {}),
     } as Record<string, string>,
   };
@@ -199,7 +180,7 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
     const value = secrets[key];
     if (!value) {
       throw new NotifierError(
-        `notifier: provider "slack" needs ${key}. Add it to the env block in ${CONFIG_FILE}, or to .env.local beside the config or at the main checkout root.`,
+        `notifier: provider "slack" needs ${key}. Add it to the env block in ${CONFIG_FILE}, or to .env.local at the main checkout root.`,
       );
     }
     return value;

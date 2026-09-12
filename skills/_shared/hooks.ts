@@ -4,7 +4,7 @@ import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { findConfigFile, formatMessage, loadConfig, NotifierError, resolveProvider } from "./notify.ts";
+import { formatMessage, loadConfig, NotifierError, resolveProvider } from "./notify.ts";
 import type { Args, HookFailure, PendingQuestion, Provider } from "./notify.ts";
 import { readRunSessionId } from "./collect-run-info.ts";
 import { containedPath, spawnRunner, uploadStageArtifacts } from "./samskara.ts";
@@ -182,6 +182,7 @@ export type HooksConfig = {
 };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+const CONFIG_FILE = "orchestrate.config.json";
 const SELF = fileURLToPath(import.meta.url);
 const NOTIFIER_EVENTS: ReadonlySet<string> = new Set([
   "run-started",
@@ -218,9 +219,9 @@ const toHooksBlock = (raw: Record<string, unknown>): Record<string, readonly Raw
 };
 
 export const loadHooks = (cwd: string): HooksConfig => {
-  const { repoRoot, mainCheckout } = gitRoots(cwd);
-  const configFile = findConfigFile(repoRoot, mainCheckout);
-  if (configFile === null) return { hooks: {}, raw: {}, repoRoot };
+  const repoRoot = gitRoots(cwd).repoRoot;
+  const configFile = join(repoRoot, CONFIG_FILE);
+  if (!existsSync(configFile)) return { hooks: {}, raw: {}, repoRoot };
   try {
     const raw = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
     return { hooks: toHooksBlock(raw), raw, repoRoot };
@@ -679,7 +680,10 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   const config = loadConfig();
   if (config === null) return "disabled";
 
-  const manifest = payload.artifactDir === undefined ? null : join(payload.artifactDir, "manifest.json");
+  const manifest =
+    payload.spec === undefined
+      ? null
+      : join(gitRoots(process.cwd()).repoRoot, ".harness", payload.spec, "manifest.json");
   const starting = payload.event === "run-started";
   const thread = !starting && manifest !== null ? readThread(manifest) : null;
 

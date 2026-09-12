@@ -1344,17 +1344,6 @@ test("SC53: the artifact dir is the run's directory under the repo root", () => 
   assert.deepEqual(new Set(dirs), new Set([join(repoRoot, ".harness", "t")]));
 });
 
-test("SC54c: a workspace checkout finds the config at the root it was cloned into", () => {
-  const dir = tmp();
-  const workspace = join(dir, "ws");
-  const main = gitRepo(dir);
-  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
-  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: main });
-  execFileSync("git", ["worktree", "add", "-q", join(workspace, "alpha"), "-b", "alpha"], { cwd: main });
-
-  assert.equal(loadHooks(join(workspace, "alpha")).raw["notifier"] !== undefined, true);
-});
-
 test("SC54d: a checkout carrying its own config keeps using it", () => {
   const dir = tmp();
   const main = gitRepo(dir);
@@ -1366,49 +1355,6 @@ test("SC54d: a checkout carrying its own config keeps using it", () => {
   writeConfig(tree, { notifier: { enabled: true, provider: "slack" } });
 
   assert.deepEqual(loadHooks(tree).raw["notifier"], { enabled: true, provider: "slack" });
-});
-
-const memberOutsideTheRoot = (): { readonly root: string; readonly tree: string } => {
-  const dir = tmp();
-  const root = join(dir, "root");
-  const src = join(dir, "src");
-  mkdirSync(root, { recursive: true });
-  mkdirSync(src, { recursive: true });
-  gitRepo(src);
-  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: src });
-  const tree = join(root, "ws", "wt");
-  execFileSync("git", ["worktree", "add", "-q", tree, "-b", "wt"], { cwd: src });
-  return { root, tree };
-};
-
-test("SC54e: a member checkout whose source repo sits outside the run root finds the root's config", () => {
-  const { root, tree } = memberOutsideTheRoot();
-  writeConfig(root, { notifier: { enabled: true, provider: "slack" } });
-
-  assert.equal(loadHooks(tree).raw["notifier"] !== undefined, true);
-});
-
-test("SC54f: the secrets load from beside the config the walk found, not the source checkout", () => {
-  const { root, tree } = memberOutsideTheRoot();
-  writeConfig(root, { notifier: { enabled: true, provider: "slack" } });
-  writeFileSync(join(root, ".env.local"), "T_LOCAL=from-root\n");
-
-  const config = loadConfig(tree);
-
-  assert.equal(config?.secrets["T_LOCAL"], "from-root");
-});
-
-test("SC54g: a checkout outside the home dir still falls back to the source repo's config", () => {
-  const dir = tmp();
-  const src = join(dir, "src");
-  mkdirSync(src, { recursive: true });
-  gitRepo(src);
-  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: src });
-  const tree = join(dir, "root", "ws", "wt");
-  execFileSync("git", ["worktree", "add", "-q", tree, "-b", "wt"], { cwd: src });
-  writeConfig(src, { notifier: { enabled: true, provider: "slack" } });
-
-  assert.equal(loadHooks(tree).raw["notifier"] !== undefined, true);
 });
 
 test("SC54h: a config above the main checkout is not picked up", () => {
