@@ -318,6 +318,14 @@ This reads the SKILL.md, extracts behavioral rules (MUST, NEVER, ALWAYS clauses)
 
 This executes each eval case against the skill, checks expectations and anti-expectations, and reports pass/fail per case.
 
+**Review a skill as written:**
+
+```
+/skill-review skills/tdd
+```
+
+This grades the skill against `skills/skill-review/references/rubric.md` — description quality, invocation, structure, integrity, coherence, test coverage, security, content, convention and cost — in two passes: a script answers the mechanical checks, then a reading covers the rest. It writes a report and machine-readable findings. Evals measure a skill by running it; this one judges it by reading it.
+
 **Typical workflow:** generate evals → run them → iterate on the SKILL.md until evals pass → ship the skill.
 
 ## Always-On Skills
@@ -345,6 +353,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/coverage-guard` | Enforces minimum test coverage |
 | `/doc-quality-guard` | Audits docs for accuracy and staleness |
 | `/skill-eval-generator` | Generates eval test suites for skills (pairs with `skill-creator eval`) |
+| `/skill-review` | Grades a skill against the rubric, writes a report plus JSON findings |
 | `/harness-retro` | Post-mortems a finished run: what broke, why, and which skill to fix |
 
 **Run automatically (no command needed):**
@@ -382,6 +391,7 @@ harness/
     ├── review-fixer/
     ├── rework/
     ├── skill-eval-generator/
+    ├── skill-review/
     ├── sync-docs/
     ├── tdd/
     ├── tech-debt-finder/
