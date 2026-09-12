@@ -288,6 +288,18 @@ Run `/git-commit`. It does more than `git commit`:
 
 ---
 
+### I'm stuck in a merge conflict
+
+Run `/resolving-merge-conflicts`. It treats a conflict as two intents meeting rather than two texts:
+
+1. Reads the history behind both sides — commit messages, PRs, issues — before touching a hunk
+2. Preserves both intents where they can coexist; where they cannot, keeps the side matching the merge's goal and reports the trade-off
+3. Runs the project's own typecheck and tests, then finishes the merge or rebase
+
+It never aborts, and it never invents behaviour that was on neither side.
+
+---
+
 ### I want to refactor code
 
 Use `/refactor`. It assesses your code for improvement opportunities:
@@ -349,6 +361,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/implement` | Manual coding entry point: TDD + code-quality, review when green |
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md, then applies the fixes |
 | `/git-commit` | Groups changes into logical conventional commits |
+| `/resolving-merge-conflicts` | Resolves an in-progress merge or rebase, intent first |
 | `/tech-debt-finder` | Finds code smells, creates GitHub issues |
 | `/coverage-guard` | Enforces minimum test coverage |
 | `/doc-quality-guard` | Audits docs for accuracy and staleness |
@@ -388,6 +401,7 @@ harness/
     ├── planning/
     ├── quality-gate/
     ├── refactor/
+    ├── resolving-merge-conflicts/
     ├── review-fixer/
     ├── rework/
     ├── skill-eval-generator/

@@ -1,0 +1,60 @@
+{
+  "skill_name": "resolving-merge-conflicts",
+  "evals": [
+    {
+      "id": 1,
+      "name": "recovers-intent-before-resolving",
+      "prompt": "git rebase onto main stopped with a conflict in src/auth/session.ts. sort it out",
+      "expected_output": "The conflicting hunks are read first, then the history behind each side — commit messages and the PR or issue that introduced them. Each hunk is resolved so both intents survive where they can coexist. The project's typecheck and tests are run afterwards, and the rebase is continued to the end.",
+      "files": [],
+      "expectations": [
+        "Inspects the conflict state and the conflicting file before editing anything",
+        "Reads the commit messages, PR or issue behind both sides of at least one hunk",
+        "Resolves every conflict marker, leaving no <<<<<<< or >>>>>>> in the tree",
+        "Runs the project's typecheck and tests after resolving, before continuing",
+        "Continues the rebase until no commits are left to apply"
+      ],
+      "anti_expectations": [
+        "Runs git rebase --abort or git merge --abort",
+        "Picks a side without reading why either change was made",
+        "Adds behaviour that appears on neither side of the conflict",
+        "Continues the rebase while the project's checks are failing"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "states-the-tradeoff-when-sides-are-incompatible",
+      "prompt": "both branches rewrote the retry logic in worker.ts differently and they can't both be right. what do we keep?",
+      "expected_output": "A resolution that names the merge's stated goal, keeps the side matching it, and reports the trade-off in one line: what the discarded side did and what is lost by dropping it.",
+      "files": [],
+      "expectations": [
+        "Names which side was kept for the incompatible hunk and why",
+        "States what the discarded side accomplished and what is lost",
+        "Ties the choice to the goal of the merge rather than to recency or line count"
+      ],
+      "anti_expectations": [
+        "Invents a third behaviour that blends the two implementations",
+        "Keeps both code paths behind a new flag nobody asked for",
+        "Resolves the hunk silently, with no record of which intent was dropped"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "verifies-with-the-projects-own-checks",
+      "prompt": "I fixed the conflict markers in the merge already. is it safe to commit?",
+      "expected_output": "The project's own commands are discovered — from orchestrate.config.json in a harness repo, otherwise from package.json or the equivalent — and typecheck, tests and format are run. Anything the merge broke is fixed before the merge is committed.",
+      "files": [],
+      "expectations": [
+        "Discovers the project's check commands rather than assuming a command name",
+        "Runs typecheck and tests, and reports their actual output",
+        "Fixes what the merge broke before staging and committing",
+        "Confirms no conflict markers remain anywhere in the tree"
+      ],
+      "anti_expectations": [
+        "Calls the merge safe on the basis that the markers are gone",
+        "Reports the checks as passing without running them",
+        "Commits while a check is failing"
+      ]
+    }
+  ]
+}
