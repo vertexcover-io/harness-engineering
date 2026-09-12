@@ -21,7 +21,8 @@ style, a network response. Layout claims cite a measurement. This becomes the sc
 The **open visual review** asks what's wrong regardless of what was asked for: alignment, contrast, clipping,
 overlap, a broken empty state, copy issues. Run it on every scenario, including the ones that passed cleanly. Treat
 `truncate` and `line-clamp` on a primary headline as a bug to justify, not a default to accept. Anything real you
-find here is a bug, and Step 4 owns it.
+find here is a bug, and Step 4 owns it. `visual-verification.md` is the one pass that runs it — against the
+design where the plan supplies one, and against the screen's own coherence always. This file renders its result.
 
 ## Building the videos (Step 5)
 
@@ -160,6 +161,40 @@ generated.
 **Read the scenario's video, then its proofs: an entry that told you nothing the video left open should not have
 been written.**
 
+### The visual match
+
+Every UI scenario carries a `visualMatch`. It is how a reader sees, without opening a single image, whether the
+screen was drawn before it was built and whether the build kept to the drawing.
+
+```json
+"visualMatch": {
+  "baseline": "docs/design/reconciliation-detailed.png",
+  "fidelity": 92,
+  "matched": "Region order, the filter row's controls, the Complete Match chip and its copy all read as drawn.",
+  "findings": [
+    { "severity": "HIGH",
+      "what": "The period selector is drawn as the screen's primary control and renders as a tertiary one",
+      "baselineShows": "filled accent button, 16px label",
+      "buildShows": "ghost button, 13px label",
+      "evidence": "getComputedStyle → background-color: rgba(0,0,0,0); font-size: 13px" }
+  ]
+}
+```
+
+- **`baseline`** is the reference image's path, or `null` for a screen nobody drew. `null` renders as
+  **no design reference** — visibly not a pass, because absence of a check must never read as one.
+- **`fidelity`** is derived, per `visual-verification.md`: 100, less 25 a BLOCKER and 8 a HIGH, floored at 0.
+  It is `null` wherever `baseline` is. **A scenario whose findings carry a BLOCKER is a `FAILURE`** — the
+  divergence is a bug, filmed from its own repro like any other, and its fidelity is not a second opinion the
+  reader gets to weigh against the verdict.
+- **`matched`** is one sentence on what lined up. A findings list with nothing beside it reads as a broken screen
+  even when nine tenths of it was right.
+- **`findings[]`** carry `severity` of `BLOCKER` or `HIGH` only. **A spacing or pixel delta against the baseline
+  is not a finding** and never appears here; where one broke something in the build, that break is a sanity
+  finding on its own terms, with its own measurement.
+- The report renders the baseline and the scenario's first frame side by side, so a reader compares them without
+  leaving the page.
+
 ### Coverage and the derived verdict
 
 `coverage[]` at the top level is the scope ledger: **one entry per requirement id the feature's docs list**, whether
@@ -274,12 +309,14 @@ sentence above passes it. `attempted` is what you actually ran, distinct approac
 - Every verdict cites a live observation from this run — a DOM assert, an HTTP status and body, a DB read-back, a
   measured rect, a captured webhook body. Where that observation is mechanism rather than surface, it is a `proofs[]`
   entry, written once.
+- Every UI scenario carries a `visualMatch`: a `baseline` path with a derived `fidelity` where a design defines the
+  screen, or `baseline: null` where none does. No `findings[]` entry rests on a spacing delta alone, every entry
+  cites a measurement or a computed style, and every `BLOCKER` has made its scenario a `FAILURE` with a `bugs[]`
+  entry behind it.
 - Every UI scenario names its `video`, every path is report-relative, and every file named in `artifacts[]` exists
   beside the report under the same `NN_<slug>` prefix. No frame or file resolves to a broken link.
-- Every side-effect scenario carries the receipt its sink produces: an **email** shows the mail-viewer frames and
-  its video; a **job-queue** scenario quotes the read from the queue's storage, naming the queue, the job id and the
-  state it was found in; a **webhook or delivered file** lists its captured
-  artifact (`NN_<slug>.<ext>`). An effect this stack has no sink for is `NOT VERIFIED` with that sink named.
+- Every side-effect scenario carries the receipt Step 3 names for its sink — mail-viewer frames, the queue read, the
+  captured artifact — or is `NOT VERIFIED` with that sink named.
 - Things this skill genuinely cannot reach (touch-hold gestures, real-device sensors, visual diffs against last
   week's build) are scenarios too, marked `NOT VERIFIED`.
 - No internal ids appear anywhere — the plain sequential `n` values are the only identifiers a reader needs. Nothing
