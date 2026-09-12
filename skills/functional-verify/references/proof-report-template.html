@@ -27,11 +27,18 @@
        title       the feature, as a short phrase
        verdict     PASS | PARTIAL | FAIL, derived from coverage[] — the badge
                    in the top bar
+       coverage[]  {req,scenario,verdict} — the scope ledger, one row per
+                   requirement id the docs list, reached or not.
+                   req: the id. scenario: the n that proves it, or "01, 09"
+                   when two walks do. verdict: SUCCESS | FAILURE | NOT VERIFIED
+                   | INVALID, the verdict of that scenario.
+                   Every id gets a row; the top-level verdict is read off them,
+                   and only the unproven rows carry colour.
        drivenOn    where you drove, as what user, against which data
        fields[]    {label,value} shown behind "Stack · ports · sinks" in the bar
        labels{}    rename a section: url, steps, media, frames, proofs, files,
-                   extra, bugs, gaps  (reason and extra have no heading unless
-                   you name them)
+                   extra, coverage, bugs, gaps  (reason and extra have no
+                   heading unless you name them)
        scenarios[] see below
        bugs[]      {severity,origin,reachedBy,scenario,title,body}  severity: blocker | major | minor
                    origin: introduced here | pre-existing | pre-existing, worsened here
@@ -50,8 +57,8 @@
        slug        NN_<slug>, the prefix carried by all of its artifacts
        short       3-4 words, for the left rail
        title       the behaviour, as a sentence a QA would use
-       verdict     Success | Failure | NOT VERIFIED | INVALID
-                   Failure and NOT VERIFIED colour the row in the rail
+       verdict     SUCCESS | FAILURE | NOT VERIFIED | INVALID
+                   FAILURE and NOT VERIFIED colour the row in the rail
        url         the path this scenario opened on — the path with its query,
                    never the host: "/app/acme/reports/gstr2b?period=062026".
                    Headless: the request path. A later path belongs to the step
@@ -91,6 +98,19 @@
 <script type="application/json" id="report-data">
 {
   "title": "<feature name>",
+  "verdict": "<PASS | PARTIAL | FAIL, read off coverage[] and never chosen>",
+  "coverage": [
+    {
+      "req": "<requirement id from the docs>",
+      "scenario": "01",
+      "verdict": "SUCCESS"
+    },
+    {
+      "req": "<a requirement id this run did not prove>",
+      "scenario": "02",
+      "verdict": "NOT VERIFIED"
+    }
+  ],
   "drivenOn": "<where you drove, as what user, against which data>",
   "fields": [
     {
@@ -112,7 +132,7 @@
       "slug": "01_<slug>",
       "short": "<3-4 words>",
       "title": "<the behaviour, as a sentence a QA would use>",
-      "verdict": "Success",
+      "verdict": "SUCCESS",
       "url": "<the path this opened on, with its query — not the host>",
       "reason": "<what decided it — the rendered string, the measured value, the status code>\n\n<a second paragraph if one observation is not enough>",
       "expected": "<what should happen, from the docs, with the values it turns on>",
@@ -340,6 +360,7 @@ a { color: var(--accent); }
 .item--aux.is-on .item__t { color: var(--fg); }
 .item__c { font: 600 11.5px/1.5 var(--mono); color: var(--fg-3); }
 .item__c.is-hot { color: var(--fail); }
+.item__c.is-warm { color: var(--hold); }
 
 /* ── detail pane ────────────────────────────────────────── */
 .pane { overflow-y: auto; background: var(--pane); }
@@ -543,6 +564,26 @@ a { color: var(--accent); }
 .bug__at li { margin-bottom: 2px; }
 .empty { color: var(--fg-2); font-size: 13.5px; }
 
+/* coverage ledger — like the rail, only the unproven rows carry colour */
+.cov { width: 100%; max-width: 104ch; border-collapse: collapse; }
+.cov th {
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--fg-3); text-align: left; padding: 0 12px 7px 9px;
+  border-bottom: 1px solid var(--line);
+}
+.cov td {
+  padding: 6px 12px 6px 9px; font-size: 13.5px; vertical-align: top;
+  border-bottom: 1px solid var(--line-2);
+}
+.cov tr:last-child td { border-bottom: 0; }
+.cov th:first-child, .cov td:first-child { border-left: 3px solid transparent; }
+.cov__r--fail > td:first-child { border-left-color: var(--fail); }
+.cov__r--hold > td:first-child { border-left-color: var(--hold); }
+.cov__r--skip > td:first-child { border-left-color: var(--skip); }
+.cov__req { font: 600 12px/1.7 var(--mono); white-space: nowrap; }
+.cov__by { color: var(--fg-2); }
+.cov__v { width: 1%; white-space: nowrap; }
+
 /* run details popover */
 .run { border-bottom: 1px solid var(--line); background: var(--rail); display: none; }
 .run.is-open { display: block; }
@@ -665,7 +706,7 @@ code {
 <script>
 (() => {
   const D = JSON.parse(document.getElementById('report-data').textContent);
-  const S = D.scenarios || [], BUGS = D.bugs || [], GAPS = D.gaps || [];
+  const S = D.scenarios || [], BUGS = D.bugs || [], GAPS = D.gaps || [], COV = D.coverage || [];
 
   const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
   const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -691,6 +732,7 @@ code {
     frames: 'Screenshots',
     proofs: 'Extra proofs',
     files: 'Files',
+    coverage: 'Requirement coverage',
     bugs: 'Bugs',
     gaps: 'What this run did not reach'
   }, D.labels || {});
@@ -698,6 +740,16 @@ code {
   const kinds = S.map(s => kind(s.verdict));
   const n = { pass: 0, fail: 0, hold: 0, skip: 0 };
   kinds.forEach(k => n[k]++);
+
+  /* the ledger: every requirement the docs list, proven or not. covOpen is what
+     keeps an incomplete run visible — the count the page colours and leads with. */
+  const covKinds = COV.map(c => kind(c.verdict));
+  const covOpen = covKinds.filter(k => k !== 'pass').length;
+  const covTone = covKinds.includes('fail') ? 'fail' : covOpen ? 'hold' : '';
+  const covCount = (COV.length - covOpen) + '/' + COV.length;
+  const covSummary = covOpen
+    ? covOpen + ' of ' + COV.length + ' unproven'
+    : 'all ' + COV.length + ' covered';
 
   /* ── bar ── */
   document.getElementById('b-title').textContent = D.title || 'Proof Report';
@@ -719,20 +771,22 @@ code {
     ['pass', n.pass,  'pass', 'pass'],
     ['fail', n.fail,  'fail', 'fail'],
     ['hold', n.hold,  'not verified', 'hold'],
+    ['coverage', covCount, 'covered', covTone],
     ['bugs', BUGS.length, BUGS.length === 1 ? 'bug' : 'bugs', BUGS.length ? 'fail' : '']
   ];
   const chips = {};
   defs.forEach(([key, v, txt, tone]) => {
     if (!v && (key === 'hold' || key === 'fail')) return;
+    if (key === 'coverage' && !COV.length) return;
     const b = el('button', 'count' + (tone ? ' count--' + tone : ''));
     b.type = 'button';
     b.appendChild(el('span', 'count__n', String(v)));
     b.appendChild(el('span', 'count__l', txt));
-    if (key !== 'bugs') {
+    if (key === 'bugs' || key === 'coverage') {
+      b.addEventListener('click', () => select(key));
+    } else {
       b.addEventListener('click', () => { filter = filter === key ? 'all' : key; paint(); });
       chips[key] = b;
-    } else {
-      b.addEventListener('click', () => select('bugs'));
     }
     counts.appendChild(b);
   });
@@ -778,12 +832,16 @@ code {
 
   rail.appendChild(el('div', 'rail__sep'));
   rail.appendChild(el('div', 'rail__h', 'Report'));
-  [['bugs', L.bugs, BUGS.length, BUGS.length > 0], ['gaps', 'Not reached', GAPS.length, false]].forEach(([id, txt, c, hot]) => {
+  /* Coverage leads the report views: it is the scope of everything under it. */
+  [['coverage', L.coverage, covCount, covTone],
+   ['bugs', L.bugs, BUGS.length, BUGS.length ? 'fail' : ''],
+   ['gaps', 'Not reached', GAPS.length, '']].forEach(([id, txt, c, tone]) => {
     if (id === 'gaps' && !GAPS.length) return;
-    const b = el('button', 'item item--aux' + (hot ? ' item--fail' : ''));
+    if (id === 'coverage' && !COV.length) return;
+    const b = el('button', 'item item--aux' + (tone ? ' item--' + tone : ''));
     b.type = 'button';
     b.appendChild(el('span', 'item__t', txt));
-    b.appendChild(el('span', 'item__c' + (hot ? ' is-hot' : ''), String(c)));
+    b.appendChild(el('span', 'item__c' + (tone === 'fail' ? ' is-hot' : tone === 'hold' ? ' is-warm' : ''), String(c)));
     b.addEventListener('click', () => select(id));
     rail.appendChild(b);
     aux.push([id, b]);
@@ -1012,6 +1070,66 @@ code {
     metaRow(box, label, a);
   }
 
+  /* The scenarios one ledger row names — "01", or "01, 09" when two walks prove
+     the same id. Each id that matches a scenario becomes a button that walks
+     there; an id with no scenario behind it says so instead of linking nowhere. */
+  function scenarioLinks(ref) {
+    const row = el('div', 'paths');
+    const ids = String(ref == null ? '' : ref).split(',').map(x => x.trim()).filter(Boolean);
+    if (!ids.length) {
+      row.appendChild(el('span', null, 'no scenario'));
+      return row;
+    }
+    ids.forEach(id => {
+      const i = S.findIndex(s => String(s.n) === id);
+      if (i < 0) {
+        row.appendChild(el('span', null, 'Scenario ' + id + ' (missing)'));
+        return;
+      }
+      const b = el('button', 'bug__go', 'Scenario ' + S[i].n + ' — ' + (S[i].short || S[i].title || ''));
+      b.addEventListener('click', () => select(i));
+      row.appendChild(b);
+    });
+    return row;
+  }
+
+  /* Coverage — D.coverage[]: {req, scenario, verdict}, one row per requirement id
+     the docs list, reached or not. It is the scope of the run and the table the
+     top-level verdict is read off: any FAILURE → FAIL, else any NOT VERIFIED →
+     PARTIAL, all SUCCESS → PASS. Unproven rows are flagged at the row edge and in
+     the badge, so a reader sees an uncovered requirement without counting rows. */
+  function drawCoverage() {
+    pane.textContent = '';
+    const head = el('div', 'head' + (covTone ? ' head--' + covTone : ''));
+    head.appendChild(el('h2', 'head__t', L.coverage));
+    head.appendChild(el('span', 'head__v v--' + (covTone || 'pass'), covSummary));
+    pane.appendChild(head);
+    const sec = el('div', 'sec');
+    if (!COV.length) {
+      sec.appendChild(el('p', 'empty', 'This report carries no requirement ledger.'));
+      pane.appendChild(sec);
+      return;
+    }
+    const tbl = el('table', 'cov');
+    const hr = el('tr');
+    ['Requirement', 'Proven by', 'Verdict'].forEach(t => hr.appendChild(el('th', null, t)));
+    tbl.appendChild(hr);
+    COV.forEach((c, i) => {
+      const k = covKinds[i];
+      const tr = el('tr', k === 'pass' ? null : 'cov__r--' + k);
+      tr.appendChild(el('td', 'cov__req', c.req || '—'));
+      const by = el('td', 'cov__by');
+      by.appendChild(scenarioLinks(c.scenario));
+      tr.appendChild(by);
+      const v = el('td', 'cov__v');
+      v.appendChild(el('span', 'item__v v--' + k, label(c.verdict)));
+      tr.appendChild(v);
+      tbl.appendChild(tr);
+    });
+    sec.appendChild(tbl);
+    pane.appendChild(sec);
+  }
+
   function drawBugs() {
     pane.textContent = '';
     const head = el('div', 'head');
@@ -1076,7 +1194,8 @@ code {
     current = id;
     rows.forEach((b, i) => b.classList.toggle('is-on', i === id));
     aux.forEach(([k, b]) => b.classList.toggle('is-on', k === id));
-    if (id === 'bugs') drawBugs();
+    if (id === 'coverage') drawCoverage();
+    else if (id === 'bugs') drawBugs();
     else if (id === 'gaps') drawGaps();
     else drawScenario(S[id], id);
     document.querySelector('.pane').scrollTop = 0;
