@@ -53,7 +53,9 @@ Pick the route before doing anything:
   across 30 files takes this route.
 - **Hand to `implement`** — decided *after* step 1, never before: one file · one obvious
   edit · nothing to sequence · no test-level judgment. Pass the step-1 findings in the
-  hand-off prompt.
+  hand-off. When `CALLER=orchestrate`, return the atomic route and findings without invoking
+  `implement`; the caller must join its baseline before starting edits. When invoked standalone,
+  invoke `implement` with `IMPLEMENT_MODE=manual` and those findings.
 
 Watch for work that sounds mechanical but is not: "add caching to this endpoint" hides four
 open decisions — TTL, invalidation, key shape, backing store. Full flow.
@@ -77,10 +79,14 @@ Do not split when the pieces share more than ~30% of files and ship together.
 - **Dispatch a design scout too when the change has a user-facing surface.** Send it with the
   sweep, on the same fast model; read `references/design-scout.md` for the brief. It pulls the
   designs off the ticket into `.harness/<name>/design/` and returns the `design/INDEX.md` path.
-- **The sweep locates; you read.** Open yourself every file a decision turns on. Where the scout
-  left a `design/INDEX.md`, that includes the files it names — a screen you have not looked at
-  is one you cannot write a step for. No index means no design was found, which is a fact the
-  step records.
+- **The sweep locates; you read.** Open yourself every file a decision turns on. No index from
+  the scout means no design was found, which is a fact the step records.
+- **Open every frame the index names — all of them.** `design/INDEX.md` is a list to exhaust, not
+  to sample: Read each file it names, images included, before you write a step. A screen you have
+  not looked at is one you cannot write a step for. Two frames of one screen at different
+  viewports are two screens — a phone sheet is not the desktop panel scaled down, and each
+  settles its own order, spacing and copy. What you take from a frame is what its prose source
+  cannot carry — the style facts `references/step-card.md` lists under Designs.
 - When the repo holds fewer than 3 examples of the pattern this work needs, also research
   externally — prior art, known failure modes, current API facts. Findings return inline
   with source URLs.
@@ -112,6 +118,13 @@ shape):
 - Deferring is the user's decision, not yours. Resolve what you can; put the remainder to
   them. In `--auto`, ask nothing — record each open fork in plan.md's `## Deferred`, marked
   `auto`, and name it in the step-8 summary.
+
+**A frame you cannot rebuild from is an open fork.** Where the scout left frames, this plan owes
+a pixel-perfect rebuild, so for every screen name every style fact `references/step-card.md` lists
+under Designs, read off the frame. What the frame leaves ambiguous — a value you would
+otherwise round, a state it never draws, a viewport it omits — is a `D<n>` and a question to the
+user now, never a coder-time guess. In `--auto`, resolve it as an inferred decision and carry it
+as a named risk.
 
 When a question is faster judged by seeing — layouts, wireframes, diagrams — offer the
 browser companion per `references/visual-companion.md`. Read it before the first offer.
@@ -229,7 +242,7 @@ deleted phase leaves a gap; never renumber the survivors.
 Then derive the tests: read `references/test-scenarios.md` now and build the Test Matrix
 from it — a basis, not a checklist.
 
-Two rules bind every step you write:
+Three rules bind every step you write:
 
 - **Open before you write.** Before a step edits a file, open that file. Write the step
   against the file's current content, never against a sweep pointer or memory.
@@ -237,6 +250,11 @@ Two rules bind every step you write:
   show the evidence, recommend the new decision. On the answer, update `design.md` when it
   exists; on the short flow, the user's answer is the record. In `--auto`: supersede, update
   `design.md` when it exists, and state the change in the step-8 summary.
+- **Every frame gets a step.** A step that builds a surface a frame defines names it —
+  `build to design/x.png`, per `references/step-card.md` — and carries that frame's style facts
+  in its contract. Every screen in `design/INDEX.md` is claimed by at least one step; a screen no
+  step builds is recorded in plan.md as `design/<file> — not built: <reason>`. A coder who cannot
+  see the frame rebuilds it from imagination.
 
 **Done when:** every phase has a capability title, every requirement has a matrix row, every
 scenario has exactly one home and names a failure no other scenario catches, and every file
@@ -278,8 +296,11 @@ Building the page takes a while — stream it so the user watches it grow instea
    is what keeps the spinner pinned to the end of the written content.
 4. **Write each `phases/phase-N.md` payload before the `#phases` card and the `#tests` table
    that render it** — you cannot transcribe a document you have not written. Payload blocks
-   never render, so this costs the stream nothing. `plan.md` and the engine data (`X`, `RX`,
-   `IMG`) last.
+   never render, so this costs the stream nothing. `plan.md` and the engine data (`X`, `RX`) last.
+   `IMG` is not hand-written — run
+   `node --experimental-strip-types <skill-dir>/scripts/inline-designs.ts .harness/<name>/plan.html`
+   and it base64s every
+   frame the page references into the map.
 
 Then self-review and fix findings inline. Each check is a lookup, not a judgment; findings
 are `[phase N, step M]: <issue>`. A failed check below blocks the gate; anything else is a
@@ -296,14 +317,14 @@ recommendation:
   lines would fit · every step title opens with an imperative verb naming the action · every
   line reference is an address the coder must open, and names what is there.
 - **Coverage.** Every requirement has a matrix row · every row names a phase or an
-  acceptance flow · every scenario appears exactly once across all payloads · `e2e` rows
-  stay under a third of the matrix, or each excess row traces to a real-browser fact or a
-  named Blocker.
+  acceptance flow · every scenario appears exactly once across all payloads · `e2e` rows stay
+  under a third of the matrix, or each excess row traces to a real-browser fact or a named
+  Blocker. Design coverage belongs to the verifier, below.
 - **The transcription is complete.** Count it, per phase: `<li>` in the drill-down ==
   numbered steps in that payload's `## Implementation`, same order, same titles · every code
   block in a step reaches its `<li>` · every existing-code snippet carries a `.snip-lbl.cur`
-  with its reason · every step that names a design embeds it, and every `data-img` resolves
-  in `IMG` · every `<details>` opens with a `<summary>` and wraps its panel in `.d-body` ·
+  with its reason · every step that names a frame embeds it · every `<details>` panel is
+  wrapped in `.d-body` — the engine derives a missing `<summary>`, so that one needs no check ·
   rows in `#matrix` == scenarios across all payloads, each carrying that
   scenario's id, heading, `Given` line and outcomes word for word.
 - **Every block has an `id`.** Cards, table rows, callouts, phase cards, `.unlock` boxes,
@@ -312,8 +333,18 @@ recommendation:
   from a payload block · every internal id on the page has a tooltip entry · the
   above-the-fold view answers *what, why, what each phase unlocks* without a drill-down.
 
-**Done when:** the shell's slots are filled, the payloads are complete, and the self-review
-found nothing blocking.
+Last, run the verifier — what a count can settle, a count settles:
+
+```bash
+node --experimental-strip-types <skill-dir>/scripts/verify-plan.ts .harness/<name>/plan.html
+```
+
+It names every frame in `design/INDEX.md` that no step embeds, every `data-img` that resolves to
+nothing, every `IMG` key that is not a file in `design/`, every slot left unfilled, and every
+payload block missing or empty. A finding blocks the gate: fix it and run it again.
+
+**Done when:** the shell's slots are filled, the payloads are complete, the verifier exits clean,
+and the self-review found nothing blocking.
 
 ## Step 8 — The plan gate
 
@@ -364,6 +395,7 @@ confirmation, and neither is a resolved comment; extract only after explicit app
 On approval, extract the payloads, then stop the comment watcher and the server:
 
 ```bash
+node --experimental-strip-types <skill-dir>/scripts/verify-plan.ts .harness/<name>/plan.html
 node <skill-dir>/scripts/extract-plan.mjs .harness/<name>/plan.html
 bash <skill-dir>/scripts/stop-server.sh <session-dir>
 ```

@@ -1,8 +1,7 @@
 # Headless Verification
 
 **Read this when:** the feature has no UI, or a behaviour within it has no screen to drive. Step 2's browser craft
-does not apply; the evidentiary bar does. A headless run proves the same things a filmed one proves — that the code
-under test actually ran, and that the state it was supposed to change actually changed.
+does not apply; the evidentiary bar does.
 
 ## The shape of a headless walk
 
@@ -31,7 +30,7 @@ with at least one of these per scenario, and say in the report which one you use
   The absence of that line is a failing scenario, not a quiet pass.
 
 **A read-back that would have passed before the change is not evidence.** Ask that question of every assertion you
-write; it is the headless equivalent of a frame that shows the wrong screen.
+write.
 
 ## Traps
 
@@ -43,12 +42,11 @@ write; it is the headless equivalent of a frame that shows the wrong screen.
 - **Gates before the code under test.** Entitlements, feature flags, allow-lists, and status preconditions sit in
   front of most interesting paths. When a walk produces nothing, read the gate before concluding the feature is
   unreachable — that reading is what separates a real gap from an early stop (Step 4).
-- **Shared datastores.** Parallel runs are usually on the same database. Scope every fixture uniquely, and
-  count the pre-existing rows before and after if the scenario asserts an absence.
+- **Shared datastores.** Where a scenario asserts an absence, count the pre-existing rows before and after — a row
+  another run left behind reads exactly like one your walk wrote.
 
 ## Evidence in the report
 
-Frames and videos do not exist here, so the exchange is the whole evidence and a headless scenario carries its
-weight in `proofs[]` — one entry per mechanism, each holding the **verbatim exchange** inline, so a dev re-runs the
-call from the entry alone. Everything else about grading, coverage, gaps and the derived verdict is unchanged:
-see `writing-the-report.md`.
+Frames and videos do not exist here, so the exchange is the whole evidence and a headless scenario carries its weight
+in `proofs[]` — one entry per mechanism. How such an entry is written, and everything about grading, coverage, gaps
+and the derived verdict, is unchanged: see `writing-the-report.md`.

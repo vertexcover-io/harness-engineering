@@ -13,7 +13,6 @@
         "Every command is run with the pattern: <command> 2>&1; echo \"EXIT_CODE=$?\"",
         "Report includes exact command, raw output, and exit code for every check executed",
         "All mandatory checks are attempted: type checker, linter, test suite + behavior coverage (every spec matrix row's named test passes), scope compliance, plan compliance, comment audit, and the mutation spot-check (Check 10)",
-        "Coverage (Check 4) is reported as a diagnostic INFO — it never produces a FAIL verdict on its own",
         "Check 8 (smoke test) is attempted or noted as 'No smoke test defined'",
         "Reads baseline.json and compares current results against baseline values",
         "Gate report is written to .harness/add-search-feature/gate-report-post-tdd-001.md",

@@ -7,8 +7,7 @@ description: >
   Produces `.harness/<name>/library-probe.md` with a per-library verdict
   (VERIFIED / FAILED / UNTESTABLE). On FAILED, walks the declared
   fallback chain; after all alternatives are exhausted, escalates via AskUserQuestion.
-  Runs inside the planning stage. Also re-invoked by orchestrate when
-  the coder stage emits a `LIB_SUSPECT` signal.
+  Runs inside the planning stage.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, AskUserQuestion
 ---
 
@@ -26,9 +25,6 @@ turns belief into evidence before a single line of production code is written.
 1. **Primary path** — invoked by the `planning` skill right after its checkpoint, before any
    phase is designed. Reads the `## External Dependencies & Fallback Chain` section of
    `.harness/<SPEC_NAME>/design.md` (written by planning's recorder sub-agent).
-2. **Loopback path** — when `tdd` emits `LIB_SUSPECT` during coding, orchestrate
-   re-invokes this skill with `--lib <name>` to re-probe the suspect lib and walk
-   the fallback chain.
 
 ---
 
@@ -38,7 +34,6 @@ turns belief into evidence before a single line of production code is written.
   writes it is dispatched at planning's checkpoint — if the file does not exist yet, wait
   briefly and re-check before declaring it missing.
 - Feature dir: `.harness/<SPEC_NAME>/` (gitignored — `library-probe.md`, `verification/verification-stubs.md`, `probes/<lib>/` scripts and logs)
-- Optional flag: `--lib <name>` to probe a single library on loopback
 - Optional flag: `--auto` to skip AskUserQuestion (CI mode)
 
 ---
@@ -272,22 +267,6 @@ pipeline — if the lib died between probe and PR, we catch it.
 
 <!-- LP:VERDICT:PASS -->  <!-- or BLOCKED -->
 ```
-
----
-
-## Loopback mode (`--lib <name>`)
-
-When orchestrate re-invokes with `--lib <name>` (because tdd flagged a
-`LIB_SUSPECT`):
-
-1. Skip libraries already marked `VERIFIED` in the existing `library-probe.md`.
-2. Re-probe only `<name>` and walk its fallback subtree.
-3. If the resolution selects a different library, append a `## Re-plan Required`
-   section listing which phase files reference the old lib. Orchestrate uses
-   this to dispatch a planner update.
-
-Cap loopbacks at 2. After that, escalate with the original `BLOCKED` verdict —
-something is structurally wrong and humans need to look.
 
 ---
 

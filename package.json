@@ -11,7 +11,8 @@
     "release:version:node": "node scripts/version.ts",
     "test:scripts": "node --test scripts/*.test.ts",
     "test:scripts:bun": "bun test scripts/",
-    "test:hooks": "node --test hooks/*.test.mjs"
+    "test:hooks": "node --test hooks/*.test.mjs",
+    "test:skills": "node --experimental-strip-types --test \"skills/**/*.test.ts\" \"skills/**/*.test.mjs\""
   },
   "pi": {
     "skills": ["./skills"],

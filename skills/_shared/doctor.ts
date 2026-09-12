@@ -44,7 +44,7 @@ export type Report = {
 
 export type Input = {
   readonly autoMode: boolean;
-  readonly inputKind: "prompt" | "ticket" | "file" | "findings";
+  readonly inputKind: "prompt" | "ticket" | "file";
   readonly inputRef: string;
 };
 
@@ -285,34 +285,17 @@ export const projectDoctor = (root: string, exec: typeof shell = shell): readonl
 
 // ── input ────────────────────────────────────────────────────────────────────
 
-const isFindingsManifest = (path: string): boolean => {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (typeof parsed !== "object" || parsed === null || !("findings" in parsed)) return false;
-    const { findings } = parsed;
-    return (
-      Array.isArray(findings) &&
-      findings.length > 0 &&
-      findings.every((f) => typeof f === "object" && f !== null && "auto_fixable" in f)
-    );
-  } catch {
-    return false;
-  }
-};
-
 export const parseInput = (raw: string): Input => {
   const autoMode = /(^|\s)--auto(\s|$)/.test(raw);
   const arg = raw.replace(/(^|\s)--auto(\s|$)/g, "$1").trim();
   if (/^https?:\/\/\S+$/.test(arg)) return { autoMode, inputKind: "ticket", inputRef: arg };
   if (arg === "" || !existsSync(arg)) return { autoMode, inputKind: "prompt", inputRef: "" };
-  const inputRef = resolve(arg);
-  return { autoMode, inputKind: isFindingsManifest(inputRef) ? "findings" : "file", inputRef };
+  return { autoMode, inputKind: "file", inputRef: resolve(arg) };
 };
 
 const INPUT_ACTIONS: Partial<Record<Input["inputKind"], string>> = {
   ticket: "Fetch INPUT_REF from the tracker; its title and description are the task.",
   file: "Read INPUT_REF; its contents are the task.",
-  findings: "Tech-debt mode: read INPUT_REF as a manifest, fix only auto_fixable entries.",
 };
 
 // ── report ───────────────────────────────────────────────────────────────────
