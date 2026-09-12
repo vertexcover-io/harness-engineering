@@ -1,6 +1,6 @@
 # Commit & PR
 
-`set-status commit-pr running`. Run these steps in the main conversation.
+`set-status commit-pr running` + `fire --event stage-started --stage commit-pr`. Run these steps in the main conversation.
 
 If [config.md](config.md) resolves a skill for this stage, invoke it in place of steps 2–4,
 passing `WORKTREE_PATH`, `BRANCH_NAME`, `BASE_BRANCH`, the PR title and body, and `MODE_ARG`.
@@ -43,10 +43,12 @@ An open PR is the successful result; a doctor-approved PR skip must be reported 
 5. Fire `artifact-created` with kind `commit` and the HEAD SHA, and — only when this run opened the
    PR — kind `pr` with its URL, per [events.md](events.md). Both fire here rather than inside steps
    2 and 4, so a project that replaces those steps with its own ship skill keeps its hooks.
-6. Update `manifest.json` with `pr_number` and `completed_at`; backfill `PR_URL` into README.
-   If no PR was created, leave its number null and record the reason in the index.
-7. Fire `run-completed`, with the PR URL or the actual commit/push outcome.
-8. `write-report commit-pr`, then `set-status commit-pr done`. Carry commits and `PR_URL`.
+6. Update `manifest.json` with `pr_number` and `completed_at` — merge into the file, never
+   rewrite it: `thread` is the notifier's and the run's later events still need it. Backfill
+   `PR_URL` into README. If no PR was created, leave its number null and record the reason in the index.
+7. `write-report commit-pr`, then `set-status commit-pr done` +
+   `fire --event stage-completed --stage commit-pr --result pass`.
+8. Fire `run-completed`, with the PR URL or the actual commit/push outcome. Carry commits and `PR_URL`.
 
 ## Resumed runs
 

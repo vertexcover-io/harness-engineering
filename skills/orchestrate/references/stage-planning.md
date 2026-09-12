@@ -1,6 +1,6 @@
 # Design & Plan
 
-1. `set-status planning running`. Invoke the resolved planning skill via `Skill`, with
+1. `set-status planning running` + `fire --event stage-started --stage planning`. Invoke the resolved planning skill via `Skill`, with
    `CALLER=orchestrate`, `TASK_CONTEXT`, `SPEC_NAME`, `HARNESS_DIR`, and `MODE_ARG`.
    If planning fails, returns blocked, or the user declines to continue, stop and report the
    reason. A revision at planning's gate stays inside planning.
@@ -16,12 +16,14 @@
    Fire `artifact-created` with kind `plan`, per [events.md](events.md).
 5. Read the phase graph from `plan.md`. Add its phase nodes under `coder` with the
    graph's dependencies using [dashboard.md](dashboard.md#phase-nodes).
-   `write-report planning`, then `set-status planning done`.
+   `write-report planning`, `set-status planning done` + `fire --event stage-completed --stage planning --result pass`,
+   its `artifacts` naming `plan`, `plan-html` and `design`.
 
 ## Implement route
 
 When planning returns atomic work for `implement`, no plan or phase files are expected.
-Record the route in the planning report, mark planning done, and set both `coder` and
+Record the route in the planning report, `set-status planning done` +
+`fire --event stage-completed --stage planning --result pass`, and set both `coder` and
 `code-review` skipped. The baseline is already joined (step 3). Invoke `implement` with `IMPLEMENT_MODE=pipeline-atomic`, the returned recon findings,
 `TASK_CONTEXT`, `WORKTREE_PATH`, `HARNESS_DIR`, `PACKAGES`, `ENVIRONMENT`, `MODE_ARG`, and
 E2E report path `<HARNESS_DIR>/phase-1-e2e.json`. If implement errors or returns `BLOCKED`,

@@ -1,6 +1,6 @@
 # Code Review
 
-`set-status code-review running`. Resolve the review skill from [config.md](config.md)
+`set-status code-review running` + `fire --event stage-started --stage code-review`. Resolve the review skill from [config.md](config.md)
 and invoke it via `Skill` in this conversation. It dispatches its own reviewers, applies
 fixes, and records them in the report; the quality gate runs after, so those edits are gated.
 If the skill errors or cannot finish, stop and report the review failure and next action.
@@ -27,4 +27,6 @@ A missing or unreadable report, or an unrecognized verdict, stops the stage as `
 - `REQUEST CHANGES` with judgement-only defects: log a warning and proceed to verification.
 
 Any resumed entry with a cited standard violation halts the run.
-`write-report code-review`, then `set-status code-review done`.
+`write-report code-review`, then `set-status code-review done` +
+`fire --event stage-completed --stage code-review --result pass|fail`, its `artifacts`
+naming `review/review.md`.

@@ -1,6 +1,6 @@
 # Quality Gate
 
-`set-status quality-gate running`. Resolve this stage's skill and model from [config.md](config.md);
+`set-status quality-gate running` + `fire --event stage-started --stage quality-gate`. Resolve this stage's skill and model from [config.md](config.md);
 read [dispatch-preamble.md](dispatch-preamble.md).
 
 The gate proves nothing regressed, by re-running the project's own checks against
@@ -35,7 +35,9 @@ baseline. A failed entry fails the run.
 ## After return
 
 Read the verdict from the gate report's markers, whose syntax the gate skill owns. Then
-`write-report quality-gate` and `set-status quality-gate done`.
+`write-report quality-gate` and `set-status quality-gate done` +
+`fire --event stage-completed --stage quality-gate --result pass|fail`, its `artifacts`
+naming `gate-report`.
 
 ## Halts
 

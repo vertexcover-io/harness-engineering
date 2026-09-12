@@ -1,6 +1,6 @@
 # Coder
 
-`set-status coder running`. Resolve the coder skill and model from [config.md](config.md).
+`set-status coder running` + `fire --event stage-started --stage coder`. Resolve the coder skill and model from [config.md](config.md).
 
 Read the DOT phase graph from `plan.md`. Ready phases have no incomplete predecessors.
 Dispatch all ready phases in one message; after the wave completes, recompute readiness.
@@ -36,7 +36,9 @@ A worker error or `BLOCKED` stops further dispatch; report the phase or checkout
 and next action. Missing completion status, absent/invalid required evidence, a failed E2E
 report, or zero executed tests stops the stage as `STAGE_CONTRACT_FAILED`.
 Write the phase report, mark the phase done, and continue the graph.
-After every phase completes, `write-report coder` and `set-status coder done`.
+After every phase completes, `write-report coder` and `set-status coder done` +
+`fire --event stage-completed --stage coder --result pass`, its `artifacts` naming each
+`phase-<N>-e2e.json`.
 
 ## Resumed runs
 

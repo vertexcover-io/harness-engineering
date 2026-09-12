@@ -1,7 +1,7 @@
 # Retro
 
 If `CONFIG.stages.retro.disabled` is true, `set-status retro skipped` and go to Summary.
-Otherwise `set-status retro running`; resolve the retro skill and model from [config.md](config.md)
+Otherwise `set-status retro running` + `fire --event stage-started --stage retro`; resolve the retro skill and model from [config.md](config.md)
 and read [dispatch-preamble.md](dispatch-preamble.md).
 
 Retro runs after the PR so the session transcript includes the whole implementation and shipping
@@ -31,4 +31,5 @@ on the primary run.
 
 This stage cannot fail the run. On any error, `set-status retro failed`, print one line naming
 the error, and continue to Summary with "not produced" in the retro row.
-On success, `write-report retro`, then `set-status retro done`.
+On success, `write-report retro`, then `set-status retro done` +
+`fire --event stage-completed --stage retro --result pass`, its `artifacts` naming `retro-report`.

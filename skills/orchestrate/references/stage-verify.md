@@ -1,6 +1,6 @@
 # Verify
 
-`set-status verify running`. Resolve this stage's skill and model from [config.md](config.md);
+`set-status verify running` + `fire --event stage-started --stage verify`. Resolve this stage's skill and model from [config.md](config.md);
 read [dispatch-preamble.md](dispatch-preamble.md).
 
 Verification proves the feature does what was asked, by driving it. The gate stage that follows
@@ -42,7 +42,9 @@ entry with its own plan, prior proof report, traced ids and environment. A faile
    `accepted` with the reason. A bug with neither is `UNDISPOSITIONED_BUG` — nobody classified it,
    so it is unfinished work rather than an accepted risk. Dispositions never override a `FAILED`
    verdict.
-3. `write-report verify`, then `set-status verify done`.
+3. `write-report verify`, then `set-status verify done` +
+   `fire --event stage-completed --stage verify --result pass`, its `artifacts` naming
+   `proof-report` and `verification`.
 
 ## Halts
 
