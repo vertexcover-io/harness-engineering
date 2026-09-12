@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { parseCropWindow, scenarioPrefixes } from "./build-videos.ts";
+import { checkFrameShape, parseCropWindow, pngSize, scenarioPrefixes } from "./build-videos.ts";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "build-videos.ts");
 
@@ -105,6 +105,69 @@ test("SC7: each scenario builds its own video and reports its crop window",
     assert.ok(existsSync(join(dir, "01_desktop.mp4")));
     assert.ok(existsSync(join(dir, "02_phone.mp4")));
   });
+
+// Every crop window below is one this repo's own ffmpeg actually reported for that source shape.
+test("SC9: a portrait frame whose crop fills the canvas was stretched", () => {
+  const verdict = checkFrameShape({ width: 390, height: 844 }, "crop=1280:720:0:0");
+
+  assert.equal(verdict.kind, "stretched");
+  assert.match(verdict.note ?? "", /0\.46/);
+  assert.match(verdict.note ?? "", /1\.78/);
+});
+
+test("SC10: a portrait frame pillarboxed into the canvas kept its shape", () => {
+  assert.equal(checkFrameShape({ width: 390, height: 844 }, "crop=320:720:478:0").kind, "matches");
+  assert.equal(checkFrameShape({ width: 1170, height: 2532 }, "crop=320:720:478:0").kind, "matches");
+  assert.equal(checkFrameShape({ width: 390, height: 2000 }, "crop=128:720:576:0").kind, "matches");
+});
+
+test("SC11: a 16:10 desktop frame with bars kept its shape", () => {
+  assert.equal(checkFrameShape({ width: 1280, height: 800 }, "crop=1152:720:64:0").kind, "matches");
+  assert.equal(checkFrameShape({ width: 1512, height: 982 }, "crop=1104:720:86:0").kind, "matches");
+});
+
+test("SC12: a 16:9 frame filling the canvas exactly is not a stretch", () => {
+  assert.equal(checkFrameShape({ width: 1280, height: 720 }, "crop=1280:720:0:0").kind, "matches");
+  assert.equal(checkFrameShape({ width: 1920, height: 1080 }, "crop=1280:720:0:0").kind, "matches");
+});
+
+test("SC13: a reshaped desktop frame is caught too, not just a portrait one", () => {
+  assert.equal(checkFrameShape({ width: 1280, height: 800 }, "crop=1280:720:0:0").kind, "stretched");
+  assert.equal(checkFrameShape({ width: 768, height: 1024 }, "crop=1280:720:0:0").kind, "stretched");
+});
+
+test("SC14: an unreadable source or an unreadable window skips the check, never fails it", () => {
+  assert.equal(checkFrameShape(null, "crop=1280:720:0:0").kind, "unchecked");
+  // An extreme source makes cropdetect report a negative height, which parses to nothing useful.
+  assert.equal(checkFrameShape({ width: 390, height: 3000 }, "crop=80:").kind, "unchecked");
+  assert.equal(checkFrameShape({ width: 0, height: 0 }, "crop=1280:720:0:0").kind, "unchecked");
+});
+
+test("SC15: the PNG header reader reports a real frame's dimensions",
+  { skip: needsFfmpeg }, () => {
+    const dir = withScreenshots("pngsize");
+    frame(dir, "01_phone__01_open.png", 390, 844);
+    frame(dir, "02_desktop__01_open.png", 1280, 800);
+
+    assert.deepEqual(pngSize(join(dir, "screenshots", "01_phone__01_open.png")),
+      { width: 390, height: 844 });
+    assert.deepEqual(pngSize(join(dir, "screenshots", "02_desktop__01_open.png")),
+      { width: 1280, height: 800 });
+  });
+
+test("SC16: anything that is not a readable PNG reads as no dimensions", () => {
+  const dir = withScreenshots("notpng");
+  const at = (name: string, bytes: Buffer | string): string => {
+    const path = join(dir, "screenshots", name);
+    writeFileSync(path, bytes);
+    return path;
+  };
+
+  assert.equal(pngSize(join(dir, "screenshots", "absent.png")), null);
+  assert.equal(pngSize(at("empty.png", "")), null);
+  assert.equal(pngSize(at("text.png", "not a png")), null);
+  assert.equal(pngSize(at("truncated.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))), null);
+});
 
 test("SC8: a scenario ffmpeg cannot build is FAILED, and the run exits non-zero",
   { skip: needsFfmpeg }, () => {
