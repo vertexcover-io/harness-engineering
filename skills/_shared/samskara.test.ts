@@ -30,7 +30,7 @@ const fakeDeps = (overrides: Partial<UploadDeps> = {}): { deps: UploadDeps; call
 test("SC2: a finished stage's reported files reach the CLI in one call", () => {
   const { deps, calls } = fakeDeps();
   const input: UploadInput = {
-    runRoot: "/repo",
+    repoRoot: "/repo",
     artifacts: [
       { name: "review", path: ".harness/spec/review/review.md" },
       { name: "plan", path: ".harness/spec/plan.html" },
@@ -48,7 +48,7 @@ test("SC2: a finished stage's reported files reach the CLI in one call", () => {
 test("SC3: the upload names the session id the run recorded", () => {
   const { deps, calls } = fakeDeps({ session: (artifactDir) => (artifactDir === "/repo/.harness/spec" ? "sess-abc" : null) });
   const input: UploadInput = {
-    runRoot: "/repo",
+    repoRoot: "/repo",
     artifactDir: "/repo/.harness/spec",
     artifacts: [{ name: "review", path: "review.md" }],
   };
@@ -62,7 +62,7 @@ test("SC3: the upload names the session id the run recorded", () => {
 test("SC4: the artifact directory is what the session lookup is asked about", () => {
   const { deps, calls } = fakeDeps({ session: () => "sess-xyz" });
   const input: UploadInput = {
-    runRoot: "/repo",
+    repoRoot: "/repo",
     artifactDir: "/repo/.harness/spec",
     artifacts: [{ name: "review", path: "review.md" }],
   };
@@ -75,7 +75,7 @@ test("SC4: the artifact directory is what the session lookup is asked about", ()
 test("SC5: with no session id anywhere, nothing uploads and the hook says why", () => {
   const { deps, calls } = fakeDeps({ session: () => null });
   const input: UploadInput = {
-    runRoot: "/repo",
+    repoRoot: "/repo",
     artifactDir: "/repo/.harness/spec",
     artifacts: [{ name: "review", path: "review.md" }],
   };
@@ -93,7 +93,7 @@ test("SC6: an installed CLI without the upload command uploads nothing", () => {
       return { exit: 0, stdout: "usage: samskara [command]\n\ncommands: login, logout, artifacts", stderr: "" };
     },
   });
-  const input: UploadInput = { runRoot: "/repo", artifacts: [{ name: "review", path: "review.md" }] };
+  const input: UploadInput = { repoRoot: "/repo", artifacts: [{ name: "review", path: "review.md" }] };
   const result = uploadStageArtifacts(input, deps);
 
   assert.equal(calls.some((c) => c.args[1] === "upload" && c.args[2] !== "--help"), false);
@@ -108,7 +108,7 @@ test("SC7: a CLI that is not installed uploads nothing", () => {
       return { exit: 127, stdout: "", stderr: "command not found: samskara" };
     },
   });
-  const input: UploadInput = { runRoot: "/repo", artifacts: [{ name: "review", path: "review.md" }] };
+  const input: UploadInput = { repoRoot: "/repo", artifacts: [{ name: "review", path: "review.md" }] };
   const result = uploadStageArtifacts(input, deps);
 
   assert.equal(calls.some((c) => c.args[1] === "upload" && c.args[2] !== "--help"), false);
@@ -117,7 +117,7 @@ test("SC7: a CLI that is not installed uploads nothing", () => {
 
 test("SC8: a stage that reports no files makes no CLI call", () => {
   const { deps, calls } = fakeDeps();
-  const input: UploadInput = { runRoot: "/repo", artifacts: [] };
+  const input: UploadInput = { repoRoot: "/repo", artifacts: [] };
   const result = uploadStageArtifacts(input, deps);
 
   assert.equal(calls.length, 0);
@@ -133,7 +133,7 @@ test("SC9: a failed upload throws, carrying the CLI's own message", () => {
       return { exit: 1, stdout: "", stderr: "session not found" };
     },
   });
-  const input: UploadInput = { runRoot: "/repo", artifacts: [{ name: "review", path: "review.md" }] };
+  const input: UploadInput = { repoRoot: "/repo", artifacts: [{ name: "review", path: "review.md" }] };
 
   assert.throws(() => uploadStageArtifacts(input, deps), /session not found/);
 });
@@ -145,16 +145,16 @@ test("SC10: a reported folder is passed to the CLI as one argument", () => {
   writeFileSync(join(folder, "a.txt"), "a");
   writeFileSync(join(folder, "b.txt"), "b");
   const { deps, calls } = fakeDeps({ exists: () => true });
-  const input: UploadInput = { runRoot: dir, artifacts: [{ name: "verification", path: "verification" }] };
+  const input: UploadInput = { repoRoot: dir, artifacts: [{ name: "verification", path: "verification" }] };
   uploadStageArtifacts(input, deps);
 
   const uploadCall = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help");
   assert.equal(uploadCall?.args.filter((a) => a === realpathSync(folder)).length, 1);
 });
 
-test("SC11: paths are anchored at the run root", () => {
+test("SC11: paths are anchored at the repo root", () => {
   const { deps, calls } = fakeDeps();
-  const input: UploadInput = { runRoot: "/repo/root", artifacts: [{ name: "plan", path: ".harness/spec/plan.html" }] };
+  const input: UploadInput = { repoRoot: "/repo/root", artifacts: [{ name: "plan", path: ".harness/spec/plan.html" }] };
   uploadStageArtifacts(input, deps);
 
   const uploadCall = calls.find((c) => c.args[1] === "upload" && c.args[2] !== "--help");
@@ -164,10 +164,10 @@ test("SC11: paths are anchored at the run root", () => {
   assert.ok(args.includes("/repo/root/.harness/spec/plan.html"));
 });
 
-test("SC17: a reported path that climbs out of the run root is never uploaded", () => {
+test("SC17: a reported path that climbs out of the repo root is never uploaded", () => {
   const { deps, calls } = fakeDeps();
   const input: UploadInput = {
-    runRoot: "/repo",
+    repoRoot: "/repo",
     artifacts: [
       { name: "escape", path: "../../.ssh/id_rsa" },
       { name: "plan", path: ".harness/spec/plan.html" },
@@ -182,10 +182,10 @@ test("SC17: a reported path that climbs out of the run root is never uploaded", 
   assert.equal(result.status, "uploaded");
 });
 
-test("SC18: an absolute path outside the run root is never uploaded", () => {
+test("SC18: an absolute path outside the repo root is never uploaded", () => {
   const { deps, calls } = fakeDeps();
   const input: UploadInput = {
-    runRoot: "/repo",
+    repoRoot: "/repo",
     artifacts: [{ name: "creds", path: "/Users/someone/.aws/credentials" }],
   };
   const result = uploadStageArtifacts(input, deps);
@@ -197,7 +197,7 @@ test("SC18: an absolute path outside the run root is never uploaded", () => {
 test("SC19: a path whose name would read as a CLI flag cannot reach the argument list", () => {
   const { deps, calls } = fakeDeps();
   const input: UploadInput = {
-    runRoot: "/repo",
+    repoRoot: "/repo",
     artifacts: [{ name: "flag", path: "--base-dir" }],
   };
   uploadStageArtifacts(input, deps);
@@ -228,7 +228,7 @@ test("SC22: a CLI that prints the flag but exits non-zero is not treated as capa
     run: () => ({ exit: 1, stdout: "usage: samskara artifacts upload SESSION PATH... --base-dir DIR", stderr: "boom" }),
   });
   const input: UploadInput = {
-    runRoot: "/repo",
+    repoRoot: "/repo",
     artifacts: [{ name: "review", path: ".harness/spec/review.md" }],
   };
   const result = uploadStageArtifacts(input, deps);
@@ -249,7 +249,7 @@ test("SC23: a symlink inside the repo that points outside it is not uploaded", (
   const { deps, calls } = fakeDeps({ exists: existsSync });
   const result = uploadStageArtifacts(
     {
-      runRoot: root,
+      repoRoot: root,
       artifacts: [
         { name: "evidence", path: ".harness/spec/evidence.txt" },
         { name: "plan", path: ".harness/spec/plan.md" },
@@ -265,7 +265,7 @@ test("SC23: a symlink inside the repo that points outside it is not uploaded", (
   assert.equal(result.status, "uploaded");
 });
 
-test("SC25: a symlinked run root is resolved before it becomes --base-dir", () => {
+test("SC25: a symlinked repo root is resolved before it becomes --base-dir", () => {
   const real = tmp();
   mkdirSync(join(real, ".harness", "spec"), { recursive: true });
   writeFileSync(join(real, ".harness", "spec", "plan.md"), "# plan\n");
@@ -274,7 +274,7 @@ test("SC25: a symlinked run root is resolved before it becomes --base-dir", () =
 
   const { deps, calls } = fakeDeps({ exists: existsSync });
   uploadStageArtifacts(
-    { runRoot: link, artifacts: [{ name: "plan", path: ".harness/spec/plan.md" }] },
+    { repoRoot: link, artifacts: [{ name: "plan", path: ".harness/spec/plan.md" }] },
     deps,
   );
 
@@ -292,7 +292,7 @@ test("SC26: an artifact the stage named but never wrote is dropped before the CL
   const { deps, calls } = fakeDeps({ exists: existsSync });
   const result = uploadStageArtifacts(
     {
-      runRoot: root,
+      repoRoot: root,
       artifacts: [
         { name: "plan", path: ".harness/spec/plan.md" },
         { name: "ghost", path: ".harness/spec/never-written.md" },
@@ -317,7 +317,7 @@ test("SC27: a folder and a file inside it are not both sent, which the CLI refus
   const { deps, calls } = fakeDeps({ exists: existsSync });
   uploadStageArtifacts(
     {
-      runRoot: root,
+      repoRoot: root,
       artifacts: [
         { name: "proof-report", path: "verification/proof-report.html" },
         { name: "verification", path: "verification" },

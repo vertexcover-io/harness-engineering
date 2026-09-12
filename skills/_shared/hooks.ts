@@ -732,7 +732,7 @@ export const samskaraHook = async (
 ): Promise<string> => {
   const result = uploadStageArtifacts(
     {
-      runRoot: payload.repoRoot,
+      repoRoot: payload.repoRoot,
       ...(payload.artifactDir === undefined ? {} : { artifactDir: payload.artifactDir }),
       artifacts: payload.data.artifacts ?? [],
     },
