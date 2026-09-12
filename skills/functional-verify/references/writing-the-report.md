@@ -27,20 +27,12 @@ find here is a bug, and Step 4 owns it.
 
 The videos are **assembled, not captured**: ffmpeg builds each one from the promoted frames in `screenshots/`. One
 video per scenario, grouped by the `NN_<slug>` prefix before the `__`, written beside the report. `SKILL.md`'s Step 5
-carries the command that builds them and prints the per-scenario `ok` line. What its settings are doing, because a
-hand-run rebuild has to keep them:
+carries the command that builds them and prints the per-scenario `ok` line.
 
-- **Three seconds a frame, the last frame held two seconds longer**, so a reviewer can follow each step.
-- The prefix is everything before the `__`, so each scenario's frames assemble into `NN_<slug>.mp4` — the exact name
-  the scenario's `video` names.
-- **The canvas is fixed and every frame letterboxes into it — a frame is never reshaped to fill it.** A phone frame
-  sits in a pillarbox and a 16:10 desktop frame gets bars top and bottom; both are correct, and neither is a reason
-  to resize the canvas to the frames. Widening it to swallow the bars is what squashes the phone frame into a
-  landscape shape and passes off a geometry that was never on screen.
-- The `crop=` value each `ok` line carries is cropdetect reporting the picture **inside** those bars, which is how
-  the shape is proven to have survived: a phone replay's video comes back a few hundred pixels wide
-  (`crop=320:720:478:0`), never the full `crop=1280:720:0:0`. **Full width on a portrait frame means it was
-  stretched** — that is a failure whatever the script printed, so check the phone replays' numbers yourself.
+The script builds every scenario's video and reports one line each. **A `FAILED` line fails the step** — including
+one that names a **stretched** frame, which the script catches itself by comparing each source frame's aspect ratio
+with the crop window cropdetect found in the video it built. The settings and the reasons for them live in the
+script.
 
 **Keep the frames** — they are the only machine-readable evidence, and a re-grade or second look needs the PNGs. If
 a merge fails, name the scenario and move on; its frames still prove it.
