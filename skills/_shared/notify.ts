@@ -107,22 +107,21 @@ const readEnvFile = (dir: string, name: string): Record<string, string> => {
   }
 };
 
-// After the checkout's own config: walk up from the checkout (a workspace member's source repo can
-// sit outside the root repo), then from the source, for a branch that predates the config.
+// The checkout's own config, else the first one between it and its main checkout — the climb stops
+// at the repo the checkout was carved out of. A main checkout off that chain (the worktree sits
+// elsewhere) is checked on its own, for a branch that predates the config.
 export const findConfigFile = (repoRoot: string, mainCheckout: string): string | null => {
-  const own = join(repoRoot, CONFIG_FILE);
-  if (existsSync(own)) return own;
-  for (const start of [repoRoot, mainCheckout]) {
-    let dir = start;
-    while (dir !== homedir()) {
-      const candidate = join(dir, CONFIG_FILE);
-      if (existsSync(candidate)) return candidate;
-      const parent = dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
+  let dir = repoRoot;
+  while (dir !== homedir()) {
+    const candidate = join(dir, CONFIG_FILE);
+    if (existsSync(candidate)) return candidate;
+    if (dir === mainCheckout) return null;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
-  return null;
+  const source = join(mainCheckout, CONFIG_FILE);
+  return existsSync(source) ? source : null;
 };
 
 export const loadConfig = (cwd: string = process.cwd()): Config | null => {

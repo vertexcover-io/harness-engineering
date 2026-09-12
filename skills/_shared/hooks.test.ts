@@ -1411,6 +1411,19 @@ test("SC54g: a checkout outside the home dir still falls back to the source repo
   assert.equal(loadHooks(tree).raw["notifier"] !== undefined, true);
 });
 
+test("SC54h: a config above the main checkout is not picked up", () => {
+  const dir = tmp();
+  const main = join(dir, "main");
+  mkdirSync(main, { recursive: true });
+  gitRepo(main);
+  execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd: main });
+  const tree = join(main, "ws", "wt");
+  execFileSync("git", ["worktree", "add", "-q", tree, "-b", "wt"], { cwd: main });
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+
+  assert.equal(loadHooks(tree).raw["notifier"], undefined);
+});
+
 test("SC55: an event fired before run-started fails and names the missing fire", async () => {
   const dir = tmp();
   const repoRoot = gitRepo(dir);
