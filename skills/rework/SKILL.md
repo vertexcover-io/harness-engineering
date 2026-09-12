@@ -24,10 +24,8 @@ the approach. Once Step 6 invokes `orchestrate`, stop asking and stop pausing: t
 orchestrate's.
 
 **Events.** Fire them as `skills/orchestrate/references/events.md` defines, from the primary entry's
-worktree: `run-started` as soon as Step 2 has written the primary entry's `manifest.json` and before
-any other event — a resumed run skips Stage 0, so `orchestrate` never fires it and nothing this
-skill sends would reach a thread; then `question-pending` before each `AskUserQuestion`, and
-`run-interrupted` before any row of the Halts table.
+worktree: `question-pending` before each `AskUserQuestion`, `run-interrupted` before any row of the
+Halts table.
 
 ## Step 1 — Resolve the ticket
 
@@ -63,9 +61,7 @@ Per `PRS` entry, or for the launch repo when `PRS` is empty:
    it now**. A QA ticket with no PR gets a new branch off the remote's default branch.
 3. Install with that config's `bootstrap` command.
 4. Create `.harness/<spec_name>/`, delete `.harness/current-phase`, and copy no prior document in: a
-   `plan.md` there puts the whole feature back into verification's scope. Write a
-   `manifest.json` beside it carrying `{"spec_name": "<spec_name>", "thread": null}`: this skill
-   fires events before `orchestrate` does, and the notifier records the thread there.
+   `plan.md` there puts the whole feature back into verification's scope.
 
 Record per entry, for Step 6:
 
@@ -73,7 +69,7 @@ Record per entry, for Step 6:
 |---|---|
 | `worktree`, `branch` | what the worktree skill returned |
 | `packages` | the `packages` keys this PR's changed files sit under, empty for the root `commands` map |
-| `spec_name` | `<TICKET_REF>-rework-<N>`, `N` one above the highest `.harness/<TICKET_REF>-rework-*` already in the primary entry's repo |
+| `spec_name` | `<TICKET_REF>-rework-<N>`, `N` one above the highest `.harness/<TICKET_REF>-rework-*` already in that checkout |
 | `base_sha` | the checkout's head |
 | `plan` | the prior run's `plan.md`, when a `.harness/*/manifest.json` in that checkout matches this `pr_number` or `TICKET_REF`. Two matches, or none, is a question |
 
