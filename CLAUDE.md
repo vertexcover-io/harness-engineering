@@ -7,6 +7,7 @@
 - Comment only what the code can't say — see code-quality
 - Use typescript:strict mode, and use type hints for all functions in python
 - Use code-quality skill for writing high quality code and try to make it functional
+- Only scripts and md files that more than one skill uses go in `skills/_shared/`; a script one skill owns lives inside that skill's folder
 
 ## Workflow
 - Explore codebase before implementing changes
@@ -23,4 +24,4 @@ Ask clarifying questions before architectural changes
 Explain reasoning for non-obvious decisions
 
 ## Pipeline exemption
-- The `ask before committing to git` rule does not apply to the orchestrate pipeline's Stage 6. When a run is driven by `/harness:orchestrate`, Stage 6 commits, pushes, and opens the PR without pausing. The rule still governs all other, manual git changes.
+- The `ask before committing to git` rule does not apply to the orchestrate pipeline's commit-pr stage. When a run is driven by `/harness:orchestrate`, that stage commits, pushes, and opens the PR without pausing. The rule still governs all other, manual git changes.

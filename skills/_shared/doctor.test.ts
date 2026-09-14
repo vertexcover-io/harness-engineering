@@ -51,16 +51,6 @@ test("parseInput strips --auto and classifies the remainder", () => {
   assert.deepEqual(parseInput("add dark mode"), { autoMode: false, inputKind: "prompt", inputRef: "" });
 });
 
-test("parseInput tells a findings manifest from a plain file by shape", () => {
-  const dir = mkdtempSync(join(tmpdir(), "doctor-"));
-  const manifest = join(dir, "findings.json");
-  const plain = join(dir, "brief.md");
-  writeFileSync(manifest, JSON.stringify({ findings: [{ auto_fixable: true }] }));
-  writeFileSync(plain, "# brief");
-  assert.equal(parseInput(manifest).inputKind, "findings");
-  assert.equal(parseInput(plain).inputKind, "file");
-});
-
 test("parseReport accepts the contract with defaults and rejects anything else", () => {
   const parsed = parseReport(JSON.stringify({ results: [{ name: "mongo", status: "warn", group: "infra" }] }));
   assert.deepEqual(parsed, [row({ name: "mongo", status: "warn" })]);

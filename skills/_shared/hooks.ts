@@ -1,10 +1,10 @@
 #!/usr/bin/env node --experimental-strip-types
 
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { formatMessage, loadConfig, resolveProvider } from "./notify.ts";
+import { formatMessage, loadConfig, NotifierError, resolveProvider } from "./notify.ts";
 import type { Args, HookFailure, PendingQuestion, Provider } from "./notify.ts";
 import { readRunSessionId } from "./collect-run-info.ts";
 import { containedPath, spawnRunner, uploadStageArtifacts } from "./samskara.ts";
@@ -191,19 +191,18 @@ const NOTIFIER_EVENTS: ReadonlySet<string> = new Set([
   "question-pending",
   "run-interrupted",
   "run-completed",
-  "hook-failed",
 ]);
 
-const findRepoRoot = (cwd: string): string => {
+const gitRoots = (cwd: string): { repoRoot: string; mainCheckout: string } => {
   try {
     const lines = execFileSync(
       "git",
       ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
       { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     ).trim().split("\n");
-    return lines[0] ?? cwd;
+    return { repoRoot: lines[0] ?? cwd, mainCheckout: dirname(lines[1] ?? cwd) };
   } catch {
-    return cwd;
+    return { repoRoot: cwd, mainCheckout: cwd };
   }
 };
 
@@ -220,7 +219,7 @@ const toHooksBlock = (raw: Record<string, unknown>): Record<string, readonly Raw
 };
 
 export const loadHooks = (cwd: string): HooksConfig => {
-  const repoRoot = findRepoRoot(cwd);
+  const repoRoot = gitRoots(cwd).repoRoot;
   const configFile = join(repoRoot, CONFIG_FILE);
   if (!existsSync(configFile)) return { hooks: {}, raw: {}, repoRoot };
   try {
@@ -599,7 +598,7 @@ const BUILTINS: readonly Builtin[] = [
   {
     name: "notifier",
     events: NOTIFIER_EVENTS,
-    entry: { fn: { module: SELF, export: "notifierHook" } },
+    entry: { fn: { module: SELF, export: "notifierHook" }, report: true },
   },
   {
     name: "samskara",
@@ -636,14 +635,41 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
-const isUploadableFile = (repoRoot: string, path: string): boolean => {
+const uploadableFile = (repoRoot: string, path: string): string | null => {
   const contained = containedPath(repoRoot, path);
-  if (contained === null) return false;
+  if (contained === null) return null;
   try {
-    return statSync(contained).isFile();
+    return statSync(contained).isFile() ? contained : null;
   } catch {
-    return false;
+    return null;
   }
+};
+
+const readManifest = (path: string): Record<string, unknown> | null => {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const readThread = (path: string): string | null => {
+  const thread = readManifest(path)?.["thread"];
+  return typeof thread === "string" && thread.trim() !== "" ? thread.trim() : null;
+};
+
+const writeThread = (path: string, ts: string): void => {
+  const current = readManifest(path);
+  if (current === null) return;
+  writeFileSync(path, `${JSON.stringify({ ...current, thread: ts }, null, 2)}\n`);
+};
+
+const missingThreadDetail = (manifest: string | null): string => {
+  if (manifest === null) return "--spec is absent. Pass --spec on every fire.";
+  return existsSync(manifest)
+    ? `no thread in ${manifest}. Trigger run-started before any other event.`
+    : `no manifest at ${manifest}. Run spec-setup init, then fire run-started.`;
 };
 
 // A plain fn-hook handler: (payload) => Promise<string>, the exact contract every user fn hook
@@ -654,16 +680,23 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   const config = loadConfig();
   if (config === null) return "disabled";
 
-  const threadFile = payload.artifactDir === undefined ? null : join(payload.artifactDir, "hooks", "thread");
+  const manifest =
+    payload.spec === undefined
+      ? null
+      : join(gitRoots(process.cwd()).repoRoot, ".harness", payload.spec, "manifest.json");
   const starting = payload.event === "run-started";
-  // No thread file yet reads as unthreaded — today's behavior for a run with no prior thread.
-  const thread =
-    !starting && threadFile !== null && existsSync(threadFile) ? readFileSync(threadFile, "utf8").trim() : null;
+  const thread = !starting && manifest !== null ? readThread(manifest) : null;
+
+  if (!starting && payload.event !== "hook-failed" && thread === null) {
+    throw new NotifierError(`${missingThreadDetail(manifest)} See references/events.md and rerun the command with fix`);
+  }
+
   const artifacts =
     payload.event === "stage-completed"
-      ? (payload.data.artifacts ?? [])
-          .map((a) => a.path)
-          .filter((path) => isUploadableFile(payload.repoRoot, path))
+      ? (payload.data.artifacts ?? []).flatMap((a) => {
+          const file = uploadableFile(payload.repoRoot, a.path);
+          return file === null ? [] : [file];
+        })
       : [];
 
   const args: Args = {
@@ -686,12 +719,8 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   // round-trips, so serializing them would make that stage wait for N of them in turn.
   await Promise.all(artifacts.map((file) => p.upload(file, message)));
 
-  // Threading is self-managed: run-started writes the returned ts, every later event reads it.
-  // A re-run overwrites the file, so each run threads fresh.
-  if (starting && ts !== null && threadFile !== null) {
-    mkdirSync(dirname(threadFile), { recursive: true });
-    writeFileSync(threadFile, ts);
-  }
+  if (starting && ts !== null && manifest !== null) writeThread(manifest, ts);
+
   return ts ?? "sent";
 };
 

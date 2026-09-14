@@ -118,6 +118,7 @@ const init = (root: string, specName: string): void => {
     worktree: root,
     started_at: new Date().toISOString(),
     run_info: runInfo(),
+    thread: null,
     pr_number: null,
     stages: {},
   };
