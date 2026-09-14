@@ -16,7 +16,10 @@ const template = (rel) => readFileSync(join(REPO, rel), "utf8");
 const PLAN_SHELL = template("skills/planning/scripts/plan-shell.html");
 const PROOF_TEMPLATE = template("skills/functional-verify/references/proof-report-template.html");
 
-const COMPLETE_PLAN = PLAN_SHELL.slice(0, PLAN_SHELL.indexOf("<!-- SLOT:content")) + "<section>done</section>";
+// A finished plan is the shell with every slot comment written over — here, removed.
+const COMPLETE_PLAN =
+  PLAN_SHELL.replace(/<!--\s*SLOT:[\s\S]*?-->/g, "").replace(/\/\*\s*SLOT:[\s\S]*?\*\//g, "") +
+  "<section>done</section>";
 const FILLED_PROOF = PROOF_TEMPLATE.replace('"<feature name>"', '"Checkout flow"');
 
 const sandbox = () => mkdtempSync(join(tmpdir(), "artifact-history-"));

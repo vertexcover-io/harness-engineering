@@ -11,8 +11,10 @@ const nonEmpty = (text) => text.trim().length > 0;
 export const ARTIFACTS = [
   {
     file: "plan.html",
-    // plan-shell.html keeps this marker until its last section is written.
-    isComplete: (text) => !text.includes("SLOT:content"),
+    // plan-shell.html opens one SLOT: comment per section; the last one goes when the page is
+    // finished. The engine's own prose mentions "SLOT:" without opening a comment, so only a
+    // comment opener counts — the same rule verify-plan.ts applies.
+    isComplete: (text) => !/(?:<!--|\/\*)\s*SLOT:/.test(text),
   },
   { file: "design.md", isComplete: nonEmpty },
   { file: "review.md", dir: "review", isComplete: nonEmpty },

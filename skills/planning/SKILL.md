@@ -1,8 +1,8 @@
 ---
 name: planning
 description: >
-  One stage from idea to approved plan — grill the open forks, checkpoint the solution
-  inline, then build plan.html for review. Use for
+  Grill the open forks, checkpoint the solution inline, then build plan.html for review —
+  one stage from idea to approved plan. Use for
   code work that needs thought before code ("plan this", "how should we implement"), and to
   interrogate an existing design or PRD ("grill this idea"). Runs as orchestrate's
   design-and-plan stage. Atomic one-edit work routes to `implement` after step 1.
@@ -22,7 +22,7 @@ standalone, derive a short kebab-case name from the topic before step 1):
 | File | Written | Read by |
 |---|---|---|
 | `design.md` | step 5 (full flow only), by a recorder sub-agent | code-review |
-| `plan.html` | step 7 | the user — the review surface |
+| `plan.html` | opened at step 1, finished at step 7 | the user — the review surface, live from step 1 |
 | `plan.md` + `phases/phase-N.md` | step 8, extracted from plan.html | coders, quality-gate |
 
 People read the checkpoint summary and `plan.html`. Load the `writing-style` skill before you
@@ -32,6 +32,9 @@ follow it too: their steps are transcribed into `plan.html`, so a person reads t
 
 **Never assume.** State a claim about the code only after one of three things: you read the
 code, the user confirmed it, or you labeled it an assumption.
+
+The bundled scripts run on Node 22.6 or later (`--experimental-strip-types`). Node prints an
+`ExperimentalWarning` to stderr on every run; it is not a failure — read the exit code.
 
 **`--auto`** means orchestrate runs unattended; the flag arrives in the dispatch prompt. Each
 touchpoint below states its `--auto` behavior.
@@ -55,7 +58,9 @@ Pick the route before doing anything:
   edit · nothing to sequence · no test-level judgment. Pass the step-1 findings in the
   hand-off. When `CALLER=orchestrate`, return the atomic route and findings without invoking
   `implement`; the caller must join its baseline before starting edits. When invoked standalone,
-  invoke `implement` with `IMPLEMENT_MODE=manual` and those findings.
+  invoke `implement` with `IMPLEMENT_MODE=manual` and those findings. Either way, step 1 has
+  already opened the page: stop the viewer with `bash <skill-dir>/scripts/stop-server.sh
+  <session-dir>` and delete the stub `.harness/<name>/plan.html` — this route produces no plan.
 
 Watch for work that sounds mechanical but is not: "add caching to this endpoint" hides four
 open decisions — TTL, invalidation, key shape, backing store. Full flow.
@@ -79,6 +84,24 @@ Do not split when the pieces share more than ~30% of files and ship together.
 - **Dispatch a design scout too when the change has a user-facing surface.** Send it with the
   sweep, on the same fast model; read `references/design-scout.md` for the brief. It pulls the
   designs off the ticket into `.harness/<name>/design/` and returns the `design/INDEX.md` path.
+- **Open the live page before the first question.** Copy `scripts/plan-shell.html` (resolve
+  the path from this skill's own directory) to `.harness/<name>/plan.html` and start the viewer,
+  backgrounded:
+  ```bash
+  bash <skill-dir>/scripts/start-server.sh --file <abs-path>/.harness/<name>/plan.html
+  ```
+  Print the returned `url` to the user at once — it carries `?key=…`; never strip the query
+  string. Keep the startup JSON (the session dir is the parent of its `state_dir`) for the
+  step-8 shutdown. If the viewer fails to start, keep writing the file and present it as a
+  `file://` link at step 8 — never block on the viewer. Then fill `SLOT:title`, `SLOT:brand`,
+  `SLOT:nav` and `SLOT:hero` (the run-info line comes from
+  `node --experimental-strip-types <skill-dir>/../_shared/collect-run-info.ts`), per
+  `references/plan-html.md`. Every other slot stays a spinner until its part exists: the reviewer
+  watches the page grow from here instead of meeting it finished at step 7.
+- **When the design scout returns an INDEX, fill `#designs`** — every frame, open, in a
+  `.gallery` — and run
+  `node --experimental-strip-types <skill-dir>/scripts/inline-designs.ts .harness/<name>/plan.html`
+  so the frames render. No INDEX: delete the `#designs` section, slot and all.
 - **The sweep locates; you read.** Open yourself every file a decision turns on. No index from
   the scout means no design was found, which is a fact the step records.
 - **Open every frame the index names — all of them.** `design/INDEX.md` is a list to exhaust, not
@@ -127,7 +150,9 @@ user now, never a coder-time guess. In `--auto`, resolve it as an inferred decis
 as a named risk.
 
 When a question is faster judged by seeing — layouts, wireframes, diagrams — offer the
-browser companion per `references/visual-companion.md`. Read it before the first offer.
+browser companion per `references/visual-companion.md`. Read it before the first offer. The
+companion is its own viewer session, started with `--project-dir` and stopped when the visual
+question closes; the plan viewer from step 1 serves only `plan.html` and keeps running.
 
 Last, check the answers **against each other**. Two answers can clash even when each looks
 fine alone — "sessions expire after 24h" vs "remember-me lasts 30 days". Ask about every
@@ -276,31 +301,22 @@ The `#phases` drill-down belongs to both: it is the payload's `## Implementation
 `## Test Scenarios`, per `references/test-scenarios.md`. `references/step-card.md` is the one contract for
 those parts — read it before writing either layer.
 
-Building the page takes a while — stream it so the user watches it grow instead of waiting:
+The page has been live since step 1, with the hero and the design gallery already on it. Fill
+the rest top-down, one save per section, so the reviewer watches each part land where its
+spinner was:
 
-1. **Start the live view first** (background it):
-   ```bash
-   bash <skill-dir>/scripts/start-server.sh --file <abs-path>/.harness/<name>/plan.html
-   ```
-   Print the returned `url` to the user immediately — it carries `?key=…`; never strip the
-   query string. The page auto-reloads on every save; keep the startup JSON (the session
-   dir is the parent of its `state_dir`) for the step-8 shutdown. If the server fails to
-   start, build the file anyway and present it as a `file://` link — never block on the
-   viewer.
-2. **Copy the shell** to `.harness/<name>/plan.html`. Unfilled slots render as spinners.
-3. **Fill top-down, one save per section**: title, brand, nav, and the hero first — the hero's
-   `.links` ends with the run-info line, so run
-   `node --experimental-strip-types <skill-dir>/../_shared/collect-run-info.ts` and paste its
-   output there. Then fill each `SLOT:content` section in order. Insert each new section *above*
-   the remaining `SLOT:content` comment and delete the comment only with the last section — that comment
-   is what keeps the spinner pinned to the end of the written content.
-4. **Write each `phases/phase-N.md` payload before the `#phases` card and the `#tests` table
+1. **Banner** — write the `.callout.warn`, or delete its slot comment when there is no real
+   gap. Then `#problem`, `#requirements`, `#design`. A project extension that produced a
+   component inventory has already filled `#design-system`; with none, delete that section.
+2. **Write each `phases/phase-N.md` payload before the `#phases` card and the `#tests` table
    that render it** — you cannot transcribe a document you have not written. Payload blocks
-   never render, so this costs the stream nothing. `plan.md` and the engine data (`X`, `RX`) last.
-   `IMG` is not hand-written — run
+   never render, so this costs the stream nothing. Each phase card opens with the frames it
+   builds to, then its steps, each change as a diff — `references/plan-html.md` and
+   `references/step-card.md` carry the shape.
+3. **`plan.md`, the footer, the hero's `.chips`, the nav, and the engine data (`X`, `RX`) last.** `IMG` is
+   not hand-written — run
    `node --experimental-strip-types <skill-dir>/scripts/inline-designs.ts .harness/<name>/plan.html`
-   and it base64s every
-   frame the page references into the map.
+   again; it regenerates the map from every frame the page now references.
 
 Then self-review and fix findings inline. Each check is a lookup, not a judgment; findings
 are `[phase N, step M]: <issue>`. A failed check below blocks the gate; anything else is a
@@ -321,14 +337,15 @@ recommendation:
   under a third of the matrix, or each excess row traces to a real-browser fact or a named
   Blocker. Design coverage belongs to the verifier, below.
 - **The transcription is complete.** Count it, per phase: `<li>` in the drill-down ==
-  numbered steps in that payload's `## Implementation`, same order, same titles · every code
-  block in a step reaches its `<li>` · every existing-code snippet carries a `.snip-lbl.cur`
-  with its reason · every step that names a frame embeds it · every `<details>` panel is
-  wrapped in `.d-body` — the engine derives a missing `<summary>`, so that one needs no check ·
-  rows in `#matrix` == scenarios across all payloads, each carrying that
-  scenario's id, heading, `Given` line and outcomes word for word.
-- **Every block has an `id`.** Cards, table rows, callouts, phase cards, `.unlock` boxes,
-  drill-down steps — none without one.
+  numbered steps in that payload's `## Implementation`, same order, same titles · every diff
+  block in a step reaches its `<li>` as a `pre.diff` under a label naming the file and range ·
+  every pattern snippet carries a `.snip-lbl.cur` with its reason · every step that names a
+  frame embeds it, and the phase's `.builds` strip holds every frame its steps name · every
+  `<details>` panel is wrapped in `.d-body` — the engine derives a missing `<summary>`, so that
+  one needs no check · rows in the scenario table (`#matrix`) == scenarios across all payloads,
+  each carrying that scenario's id, heading, `Given` line and outcomes word for word.
+- **Every block has an `id`.** Cards, tiles, table rows, callouts, frames, element cards, phase
+  cards, `.unlock` boxes, drill-down steps — none without one.
 - **The layers agree.** Every number, name, signature, and path in the human layer comes
   from a payload block · every internal id on the page has a tooltip entry · the
   above-the-fold view answers *what, why, what each phase unlocks* without a drill-down.
@@ -340,15 +357,16 @@ node --experimental-strip-types <skill-dir>/scripts/verify-plan.ts .harness/<nam
 ```
 
 It names every frame in `design/INDEX.md` that no step embeds, every `data-img` that resolves to
-nothing, every `IMG` key that is not a file in `design/`, every slot left unfilled, and every
-payload block missing or empty. A finding blocks the gate: fix it and run it again.
+nothing, every `IMG` key that is not a file in `design/`, every slot left unfilled, every
+payload block missing or empty, and every diff block that is empty or holds a line opening with
+neither `+`, `-`, `@@` nor a space. A finding blocks the gate: fix it and run it again.
 
 **Done when:** the shell's slots are filled, the payloads are complete, the verifier exits clean,
 and the self-review found nothing blocking.
 
 ## Step 8 — The plan gate
 
-Present `plan.html` — the live-view URL when the server is running (the open tab already
+Present `plan.html` — the live-view URL when the viewer is running (the open tab already
 shows the finished page), plus its absolute path as a `file://` fallback — with a
 one-paragraph summary: the phase list and anything that changed since the checkpoint. Say in
 one line that they can comment on the page itself. One `AskUserQuestion`. In `--auto`,
@@ -388,15 +406,18 @@ Clear the whole batch before presenting again: one unanswered thread reads as ig
 `--auto` there is no reviewer — skip the watcher.
 
 After any revision, whether it came from a comment or the terminal: update plan.html —
-payloads included — re-run step 7's self-review, and re-present. Keep the server running
+payloads included — re-run step 7's self-review, and re-present. Keep the viewer running
 through revisions; every save shows up in the user's tab on its own. A revision is not a
 confirmation, and neither is a resolved comment; extract only after explicit approval.
 
-On approval, extract the payloads, then stop the comment watcher and the server:
+On approval, extract the payloads, keep the review's comments, then stop the comment watcher
+and the viewer — the session dir under `/tmp` is deleted with it, and `comments.json` is the
+only record of what the reviewer asked:
 
 ```bash
 node --experimental-strip-types <skill-dir>/scripts/verify-plan.ts .harness/<name>/plan.html
 node <skill-dir>/scripts/extract-plan.mjs .harness/<name>/plan.html
+cp <state-dir>/comments.json .harness/<name>/comments.json 2>/dev/null || true
 bash <skill-dir>/scripts/stop-server.sh <session-dir>
 ```
 

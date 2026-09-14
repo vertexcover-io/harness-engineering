@@ -9,7 +9,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type Finding = {
-  readonly check: "design" | "slot" | "payload";
+  readonly check: "design" | "slot" | "payload" | "diff";
   readonly message: string;
 };
 
@@ -30,6 +30,16 @@ const IMG_BLOCK = /(?:^\/\* SLOT:images[\s\S]*?\*\/\n)?^const IMG = \{[\s\S]*?^\
 const SLOT_MARKER = /(?:<!--|\/\*)\s*SLOT:([\w-]+)/;
 const SLOT_MARKERS = new RegExp(SLOT_MARKER, "g");
 const PAYLOAD_BLOCK = /<script type="text\/markdown" data-file="([^"]+)">([\s\S]*?)<\/script>/g;
+// Any <pre> whose class list holds "diff", whatever else the tag carries (an id, another class).
+const DIFF_BLOCK = /<pre\b[^>]*\bclass="[^"]*\bdiff\b[^"]*"[^>]*>\s*<code\b[^>]*>([\s\S]*?)<\/code>/g;
+// A unified-diff line opens with "+", "-", "@@" or a space (context); git also emits
+// "\ No newline at end of file". The shell's engine colours by that first character, so any
+// other opener is a line the reader sees uncoloured and wrong.
+const DIFF_LINE = /^(?:[+\- \\]|@@|$)/;
+// The frames a plan has actually built steps for live under #phases (the phase cards' .builds
+// strips and the steps' media panels). The gallery at the top references every frame the moment
+// the scout returns, so a whole-page scan could never find one unbuilt.
+const PHASES_SECTION = /<section\b[^>]*\bid="phases"[^>]*>([\s\S]*?)<\/section>/;
 
 const unique = <T>(values: readonly T[]): readonly T[] => [...new Set(values)];
 
@@ -72,12 +82,18 @@ function indexedFrames(indexPath: string): readonly string[] {
   return unique(frames);
 }
 
+// Frames referenced inside #phases — what the plan has written a step for. Absent section: none.
+export function builtFrames(html: string): readonly string[] {
+  const phases = PHASES_SECTION.exec(html)?.[1];
+  return phases === undefined ? [] : referencedFrames(phases);
+}
+
 function imgKeys(html: string): readonly string[] {
-  const start = html.indexOf("const IMG = {");
-  if (start < 0) return [];
-  const end = html.indexOf("\n};", start);
-  const keys = html
-    .slice(start, end < 0 ? html.length : end)
+  // The same column-anchored block inline-designs.ts rewrites: a payload's prose may mention
+  // `const IMG = {`, and payloads sit above the engine in the page.
+  const block = IMG_BLOCK.exec(html)?.[0];
+  if (block === undefined) return [];
+  const keys = block
     .split("\n")
     .map((line) => IMG_ENTRY.exec(line)?.[1])
     .filter((key): key is string => key !== undefined);
@@ -100,15 +116,16 @@ function designFindings(html: string, designDir: string): readonly Finding[] {
   if (!existsSync(join(designDir, "INDEX.md"))) return [];
 
   const referenced = referencedFrames(html);
+  const built = builtFrames(html);
   const keys = imgKeys(html);
   const lines = html.split("\n");
 
   const unembedded = indexedFrames(join(designDir, "INDEX.md"))
-    .filter((file) => !referenced.includes(file))
+    .filter((file) => !built.includes(file))
     .filter((file) => !isExcused(lines, file))
     .map((file): Finding => ({
       check: "design",
-      message: `${file} is in design/INDEX.md but no step embeds it — embed it, or record "design/${file} — not built: reason"`,
+      message: `${file} is in design/INDEX.md but no phase builds to it — embed it under #phases, or record "design/${file} — not built: reason"`,
     }));
 
   const blank = referenced
@@ -161,11 +178,34 @@ function payloadFindings(blocks: readonly Payload[]): readonly Finding[] {
   return [...missingPlan, ...unwritten];
 }
 
+function diffFindings(html: string): readonly Finding[] {
+  return [...html.matchAll(DIFF_BLOCK)].flatMap((match, index) => {
+    const body = (match[1] ?? "").replace(/^\n/, "").trimEnd();
+    if (body === "") {
+      return [{ check: "diff" as const, message: `pre.diff block ${index + 1} is empty` }];
+    }
+    const bad = body.split("\n").find((line) => !DIFF_LINE.test(line));
+    return bad === undefined
+      ? []
+      : [
+          {
+            check: "diff" as const,
+            message: `pre.diff block ${index + 1} has a line that opens with neither "+", "-", "@@" nor a space: ${bad.slice(0, 60)}`,
+          },
+        ];
+  });
+}
+
 export function verifyPlan(htmlPath: string): readonly Finding[] {
   // An unreadable page reads as empty so the payload check fails it, never passes it.
   const html = readText(htmlPath) ?? "";
   const designDir = join(dirname(resolve(htmlPath)), "design");
-  return [...designFindings(html, designDir), ...slotFindings(html), ...payloadFindings(payloads(html))];
+  return [
+    ...designFindings(html, designDir),
+    ...slotFindings(html),
+    ...payloadFindings(payloads(html)),
+    ...diffFindings(html),
+  ];
 }
 
 function run(htmlPath: string | undefined): number {

@@ -1,7 +1,7 @@
 <!-- Vendored from obra/superpowers (skills/brainstorming/visual-companion.md), MIT license.
      Scripts in ../scripts/ are vendored from the same source, with two local additions:
      1. start-server.sh/server.cjs accept --file <path> (env BRAINSTORM_FILE) to serve and
-        live-reload a single named file in place — used by SKILL.md step 7 for plan.html.
+        live-reload a single named file in place — used by SKILL.md step 1 for plan.html.
      2. The review-comment layer — comment-store.cjs (store + CLI) and comments-ui.js
         (injected UI), plus the server's push of the threads on connect, its comments.json
         watch, and one CustomEvent re-broadcast in helper.js. See SKILL.md step 8. Keep these
@@ -9,6 +9,20 @@
 
 
 # Visual Companion Guide
+
+## Contents
+
+- [When to Use](#when-to-use)
+- [How It Works](#how-it-works)
+- [Starting a Session](#starting-a-session)
+- [The Loop](#the-loop)
+- [Writing Content Fragments](#writing-content-fragments)
+- [CSS Classes Available](#css-classes-available)
+- [Browser Events Format](#browser-events-format)
+- [Design Tips](#design-tips)
+- [File Naming](#file-naming)
+- [Cleaning Up](#cleaning-up)
+- [Reference](#reference)
 
 Browser-based visual brainstorming companion for showing mockups, diagrams, and options.
 
@@ -300,7 +314,7 @@ If `$STATE_DIR/events` doesn't exist, the user didn't interact with the browser 
 ## Cleaning Up
 
 ```bash
-scripts/stop-server.sh $SESSION_DIR
+scripts/stop-server.sh "$SESSION_DIR"
 ```
 
 If the session used `--project-dir`, mockup files persist in `.superpowers/brainstorm/` for later reference. Only `/tmp` sessions get deleted on stop.

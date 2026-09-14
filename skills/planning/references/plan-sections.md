@@ -17,6 +17,16 @@ unrelated to the feature being planned.
 
 A reviewer can open these directly. They are handed `plan.html` first.
 
+## Contents
+
+- [Who reads them](#who-reads-them)
+- [Fixed format — do not vary](#fixed-format--do-not-vary)
+- [Writing for a coder](#writing-for-a-coder)
+- [File references](#file-references)
+- [Sections are available, not required](#sections-are-available-not-required)
+- [phase-N.md](#phase-nmd)
+- [Implementation steps](#implementation-steps)
+
 ## Fixed format — do not vary
 
 Five things are matched by name or by shape. Rename or reshape one, and a downstream skill
@@ -74,9 +84,11 @@ a complete plan.
 | `## Test Matrix` | requirements exist — one row per requirement |
 | `## Acceptance` | something is provable only after every phase lands |
 | `## Deferred` | work was deliberately excluded, the user chose to defer an open question, or `--auto` deferred one (marked `auto`) |
+| `## Design System` | a project extension produced a component inventory — that extension owns the section's shape |
 
 No status fields — progress derives from git and the digraph. No file inventory, no patterns
-table, no reuse-verdict table: those belong in the steps they govern.
+table: those belong in the steps they govern. A component inventory appears only as the
+`## Design System` section an extension defines, never as a table of the plan's own.
 
 ### The phase digraph
 
@@ -158,6 +170,10 @@ writing the `## Implementation` section, and write to it.
 
 The card governs where things go and what they are called. It never governs how much a step says,
 or which part carries the weight.
+
+A step's change is a ```` ```diff ```` block — removed lines `-`, added lines `+`, a hunk header
+`@@ -from,count +to,count @@` — under a line naming the file and range. The coder applies it; a
+before-and-after pair makes them reconstruct it.
 
 ### Test-file steps
 
