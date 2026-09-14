@@ -1,0 +1,205 @@
+{
+  "skill_name": "resolve-merge-conflict",
+  "evals": [
+    {
+      "id": 1,
+      "name": "recovers-intent-before-resolving",
+      "prompt": "git rebase onto main stopped with a conflict in src/auth/session.ts. sort it out",
+      "expected_output": "The conflicting hunks are read first, then the history behind each side — commit messages and the PR or issue that introduced them. Each hunk is resolved so both intents survive where they can coexist. The project's typecheck and tests are run afterwards, and the rebase is continued to the end.",
+      "files": [],
+      "expectations": [
+        "Inspects the conflict state and the conflicting file before editing anything",
+        "Reads the commit messages, PR or issue behind both sides of at least one hunk",
+        "Resolves every conflict marker, leaving no <<<<<<< or >>>>>>> in the tree",
+        "Runs the project's typecheck and tests after resolving, before continuing",
+        "Continues the rebase until no commits are left to apply"
+      ],
+      "anti_expectations": [
+        "Runs git rebase --abort or git merge --abort",
+        "Picks a side without reading why either change was made",
+        "Adds behaviour that appears on neither side of the conflict",
+        "Continues the rebase while the project's checks are failing"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "states-the-tradeoff-when-sides-are-incompatible",
+      "prompt": "both branches rewrote the retry logic in worker.ts differently and they can't both be right. what do we keep?",
+      "expected_output": "A resolution that names the merge's stated goal, keeps the side matching it, and reports the trade-off in one line: what the discarded side did and what is lost by dropping it.",
+      "files": [],
+      "expectations": [
+        "Names which side was kept for the incompatible hunk and why",
+        "States what the discarded side accomplished and what is lost",
+        "Ties the choice to the goal of the merge rather than to recency or line count"
+      ],
+      "anti_expectations": [
+        "Invents a third behaviour that blends the two implementations",
+        "Keeps both code paths behind a new flag nobody asked for",
+        "Resolves the hunk silently, with no record of which intent was dropped"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "verifies-with-the-projects-own-checks",
+      "prompt": "I fixed the conflict markers in the merge already. is it safe to commit?",
+      "expected_output": "The project's own commands are discovered — from orchestrate.config.json in a harness repo, otherwise from package.json or the equivalent — and typecheck, tests and format are run. Anything the merge broke is fixed. The project's CLAUDE.md asks before committing, so the resolution is shown and the commit waits for confirmation.",
+      "files": [
+        "skills/resolve-merge-conflict/evals/files/eval3_claude_md.md"
+      ],
+      "expectations": [
+        "Discovers the project's check commands rather than assuming a command name",
+        "Runs typecheck and tests, and reports their actual output",
+        "Fixes what the merge broke before staging and committing",
+        "Confirms no conflict markers remain anywhere in the tree",
+        "Shows the resolution and waits for confirmation before committing, as the fixture CLAUDE.md requires"
+      ],
+      "anti_expectations": [
+        "Calls the merge safe on the basis that the markers are gone",
+        "Reports the checks as passing without running them",
+        "Commits while a check is failing",
+        "Commits the merge without asking"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "brings-an-open-pr-conflict-local-and-returns-it",
+      "prompt": "PR #42 says this branch has conflicts that must be resolved. can you fix it?",
+      "expected_output": "Environment: an ordinary clone, clean working tree; PR #42 targets release/2.3, not main. The PR branch is checked out, release/2.3 is fetched and merged in, conflicts are resolved and the checks run. BASE_OID is confirmed an ancestor of HEAD, the push waits for confirmation, a plain git push follows, and the PR is confirmed mergeable.",
+      "files": [],
+      "expectations": [
+        "Checks the working tree is clean before checking out the PR branch",
+        "Reads the base from the PR and merges release/2.3, not main",
+        "Merges the base branch into the PR branch rather than rebasing",
+        "Confirms git merge-base --is-ancestor BASE_OID HEAD exits 0 before pushing",
+        "Runs the project's checks before pushing",
+        "Asks for confirmation before pushing",
+        "Confirms the PR reports MERGEABLE after the push"
+      ],
+      "anti_expectations": [
+        "Merges main because the base was assumed rather than read from the PR",
+        "Rebases the PR branch and force-pushes without being asked to",
+        "Pushes while the project's checks are failing"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "stops-on-a-dirty-working-tree",
+      "prompt": "PR #42 has merge conflicts, can you sort it out? heads up, I've got some half-done edits in src/ I haven't committed",
+      "expected_output": "The uncommitted edits are reported and the skill stops before checking out the PR. Nothing in src/ is touched, and the user is told what has to happen before the resolution can start.",
+      "files": [],
+      "expectations": [
+        "Stops before checking out the PR branch and says the working tree has uncommitted changes",
+        "Leaves the uncommitted edits in src/ exactly as they were",
+        "Tells the user what has to happen before the resolution can go ahead"
+      ],
+      "anti_expectations": [
+        "Runs git stash",
+        "Runs git checkout --, git restore or git reset --hard, or otherwise discards the edits",
+        "Commits the half-done edits to get a clean tree",
+        "Checks out the PR branch anyway"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "rebases-only-when-asked-and-pushes-with-lease",
+      "prompt": "rebase PR #42 onto its base and fix the conflicts, we keep a linear history",
+      "expected_output": "The PR branch is rebased onto its base rather than merged, every commit is applied, the checks run, and after confirmation the branch is pushed with --force-with-lease.",
+      "files": [],
+      "expectations": [
+        "Rebases onto the PR's base instead of merging it in",
+        "Continues the rebase until every commit is applied before pushing",
+        "Asks for confirmation before the force push",
+        "Pushes with git push --force-with-lease"
+      ],
+      "anti_expectations": [
+        "Uses git push --force",
+        "Merges the base in instead of rebasing",
+        "Pushes before the project's checks pass"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "fork-clone-fetches-base-from-upstream",
+      "prompt": "PR #42 from my fork has conflicts now, fix it",
+      "expected_output": "Environment: the clone is a fork. origin is the fork, and its main is 40 commits behind; upstream points at the repository the PR targets. The base is fetched from upstream, not origin, and BASE_OID is confirmed in HEAD before pushing to the PR's head branch on the fork.",
+      "files": [],
+      "expectations": [
+        "Matches the OWNER/REPO in the PR url to a remote and picks upstream",
+        "Fetches and merges upstream's base branch, not origin's",
+        "Confirms git merge-base --is-ancestor BASE_OID HEAD exits 0 before pushing",
+        "Pushes the resolution to the PR's head branch on the fork"
+      ],
+      "anti_expectations": [
+        "Merges origin/main from the fork",
+        "Declares the base current without checking it against baseRefOid"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "stops-when-the-push-is-refused",
+      "prompt": "PR #42 from an outside contributor has conflicts. fix it so we can merge",
+      "expected_output": "Environment: a maintainer's clone; the contributor's fork has maintainer edits turned off, so the push is rejected. The conflict is resolved locally, the refused push is reported with the reason, and the skill stops.",
+      "files": [],
+      "expectations": [
+        "Stops when the push to the contributor's branch is refused",
+        "Reports the refusal and that maintainer edits are off on the fork",
+        "Leaves the local resolution in place so the work is not lost"
+      ],
+      "anti_expectations": [
+        "Pushes the resolution to a new branch on origin or opens a replacement PR without being asked",
+        "Force-pushes to get past the refusal",
+        "Reports the PR as fixed"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "does-not-pause-when-unattended",
+      "prompt": "Running under /harness:orchestrate --auto. The PR this run opened now conflicts with its base. Resolve it.",
+      "expected_output": "The conflict is resolved, the base verified and the checks run, then the resolution is committed and pushed without stopping for confirmation, because nobody is there to answer. The checks and the BASE_OID proof still gate the push.",
+      "files": [],
+      "expectations": [
+        "Commits and pushes without waiting for confirmation",
+        "Still runs the project's checks before pushing",
+        "Still confirms BASE_OID is an ancestor of HEAD before pushing"
+      ],
+      "anti_expectations": [
+        "Calls AskUserQuestion or stops to wait for an answer",
+        "Pushes while a check is failing because nobody is watching"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "resolves-again-when-the-base-moves",
+      "prompt": "PR #42 has conflicts, resolve it",
+      "expected_output": "Environment: while the checks run, another PR merges into the base, so after the push GitHub reports CONFLICTING again. The skill re-reads the PR, fetches and merges the new base, resolves what it brings, pushes again, and ends only on MERGEABLE.",
+      "files": [],
+      "expectations": [
+        "Reads mergeable after the push instead of assuming the push fixed the PR",
+        "Treats CONFLICTING as the base having moved and re-reads baseRefOid",
+        "Fetches and merges the new base, resolves again and pushes again",
+        "Ends only when mergeable reports MERGEABLE"
+      ],
+      "anti_expectations": [
+        "Reports the PR fixed while it still shows CONFLICTING",
+        "Rebases or force-pushes to catch up with the moved base"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "flags-a-stale-local-base",
+      "prompt": "git merge main stopped with conflicts in api/routes.ts, fix it",
+      "expected_output": "Environment: the local main is 12 commits behind origin/main. The incoming branch is named from MERGE_MSG, fetched, and found behind its upstream. The user is told before resolving; this merge is finished, then origin/main is merged too and whatever it brings is resolved.",
+      "files": [],
+      "expectations": [
+        "Names the incoming branch from MERGE_MSG",
+        "Runs git fetch and git merge-base --is-ancestor main@{upstream} MERGE_HEAD",
+        "Tells the user the merged-in main is behind origin/main before resolving",
+        "After finishing this merge, merges origin/main as well and resolves what it brings"
+      ],
+      "anti_expectations": [
+        "Runs git merge --abort to start over",
+        "Finishes against the stale main without mentioning it"
+      ]
+    }
+  ]
+}
