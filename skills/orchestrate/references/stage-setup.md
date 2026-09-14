@@ -40,6 +40,8 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
 5. **Create the worktree.** Resolve the worktree skill per [config.md](config.md) and invoke it
    with `SPEC_NAME` and `BASE_BRANCH` (the requested target branch, otherwise `main`).
    Enter the checkout it produces and store `WORKTREE_PATH`, `BRANCH_NAME`, and `BASE_BRANCH`.
+   Store `START_SHA=$(git rev-parse HEAD)` before any stage commits: commit-pr squashes the run's
+   commits down to this point, and only this run's commits.
    If the skill fails or produces no usable worktree, stop and report the error and next action.
 
 6. **Initialize the dashboard inside the worktree.** Run the init block in
