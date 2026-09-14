@@ -77,9 +77,9 @@ Record per entry, for Step 6:
 
 ## Step 3 — Baseline every checkout, in the background
 
-The moment a checkout is ready, dispatch one background sub-agent for it from the Stage 0 Baseline
-block in `skills/orchestrate/references/stage-prompts.md`, with its worktree, spec dir and
-`packages`. Do not wait for it; Step 5 collects them.
+The moment a checkout is ready, start the background baseline command from
+`skills/orchestrate/references/stage-setup.md` in that checkout, with its spec name and packages.
+Store each command's task handle. Do not wait for it; Step 5 joins them.
 
 ## Step 4 — Triage the feedback
 
@@ -91,8 +91,8 @@ report was real, and going green is the proof the fix landed.
 
 ## Step 5 — The checkpoint
 
-**First, collect Step 3's baselines**: wait for each sub-agent, then check its `baseline.json` with
-the join command in `skills/orchestrate/SKILL.md` Stage 0. Nothing may still be unresolved either:
+**First, collect Step 3's baselines** using the join procedure in
+`skills/orchestrate/references/stage-setup.md`. Nothing may still be unresolved either:
 an entry with no `plan`, a comment triage could not settle.
 
 Then present the plan inline, opening with one sentence saying this is the plan to review and

@@ -8,7 +8,9 @@
     "planning": { "skill": "my-planning" },
     "coder": { "skill": "my-implement", "model": "opus" },
     "code-review": { "skill": "strict-review" },
-    "verify-finalize": { "model": "haiku", "skills": { "quality-gate": "my-gate" } },
+    "verify": { "model": "haiku" },
+    "quality-gate": { "skill": "my-gate" },
+    "sync-docs": {},
     "commit-pr": {},
     "retro": {}
   },

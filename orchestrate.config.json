@@ -6,7 +6,9 @@
     "planning": {},
     "coder": {},
     "code-review": {},
-    "verify-finalize": {},
+    "verify": {},
+    "quality-gate": {},
+    "sync-docs": {},
     "commit-pr": {},
     "retro": {}
   },

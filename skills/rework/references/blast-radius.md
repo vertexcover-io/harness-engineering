@@ -29,6 +29,6 @@ the prior report. Narrowing is what you have to earn.
 
 ## Where it goes
 
-- **Into the Stage 5 dispatch** — the in-radius list is the requirement enumeration verification
+- **Into the verify dispatch** — the in-radius list is the requirement enumeration verification
   runs against, and it reaches that sub-agent only through the prompt.
 - **Into the report** — the out-of-radius list only, as a caveat, and only when it is not empty.

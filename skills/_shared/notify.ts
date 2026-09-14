@@ -190,7 +190,7 @@ const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
   const channel = need("SLACK_CHANNEL_ID");
   const memberId = secrets["SLACK_MEMBER_ID"] ?? "";
   const thread = (msg: Message): Record<string, string> =>
-    msg.threadRef === null ? {} : { thread_ts: msg.threadRef };
+    msg.threadRef ? { thread_ts: msg.threadRef } : {};
 
   return {
     send: async (msg) => {
