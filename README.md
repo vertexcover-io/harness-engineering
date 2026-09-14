@@ -285,6 +285,7 @@ Run `/git-commit`. It does more than `git commit`:
 - Analyzes your dirty working tree
 - Groups related changes into logical commits (using hunk-level staging)
 - Writes conventional commit messages with proper prefixes (`feat`, `fix`, `refactor`, etc.)
+- Runs start to finish without asking, then names any file it left out
 
 ---
 

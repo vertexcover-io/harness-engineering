@@ -4,44 +4,101 @@
     {
       "id": 1,
       "prompt": "Commit my changes",
-      "expected_output": "Multiple logical commits grouping related changes, with conventional commit messages. Tests and implementation should be grouped together. Should present a plan before executing.",
-      "files": [],
+      "expected_output": "Three commits: a feat(cart) commit with the discount code and its test, a separate commit for the tsconfig change, and the already-staged README fix committed as it was staged.",
+      "setup": "skills/git-commit/evals/files/make-fixture.sh 1 REPO_DIR, then run the prompt inside REPO_DIR",
+      "files": [
+        "skills/git-commit/evals/files/make-fixture.sh"
+      ],
       "expectations": [
-        "Runs git status and git diff before proposing any commits",
-        "Checks git log for existing commit message conventions",
-        "Groups test file changes with their corresponding implementation file changes in the same commit",
-        "Presents a commit plan to the user before executing any git commit commands",
-        "Uses conventional commit prefixes (feat, fix, refactor, test, chore, etc.)",
-        "Does not use git add . or git add -A",
-        "Uses HEREDOC format for commit messages",
-        "Does not run git reset HEAD"
+        "Runs git status and git diff before committing",
+        "Commits src/cart.ts and src/cart.test.ts together",
+        "Commits tsconfig.json in a commit of its own",
+        "Commits the already-staged README.md change without unstaging it first",
+        "Uses conventional commit prefixes",
+        "Runs no git add . or git add -A",
+        "Asks the user no question and waits for no approval"
       ]
     },
     {
       "id": 2,
       "prompt": "Split these into logical commits",
-      "expected_output": "Analyzes the working tree, identifies distinct concerns, and proposes separate commits for each. Should handle the case where changes in the same file may belong to different commits.",
-      "files": [],
+      "expected_output": "src/cart.ts is split by hunk: the lineTotal destructuring in a refactor commit, the cartTotal rounding fix in a fix commit with its new test.",
+      "setup": "skills/git-commit/evals/files/make-fixture.sh 2 REPO_DIR, then run the prompt inside REPO_DIR",
+      "files": [
+        "skills/git-commit/evals/files/make-fixture.sh"
+      ],
       "expectations": [
-        "Reads the actual diff content to understand what changed, not just which files changed",
-        "Identifies distinct logical concerns across the changeset",
-        "Proposes more than one commit when changes span multiple concerns",
-        "Each proposed commit has a clear conventional commit message",
-        "Waits for user confirmation before executing commits",
-        "Does not auto-stage untracked files without mentioning them"
+        "Reads the diff content of src/cart.ts, not only the file list",
+        "Commits the lineTotal change and the cartTotal change separately",
+        "Commits the cartTotal rounding change with the new test in src/cart.test.ts",
+        "Labels the lineTotal commit refactor and the cartTotal commit fix",
+        "Asks the user no question and waits for no approval"
       ]
     },
     {
       "id": 3,
       "prompt": "Commit this",
-      "expected_output": "Handles a simple commit request by still doing reconnaissance, understanding intent, and writing a good commit message. Even for simple cases, should not blindly add everything.",
-      "files": [],
+      "expected_output": "One fix commit for the isEmpty change; notes.txt stays uncommitted and is named in the summary.",
+      "setup": "skills/git-commit/evals/files/make-fixture.sh 3 REPO_DIR, then run the prompt inside REPO_DIR",
+      "files": [
+        "skills/git-commit/evals/files/make-fixture.sh"
+      ],
       "expectations": [
-        "Runs reconnaissance commands (git status, git diff) before committing",
-        "Does not blindly run git add . even for a simple 'commit this' request",
-        "Proposes a commit message using conventional commit format",
-        "Presents the plan before executing",
-        "Handles untracked files appropriately — either includes them with justification or mentions them in a single grouped question, not individually"
+        "Runs git status and git diff before committing",
+        "Creates exactly one commit, containing only src/cart.ts",
+        "Leaves notes.txt uncommitted",
+        "Names notes.txt in the closing summary",
+        "Runs no git add . or git add -A",
+        "Asks the user no question and waits for no approval"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Commit the working tree. Arguments: --working-commits .harness/demo/working-commits.txt",
+      "expected_output": "Two feature commits — cart discounts and checkout — with the review and verify fixes folded into them, every tracked change committed, and no question asked.",
+      "setup": "skills/git-commit/evals/files/make-fixture.sh 4 REPO_DIR, then run the prompt inside REPO_DIR",
+      "files": [
+        "skills/git-commit/evals/files/make-fixture.sh"
+      ],
+      "expectations": [
+        "Reads .harness/demo/working-commits.txt before grouping",
+        "Creates one commit for cart discounts and one for checkout",
+        "Creates no commit whose subject starts with fix",
+        "Puts the percent-capping change in the same commit as applyDiscount",
+        "Puts the empty-items guard in the same commit as src/checkout.ts",
+        "Commits src/checkout.ts and src/checkout.test.ts, which are marked intent-to-add",
+        "git status shows no tracked change after the run",
+        "Asks the user no question and waits for no approval"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Commit my changes",
+      "expected_output": "The discount change is committed, .gitignore gets its .harness/* rule back in a commit, and .harness/demo/plan.md is never committed.",
+      "setup": "skills/git-commit/evals/files/make-fixture.sh 5 REPO_DIR, then run the prompt inside REPO_DIR",
+      "files": [
+        "skills/git-commit/evals/files/make-fixture.sh"
+      ],
+      "expectations": [
+        "Commits src/cart.ts and src/cart.test.ts together",
+        "No commit contains .harness/demo/plan.md",
+        "The final .gitignore contains a .harness/* rule",
+        "Asks the user no question and waits for no approval"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Commit my changes",
+      "expected_output": "package.json and package-lock.json land in the same commit as the zod validation code that needs them; the README typo fix is a separate docs commit.",
+      "setup": "skills/git-commit/evals/files/make-fixture.sh 6 REPO_DIR, then run the prompt inside REPO_DIR",
+      "files": [
+        "skills/git-commit/evals/files/make-fixture.sh"
+      ],
+      "expectations": [
+        "package.json and package-lock.json are in the same commit",
+        "src/validate.ts and src/validate.test.ts are committed, in the commit with the zod dependency",
+        "README.md is in a separate commit",
+        "Asks the user no question and waits for no approval"
       ]
     }
   ]

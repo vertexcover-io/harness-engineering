@@ -184,13 +184,13 @@ For skills that operate on conversation/git context, not input files:
   "id": 1,
   "name": "basic-commit-request",
   "prompt": "Commit my changes",
-  "expected_output": "Multiple logical commits with conventional messages, plan presented before executing",
+  "expected_output": "Multiple logical commits with conventional messages, made without stopping to ask",
   "files": [],
   "expectations": [
     "Runs git status and git diff before proposing any commits",
     "Checks git log for existing commit message conventions",
     "Groups test file changes with their corresponding implementation file changes",
-    "Presents a commit plan to the user before executing any git commit commands",
+    "Asks the user no question and waits for no approval",
     "Uses conventional commit prefixes (feat, fix, refactor, test, chore, etc.)"
   ],
   "anti_expectations": [
