@@ -59,8 +59,8 @@ Store: `WORKTREE_PATH`, `BRANCH_NAME`
 
 ### 2. Create the Feature Directory
 
-One directory holds everything — `.harness/<SPEC_NAME>/` (design.md, plan.html, plan.md, phases/,
-baseline.json, manifest.json, phase-*-e2e.json, gate-report-*.md, review/,
+One directory holds everything — `.harness/<SPEC_NAME>/` at the repo root (design.md, plan.html,
+plan.md, phases/, baseline.json, manifest.json, phase-*-e2e.json, gate-report-*.md, review/,
 probes/, verification/). The whole `.harness/` tree is gitignored (knowledge/ excepted);
 reviewers read artifacts out-of-band.
 
@@ -74,7 +74,8 @@ Steps:
    `.harness/<SPEC_NAME>/design/` (the DAG dashboard already creates `.harness/<SPEC_NAME>/reports/`).
    The planning skill's design scout writes into `design/` during its own step 1 and creates nothing —
    so this call is what gives those files a home inside the worktree.
-4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`. Fill `run_info` from
+4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`. This file must exist before
+   the run's first hook fire. Fill `run_info` from
    `node --experimental-strip-types <plugin-root>/skills/_shared/collect-run-info.ts --json`,
    verbatim — it records what produced this run, and any value it could not read comes back
    `null`:
@@ -86,6 +87,7 @@ Steps:
   "worktree": "<WORKTREE_PATH>",
   "started_at": "<ISO8601>",
   "run_info": { "harness": "1.29.0", "andromeda": "master@a2bd8cc", "session": "<uuid>" },
+  "thread": null,
   "pr_number": null,
   "stages": {}
 }

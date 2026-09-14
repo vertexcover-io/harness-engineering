@@ -8,17 +8,21 @@ with what `fire` prints back.
 <HOOKS> is: node --experimental-strip-types <plugin-root>/skills/_shared/hooks.ts
 ```
 
-`fire` is always safe to call, with or without a `hooks` block in `orchestrate.config.json`: the
-notifier gates itself on `notifier.enabled`, and an unconfigured project just prints `{}`.
+`fire` is always safe to call — a project with no `hooks` block just prints `{}`.
 
 ## When to fire
 
 Fire one command per row, from the worktree root. Pass this run's DAG node id as `--stage` and
 its spec name as `--spec`.
 
+**Never discard a fire's output** — no `>/dev/null`, no `2>&1`, no `; echo done`. A redirected fire
+reports success whatever happened.
+
+**Send each fire in the same command block as its stage's `set-status`.**
+
 | When | Command |
 |---|---|
-| Stage 0 starts | `<HOOKS> fire --event run-started --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","body":"<one-line task> : <ticket URL>"}'` |
+| Stage 0, as soon as `pipeline-setup` returns | `<HOOKS> fire --event run-started --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","body":"<one-line task> : <ticket URL>"}'` |
 | you enter a stage | `<HOOKS> fire --event stage-started --stage <id> --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>"}'` |
 | you leave a stage | `<HOOKS> fire --event stage-completed --stage <id> --result pass --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","body":"<what the stage did, in plain words>","artifacts":[{"name":"<artifact name>","path":"<its path>"}]}'` |
 | before each `AskUserQuestion`, or any question to the developer | `<HOOKS> fire --event question-pending --stage <id> --spec <SPEC_NAME> --data '{"title":"<SPEC_NAME>","questions":[{"question":"<the question>","answers":["<option>","<option>"]}]}'` |
@@ -40,10 +44,8 @@ not read the run.
 `run-started`'s ticket URL comes from `TASK_CONTEXT`; drop the ` : <ticket URL>` suffix when the
 task names no ticket.
 
-`--data` is checked against the event before any hook fires. A `--data` that doesn't fit —
-a `pr` with no `url`, a `questions` that isn't a list — is `invalid`: rejected with nothing
-fired, safe to fix and send again. Fields the event doesn't carry are dropped, so what a hook
-receives as `payload.data` is only what the event means.
+**`run-started` must be the run's first fire.** A later event that reports no thread or no
+manifest sent nothing — fire `run-started`, then re-fire that event.
 
 ## Reporting a stage's artifacts
 
@@ -67,7 +69,7 @@ Setup, worktree, and commit-pr produce no files of their own — they send no `a
 |---|---|---|
 | `success` | Hooks ran, none failed | Carry on |
 | `skipped` | Nothing was configured for this event | Carry on |
-| `failure` | A hook failed, but none of them was required | Carry on; `results` says which |
+| `failure` | A hook failed, but none of them was required | Apply the fix `results` names, then fire the same event again |
 | `halt` | A required hook failed | Pause — see below |
 | `invalid` | The command was wrong. Nothing fired | Fix it and fire again |
 
@@ -79,6 +81,9 @@ nobody is there to answer: record the halt in the stage report and carry on.
 
 **On `invalid`** — the fire was rejected before a single hook ran, so re-firing repeats nothing.
 `result` names what was wrong. Fix the command and send it again.
+
+**On `failure`** — a failed hook did not do its work, so it is yours to re-run: every `result` names
+the fix it needs, and the event is not sent until you apply it and fire again.
 
 The rest of the line:
 
@@ -93,10 +98,11 @@ The rest of the line:
 ## When a hook fails
 
 You never fire `hook-failed` — the dispatcher does it for you, for every failed hook, required or
-not. Its handlers' results come back on the same line under `hook-failed:<name>`, and the notifier
-is one of them, so a broken hook reaches Slack without the pipeline doing anything. A handler that
+not. Its handlers' results come back on the same line under `hook-failed:<name>`. A handler that
 fails while handling `hook-failed` is recorded and dropped; the event never re-enters.
 
-There is no thread id to carry between commands — the old `<THREAD>` bookkeeping is gone. The
-notifier hook persists it itself, in `.harness/<SPEC_NAME>/hooks/thread`, and reads it back on
-every later fire.
+There is no thread id to carry between commands — the notifier persists it itself in the `thread`
+field of `.harness/<SPEC_NAME>/manifest.json`.
+
+Fire every event from the directory the Claude session started in — the manifest path resolves
+against that working directory.
