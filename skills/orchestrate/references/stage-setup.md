@@ -30,6 +30,7 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
    For `prompt`, use the stripped argument; for `ticket`, fetch its title and description
    through the project's tracker reader (carry the URL as context if none can read it);
    for `file`, read its contents. Store the result as `TASK_CONTEXT` for every stage.
+   When the ticket has an assignee, store their name as `TICKET_ASSIGNEE`.
    A resumed run uses the caller's feedback and follows [resumed-runs.md](resumed-runs.md)
    instead of steps 3–10.
 
@@ -60,8 +61,9 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
 
 7. **Create the spec directory:**
    ```
-   Bash("node --experimental-strip-types '<SETUP_SCRIPT>' init '<SPEC_NAME>'")
+   Bash("node --experimental-strip-types '<SETUP_SCRIPT>' init '<SPEC_NAME>' --custom-fields '{"assignee":"<TICKET_ASSIGNEE>"}'")
    ```
+   Omit `--custom-fields` when there is no `TICKET_ASSIGNEE`.
    It creates the artifact directories (`verify-staging/` beside `verification/`), clears a
    stale baseline, and writes the manifest. Store printed `SPEC_DIR`, `BASELINE_PATH`,
    `MANIFEST_PATH`; read `SESSION_ID` from `run_info.session` (empty is valid).
