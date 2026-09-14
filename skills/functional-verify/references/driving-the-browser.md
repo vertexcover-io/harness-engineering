@@ -3,6 +3,15 @@
 **Read this when:** driving UI scenarios (Step 2), or re-driving a bug's repro (Step 4). Everything here is done
 with a browser open; grading, videos, and the report are in `writing-the-report.md`.
 
+**In here:**
+
+- Setup
+- The rules
+- Catching a self-dismissing element
+- The capture loop — act, assert, capture to staging, promote
+- The frame that proves it
+- Replaying the scenario on a phone
+
 What depends on the app — how login works, which surfaces lie about their own state, whether a dev overlay is in
 the way — is knowledge the project owns, held in its own skills and `CLAUDE.md`. Look for it before your first
 `open`; a project that has been verified before has usually written its traps down.
@@ -11,9 +20,17 @@ the way — is knowledge the project owns, held in its own skills and `CLAUDE.md
 
 Use the binary directly (`npx` routes through Node instead of the Rust client and pays that cost on every call). On
 Linux, launch with `agent-browser --args "--no-sandbox" open <url>` — without it Chrome dies on `No usable
-sandbox!` and every later command reports a dead session. Set `AGENT_BROWSER_DEFAULT_TIMEOUT` so a wait that will
-never resolve fails fast rather than at the 30s default — `2000` against a local stack, and higher where the stack
-is across a network, since a budget tuned for loopback turns latency into phantom failures.
+sandbox!` and every later command reports a dead session. Export two variables before the first `open`, so every
+command in the run and Step 7's cleanup agree on them:
+
+```bash
+export AGENT_BROWSER_SESSION=<SPEC_NAME>       # one named session for the whole run, so Step 7 closes the browser it actually drove
+export AGENT_BROWSER_DEFAULT_TIMEOUT=2000      # fail a doomed wait fast instead of at the 25s default
+```
+
+Without `AGENT_BROWSER_SESSION` every command drives the session named `default`, and a cleanup naming anything else
+reports success while releasing nothing. Raise the timeout where the stack is across a network, since a budget tuned
+for loopback turns latency into phantom failures.
 
 The CLI ships its own guide, version-matched to the binary and authoritative on the basics — session/refs/snapshot,
 the `wait` verbs, viewports, tabs, `record`:
@@ -23,12 +40,9 @@ agent-browser skills get core          # ~475 lines. Look things up here.
 agent-browser skills get core --full   # ~2400 lines (~19k tokens). A lookup surface, not a read.
 ```
 
-Reach for it when a command's flags aren't obvious.
-
 ## The rules
 
-A verification run is slow in the round-trips, not in the browser, so `batch` — many commands per invocation,
-returning a JSON array of results — is the workhorse.
+`batch` — many commands per invocation, returning a JSON array of results — is the workhorse.
 
 - **Pipe JSON on stdin** (argument mode lets the shell word-split your JS and eat the quotes), **one action per
   batch entry**.
@@ -71,8 +85,7 @@ EOF
 ```
 
 The `wait` is load-bearing: the toast appears only after the request the click fires, so without it you shoot the
-empty gap before the toast exists. Real toasts live seconds, so this covers almost everything; how long *this*
-app's toasts stay up is a project fact.
+empty gap before the toast exists.
 
 **When the element lives too briefly for `wait` to catch it** (`wait` reaches down to ~150ms), block the batch on
 the element's arrival instead. One `eval` arms a `MutationObserver`, fires the action, and returns a Promise that
@@ -87,21 +100,37 @@ EOF
 ```
 
 The order inside the eval is load-bearing: **observe → arm the timeout → click**, then resolve on arrival. Arming
-after the click is the race you came here to close. It must be a `MutationObserver` rather than an event listener,
-because the element does not exist yet — there is no node to attach to. The `setTimeout` guarantees the Promise
-always settles, so a batch can never hang; when it resolves `{appeared: false}`, record the element `NOT VERIFIED`
-with the `ms` lifetime you measured.
+after the click is the race you came here to close. When it resolves `{appeared: false}`, record the element
+`NOT VERIFIED` with the `ms` lifetime you measured.
 
 ## The capture loop — act, assert, capture to staging, promote
 
-**Film the whole life of the scenario, not a checklist of its steps.** The frames are what a reviewer watches to
-believe you, so shoot whatever the flow needs end to end: the seeded preconditions as the page renders them, each
-step, the intermediate render that explains why the next click works, the toast that confirms it. Every step earns
-at least one frame, many earn more — a scenario with more *promoted* frames than steps is doing it right.
+**Film the whole life of the scenario, not a checklist of its steps.** Every step earns at least one frame, many earn
+more — a scenario with more *promoted* frames than steps is doing it right.
 
 **Capture to staging, promote only what you verified.** Shoot into `.harness/<SPEC_NAME>/verify-staging/` — scratch,
 a sibling of `verification/` and never part of it — and move a frame into `screenshots/` only once it earns its
 place. Re-takes, dead ends, and missed clicks stay in staging and are discarded at cleanup.
+
+**Re-driving a scenario an earlier round filmed? Delete its old evidence first, then capture.**
+
+```bash
+rm .harness/<SPEC_NAME>/verification/screenshots/NN_*
+```
+
+Delete what that walk produced beside the report too — the `verification/NN_<slug>.<ext>` download or webhook body
+its `artifacts[]` named.
+
+Step 5 runs once, on the final attempt, and builds each video by globbing every frame still under that prefix — so
+that video is the only one anybody sees. A five-step walk re-driven in three leaves `__SS_04` and `__SS_05` behind,
+and the video shows three real steps and then two from a version of the feature that no longer exists. A produced
+file left behind fails the same way, more quietly: the scenario lists it again, and last round's download stands as
+this round's evidence.
+
+Nothing downstream catches either one. The builder cannot tell a stale frame from a fresh one, and the report cites
+whatever it is handed.
+
+Staging needs no clearing — nothing leaves it unverified.
 
 For every action, run one batch that acts, asserts, and captures **to staging**:
 
@@ -123,9 +152,8 @@ the quoted string) for the scenario's `reason`.
 You need both checks. **The assert answers whether the state took hold** — a click that silently no-ops looks
 identical to one that worked until you ask the DOM. **The Read answers whether the frame shows it.** When they
 disagree, re-drive rather than promote: the frame usually lags the render (`wait` on the condition and re-shoot),
-but check the assert too — it may have matched `innerText` across a line break, measured a rect in the same batch as
-the scroll that moved it, or passed vacuously over a selector that matched nothing. Settle it by asking the page a
-second way.
+but check the assert against *The rules* above too, where its ways of lying are listed. Settle it by asking the page
+a second way.
 
 **A file the scenario downloads is evidence — keep it** beside the report as `verification/NN_<slug>.<ext>`, the
 same prefix as its video, and list it in the scenario's `artifacts[]`.
@@ -143,7 +171,7 @@ this*. **Get them into one frame.** Work in this order, and stop as soon as the 
 
 1. **Use the app's own controls** — a column chooser, a density toggle, a collapse. Cheapest and most honest.
    **Restore what you changed** — these settings persist for the account you're driving.
-2. **Set the viewport to fit** — `agent-browser set viewport 1600 900`. Yours to choose, costs nothing.
+2. **Set the viewport to fit** — `agent-browser set viewport 1600 900`.
 3. **Only if neither works, overlap.** Keep an identifying column in every frame so the shots stitch, and say in the
    report that the evidence spans frames.
 
@@ -166,11 +194,10 @@ identifiable in that same frame.**
 touch rather than width serves its desktop layout to a resized window, and you photograph a mobile pass that never
 happened.
 
-**Replay, don't re-shoot.** Set the device, then drive the walk again from its first click — the same batches and
-the same asserts as the desktop run, under the replay's own `NN_<slug>`. The phone's own path is the evidence: the
-CTA behind a hamburger that no longer opens, the touch handler that never fires, the sticky footer over the submit
-button all sit ahead of the final screen, where a frame shot at the end reaches none of them. Restore the desktop
-device afterwards, as with any setting you changed.
+**Drive the whole scenario again on the phone.** Set the device, then walk it from its first click — the same
+batches and the same asserts as the desktop run, under the replay's own `NN_<slug>`. A phone breaks on the way to
+the final screen rather than on it, so a frame shot at the end proves nothing. Restore the desktop device
+afterwards, as with any setting you changed.
 
 The replay carries a verdict, so the walk answers the same question it answered on desktop:
 
@@ -182,5 +209,5 @@ The replay carries a verdict, so the walk answers the same question it answered 
 - **Controls are reached the way the phone presents them** — driven through the menu the layout collapsed them into,
   the way the user gets to them.
 
-A replay that fails is a `Failure` scenario and a `bugs[]` entry like any other, and its `reachedBy` writes itself:
+A replay that fails is a `FAILURE` scenario and a `bugs[]` entry like any other, and its `reachedBy` writes itself:
 the user on that device, and the surface they touched.
