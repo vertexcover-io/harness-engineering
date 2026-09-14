@@ -16,6 +16,7 @@
        Expected       FIXED FORMAT   expected
        Steps          FIXED FORMAT   steps[]
        Visual proof   FIXED FORMAT   video + frames[]
+       Design match   FIXED FORMAT   visualMatch
        Extra proofs   proofs[]       collapsed
        Files          artifacts[]
        free blocks    extra[]        anything the above does not fit
@@ -36,8 +37,8 @@
                    and only the unproven rows carry colour.
        drivenOn    where you drove, as what user, against which data
        fields[]    {label,value} shown behind "Stack · ports · sinks" in the bar
-       labels{}    rename a section: url, steps, media, frames, proofs, files,
-                   extra, coverage, bugs, gaps  (reason and extra have no
+       labels{}    rename a section: url, steps, media, frames, visualMatch,
+                   proofs, files, extra, coverage, bugs, gaps  (reason and extra have no
                    heading unless you name them)
        scenarios[] see below
        bugs[]      {severity,origin,reachedBy,scenario,title,body}  severity: blocker | major | minor
@@ -76,6 +77,15 @@
        frames[]    {src,label} in order. A bare path works too — the label is
                    then derived from the filename.
        framesOpen  true to leave the Screenshots toggle open on load
+       visualMatch {baseline,fidelity,matched,findings[]} — the screen read
+                   against the design that defines it. baseline is the
+                   reference image's path, or null for a screen nobody drew;
+                   fidelity is derived (100, less 25 a BLOCKER and 8 a HIGH),
+                   null when baseline is. matched is one sentence on what lined
+                   up. findings[] are {severity,what,baselineShows,buildShows,
+                   evidence}, severity BLOCKER | HIGH only — a spacing delta
+                   against the baseline is not a finding. The baseline renders
+                   beside the first frame, both opening in the modal.
        proofs[]    {tag,heading,body,capture} — what a frame cannot show.
                    capture is the verbatim exchange, inline and whole: the
                    request as sent, the status, the response as it came back.
@@ -155,6 +165,20 @@
           "label": "<what this frame shows>"
         }
       ],
+      "visualMatch": {
+        "baseline": "<path to the design that defines this screen, or null if nobody drew it>",
+        "fidelity": 100,
+        "matched": "<one sentence on what lined up>",
+        "findings": [
+          {
+            "severity": "<BLOCKER | HIGH — never a spacing delta>",
+            "what": "<the divergence, in one line>",
+            "baselineShows": "<what the design draws>",
+            "buildShows": "<what the build renders>",
+            "evidence": "<the rect, computed style or quoted string that settles it>"
+          }
+        ]
+      },
       "proofs": [
         {
           "tag": "<queue | email | http | db | cache | file>",
@@ -476,6 +500,32 @@ a { color: var(--accent); }
   background: var(--accent); color: #fff; border-radius: 3px; padding: 2px 6px;
 }
 
+/* design match — the baseline beside the build, then what diverged */
+.vm__bar {
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  margin-bottom: 10px; font-size: 12.5px; color: var(--fg-2);
+}
+.vm__score { font: 700 15px/1.2 var(--mono); }
+.vm__score.is-pass { color: var(--pass); }
+.vm__score.is-warm { color: var(--hold); }
+.vm__score.is-hot  { color: var(--fail); }
+.vm__none {
+  font: 600 10px/1.6 var(--ui); letter-spacing: .1em; text-transform: uppercase;
+  border: 1px dashed var(--fg-3); border-radius: 3px; padding: 2px 7px; color: var(--fg-3);
+}
+.vm__matched { min-width: 0; line-height: 1.5; }
+.vm__pair { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); max-width: 600px; }
+.vm__f { border: 1px solid var(--line); border-radius: 4px; padding: 9px 12px; margin-top: 8px; background: var(--rail); }
+.vm__sev {
+  font: 700 9px/1.6 var(--ui); letter-spacing: .1em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 3px; color: #fff; margin-right: 8px;
+}
+.vm__sev.is-blocker { background: var(--fail); }
+.vm__sev.is-high { background: var(--hold); }
+.vm__what { font-size: 13.5px; font-weight: 600; }
+.vm__d { margin: 6px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--fg-2); }
+.vm__d b { color: var(--fg-3); font: 600 10.5px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+
 /* proofs */
 .proof { border: 1px solid var(--line); border-radius: 4px; margin-bottom: 8px; background: var(--rail); }
 .proof > summary { cursor: pointer; list-style: none; padding: 9px 12px; display: block; }
@@ -730,6 +780,7 @@ code {
     steps: 'Steps',
     media: 'Visual proof',
     frames: 'Screenshots',
+    visualMatch: 'Design match',
     proofs: 'Extra proofs',
     files: 'Files',
     coverage: 'Requirement coverage',
@@ -969,6 +1020,56 @@ code {
     sec.appendChild(d);
   }
 
+  /* Design match — FIXED FORMAT. s.visualMatch: the screen read against the design
+     that defines it. A null baseline renders as "no design reference" rather than
+     silently disappearing, because absence of a check must not read as a pass. */
+  function renderVisualMatch(sec, s) {
+    const vm = s.visualMatch, frames = frameList(s);
+    const bar = el('div', 'vm__bar');
+    if (vm.baseline == null) {
+      bar.appendChild(el('span', 'vm__none', 'no design reference'));
+    } else if (typeof vm.fidelity === 'number') {
+      const tone = vm.fidelity >= 92 ? 'is-pass' : vm.fidelity >= 80 ? 'is-warm' : 'is-hot';
+      bar.appendChild(el('span', 'vm__score ' + tone, vm.fidelity + '%'));
+    }
+    if (vm.matched) {
+      const m = el('span', 'vm__matched'); m.innerHTML = rich(vm.matched);
+      bar.appendChild(m);
+    }
+    sec.appendChild(bar);
+
+    if (vm.baseline) {
+      const pair = [{ src: vm.baseline, cap: 'Design' }];
+      if (frames[0]) pair.push({ src: frames[0].src, cap: 'Built' });
+      const grid = el('div', 'vm__pair');
+      pair.forEach((p, j) => {
+        const t = tile({ src: p.src, cap: p.cap, n: j ? '02' : '01' });
+        t.addEventListener('click', () => openModal({ kind: 'image', gallery: pair, index: j }));
+        grid.appendChild(t);
+      });
+      sec.appendChild(grid);
+    }
+
+    (vm.findings || []).forEach(f => {
+      const d = el('div', 'vm__f');
+      const head = el('div');
+      const sev = String(f.severity || '').toUpperCase();
+      if (sev) head.appendChild(el('span', 'vm__sev ' + (sev === 'BLOCKER' ? 'is-blocker' : 'is-high'), sev));
+      const w = el('span', 'vm__what'); w.innerHTML = rich(f.what || '');
+      head.appendChild(w);
+      d.appendChild(head);
+      [['design', f.baselineShows], ['built', f.buildShows], ['evidence', f.evidence]].forEach(([k, v]) => {
+        if (!v) return;
+        const p = el('p', 'vm__d');
+        p.appendChild(el('b', null, k + ' '));
+        const sp = el('span'); sp.innerHTML = rich(String(v));
+        p.appendChild(sp);
+        d.appendChild(p);
+      });
+      sec.appendChild(d);
+    });
+  }
+
   /* Extra proofs — s.proofs[]: {tag, heading, body, capture}, collapsed.
      `tag` is a one-word kind shown as a chip. Prose inside is yours to shape. */
   function renderProofs(sec, s) {
@@ -1024,6 +1125,7 @@ code {
     ['expected', s => s.expected,                                 renderExpected],
     ['steps',  s => s.steps && s.steps.length,                    renderSteps],
     ['media',  s => s.video || (s.frames && s.frames.length),     renderVisual],
+    ['visualMatch', s => s.visualMatch,                           renderVisualMatch],
     ['proofs', s => s.proofs && s.proofs.length,                  renderProofs],
     ['files',  s => s.artifacts && s.artifacts.length,            renderFiles],
     ['extra',  s => s.extra && s.extra.length,                    renderExtra],
