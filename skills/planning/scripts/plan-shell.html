@@ -11,8 +11,11 @@
    MACHINERY — do not edit below unless a slot says so.
    Component classes available to content:
    .card .tag / .grid .g2 .g3 / .pill (ok|err|warn|info) / .chip
+   .tiles .tile / .callout (warn|key) / .filter
+   .gallery .frame / .screen .screen-frame .els .el / .builds
    .steps .step / table + .tbl-scroll / details + .d-body + .cnt
    .pipe* (numbered pipeline) / .phase* (phase cards) / .unlock
+   pre.diff (unified diff, lines coloured by their first character)
    #matrix (the scenario table) / .x (xref)
    ============================================================ */
 :root {
@@ -67,8 +70,11 @@ main { padding: 30px 0 60px; min-width: 0; }
 .callout { border-radius: 12px; padding: 15px 19px; margin: 24px 0; border: 1px solid; }
 .callout.warn { background: var(--amber-bg); border-color: color-mix(in srgb, var(--amber) 35%, transparent); }
 .callout.warn .ct { color: var(--amber); }
+.callout.key { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.callout.key .ct { color: var(--accent); }
 .callout .ct { font-weight: 700; font-size: 12.5px; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; }
 .callout p { font-size: 14px; }
+.callout ul { font-size: 13.5px; margin: 6px 0 0 18px; }
 section { padding: 30px 0 8px; }
 .sec-head { display: flex; align-items: baseline; gap: 13px; border-bottom: 2px solid var(--ink); padding-bottom: 9px; margin-bottom: 20px; }
 .sec-head .num { font-size: 12.5px; font-weight: 700; color: var(--accent); }
@@ -80,6 +86,60 @@ section { padding: 30px 0 8px; }
 .card .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; color: var(--accent); text-transform: uppercase; }
 .card h3 { margin-top: 3px; }
 .card p { font-size: 13.5px; color: var(--ink2); }
+/* .tiles — big-number counts. One .tile per verdict or per total; .n carries the number and a
+   pill colour class, .l the label, p one line on what the number means. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 13px; margin: 14px 0 6px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 15px 17px; }
+.tile .n { font-size: 30px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.tile .n.ok { color: var(--green); }
+.tile .n.warn { color: var(--amber); }
+.tile .n.err { color: var(--red); }
+.tile .n.info { color: var(--blue); }
+.tile .l { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink2); margin-top: 8px; }
+.tile p { font-size: 13px; color: var(--ink2); margin-top: 4px; }
+/* .filter — verdict toggles. Each button's data-v names a verdict; every element with a matching
+   data-verdict inside the same <section> hides when at least one button is on and it is not. */
+.filter { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 18px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink2); }
+.filter button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 11px; font: 600 11.5px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink2); cursor: pointer; }
+.filter button.on.ok { background: var(--green-bg); color: var(--green); border-color: transparent; }
+.filter button.on.warn { background: var(--amber-bg); color: var(--amber); border-color: transparent; }
+.filter button.on.err { background: var(--red-bg); color: var(--red); border-color: transparent; }
+.filter button.on.info { background: var(--blue-bg); color: var(--blue); border-color: transparent; }
+[data-verdict].off { display: none; }
+/* .gallery — every design frame, open, each with its screen name and what it settles. */
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.frame { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.frame img { width: 100%; height: auto; display: block; border-radius: 8px; border: 1px solid var(--line); }
+.frame .ft { font-weight: 650; font-size: 13.5px; margin-top: 9px; }
+.frame .fs { font-size: 12.5px; color: var(--ink2); }
+.frame .fn { font: 11px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink2); margin-top: 4px; }
+/* .screen — one design frame beside the elements found on it. The frame stays in view while the
+   element list scrolls. Stacks on a narrow window. */
+.screen { display: grid; grid-template-columns: minmax(260px, 2fr) 3fr; gap: 22px; margin: 18px 0 34px; align-items: start; }
+@media (max-width: 860px) { .screen { grid-template-columns: 1fr; } }
+.screen-frame { position: sticky; top: 20px; background: var(--surface2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.screen-frame img { width: 100%; height: auto; display: block; border-radius: 8px; border: 1px solid var(--line); }
+.screen-frame .fn { font: 11.5px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink2); margin-top: 8px; }
+.screen-head { margin: 22px 0 4px; }
+.screen-head h3 { font-size: 17px; margin-bottom: 2px; }
+.screen-head p { font-size: 13.5px; color: var(--ink2); }
+.els { display: flex; flex-direction: column; }
+/* .el — one element: id chip · name · verdict pill on the first row; how it is produced (.eu) and
+   the file lines (.em) beneath. */
+.el { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 5px 12px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.el:last-child { border-bottom: none; }
+.el .eid { font: 700 11px/1.7 ui-monospace, "SF Mono", Menlo, monospace; color: var(--blue); background: var(--blue-bg); border-radius: 6px; padding: 1px 0; text-align: center; height: fit-content; }
+.el .en { font-weight: 650; font-size: 14px; }
+.el .pill { align-self: start; }
+.el .eu { grid-column: 2 / 4; font-size: 13.5px; color: var(--ink2); }
+.el .eu b { color: var(--ink); font-weight: 650; }
+.el .em { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 3px 16px; font-size: 12px; color: var(--ink2); }
+.el .em span b { font-weight: 600; margin-right: 5px; }
+.el .em code { font-size: 11.5px; }
+/* .builds — the frames a phase builds to, open, above its steps; then the element ids it covers. */
+.builds { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 12px 0 4px; }
+.builds .frame img { max-height: 240px; object-fit: cover; object-position: top; }
+.builds-els { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 12px; font-size: 12.5px; color: var(--ink2); }
 .steps { counter-reset: st; margin: 12px 0; }
 .step { display: flex; gap: 15px; padding: 11px 0; border-bottom: 1px dashed var(--line); }
 .step:last-child { border-bottom: none; }
@@ -150,10 +210,18 @@ summary .cnt { margin-left: auto; font-size: 11.5px; color: var(--ink2); font-we
 .impl .rule.trap { background: var(--amber-bg); }
 .impl .rule.trap b { color: var(--amber); }
 .impl .snip-lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin: 11px 0 0; }
-.impl .snip-lbl.new { color: var(--accent); }
+.impl .snip-lbl.diff { color: var(--blue); }
+.impl .snip-lbl.diff code { text-transform: none; letter-spacing: normal; font-weight: 600; }
 .impl .snip-lbl.cur { color: var(--ink2); }
 .impl .snip-lbl .why { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 500; letter-spacing: normal; text-transform: none; color: var(--ink2); }
 .impl .snip-lbl + pre { margin-top: 5px; }
+/* pre.diff — a unified diff. The engine wraps each line by its first character: "+" added,
+   "-" removed, "@@" a hunk header, anything else context. Authors write plain diff text. */
+pre.diff { padding: 10px 0; }
+pre.diff .ln { display: block; padding: 0 17px; white-space: pre; }
+pre.diff .add { background: color-mix(in srgb, var(--green) 26%, transparent); }
+pre.diff .del { background: color-mix(in srgb, var(--red) 26%, transparent); }
+pre.diff .hunk { color: var(--code-cm); }
 .impl details.media { margin: 9px 0 0; max-width: 730px; }
 .impl details.media > summary { font-size: 12.5px; padding: 8px 12px; }
 .impl details.media img { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; margin-block: 2px 5px; }
@@ -197,38 +265,81 @@ footer { border-top: 1px solid var(--line); margin-top: 44px; padding: 20px 0 10
 <aside class="side">
   <div class="brand"><!-- SLOT:brand — "<TICKET> · Plan" --></div>
   <nav id="side-nav">
-    <!-- SLOT:nav — one <a href="#id"> per section, numbered; then a "Jump to" .grp
-         with shortcuts to decisions and the scenario table. -->
+    <!-- SLOT:nav — one <a href="#id"> per section on the page, in page order, each prefixed
+         with its section number; then a "Jump to" .grp with shortcuts to #decisions and #matrix.
+         Written at step 1 with the sections that exist so far; rewritten at step 7. -->
   </nav>
   <div class="foot"><button class="theme-btn" onclick="toggleTheme()">◐ Theme</button></div>
 </aside>
 
 <main id="main">
-  <!-- SLOT:content — the sections, in this order; omit a section with nothing to say:
-       #top          hero: kicker, h1, .lede, .chips (counts), .links (ticket, PRs, PRD,
-                     then the run-info span — last item, plain text, not a link)
-       (banner)      .callout.warn — ONLY if a real risk/known-gap exists; never pad
-       #problem      short problem prose + .steps primary flow
-       #requirements .grid.g2 of .card, one per acceptance criterion, id per criterion
-       #design       approach prose, .svgd system diagram, .pipe request/data flow,
-                     API surface table, decisions table (tr id per decision)
-       #phases       .phase-graph, then one .phase card per phase:
-                     goal line · .unlock ("After this lands") · details holding an
-                     ol.impl — one li per implementation step in that phase's payload,
-                     same order, same titles, carrying that step's prose, its code
-                     blocks and its .rule box. Every details opens with its summary,
-                     and the panel wraps in .d-body:
-                       <details><summary>The work <span class="cnt">4 steps</span></summary>
-                         <div class="d-body"><ol class="impl">…</ol></div></details>
-                     A step's design panel takes the same shape, captioned:
-                       <details class="media"><summary>Design — what it settles</summary>
-                         <div class="d-body"><img data-img="x.png" alt="…">
-                         <div class="cap">…</div></div></details>
-       #tests        one table (id="matrix"), no details wrapper: Scenarios · Level ·
-                     Phase, one row per scenario across the phase payloads, transcribed
-                     from their ## Test Scenarios (references/test-scenarios.md)
-       footer        one line: sources + PR links + style note
-       All prose: the writing-style skill. -->
+  <!-- Every section below is its own slot, so a half-written page shows a spinner exactly where
+       the next part will land. A section with nothing to say is deleted whole, slot included;
+       section numbers are fixed and a gap is fine. Prose follows the writing-style skill. -->
+  <section id="top">
+    <!-- SLOT:hero — step 1: .kicker, h1, .lede (the task in one or two sentences), .links
+         (ticket, PRD, then the run-info span — last item, plain text, not a link).
+         Step 7 adds .chips (the counts) above .links. -->
+  </section>
+
+  <!-- SLOT:banner — .callout.warn, ONLY when a real risk or known gap exists: what is unverified,
+       why, and what fixes it. Delete this comment when there is none. -->
+
+  <section id="designs">
+    <!-- SLOT:designs — step 1, when the design scout returns an INDEX: .sec-head (num 01), then
+         a .gallery with one .frame per INDEX row, open: <img data-img="file.png" alt="…">,
+         .ft the screen name, .fs what it settles, .fn the file. Delete the section when there
+         is no INDEX. -->
+  </section>
+
+  <section id="problem">
+    <!-- SLOT:problem — .sec-head (num 02), short problem prose, .steps primary flow. -->
+  </section>
+
+  <section id="requirements">
+    <!-- SLOT:requirements — .sec-head (num 03), .grid.g2 of .card, one per acceptance
+         criterion, id per criterion, each naming the scenarios that prove it. -->
+  </section>
+
+  <section id="design">
+    <!-- SLOT:design — .sec-head (num 04), approach prose, .svgd system diagram, .pipe
+         request/data flow, API surface table, decisions table (h3 id="decisions"; tr id per
+         decision; What we do · Instead of · Because). -->
+  </section>
+
+  <section id="design-system">
+    <!-- SLOT:design-system — .sec-head (num 05); filled by a project extension that produced a
+         component inventory, as soon as its scout returns. Shape: .tiles of verdict counts ·
+         .callout.key for the finding that changes the plan · .filter buttons · one .screen per
+         design frame (.screen-frame beside .els of .el cards, each data-verdict). Delete the
+         section when no inventory exists. -->
+  </section>
+
+  <section id="phases">
+    <!-- SLOT:phases — .sec-head (num 06), .phase-graph, then one .phase card per phase:
+         goal line · .builds (the frames it builds to, open, as .frame with data-img) ·
+         .builds-els (the element ids it covers, as .x spans — only when an extension produced
+         an element inventory) · .unlock ("After this lands…") ·
+         details holding an ol.impl — one li per implementation step in that phase's payload,
+         same order, same titles, carrying that step's prose, its pre.diff blocks and its .rule
+         box. Every details opens with its summary, and the panel wraps in .d-body:
+           <details><summary>The work <span class="cnt">4 steps</span></summary>
+             <div class="d-body"><ol class="impl">…</ol></div></details>
+         A step's design panel takes the same shape, captioned:
+           <details class="media"><summary>Design — what it settles</summary>
+             <div class="d-body"><img data-img="x.png" alt="…">
+             <div class="cap">…</div></div></details> -->
+  </section>
+
+  <section id="tests">
+    <!-- SLOT:tests — .sec-head (num 07), then one table (id="matrix"), no details wrapper:
+         Scenarios · Level · Phase, one row per scenario across the phase payloads, transcribed
+         from their ## Test Scenarios (references/test-scenarios.md). -->
+  </section>
+
+  <footer>
+    <!-- SLOT:footer — one line: sources + PR links + style note. -->
+  </footer>
 </main>
 </div>
 
@@ -260,14 +371,14 @@ function toggleTheme() {
 if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme','dark');
 
 /* SLOT:xrefs — every internal id used anywhere on the page → [tooltip text, jump-target id or ""].
-   Cover: requirement ids, decision ids, flow/edge-case ids, error codes. Scenario ids stay
-   out — they name a heading in the phase file, not a target on this page. */
+   Cover: requirement ids, decision ids, flow/edge-case ids, element ids, error codes. Scenario
+   ids stay out — they name a heading in the phase file, not a target on this page. */
 const X = {
 };
 
 /* SLOT:images — do not fill this by hand. Run scripts/inline-designs.ts on this file and it
-   writes every frame the steps reference, as "file.png": "data:image/png;base64,…". Each file
-   lands ONCE however many steps use it; the engine wires it to every
+   writes every frame the page references, as "file.png": "data:image/png;base64,…". Each file
+   lands ONCE however many places use it; the engine wires it to every
    <img data-img="file.png">. A frame with no entry here renders blank — no other breakage. */
 const IMG = {
 };
@@ -279,6 +390,34 @@ const IMG = {
 document.querySelectorAll('img[data-img]').forEach((el) => {
   const src = IMG[el.dataset.img];
   if (src) { el.src = src; }
+});
+
+/* ---- engine: diff lines ----
+   Authors write plain unified-diff text inside <pre class="diff"><code>. Each line is wrapped
+   and classed by its first character, so the colouring is never hand-written. */
+document.querySelectorAll('pre.diff > code').forEach((code) => {
+  const lines = code.innerHTML.split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  code.innerHTML = lines.map((line) => {
+    const cls = line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del'
+      : line.startsWith('@@') ? 'hunk' : 'ctx';
+    return '<span class="ln ' + cls + '">' + (line || ' ') + '</span>';
+  }).join('');
+});
+
+/* ---- engine: verdict filters ----
+   A .filter button toggles on; while any button in the group is on, every [data-verdict] in
+   the same <section> that matches none of the on buttons hides. All off shows everything. */
+document.querySelectorAll('.filter button[data-v]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    btn.classList.toggle('on');
+    const group = btn.parentElement;
+    const on = [...group.querySelectorAll('button.on')].map((b) => b.dataset.v);
+    const scope = btn.closest('section') || document;
+    scope.querySelectorAll('[data-verdict]').forEach((el) => {
+      el.classList.toggle('off', on.length > 0 && !on.includes(el.dataset.verdict));
+    });
+  });
 });
 
 /* ---- engine: give every <details> a <summary> ----
@@ -304,9 +443,9 @@ document.querySelectorAll('details').forEach((d) => {
 });
 
 /* ---- engine: auto-link internal ids in prose ----
-   SLOT:xref-regex — extend the alternation to match this feature's id families.
+   xref-regex — extend the alternation to match this feature's id families.
    Longest alternatives first. */
-const RX = /\b(D\d{1,2}|AC\d{1,2}|FL\d{1,2}|EC\d{1,2})\b/g;
+const RX = /\b(D\d{1,2}|AC\d{1,2}|FL\d{1,2}|EC\d{1,2}|E\d{1,2})\b/g;
 function linkify(root) {
   const test = new RegExp(RX.source);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(n) {

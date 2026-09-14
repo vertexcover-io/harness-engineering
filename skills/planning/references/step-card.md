@@ -6,14 +6,25 @@ An implementation step is a **card**. `phases/phase-N.md` and the `#phases` dril
 Write the card once, in the phase file. Then **transcribe** it into the drill-down. The
 drill-down has no content of its own, so the two cannot drift.
 
+## Contents
+
+- [The parts](#the-parts)
+- [How to use the table](#how-to-use-the-table)
+- [Show the change as a diff](#show-the-change-as-a-diff)
+- [Addresses](#addresses)
+- [Designs](#designs)
+- [Register](#register)
+- [What earns a step](#what-earns-a-step)
+- [One step, both renderings](#one-step-both-renderings)
+
 ## The parts
 
 | Part | Include when | In `phase-N.md` | In the drill-down |
 |---|---|---|---|
-| **Title** — the action and its file | always | `1. **Create \`src/x.ts\`**` | `<div class="it">` |
+| **Title** — the action and its file | always | `1. **Change \`src/x.ts:31-40\`**` | `<div class="it">` |
 | **What it does** — the contract, or the ordered logic including the branch and the error path | always | prose under the title | `<p>` |
-| **New code** — what the developer writes | the step writes or changes code | fenced block | `.snip-lbl.new` + `<pre>` |
-| **Existing code** — plus the reason it is shown | one of the three triggers below | fenced block, reason on the line above | `.snip-lbl.cur` with a `.why` |
+| **Diff** — the change, as a unified diff | the step writes or changes code | a line naming the file and range, then a ```` ```diff ```` block | `.snip-lbl.diff` naming the file and range, then `<pre class="diff"><code>` |
+| **Pattern** — existing code to imitate, plus the reason it is shown | the step copies a shape from elsewhere rather than changing that code | fenced block, reason on the line above | `.snip-lbl.cur` with a `.why`, then `<pre>` |
 | **Design** — the frame this step builds to | the step builds a surface a design defines | `build to design/x.png` | `<details class="media">` with the image |
 | **Why this way** — the rejected alternative, or the constraint | the location or shape had a plausible alternative | closing sentence | `.rule` |
 | **Trap** — what breaks if the developer does the obvious thing | code that looks safe to change and is not | its own paragraph | `.rule.trap` |
@@ -33,41 +44,54 @@ a step builds, that step's Design part is required. See Designs below.
 everything a step may contain. An environment warning, or a note about how to see the change, is
 plain prose in both renderings.
 
-## Show the code the developer is about to write
+## Show the change as a diff
 
-The default snippet is the **new** state, under `.snip-lbl.new` — "What you write" or "What you
-change".
+Every change the developer makes is a **unified diff**: removed lines open with `-`, added lines
+with `+`, unchanged context lines with a space, and a hunk header `@@ -from,count +to,count @@`
+separates hunks. The reader sees what goes and what comes in one block, in the file's own order,
+instead of holding a before block and an after block side by side in their head.
 
-Existing code appears under exactly three triggers:
+- **A new file** is one block of `+` lines, every line of it.
+- **A change inside an existing file** carries at least one context line on each side of the
+  change, so the developer finds the spot without a line number — and a hunk header when the
+  file's line numbers are known, so they find it with one.
+- **Two changes in one file, apart from each other** are two hunks in one block, each with its
+  own header, never a scroll of context between them.
+- **A moved block** is `-` lines where it was and `+` lines where it goes, in the same block.
+- **A rename or a one-token edit** is still a diff: `-` the old line, `+` the new. A prose
+  instruction to "change X to Y" makes the developer reconstruct the line the diff hands them.
 
-- the step moves it verbatim
-- the developer must locate the block before replacing it
-- a library rule explains why the obvious fix does not work
+Keep a diff as long as the change and no longer. Context beyond a line or two claims the change is
+self-contained when it is not, and a hunk long enough to scroll is a hunk the developer will skim.
 
-Then it carries `.snip-lbl.cur` **and the reason it is on the page**. Unlabeled current code reads
-as the target state, and the developer builds it.
+Existing code that the step does not change appears under exactly one trigger: the step **imitates**
+it. Then it is a plain fenced block under `.snip-lbl.cur` **with the reason it is on the page** —
+`bull-queue.ts:1678 — createFlow, the parent-plus-children builder`. Unlabeled current code reads
+as the target state, and the developer builds it. Where the step changes that code instead, the
+old lines belong in the diff as `-` lines, not in a second block.
 
-Quote what the step changes. Where a step imitates a pattern instead, name it
-(`bull-queue.ts:1678 — createFlow, the parent-plus-children builder`) and let the developer read it
-whole. Elide a before-block to the lines that matter and an after-block to the changed lines: a
-quote long enough to scroll claims the change is self-contained when it is not.
+**The verifier reads every `pre.diff`.** A line that opens with anything but `+`, `-`, `@@` or a
+space fails the plan gate, and so does an empty block. In the HTML rendering `<`, `>` and `&`
+are escaped; the engine colours the lines from their first character, so nothing is hand-marked.
 
 ## Addresses
 
 A line reference is an **address**. Give one where the developer must open that spot — the code
 they change, delete, move, or replace — and name what is there:
-`header.js:859-972 — the AccountMenu memo`. Repo-relative always.
+`header.js:859-972 — the AccountMenu memo`. Repo-relative always. The diff label carries the
+address for a change; the title repeats it only when the step has no diff.
 
 Everywhere else, state the fact. "The same business check already guards the Frill container and
 the menu button" is complete where they read it. Where they must keep something exactly, quote it;
-where a call site would fit in four lines, show the lines. An address asks them to fetch what the
-step could have handed them.
+where a call site would fit in four lines, show the lines as a diff. An address asks them to fetch
+what the step could have handed them.
 
 ## Designs
 
 A step that builds to a design embeds the frame, with a one-line caption naming what it settles.
 Two steps using the same frame both embed it — the shell embeds each file once and wires it to
-every use, so repeats cost nothing.
+every use, so repeats cost nothing. The phase card above the steps also shows every frame the
+phase builds to, open, in its `.builds` strip; the step's panel is the close-up beside the work.
 
 Where a frame exists the panel is not optional, and prose is not a substitute for it. The PRD
 states the rule; the frame settles what the rule leaves open — spacing, order, variant, the exact
@@ -98,7 +122,7 @@ derive from.
 
 The file a `data-img` names must also have an entry in the page's `IMG` map, or the panel renders
 blank. That map is generated, never typed: `scripts/inline-designs.ts` base64s every frame the
-steps reference into it.
+page references into it.
 
 Where no design exists, say so in the step. A surface with no design is one the developer is
 authorized to invent, and that is worth one clause where the work happens.
@@ -136,11 +160,16 @@ In `phases/phase-N.md`:
 ````markdown
 2. **Reject duplicate emails in `src/services/user.ts:31 — createUser`**
 
-   Look up the address before hashing. When the lookup returns a row, throw
+   Look up the address before inserting. When the lookup returns a row, throw
    `DuplicateError(email)`. The happy path does not change.
 
-   ```ts
-   if (await findByEmail(email)) throw new DuplicateError(email)
+   `src/services/user.ts:31-33`
+
+   ```diff
+   @@ -31,3 +31,4 @@
+    export async function createUser(email: string, name: string) {
+   +  if (await findByEmail(email)) throw new DuplicateError(email)
+      const user = await users.insert({ email, name })
    ```
 
    Use `findByEmail` rather than catching the unique-index error: the constraint error does not
@@ -152,13 +181,16 @@ In the drill-down:
 ```html
 <li>
   <div class="it">Reject duplicate emails in <code>src/services/user.ts:31 — createUser</code></div>
-  <p>Look up the address before hashing. When the lookup returns a row, throw
+  <p>Look up the address before inserting. When the lookup returns a row, throw
   <code>DuplicateError(email)</code>. The happy path does not change.</p>
-  <div class="snip-lbl new">What you write</div>
-  <pre><code>if (await findByEmail(email)) throw new DuplicateError(email)</code></pre>
+  <div class="snip-lbl diff">Change <code>src/services/user.ts:31-33</code></div>
+  <pre class="diff"><code>@@ -31,3 +31,4 @@
+ export async function createUser(email: string, name: string) {
++  if (await findByEmail(email)) throw new DuplicateError(email)
+   const user = await users.insert({ email, name })</code></pre>
   <div class="rule"><b>Why this way</b>Use <code>findByEmail</code> rather than catching the
   unique-index error: the constraint error does not say which column collided.</div>
 </li>
 ```
 
-Same title, same order, same code, with `<`, `>` and `&` escaped. It adds nothing.
+Same title, same order, same diff, with `<`, `>` and `&` escaped. It adds nothing.

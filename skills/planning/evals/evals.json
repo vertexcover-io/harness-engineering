@@ -1,0 +1,163 @@
+{
+  "skill_name": "planning",
+  "evals": [
+    {
+      "id": 1,
+      "name": "page-is-live-before-the-first-question",
+      "prompt": "plan this: add a 'snooze until' option to the reminders drawer. The ticket has three Figma frames attached.",
+      "expected_output": "Before any question is asked, plan.html exists under .harness/<name>/, the viewer's URL (with its ?key= query string) has been printed, its hero is filled from the task, and — once the design scout returns — its #designs section shows every frame from design/INDEX.md open in a gallery with inline-designs.ts run. Every later section is still a spinner. The checkpoint question follows; plan.html is finished at step 7 in the same file, never a second one.",
+      "files": [],
+      "expectations": [
+        "start-server.sh is invoked with --file pointing at .harness/<name>/plan.html before the first AskUserQuestion.",
+        "The printed URL keeps its ?key= query string.",
+        "The #designs section holds one .frame per row of design/INDEX.md, each with a data-img, a screen name and what it settles, and the IMG map is populated before the checkpoint.",
+        "Sections not yet written keep their SLOT: comments; none is padded with placeholder prose."
+      ],
+      "anti_expectations": [
+        "Starts the server only at step 7, after the checkpoint",
+        "Presents only a file:// link, with no URL, while the server started successfully",
+        "Hides the frames inside closed <details> panels only, with no open gallery",
+        "Copies the shell a second time at step 7 instead of filling the file opened at step 1"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "every-change-is-a-diff",
+      "prompt": "plan: rename the `owner` field on Invoice to `issuedBy` across the API, the store and the two React forms that write it.",
+      "expected_output": "Phase files whose steps show each change as a ```diff fence under a line naming the file and range — removed lines with -, added lines with +, a hunk header when line numbers are known — and a plan.html whose drill-down transcribes each as a pre.diff under a .snip-lbl.diff. Existing code appears only as - lines, or as a labelled pattern block when the step imitates it. verify-plan.ts exits 0.",
+      "files": [],
+      "expectations": [
+        "Every step that changes a file carries a ```diff block, and the drill-down <li> carries the same lines inside <pre class=\"diff\"><code>.",
+        "Each diff label names the file and the line range, e.g. src/models/invoice.ts:12-18.",
+        "A new file is a diff of + lines only.",
+        "verify-plan.ts reports no diff finding: every line opens with +, -, @@ or a space."
+      ],
+      "anti_expectations": [
+        "Shows a 'before' block and an 'after' block for one change instead of a single diff",
+        "Describes a one-line edit in prose ('change owner to issuedBy on line 14') with no diff",
+        "Writes a diff line that opens with a character other than +, -, @@ or a space",
+        "Leaves an existing-code block with no label saying why it is on the page"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "phases-lead-with-their-frames",
+      "prompt": "plan REF-4410: the new onboarding checklist card on the dashboard. Designs are on the ticket: desktop card, phone card, and the empty state.",
+      "expected_output": "In plan.html, each phase card opens with a .builds strip showing every frame that phase builds to, open, then the unlock box, then the drill-down. Every frame in design/INDEX.md appears in at least one phase's strip or is recorded 'not built' in plan.md. Each step that builds a screen also embeds its frame in a media panel.",
+      "files": [],
+      "expectations": [
+        "Every .phase card that builds a surface has a .builds strip before its <details>, holding a .frame with data-img for each frame its steps name.",
+        "The strip's frames are open — not inside a <details>.",
+        "verify-plan.ts reports every INDEX frame embedded, or excused with the documented not-built form."
+      ],
+      "anti_expectations": [
+        "Puts a phase's frames only at the bottom of a collapsed step panel",
+        "Names a frame in a step that the phase card's strip omits",
+        "Builds a phase to a screen with no frame while a frame for it sits in design/INDEX.md"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "checkpoint-before-the-expensive-work",
+      "prompt": "how should we implement rate limiting on the public quotes endpoint?",
+      "expected_output": "A question loop that closes the open forks (window, key, store, response on limit), a fresh-context review of the draft solution, then one inline checkpoint summary — problem, approach, decisions with inferred ones flagged, risks, next — ending in a single Approve/Revise question. No phase file, test matrix or drill-down is written before that approval.",
+      "files": [],
+      "expectations": [
+        "The checkpoint summary lists every decision as a D<n> line and flags each fork closed on the user's behalf as inferred.",
+        "The approve question is asked with AskUserQuestion and offers exactly Approve and Revise.",
+        "No phases/phase-N.md payload exists in plan.html before the approval."
+      ],
+      "anti_expectations": [
+        "Writes phase files or the test matrix before the checkpoint is approved",
+        "Presents the recommended approach before listing the alternatives",
+        "Treats a 'Revise' answer as approval and continues to step 6"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "auto-mode-defers-instead-of-asking",
+      "prompt": "--auto plan this: let a workspace owner export every invoice of a month as one CSV. Nothing in the ticket says which columns, the date format, or where the file goes.",
+      "expected_output": "A full plan with no AskUserQuestion call. Each fork the ticket leaves open — columns, date format, destination — is closed as an inferred decision, flagged inferred in the decisions table, and listed in plan.md's ## Deferred section marked auto. The checkpoint and the plan gate self-approve, and the step-8 summary names every auto-deferred fork.",
+      "files": [],
+      "expectations": [
+        "No AskUserQuestion is issued at any step.",
+        "plan.md holds a ## Deferred section whose entries carry the word auto.",
+        "Every decision closed on the user's behalf is marked inferred in the decisions table and in the checkpoint summary.",
+        "The step-8 summary lists the auto-deferred forks by name."
+      ],
+      "anti_expectations": [
+        "Asks a question despite --auto",
+        "Closes an open fork silently, with no inferred flag and no Deferred entry",
+        "Stops the run waiting for approval at the checkpoint or the plan gate"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "same-decision-revised-twice-is-asked-about-directly",
+      "prompt": "plan the retry policy for the webhook sender. (Then, at the checkpoint, answer Revise twice, each time changing D2 — the backoff schedule — to a different value.)",
+      "expected_output": "After the second revision of D2 the skill stops re-presenting the whole summary and asks one direct question about D2 alone, with the options the two revisions named, before continuing. Each revision is re-presented and waits for approval; neither is treated as a confirmation.",
+      "files": [],
+      "expectations": [
+        "After D2 is revised a second time, a single AskUserQuestion targets D2 by name.",
+        "Each Revise answer is followed by a re-presented summary showing what changed, and a fresh approval question.",
+        "design.md is recorded only after explicit approval."
+      ],
+      "anti_expectations": [
+        "Integrates the second D2 revision and moves on without asking about D2 directly",
+        "Treats a Revise answer as approval",
+        "Dispatches the recorder before an Approve answer"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "viewer-failure-never-blocks-the-plan",
+      "prompt": "plan: add a dark theme toggle to the settings page. (In this run, scripts/start-server.sh exits non-zero with a port error.)",
+      "expected_output": "Planning continues to the plan gate; plan.html is still written to .harness/<name>/plan.html and verified; the gate presents an absolute file:// path instead of a URL; the comment watcher is not armed. Nothing waits on the viewer.",
+      "files": [],
+      "expectations": [
+        "plan.html exists and verify-plan.ts exits 0 at the gate.",
+        "The plan gate presents a file:// link to the absolute path of plan.html.",
+        "No comment-store.cjs wait is started when the server never came up."
+      ],
+      "anti_expectations": [
+        "Retries the server in a loop or stops the run because the viewer failed",
+        "Presents a localhost URL that nothing serves",
+        "Skips writing or verifying plan.html because it cannot be viewed live"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "atomic-route-cleans-up-the-viewer",
+      "prompt": "plan: the 'Export' button label on the invoices page should read 'Download PDF'.",
+      "expected_output": "Step 1 opens the page and starts the viewer as always; after the sweep the work is one obvious edit in one file, so the skill takes the atomic route: it stops the viewer with stop-server.sh, deletes the stub .harness/<name>/plan.html, and hands the step-1 findings to implement. No plan, no phases, no checkpoint.",
+      "files": [],
+      "expectations": [
+        "stop-server.sh is called with the session dir from the step-1 startup JSON.",
+        "No .harness/<name>/plan.html remains on disk after the hand-off.",
+        "implement receives the step-1 findings (the file and line, the string to change)."
+      ],
+      "anti_expectations": [
+        "Leaves the viewer running after handing off",
+        "Leaves an all-spinner plan.html behind",
+        "Builds phases or asks a checkpoint question for a one-line label change"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "page-comments-are-all-answered-before-re-presenting",
+      "prompt": "plan the bulk-archive action on the contacts list. (At the plan gate, leave three comments on the page: one question, one change request, one request the plan should refuse.)",
+      "expected_output": "The skill wakes on the batch, reads it with comment-store.cjs list, answers the question (status answered), makes the change in plan.html and the payload blocks (status changed), declines the third with a reason (status declined), re-arms the watcher, and only then re-presents the plan. On approval it kills the wait job, copies comments.json into .harness/<name>/, and stops the viewer.",
+      "files": [],
+      "expectations": [
+        "Every one of the three threads receives a reply with a status of answered, changed or declined before the plan is presented again.",
+        "The changed thread's edit appears in both the HTML section and the matching payload block.",
+        "On approval, the backgrounded wait job is killed and .harness/<name>/comments.json exists."
+      ],
+      "anti_expectations": [
+        "Re-presents the plan with a thread still unanswered",
+        "Changes the HTML but not the payload block, or the reverse",
+        "Leaves the wait job armed after approval"
+      ]
+    }
+  ]
+}

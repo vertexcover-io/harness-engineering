@@ -189,6 +189,79 @@ test("a half-built page reports the unembedded frame and invents none from the s
   assert.match(design[0]?.message ?? "", /04-states\.png/);
 });
 
+const diffBlock = (body: string): string => `<pre class="diff"><code>${body}</code></pre>`;
+
+const gallery = (file: string): string =>
+  `<section id="designs"><div class="gallery"><div class="frame"><img data-img="${file}" alt="x"></div></div></section>`;
+
+test("a frame shown only in the top gallery is still one no phase builds to", () => {
+  const plan = spec({
+    html: planHtml({ slots: gallery("04-states.png"), img: `  "04-states.png": "data:image/png;base64,iVBO",` }),
+    index: INDEX_ONE,
+    designFiles: ["04-states.png"],
+  });
+
+  const findings = verifyPlan(plan);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]?.check, "design");
+  assert.match(findings[0]?.message ?? "", /04-states\.png/);
+});
+
+test("a frame in the gallery and in a phase's builds strip is built", () => {
+  const strip = `<div class="builds"><div class="frame"><img data-img="04-states.png" alt="x"></div></div>`;
+  const plan = spec({
+    html: planHtml({ slots: gallery("04-states.png"), steps: strip, img: `  "04-states.png": "data:image/png;base64,iVBO",` }),
+    index: INDEX_ONE,
+    designFiles: ["04-states.png"],
+  });
+
+  assert.deepEqual(verifyPlan(plan), []);
+});
+
+test("a diff block carrying an id is still checked", () => {
+  const steps = `<pre class="diff" id="p1-s1-d1"><code>garbage line\n</code></pre>`;
+  const findings = verifyPlan(spec({ html: planHtml({ steps }) }));
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]?.check, "diff");
+});
+
+test("git's no-newline marker is a legal diff line", () => {
+  const steps = diffBlock("-a\n+b\n\\ No newline at end of file\n");
+  assert.deepEqual(verifyPlan(spec({ html: planHtml({ steps }) })), []);
+});
+
+test("a payload that mentions the IMG map does not shadow the real one", () => {
+  const payloads = `<script type="text/markdown" data-file="plan.md">
+Run inline-designs.ts; it rewrites const IMG = { … } in the engine.
+</script>`;
+  const plan = spec({
+    html: planHtml({ steps: framePanel("04-states.png"), img: `  "04-states.png": "data:image/png;base64,iVBO",`, payloads }),
+    index: INDEX_ONE,
+    designFiles: ["04-states.png"],
+  });
+
+  assert.deepEqual(verifyPlan(plan), []);
+});
+
+test("a diff whose every line opens with +, -, @@ or a space has no findings", () => {
+  const steps = diffBlock("@@ -1,2 +1,2 @@\n const a = 1;\n-const b = 2;\n+const b = 3;\n");
+  assert.deepEqual(verifyPlan(spec({ html: planHtml({ steps }) })), []);
+});
+
+test("a diff line with no diff opener is a finding quoting the line", () => {
+  const steps = diffBlock("-const b = 2;\nconst b = 3;\n");
+  const findings = verifyPlan(spec({ html: planHtml({ steps }) }));
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]?.check, "diff");
+  assert.match(findings[0]?.message ?? "", /const b = 3;/);
+});
+
+test("an empty diff block is a finding", () => {
+  const findings = verifyPlan(spec({ html: planHtml({ steps: diffBlock("\n") }) }));
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]?.check, "diff");
+});
+
 const run = (planPath: string): { readonly status: number | null; readonly out: string } => {
   const r = spawnSync(
     process.execPath,
