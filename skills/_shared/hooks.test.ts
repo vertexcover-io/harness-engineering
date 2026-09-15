@@ -1325,6 +1325,8 @@ const notifierDeps = (dir: string, provider: Provider): FireDeps =>
 
 const gitRepo = (dir: string): string => {
   execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "test"], { cwd: dir });
   return execFileSync(
     "git",
     ["rev-parse", "--path-format=absolute", "--show-toplevel"],
