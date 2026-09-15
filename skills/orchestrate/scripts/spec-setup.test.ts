@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -43,8 +43,8 @@ test("init creates the artifact tree and manifest, and prints the paths", () => 
   }
   const manifest = readJson(join(specDir, "manifest.json"));
   assert.equal(manifest["spec_name"], "add-auth");
-  assert.equal(manifest["branch"], "feat/test");
-  assert.equal(manifest["worktree"], repo);
+  assert.equal(manifest["branch"], undefined);
+  assert.equal(manifest["worktree"], undefined);
   assert.equal(manifest["thread"], null);
   assert.equal(manifest["pr_number"], null);
   assert.deepEqual(manifest["stages"], {});
@@ -93,8 +93,19 @@ test("init without --custom-fields writes only the manifest's own fields", () =>
 
   const manifest = readJson(join(repo, ".harness", "add-auth", "manifest.json"));
   assert.deepEqual(Object.keys(manifest).toSorted(), [
-    "branch", "pr_number", "run_info", "spec_name", "stages", "started_at", "thread", "worktree",
+    "pr_number", "run_info", "spec_name", "stages", "started_at", "thread",
   ]);
+});
+
+test("init stores the worktree and branch the caller passes in --custom-fields", () => {
+  const repo = makeRepo({ commands: {} });
+  const worktree = join(repo, ".workspaces", "REF-1");
+  const r = run(repo, "init", "add-auth", "--custom-fields", JSON.stringify({ worktree, branch: "REF-1" }));
+
+  assert.equal(r.code, 0, r.stderr);
+  const manifest = readJson(join(repo, ".harness", "add-auth", "manifest.json"));
+  assert.equal(manifest["worktree"], worktree);
+  assert.equal(manifest["branch"], "REF-1");
 });
 
 test("init halts on custom fields that are not a flat map of snake_case strings, and writes no manifest", () => {
@@ -276,6 +287,35 @@ test("baseline halts when a package path does not exist", () => {
 
   assert.equal(r.code, 2);
   assert.match(r.stderr, /CONFIG_STALE/);
+});
+
+test("baseline runs each package under the manifest's worktree and writes baseline.json at the root", () => {
+  const repo = makeRepo({
+    commands: {},
+    packages: { api: { path: "api", commands: { test_all: "test -f in-worktree" } } },
+  });
+  const worktree = join(repo, ".workspaces", "REF-1");
+  mkdirSync(join(worktree, "api"), { recursive: true });
+  writeFileSync(join(worktree, "api", "in-worktree"), "");
+  run(repo, "init", "add-auth", "--custom-fields", JSON.stringify({ worktree }));
+
+  const r = run(worktree, "baseline", "add-auth", "--packages", "api");
+
+  assert.equal(r.code, 0, r.stderr);
+  const baseline = readJson(join(repo, ".harness", "add-auth", "baseline.json"));
+  assert.equal((baseline["api"] as Record<string, Record<string, unknown>>)["test"]?.["exit"], 0);
+  assert.ok(!existsSync(join(worktree, ".harness")));
+});
+
+test("baseline halts when the manifest's worktree does not exist", () => {
+  const repo = makeRepo({ commands: {}, packages: { api: { path: "api", commands: { test_all: "true" } } } });
+  run(repo, "init", "add-auth", "--custom-fields", JSON.stringify({ worktree: join(repo, "gone") }));
+
+  const r = run(repo, "baseline", "add-auth", "--packages", "api");
+
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /WORKTREE_MISSING/);
+  assert.ok(!existsSync(join(repo, ".harness", "add-auth", "baseline.json")));
 });
 
 test("parsers read the common runner summaries", () => {

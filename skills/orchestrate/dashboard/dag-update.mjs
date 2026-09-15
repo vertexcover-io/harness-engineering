@@ -13,6 +13,12 @@ import { harnessDir as harnessDirFor } from "../../../hooks/_lib/paths.mjs";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const BREADCRUMB = join(tmpdir(), ".claude-harness-active");
 
+// spec-setup.ts writes the manifest under the git top level; the dashboard must land beside it,
+// even when started from a gitignored workspace folder below that root.
+const projectRoot = () =>
+  spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+    .stdout?.trim() || process.cwd();
+
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
 class DagExit {
@@ -79,7 +85,7 @@ const dagPath = () => {
 const cmdInit = async (specName, task, branch = "unknown", worktree = "unknown") => {
   if (!specName || !task) die("Usage: init <spec_name> <task> [branch] [worktree]");
 
-  const harnessDir = harnessDirFor(process.cwd(), specName);
+  const harnessDir = harnessDirFor(projectRoot(), specName);
 
   // Crash recovery
   const oldPidFile = join(harnessDir, "server.pid");
@@ -225,7 +231,7 @@ const clearServerFiles = (dir) => {
 // A detached server outlives the run that started it, so every start reaps the dead runs'
 // servers. Nothing else will: `finalize` only ever kills its own.
 const reapFinishedServers = (skipDir) => {
-  const root = join(process.cwd(), ".harness");
+  const root = join(projectRoot(), ".harness");
   if (!existsSync(root)) return;
   for (const d of readdirSync(root, { withFileTypes: true })) {
     if (!d.isDirectory()) continue;
@@ -365,7 +371,7 @@ const cmdFinalize = async (outcome = "interrupted") => {
     // Find any active run
     const candidates = [];
     try {
-      const root = join(process.cwd(), ".harness");
+      const root = join(projectRoot(), ".harness");
       if (existsSync(root)) {
         for (const d of readdirSync(root, { withFileTypes: true })) {
           if (!d.isDirectory()) continue;

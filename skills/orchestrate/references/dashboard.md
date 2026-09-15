@@ -4,7 +4,7 @@
 
 Resolve `DAG_SCRIPT=<plugin-root>/skills/orchestrate/dashboard/dag-update.mjs`, using
 `${CODEX_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-.}}` for the plugin root before changing cwd.
-`HARNESS_DIR` is the absolute worktree `.harness/<SPEC_NAME>` directory printed by init.
+`HARNESS_DIR` is the absolute `<git top level>/.harness/<SPEC_NAME>` directory printed by init.
 
 Every command uses this invocation form; store the script path, not a shell command:
 ```
@@ -28,7 +28,7 @@ the orchestrator owns top-level transitions. Escape report bodies as literal she
 
 ## Initialization
 
-Run from the worktree, after it exists:
+Run after the worktree exists; init resolves `.harness` from the git top level, not cwd:
 
 ```
 Bash("
