@@ -44,14 +44,16 @@ export type Report = {
 
 export type Input = {
   readonly autoMode: boolean;
+  readonly preRelease: boolean;
   readonly inputKind: "prompt" | "ticket" | "file" | "findings";
   readonly inputRef: string;
 };
 
 const CONFIG_FILE = "orchestrate.config.json";
 const PLUGIN_MANIFEST = join(".claude-plugin", "plugin.json");
-const REMOTE_MANIFEST_URL =
-  "https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main/.claude-plugin/plugin.json";
+const RAW_MAIN = "https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main";
+const UPDATE_SCRIPT = join(import.meta.dirname, "..", "orchestrate", "scripts", "harness-update.ts");
+const VERSION = /^\d+(\.\d+)*(-[0-9A-Za-z.-]+)?$/;
 // Covers a cold DNS and TLS handshake on a slow link, and caps what a hung network
 // costs a caller that only wanted a version comparison.
 const FETCH_TIMEOUT_SECONDS = 10;
@@ -132,7 +134,7 @@ const readVersion = (json: string | null): string | null => {
   try {
     const parsed: unknown = JSON.parse(json ?? "");
     if (typeof parsed !== "object" || parsed === null || !("version" in parsed)) return null;
-    return typeof parsed.version === "string" && /^\d+(\.\d+)*$/.test(parsed.version) ? parsed.version : null;
+    return typeof parsed.version === "string" && VERSION.test(parsed.version) ? parsed.version : null;
   } catch {
     return null;
   }
@@ -148,29 +150,105 @@ const localManifest = (): string | null => {
   return null;
 };
 
-// Field-wise numeric compare: local >= remote (equal, or a dev checkout ahead of main) is fine.
-const isBehind = (local: string, remote: string): boolean => {
-  const mine = local.split(".").map(Number);
-  const theirs = remote.split(".").map(Number);
-  const length = Math.max(mine.length, theirs.length);
-  const firstDiff = Array.from({ length }, (_, i) => (mine[i] ?? 0) - (theirs[i] ?? 0)).find((d) => d !== 0);
-  return firstDiff !== undefined && firstDiff < 0;
+const splitVersion = (version: string): { readonly core: readonly number[]; readonly pre: readonly string[] } => {
+  const [core = "", ...rest] = version.split("-");
+  const pre = rest.join("-");
+  return { core: core.split(".").map(Number), pre: pre === "" ? [] : pre.split(".") };
 };
 
-const checkHarnessVersion = (): Outcome => {
-  const path = localManifest();
-  const local = readVersion(path !== null && existsSync(path) ? readFileSync(path, "utf8") : null);
-  const remote = readVersion(run("curl", ["-fsSL", "--max-time", String(FETCH_TIMEOUT_SECONDS), REMOTE_MANIFEST_URL]));
-  const seen = `local=${local ?? "?"} remote=${remote ?? "?"}`;
+// Semver identifier order: numbers numerically and below words, and a shorter list below a longer one.
+const compareIdentifiers = (a: string | undefined, b: string | undefined): number => {
+  if (a === undefined || b === undefined) return a === b ? 0 : a === undefined ? -1 : 1;
+  const numeric = /^\d+$/;
+  if (numeric.test(a) && numeric.test(b)) return Number(a) - Number(b);
+  if (numeric.test(a) !== numeric.test(b)) return numeric.test(a) ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+};
+
+// Negative when a is older. A pre-release sorts below the version it is a candidate for.
+export const compareVersions = (a: string, b: string): number => {
+  const x = splitVersion(a);
+  const y = splitVersion(b);
+  const coreLength = Math.max(x.core.length, y.core.length);
+  const coreDiff = Array.from({ length: coreLength }, (_, i) => (x.core[i] ?? 0) - (y.core[i] ?? 0)).find((d) => d !== 0);
+  if (coreDiff !== undefined) return coreDiff;
+  if (x.pre.length === 0 || y.pre.length === 0) return y.pre.length - x.pre.length;
+  const preLength = Math.max(x.pre.length, y.pre.length);
+  return Array.from({ length: preLength }, (_, i) => compareIdentifiers(x.pre[i], y.pre[i])).find((d) => d !== 0) ?? 0;
+};
+
+type Channel = "stable" | "pre-release";
+
+// Must match the names in .claude-plugin/marketplace.json and .claude-plugin/pre-release/marketplace.json.
+const MARKETPLACES: Record<Channel, { readonly name: string; readonly url: string }> = {
+  stable: { name: "main", url: `${RAW_MAIN}/.claude-plugin/marketplace.json` },
+  "pre-release": { name: "harness-pre-release", url: `${RAW_MAIN}/.claude-plugin/pre-release/marketplace.json` },
+};
+
+// Users get the tag main's marketplace pins, not main's own manifest, so main can run ahead of any release.
+export const pinnedVersion = (json: string | null): string | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json ?? "");
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || !("plugins" in parsed) || !Array.isArray(parsed.plugins)) return null;
+  const harness: unknown = parsed.plugins.find(
+    (plugin: unknown) => typeof plugin === "object" && plugin !== null && "name" in plugin && plugin.name === "harness",
+  );
+  if (typeof harness !== "object" || harness === null || !("source" in harness)) return null;
+  const { source } = harness;
+  const hasRef = typeof source === "object" && source !== null && "ref" in source && typeof source.ref === "string";
+  const version = hasRef ? String(source.ref).replace(/^v/, "") : "";
+  return VERSION.test(version) ? version : null;
+};
+
+// Claude Code copies an installed plugin to plugins/cache/<marketplace>/<plugin>/<version>.
+export const installedMarketplace = (manifest: string | null): string | null =>
+  manifest?.match(/[\\/]plugins[\\/]cache[\\/]([^\\/]+)[\\/]harness[\\/]/)?.[1] ?? null;
+
+const updateFix = (channel: Channel): readonly string[] => [
+  `node --experimental-strip-types '${UPDATE_SCRIPT}' ${channel}`,
+  "then run /reload-plugins and start orchestrate again",
+];
+
+type VersionsSeen = {
+  readonly local: string | null;
+  readonly remote: string | null;
+  readonly installedFrom: string | null;
+  readonly preRelease: boolean;
+};
+
+export const judgeHarnessVersion = ({ local, remote, installedFrom, preRelease }: VersionsSeen): Outcome => {
+  const channel: Channel = preRelease ? "pre-release" : "stable";
+  const seen = `current=${local ?? "?"} latest-${channel}=${remote ?? "?"}`;
+  const isChannel = Object.values(MARKETPLACES).some(({ name }) => name === installedFrom);
+  // A checkout or a local marketplace is its owner's to update; an install from GitHub would replace it.
+  if (installedFrom === null || !isChannel) return ok(`${seen} (from ${installedFrom ?? "a local checkout"})`);
+  if (installedFrom !== MARKETPLACES[channel].name) {
+    return preRelease ? fail(`${seen} (on stable)`, updateFix(channel)) : warn(`${seen} (on pre-release)`, updateFix(channel));
+  }
   if (local === null || remote === null) return ok(`${seen} (unknown)`);
-  return isBehind(local, remote) ? fail(`${seen} (stale)`) : ok(seen);
+  return compareVersions(local, remote) < 0 ? fail(`${seen} (stale)`, updateFix(channel)) : ok(seen);
 };
 
-export const HARNESS_CHECKS: readonly Check[] = [
+const checkHarnessVersion = (preRelease: boolean) => (): Outcome => {
+  const path = localManifest();
+  const url = MARKETPLACES[preRelease ? "pre-release" : "stable"].url;
+  return judgeHarnessVersion({
+    local: readVersion(path !== null && existsSync(path) ? readFileSync(path, "utf8") : null),
+    remote: pinnedVersion(run("curl", ["-fsSL", "--max-time", String(FETCH_TIMEOUT_SECONDS), url])),
+    installedFrom: installedMarketplace(path),
+    preRelease,
+  });
+};
+
+export const harnessChecks = (preRelease: boolean): readonly Check[] => [
   {
     name: "harness-version",
     fix: ["update the harness plugin, then reload the session or restart Claude"],
-    run: checkHarnessVersion,
+    run: checkHarnessVersion(preRelease),
   },
   { name: "git", fix: ["brew install git", "apt install git"], run: checkBinary("git") },
   { name: "git-repo", fix: ["git init", "cd into the repository first"], run: checkGitRepo },
@@ -297,11 +375,12 @@ const isFindingsManifest = (path: string): boolean => {
 
 export const parseInput = (raw: string): Input => {
   const autoMode = /(^|\s)--auto(\s|$)/.test(raw);
-  const arg = raw.replace(/(^|\s)--auto(\s|$)/g, "$1").trim();
-  if (/^https?:\/\/\S+$/.test(arg)) return { autoMode, inputKind: "ticket", inputRef: arg };
-  if (arg === "" || !existsSync(arg)) return { autoMode, inputKind: "prompt", inputRef: "" };
+  const preRelease = /(^|\s)--pre-release(\s|$)/.test(raw);
+  const arg = raw.replace(/(^|\s)--(?:auto|pre-release)(?=\s|$)/g, "").trim();
+  if (/^https?:\/\/\S+$/.test(arg)) return { autoMode, preRelease, inputKind: "ticket", inputRef: arg };
+  if (arg === "" || !existsSync(arg)) return { autoMode, preRelease, inputKind: "prompt", inputRef: "" };
   const inputRef = resolve(arg);
-  return { autoMode, inputKind: isFindingsManifest(inputRef) ? "findings" : "file", inputRef };
+  return { autoMode, preRelease, inputKind: isFindingsManifest(inputRef) ? "findings" : "file", inputRef };
 };
 
 const INPUT_ACTIONS: Partial<Record<Input["inputKind"], string>> = {
@@ -326,7 +405,7 @@ export const verdict = (report: Report): string => {
 
 const HEADERS = ["CHECK", "REQUIRED", "STATUS", "DETAIL", "FIX"] as const;
 // A version banner (curl prints its whole TLS stack) would push the FIX column off-screen.
-const MAX_DETAIL = 44;
+const MAX_DETAIL = 64;
 
 const truncate = (text: string, limit: number): string =>
   text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
@@ -372,6 +451,7 @@ const renderText = (report: Report, input: Input): string => {
     "",
     "INPUT",
     `AUTO_MODE=${input.autoMode}`,
+    `PRE_RELEASE=${input.preRelease}`,
     `INPUT_KIND=${input.inputKind}`,
     `INPUT_REF=${input.inputRef}`,
     ...(action === undefined ? [] : [action]),
@@ -388,7 +468,7 @@ export const main = (argv: readonly string[], cwd: string = process.cwd()): numb
   const asJson = argv.includes("--json");
   const input = parseInput(argv.filter((arg) => arg !== "--json").join(" "));
   const root = repoRoot(cwd);
-  const results = [...HARNESS_CHECKS.map((check) => evaluate(check, root)), ...projectDoctor(root)];
+  const results = [...harnessChecks(input.preRelease).map((check) => evaluate(check, root)), ...projectDoctor(root)];
   const report = summarize(results);
 
   console.log(asJson ? JSON.stringify({ ...report, input }, null, 2) : renderText(report, input));

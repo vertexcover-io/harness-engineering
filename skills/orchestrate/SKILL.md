@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: Orchestrate end-to-end development from spec to PR through a multi-agent pipeline. Use when the user says orchestrate, run the pipeline, or full workflow; hands over a bare feature prompt, a PRD, or a design doc to take all the way to a PR; asks to auto-fix a tech-debt-finder findings.json into a dispositioned fix manifest; or passes --auto for an unattended CI run.
-argument-hint: "<prompt or path/to/prd-or-design.md> [--auto]"
+argument-hint: "<prompt or path/to/prd-or-design.md> [--auto] [--pre-release]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestion
 ---
 
@@ -79,7 +79,7 @@ It prints three sections: `ENVIRONMENT`, a table of the harness's checks followe
 - `DEGRADED` → each named check costs the one stage it unblocks: `gh` skips the PR, `samskara` skips publish. Print the WARN rows with their fixes, then ask via `AskUserQuestion`: **fix now** (invoke `setup-harness`, then re-run this step), **continue without** (log the names and go on), or **stop**. In `--auto` mode, log them and continue — nobody is there to answer.
 - `BLOCKED` → **stop before creating anything.** Print the FAIL rows with their fixes and name `setup-harness`, which runs the same checks and applies what it can. A project row is the project's to fix — report the row as printed. In `--auto` mode, log them and continue: CI cannot install a tool or reload a session, and a stage that needs one fails with its own diagnosis.
 
-`harness-version` in a `BLOCKED` list means the local plugin is behind `main`. Its fix is `/plugin`, then reload the session or restart Claude and re-run the same orchestrate command.
+A `harness-version` row whose fix runs `harness-update.ts` is handled before the verdict: `--pre-release` (`PRE_RELEASE=true`) wants the pre-release channel, a plain run the stable one. A FAIL row means the harness is behind its channel's pinned tag, or is on stable under `--pre-release`; run its fix command now. A WARN row means a plain run found a pre-release install; use `AskUserQuestion` to offer moving back to stable, and run the fix only if chosen. After `UPDATED`, tell the developer to run `/reload-plugins` and start orchestrate again, then stop: this session still runs the old harness. On `UPDATE_REFUSED` or `UPDATE_FAILED`, print the script's message and stop. Under `--auto`, never run the update; log the row and continue.
 
 **INPUT** carries `AUTO_MODE`, `INPUT_KIND`, `INPUT_REF`, and one line naming what to do with them. The argument describes the work as an **inline prompt**, a **ticket URL**, or a **path to a document** — a PRD, an issue export, a brief, or an existing design doc. (There is no `spec.md` stage in this pipeline; the requirement namespace belongs to the PRD and to `plan.md`.) The script has already stripped `--auto` and classified the remainder:
 

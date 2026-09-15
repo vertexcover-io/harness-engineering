@@ -3,18 +3,36 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Part of the version to bump. none counts up the current pre-release, so tick pre-release with it."
+        type: choice
+        options: [patch, minor, major, none]
+        default: patch
+      pre_release:
+        description: "Cut a pre-release (vX.Y.Z-rc.N)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  # Runs first, so a manual release never pushes a tag for code that fails its tests.
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      # A hand-pushed tag already exists, so the earliest a mismatch can stop it is here.
+      # A manual run checks its own tag in cut, before pushing it.
+      - name: Check the pushed tag matches the files at it
+        if: github.event_name == 'push'
+        run: bash scripts/check-release-tag.sh "$GITHUB_REF_NAME"
 
       # Both runtimes, because the release script is meant to run under either
       # and only CI can catch one of them drifting.
@@ -29,39 +47,68 @@ jobs:
         with:
           bun-version: 1.2.19
 
-      # version-gate.sh reads plugin.json from main to tell an installed harness
-      # it is stale, so a tag that disagrees with the manifests would announce a
-      # release nobody can actually install.
-      - name: Check the tag matches the version in both manifests
-        run: |
-          tagged="${GITHUB_REF_NAME#v}"
-          for manifest in package.json .claude-plugin/plugin.json; do
-            declared=$(node -p "require('./$manifest').version")
-            if [ "$tagged" != "$declared" ]; then
-              echo "tag $GITHUB_REF_NAME does not match $manifest version $declared" >&2
-              exit 1
-            fi
-          done
-
       - run: npm run test:scripts
 
       - run: npm run test:scripts:bun
 
       - run: npm run test:hooks
 
-      # A release cut on the wrong runtime is a silent no-op, so prove the
-      # script actually rewrites both manifests before trusting it to tag.
-      - name: Check the release script runs under both runtimes
-        run: |
-          for runner in node bun; do
-            $runner scripts/version.ts 99.99.99 --no-git
-            grep -q '"version": "99.99.99"' package.json
-            grep -q '"version": "99.99.99"' .claude-plugin/plugin.json
-            git checkout package.json .claude-plugin/plugin.json
-            echo "$runner: ok"
-          done
+      - run: npm run test:skills
 
+  # A tag pushed with GITHUB_TOKEN starts no workflow run, so a manual release cuts its tag
+  # here and the release job below publishes it in this same run.
+  cut:
+    needs: test
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      # The commit the test job passed. If the branch has moved since, the push below is
+      # rejected rather than releasing code nobody tested.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.19
+
+      - name: Bump the version, pin the marketplaces, commit and tag
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+          PRE_RELEASE: ${{ inputs.pre_release }}
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR_ID+$GITHUB_ACTOR@users.noreply.github.com"
+          args=()
+          if [ "$BUMP" != "none" ]; then args+=("$BUMP"); fi
+          if [ "$PRE_RELEASE" = "true" ]; then args+=("--pre-release"); fi
+          bun run release:version "${args[@]}"
+          tag="v$(jq -r .version package.json)"
+          bash scripts/check-release-tag.sh "$tag"
+          git push --atomic origin "HEAD:$GITHUB_REF_NAME" "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: [test, cut]
+    # A pushed tag skips cut; a manual run publishes only once cut has pushed its tag.
+    if: ${{ !cancelled() && needs.test.result == 'success' && needs.cut.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TAG: ${{ needs.cut.outputs.tag || github.ref_name }}
+    steps:
+      # A tag like v1.32.0-rc.1 publishes as a pre-release, so it never becomes "Latest".
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+          # No checkout in this job, so gh needs to be told which repository to release.
+          GH_REPO: ${{ github.repository }}
+        run: |
+          flags=""
+          case "$TAG" in *-*) flags="--prerelease" ;; esac
+          gh release create "$TAG" --verify-tag --generate-notes --title "$TAG" $flags

@@ -32,22 +32,16 @@ Run the full pipeline end-to-end, or pick individual skills for smaller tasks.
 ### Claude Code
 
 ```bash
-# Clone the repo
-git clone https://github.com/vertexcover-io/harness-engineering.git
-
-# Add as a local marketplace
-/plugin marketplace add ./
-
-# Install the plugin
-/plugin install harness
+claude plugin marketplace add vertexcover-io/harness-engineering
+claude plugin install harness@main
 ```
 
-This persists across sessions — the plugin loads automatically on startup.
+This persists across sessions — the plugin loads automatically on startup. It installs the latest stable release, not whatever `main` holds: the marketplace pins a release tag. `claude plugin marketplace update main` then `claude plugin update harness@main` moves you to the next release.
 
-For quick one-off usage without installing:
+To run the code in a local checkout instead, point Claude at it. Adding the checkout as a marketplace still installs the pinned release from GitHub.
 
 ```bash
-claude --plugin-dir <path-to-harness>
+claude --plugin-dir PATH_TO_HARNESS
 ```
 
 ### Codex
@@ -115,6 +109,36 @@ npx skills add vertexcover-io/harness-engineering --agent pi
 ```
 
 **Caveat (all three):** the `npx skills` path installs **skills only** — hooks, quality gates, and the orchestrate dashboard require the agent's native plugin install (`/plugin install harness` for Claude Code, `codex plugin add harness` for Codex, `pi install git:…` for PI).
+
+### Pre-releases
+
+Users install the tag a marketplace file on `main` pins, so `main` can run ahead of any release. There are two marketplaces:
+
+| Channel | File | Marketplace | Pins |
+|---|---|---|---|
+| stable | `.claude-plugin/marketplace.json` | `main` | the latest stable tag |
+| pre-release | `.claude-plugin/pre-release/marketplace.json` | `harness-pre-release` | the latest tag of any kind |
+
+**Cut a release** from GitHub: Actions → Release → Run workflow, then pick the bump and tick pre-release if you want one. The workflow bumps the version, repins the marketplaces, pushes the commit and tag to the branch you ran it on, and publishes the GitHub release. Or cut one locally and push it:
+
+```bash
+bun run release:version minor --pre-release   # 1.31.1 -> 1.32.0-rc.1
+bun run release:version --pre-release         # 1.32.0-rc.1 -> 1.32.0-rc.2
+bun run release:version minor                 # 1.32.0-rc.2 -> 1.32.0, the real release
+git push origin main --follow-tags
+```
+
+With npm, put `--` before the arguments: `npm run release:version -- minor --pre-release`. A pre-release repins only the pre-release marketplace; a stable release repins both. Users see a new pin once it reaches `main`.
+
+**Try a pre-release** with `/orchestrate TASK --pre-release`. Orchestrate moves your install to the pre-release marketplace, or updates it there, then asks you to run `/reload-plugins` and start again. A plain `/orchestrate` on a pre-release offers to move you back to stable. By hand:
+
+```bash
+claude plugin marketplace add https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main/.claude-plugin/pre-release/marketplace.json
+claude plugin install harness@harness-pre-release
+claude plugin uninstall harness@main
+```
+
+Keep only one of `harness@main` and `harness@harness-pre-release` installed: both load at once when both are. A harness run from a local checkout is never moved.
 
 ## Quick Start
 
