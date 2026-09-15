@@ -85,8 +85,9 @@ Resolve a key for the package the run named: `packages.<PKG>.commands`, then roo
 | a command that will not run: exit 127, a missing script or binary | `CONFIG_STALE` — the config is stale, not the code. Halt, naming the command and its package |
 | a command that ran and came back failing | a measurement. Record it; a red suite is a result, not a config problem |
 
-`packages.<PKG>.path` is the directory to run in. `runner` names the tool only so its output can be
-parsed — never build a command from it.
+`packages.<PKG>.path` is the directory to run in, resolved against the run's `WORKTREE_PATH`
+(`manifest.worktree`); read this config, `.harness/` and hook modules from the git top level.
+`runner` names the tool only so its output can be parsed — never build a command from it.
 
 Placeholders: `{NAME}` or `{NAME...}` take one or more values, and `[...]` is a segment included
 only when the run asks for what it carries. So

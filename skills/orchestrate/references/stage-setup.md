@@ -42,7 +42,8 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
 4. **Load config** as `CONFIG`, per [config.md](config.md). Read it here, before the worktree
    exists, because the worktree stage resolves its skill from it. The doctor has already confirmed
    the file is present and parses. Resolve once and pass to command-running stages:
-   `PACKAGES` = request-named keys, else every `CONFIG.packages` key (empty uses root commands);
+   `PACKAGES` = request-named keys, else every `CONFIG.packages` key whose `path` exists under
+   `WORKTREE_PATH` (finalize after step 5; empty uses root commands);
    `ENVIRONMENT` = requested key, else `environments.default`. Baseline every candidate package:
    an omitted package blocks the gate later, while an extra package costs background time.
 
@@ -53,17 +54,18 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
    commits down to this point, and only this run's commits.
    If the skill fails or produces no usable worktree, stop and report the error and next action.
 
-6. **Initialize the dashboard inside the worktree.** Run the init block in
+6. **Initialize the dashboard.** Run the init block in
    [dashboard.md](dashboard.md#initialization), store its `HARNESS_DIR` and `DAG_SCRIPT`,
    then `serve-start`, `set-status setup running`, `write-report worktree`,
-   `set-status worktree done`. Init uses cwd; starting it here keeps dashboard and artifacts together.
+   `set-status worktree done`. Init places `HARNESS_DIR` at the git top level
    If initialization fails, stop and report the command and error; preserve the worktree.
 
 7. **Create the spec directory:**
    ```
-   Bash("node --experimental-strip-types '<SETUP_SCRIPT>' init '<SPEC_NAME>' --custom-fields '{"assignee":"<TICKET_ASSIGNEE>"}'")
+   Bash("node --experimental-strip-types '<SETUP_SCRIPT>' init '<SPEC_NAME>' --custom-fields '{"worktree":"<WORKTREE_PATH>","branch":"<BRANCH_NAME>","assignee":"<TICKET_ASSIGNEE>"}'")
    ```
-   Omit `--custom-fields` when there is no `TICKET_ASSIGNEE`.
+   Always pass `worktree` and `branch`; the baseline runs package commands under that worktree.
+   Drop only the `assignee` key when there is no `TICKET_ASSIGNEE`.
    It creates the artifact directories (`verify-staging/` beside `verification/`), clears a
    stale baseline, and writes the manifest. Store printed `SPEC_DIR`, `BASELINE_PATH`,
    `MANIFEST_PATH`; read `SESSION_ID` from `run_info.session` (empty is valid).
@@ -83,8 +85,9 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
    ```
    Store the background task handle. The script bootstraps packages, runs typecheck, lint and
    `test_all`, and writes `baseline.json`; red results are the baseline.
-   Exit 2 halts with `CONFIG_STALE` (name the command, package, and config to update) or
-   `PACKAGE_UNKNOWN` (name the missing package and `setup-harness`).
+   Exit 2 halts with `CONFIG_STALE` (name the command, package, and config to update),
+   `PACKAGE_UNKNOWN` (name the missing package and `setup-harness`), or `WORKTREE_MISSING`
+   (the `worktree` passed at step 7 does not exist).
 
 10. **Enter the planning stage without waiting.**
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env node --experimental-strip-types
 // Stage 0 of the orchestrate pipeline, as a script.
-//   spec-setup.ts init <SPEC_NAME> [--custom-fields '{"assignee":"…"}']
+//   spec-setup.ts init <SPEC_NAME> [--custom-fields '{"worktree":"…","branch":"…","assignee":"…"}']
 //                                                        → .harness/<SPEC_NAME>/ tree + manifest.json
 //   spec-setup.ts baseline <SPEC_NAME> [--packages a,b]  → .harness/<SPEC_NAME>/baseline.json
-// Exit 0 on success, 2 on a halt (config missing/stale, unknown package, invalid custom fields). A red suite is a
-// result, not a halt: the baseline records it.
+// .harness and the config live at the git top level; baseline runs package commands under the manifest's
+// worktree when init was given one. Exit 0 on success, 2 on a halt (config missing/stale, unknown package,
+// invalid custom fields, missing worktree). A red suite is a result, not a halt: the baseline records it.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -113,8 +114,6 @@ const init = (root: string, specName: string, customFields: Readonly<Record<stri
 
   const manifest = {
     spec_name: specName,
-    branch: git(root, "branch", "--show-current"),
-    worktree: root,
     started_at: new Date().toISOString(),
     run_info: runInfo(),
     thread: null,
@@ -187,9 +186,20 @@ const selectPackages = (config: Config, names: readonly string[]): ReadonlyArray
   });
 };
 
+// A multi-repo workspace sits in a gitignored folder under the root, so only the caller knows it.
+const worktreeFor = (root: string, specName: string): string => {
+  const path = join(root, ".harness", specName, "manifest.json");
+  const parsed: unknown = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  const recorded = isRecord(parsed) && typeof parsed["worktree"] === "string" ? parsed["worktree"] : null;
+  if (recorded === null) return root;
+  const worktree = resolve(root, recorded);
+  return existsSync(worktree) ? worktree : halt("WORKTREE_MISSING", `manifest worktree ${worktree} does not exist`);
+};
+
 const baseline = (root: string, specName: string, packageNames: readonly string[]): void => {
   const config = readConfig(root);
-  const entries = selectPackages(config, packageNames).map(([name, pkg]) => [name, measure(config, root, name, pkg)] as const);
+  const worktree = worktreeFor(root, specName);
+  const entries = selectPackages(config, packageNames).map(([name, pkg]) => [name, measure(config, worktree, name, pkg)] as const);
   const result = { ...Object.fromEntries(entries), timestamp: new Date().toISOString() };
   const path = join(root, ".harness", specName, "baseline.json");
   mkdirSync(dirname(path), { recursive: true });
