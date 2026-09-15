@@ -9,7 +9,7 @@
       "source": {
         "source": "github",
         "repo": "vertexcover-io/harness-engineering",
-        "ref": "v1.31.1"
+        "ref": "v1.31.2"
       },
       "description": "Pre-releases of the harness plugin. Systematic software engineering pipeline — brainstorm, plan, TDD, quality gates, code review, and full orchestration from spec to PR."
     }
