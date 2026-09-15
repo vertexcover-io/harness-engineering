@@ -31,6 +31,7 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
    through the project's tracker reader (carry the URL as context if none can read it);
    for `file`, read its contents. Store the result as `TASK_CONTEXT` for every stage.
    When the ticket has an assignee, store their name as `TICKET_ASSIGNEE`.
+   When the reader reports a ticket ID, store it as `TICKET_ID`.
    A resumed run uses the caller's feedback and follows [resumed-runs.md](resumed-runs.md)
    instead of steps 3–10.
 
@@ -62,10 +63,10 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
 
 7. **Create the spec directory:**
    ```
-   Bash("node --experimental-strip-types '<SETUP_SCRIPT>' init '<SPEC_NAME>' --custom-fields '{"worktree":"<WORKTREE_PATH>","branch":"<BRANCH_NAME>","assignee":"<TICKET_ASSIGNEE>"}'")
+   Bash("node --experimental-strip-types '<SETUP_SCRIPT>' init '<SPEC_NAME>' --custom-fields '{"worktree":"<WORKTREE_PATH>","branch":"<BRANCH_NAME>","ticket_id":"<TICKET_ID>","assignee":"<TICKET_ASSIGNEE>"}'")
    ```
    Always pass `worktree` and `branch`; the baseline runs package commands under that worktree.
-   Drop only the `assignee` key when there is no `TICKET_ASSIGNEE`.
+   Drop the `ticket_id` key when there is no `TICKET_ID`, and `assignee` when there is no `TICKET_ASSIGNEE`.
    It creates the artifact directories (`verify-staging/` beside `verification/`), clears a
    stale baseline, and writes the manifest. Store printed `SPEC_DIR`, `BASELINE_PATH`,
    `MANIFEST_PATH`; read `SESSION_ID` from `run_info.session` (empty is valid).
