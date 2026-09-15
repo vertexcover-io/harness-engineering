@@ -1,8 +1,9 @@
 #!/usr/bin/env node --experimental-strip-types
 // Stage 0 of the orchestrate pipeline, as a script.
-//   spec-setup.ts init <SPEC_NAME>                       → .harness/<SPEC_NAME>/ tree + manifest.json
+//   spec-setup.ts init <SPEC_NAME> [--custom-fields '{"assignee":"…"}']
+//                                                        → .harness/<SPEC_NAME>/ tree + manifest.json
 //   spec-setup.ts baseline <SPEC_NAME> [--packages a,b]  → .harness/<SPEC_NAME>/baseline.json
-// Exit 0 on success, 2 on a halt (config missing/stale, unknown package). A red suite is a
+// Exit 0 on success, 2 on a halt (config missing/stale, unknown package, invalid custom fields). A red suite is a
 // result, not a halt: the baseline records it.
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -106,11 +107,9 @@ const runInfo = (): unknown => {
   }
 };
 
-const init = (root: string, specName: string): void => {
+const init = (root: string, specName: string, customFields: Readonly<Record<string, string>>): void => {
   readConfig(root);
   const specDir = join(root, ".harness", specName);
-  for (const sub of ARTIFACT_SUBDIRS) mkdirSync(join(specDir, sub), { recursive: true });
-  rmSync(join(specDir, "baseline.json"), { force: true });
 
   const manifest = {
     spec_name: specName,
@@ -122,7 +121,13 @@ const init = (root: string, specName: string): void => {
     pr_number: null,
     stages: {},
   };
-  writeFileSync(join(specDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  // Reserved names come from the manifest itself, so a field added above is protected without a second list.
+  const clash = Object.keys(customFields).find((key) => key in manifest);
+  if (clash !== undefined) halt("CUSTOM_FIELDS_INVALID", `"${clash}" is a manifest field`);
+
+  for (const sub of ARTIFACT_SUBDIRS) mkdirSync(join(specDir, sub), { recursive: true });
+  rmSync(join(specDir, "baseline.json"), { force: true });
+  writeFileSync(join(specDir, "manifest.json"), `${JSON.stringify({ ...customFields, ...manifest }, null, 2)}\n`);
 
   console.log(`SPEC_NAME=${specName}`);
   console.log(`SPEC_DIR=${specDir}`);
@@ -192,15 +197,40 @@ const baseline = (root: string, specName: string, packageNames: readonly string[
   console.log(`BASELINE_PATH=${path}`);
 };
 
-const readPackagesFlag = (argv: readonly string[]): readonly string[] => {
-  const at = argv.indexOf("--packages");
-  return at === -1 ? [] : (argv[at + 1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+const readFlag = (argv: readonly string[], name: string): string | null => {
+  const at = argv.indexOf(name);
+  return at === -1 ? null : (argv[at + 1] ?? "");
+};
+
+const readPackagesFlag = (argv: readonly string[]): readonly string[] =>
+  (readFlag(argv, "--packages") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+// title, body and url are the task itself: setup consumes them, and the manifest never stores them.
+const TASK_KEYS: ReadonlySet<string> = new Set(["title", "body", "url"]);
+const FIELD_KEY = /^[a-z][a-z0-9_]*$/;
+
+const readCustomFields = (argv: readonly string[]): Readonly<Record<string, string>> => {
+  const raw = readFlag(argv, "--custom-fields");
+  if (raw === null) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return halt("CUSTOM_FIELDS_INVALID", "--custom-fields is not JSON");
+  }
+  if (!isRecord(parsed)) return halt("CUSTOM_FIELDS_INVALID", "--custom-fields must be a JSON object");
+  for (const [key, value] of Object.entries(parsed)) {
+    if (TASK_KEYS.has(key)) halt("CUSTOM_FIELDS_INVALID", `"${key}" is task text, not a custom field — drop title, body and url before passing the rest`);
+    if (!FIELD_KEY.test(key)) halt("CUSTOM_FIELDS_INVALID", `"${key}" must be snake_case`);
+    if (typeof value !== "string") halt("CUSTOM_FIELDS_INVALID", `"${key}" must be a string`);
+  }
+  return parsed as Record<string, string>;
 };
 
 const main = (argv: readonly string[]): void => {
   const [command, specName] = argv;
   if (!specName || (command !== "init" && command !== "baseline")) {
-    console.error("usage: spec-setup.ts <init|baseline> <SPEC_NAME> [--packages a,b]");
+    console.error("usage: spec-setup.ts <init|baseline> <SPEC_NAME> [--custom-fields <json>] [--packages a,b]");
     process.exit(1);
   }
   if (!SPEC_NAME.test(specName)) {
@@ -208,7 +238,7 @@ const main = (argv: readonly string[]): void => {
     process.exit(1);
   }
   const root = git(process.cwd(), "rev-parse", "--show-toplevel") ?? process.cwd();
-  if (command === "init") return init(root, specName);
+  if (command === "init") return init(root, specName, readCustomFields(argv));
   baseline(root, specName, readPackagesFlag(argv));
 };
 

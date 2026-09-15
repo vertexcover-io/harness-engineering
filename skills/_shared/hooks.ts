@@ -654,9 +654,9 @@ const readManifest = (path: string): Record<string, unknown> | null => {
   }
 };
 
-const readThread = (path: string): string | null => {
-  const thread = readManifest(path)?.["thread"];
-  return typeof thread === "string" && thread.trim() !== "" ? thread.trim() : null;
+const readManifestString = (path: string, key: string): string | null => {
+  const value = readManifest(path)?.[key];
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
 };
 
 const writeThread = (path: string, ts: string): void => {
@@ -685,7 +685,9 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
       ? null
       : join(gitRoots(process.cwd()).repoRoot, ".harness", payload.spec, "manifest.json");
   const starting = payload.event === "run-started";
-  const thread = !starting && manifest !== null ? readThread(manifest) : null;
+  const thread = !starting && manifest !== null ? readManifestString(manifest, "thread") : null;
+  // spec-setup init writes the assignee before run-started fires, so every event can read it.
+  const assignee = manifest === null ? null : readManifestString(manifest, "assignee");
 
   if (!starting && payload.event !== "hook-failed" && thread === null) {
     throw new NotifierError(`${missingThreadDetail(manifest)} See references/events.md and rerun the command with fix`);
@@ -711,6 +713,7 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
     failure: payload.event === "hook-failed" ? hookFailure(payload.data) : null,
     thread,
     artifacts,
+    assignee,
   };
   const message = formatMessage(args);
   const p = provider ?? resolveProvider(config);

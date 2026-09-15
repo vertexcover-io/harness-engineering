@@ -75,6 +75,49 @@ test("init rejects a spec name that could escape the artifact directory", () => 
   assert.ok(!existsSync(join(repo, "..", "..", "tmp", "escape")));
 });
 
+test("init writes each --custom-fields entry as a top-level manifest field", () => {
+  const repo = makeRepo({ commands: {} });
+  const r = run(repo, "init", "add-auth", "--custom-fields", '{"assignee":"Priya S.","squad":"billing"}');
+
+  assert.equal(r.code, 0, r.stderr);
+  const manifest = readJson(join(repo, ".harness", "add-auth", "manifest.json"));
+  assert.equal(manifest["assignee"], "Priya S.");
+  assert.equal(manifest["squad"], "billing");
+  assert.equal(manifest["spec_name"], "add-auth");
+  assert.equal(manifest["thread"], null);
+});
+
+test("init without --custom-fields writes only the manifest's own fields", () => {
+  const repo = makeRepo({ commands: {} });
+  run(repo, "init", "add-auth");
+
+  const manifest = readJson(join(repo, ".harness", "add-auth", "manifest.json"));
+  assert.deepEqual(Object.keys(manifest).toSorted(), [
+    "branch", "pr_number", "run_info", "spec_name", "stages", "started_at", "thread", "worktree",
+  ]);
+});
+
+test("init halts on custom fields that are not a flat map of snake_case strings, and writes no manifest", () => {
+  const cases: ReadonlyArray<readonly [string, RegExp]> = [
+    ['{"thread":"x"}', /"thread" is a manifest field/],
+    ['{"title":"x"}', /"title" is task text/],
+    ['{"Assignee":"x"}', /snake_case/],
+    ['{"assignee":1}', /must be a string/],
+    ['{"assignee":{"name":"x"}}', /must be a string/],
+    ["[1]", /JSON object/],
+    ["not-json", /not JSON/],
+  ];
+  for (const [raw, reason] of cases) {
+    const repo = makeRepo({ commands: {} });
+    const r = run(repo, "init", "add-auth", "--custom-fields", raw);
+
+    assert.equal(r.code, 2, raw);
+    assert.match(r.stderr, /CUSTOM_FIELDS_INVALID/, raw);
+    assert.match(r.stderr, reason, raw);
+    assert.ok(!existsSync(join(repo, ".harness", "add-auth", "manifest.json")), raw);
+  }
+});
+
 test("baseline with no --packages measures every configured package", () => {
   const repo = makeRepo({
     commands: {},

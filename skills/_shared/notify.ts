@@ -35,6 +35,7 @@ export type Args = {
   readonly failure: HookFailure | null;
   readonly thread: string | null;
   readonly artifacts: readonly string[];
+  readonly assignee: string | null;
 };
 
 export type Message = {
@@ -46,6 +47,8 @@ export type Message = {
   readonly threadRef: string | null;
   /** Address the message to a person. True for the events a human must act on. */
   readonly mention: boolean;
+  /** The ticket's assignee, named in text when there is no member id to tag. */
+  readonly assignee: string | null;
 };
 
 export type Provider = {
@@ -89,7 +92,7 @@ export const parseArgs = (argv: readonly string[]): Args => {
   }
 
   if (event === null) throw new NotifierError("--event is required.");
-  return { event, stage, title, body, questions: [], failure: null, thread, artifacts };
+  return { event, stage, title, body, questions: [], failure: null, thread, artifacts, assignee: null };
 };
 
 const CONFIG_FILE = "orchestrate.config.json";
@@ -170,9 +173,11 @@ export const slackText = (msg: Message, memberId: string): string => {
   const heading = msg.mention && memberId !== ""
     ? `<@${memberId}> *${msg.title}*`
     : `*${msg.title}*`;
+  // With no member id to tag, the assignee's name addresses the message instead.
+  const assignee = msg.mention && memberId === "" && msg.assignee !== null ? `Assignee : ${msg.assignee}` : "";
   const questions = msg.questions.map(slackQuestion).join("\n\n");
   const failure = msg.failure === null ? "" : slackFailure(msg.failure);
-  return [heading, msg.body, questions, failure].filter((part) => part !== "").join("\n");
+  return [heading, assignee, msg.body, questions, failure].filter((part) => part !== "").join("\n");
 };
 
 const createSlack = (secrets: Readonly<Record<string, string>>): Provider => {
@@ -271,6 +276,7 @@ export const formatMessage = (args: Args): Message => {
     threadRef: args.thread,
     // A hook that broke is only worth waking someone for when the run depended on it.
     mention: MENTIONED.has(args.event) || args.failure?.required === true,
+    assignee: args.assignee,
   };
 };
 
