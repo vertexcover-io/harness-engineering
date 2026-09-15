@@ -4,25 +4,62 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 /**
- * The plugin manifest is what version-gate.sh fetches from main to tell an
- * installed harness it is stale, so it and package.json must never drift.
+ * An install reports plugin.json's version and the doctor compares it against
+ * release tags, so it and package.json must never drift.
  */
 const MANIFESTS = ["package.json", ".claude-plugin/plugin.json"]
 
+/**
+ * Users install the tag these marketplaces pin. Stable moves only on a stable release; pre-release
+ * moves on every release, so a shipped version replaces its candidates there too.
+ */
+const STABLE_MARKETPLACE = ".claude-plugin/marketplace.json"
+const PRE_RELEASE_MARKETPLACE = ".claude-plugin/pre-release/marketplace.json"
+
 const EXPLICIT = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const SEGMENTS = /^(\d+)\.(\d+)\.(\d+)/
+const CANDIDATE = /^(\d+\.\d+\.\d+)-rc\.(\d+)$/
 const VERSION_FIELD = /("version":\s*")[^"]*(")/
 const NAME_LINE = /("name":\s*"[^"]*",\n)/
+const USAGE = "usage: bun run release:version <major|minor|patch|x.y.z> [--pre-release] [--no-git]"
 
-export const nextVersion = (current: string, bump: string): string => {
-  if (EXPLICIT.test(bump)) return bump
+type Options = { readonly preRelease?: boolean }
+
+/**
+ * Follows npm's semver.inc: a pre-release is a candidate for its own core, so a bump
+ * that core already satisfies ships it instead of skipping past it.
+ */
+const bumpCore = (current: string, bump: string): string => {
   const segments = current.match(SEGMENTS)
   if (segments === null) throw new Error(`cannot bump "${current}": it is not a semver version`)
   const [major, minor, patch] = segments.slice(1, 4).map(Number) as [number, number, number]
-  if (bump === "major") return `${major + 1}.0.0`
-  if (bump === "minor") return `${major}.${minor + 1}.0`
-  if (bump === "patch") return `${major}.${minor}.${patch + 1}`
+  const candidate = current.length > segments[0].length
+  if (bump === "major") return candidate && minor === 0 && patch === 0 ? `${major}.0.0` : `${major + 1}.0.0`
+  if (bump === "minor") return candidate && patch === 0 ? `${major}.${minor}.0` : `${major}.${minor + 1}.0`
+  if (bump === "patch") return candidate ? `${major}.${minor}.${patch}` : `${major}.${minor}.${patch + 1}`
   throw new Error(`unknown bump "${bump}": use major, minor, patch or an explicit x.y.z`)
+}
+
+const nextCandidate = (current: string): string => {
+  const candidate = current.match(CANDIDATE)
+  if (candidate === null) {
+    throw new Error(`${current} is not a pre-release to count up: pass major, minor or patch with --pre-release`)
+  }
+  return `${candidate[1]}-rc.${Number(candidate[2]) + 1}`
+}
+
+export const nextVersion = (current: string, bump: string | undefined, { preRelease = false }: Options = {}): string => {
+  if (bump !== undefined && EXPLICIT.test(bump)) {
+    if (preRelease) throw new Error("pass either an explicit version or --pre-release, not both")
+    return bump
+  }
+  if (!preRelease) {
+    if (bump === undefined) throw new Error(USAGE)
+    return bumpCore(current, bump)
+  }
+  if (bump === undefined) return nextCandidate(current)
+  const core = bumpCore(current, bump)
+  return current.startsWith(`${core}-`) ? nextCandidate(current) : `${core}-rc.1`
 }
 
 export const readVersion = (source: string): string | null =>
@@ -34,6 +71,13 @@ export const setVersion = (source: string, version: string): string => {
   const inserted = source.replace(NAME_LINE, `$1  "version": "${version}",\n`)
   if (inserted === source) throw new Error('manifest has neither a "version" nor a "name" field')
   return inserted
+}
+
+const REF_FIELD = /("ref":\s*")[^"]*(")/
+
+export const setRef = (source: string, tag: string): string => {
+  if (!REF_FIELD.test(source)) throw new Error('marketplace has no "ref" to pin')
+  return source.replace(REF_FIELD, `$1${tag}$2`)
 }
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -62,9 +106,8 @@ const currentVersion = (): string =>
 const main = (): void => {
   const args = process.argv.slice(2)
   const bump = args.find((arg) => !arg.startsWith("--"))
-  if (bump === undefined) {
-    throw new Error("usage: bun run release:version <major|minor|patch|x.y.z> [--no-git]")
-  }
+  const preRelease = args.includes("--pre-release")
+  const version = nextVersion(currentVersion(), bump, { preRelease })
 
   const commit = !args.includes("--no-git")
   /** -uno: untracked files are none of a release's business, only MANIFESTS get committed. */
@@ -73,15 +116,17 @@ const main = (): void => {
     throw new Error(`working tree is dirty: commit or stash before cutting a release\n${dirty}`)
   }
 
-  const version = nextVersion(currentVersion(), bump)
-  for (const manifest of MANIFESTS) {
-    const path = join(repoRoot, manifest)
-    writeFileSync(path, setVersion(readFileSync(path, "utf8"), version))
+  const rewrite = (file: string, update: (source: string) => string): void => {
+    const path = join(repoRoot, file)
+    writeFileSync(path, update(readFileSync(path, "utf8")))
   }
-  console.log(`version ${version} written to ${MANIFESTS.length} manifests`)
+  const pinned = version.includes("-") ? [PRE_RELEASE_MARKETPLACE] : [STABLE_MARKETPLACE, PRE_RELEASE_MARKETPLACE]
+  MANIFESTS.forEach((manifest) => rewrite(manifest, (source) => setVersion(source, version)))
+  pinned.forEach((marketplace) => rewrite(marketplace, (source) => setRef(source, `v${version}`)))
+  console.log(`version ${version} written to ${MANIFESTS.length} manifests and pinned in ${pinned.join(", ")}`)
   if (!commit) return
 
-  git("add", ...MANIFESTS)
+  git("add", ...MANIFESTS, ...pinned)
   git("commit", "-m", `chore(release): v${version}`)
   git("tag", "-a", `v${version}`, "-m", `v${version}`)
   console.log(
