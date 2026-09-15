@@ -10,6 +10,14 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
    ```
 
    Read its `ENVIRONMENT`, `INPUT`, and `VERDICT` sections. `READY` continues.
+   A `harness-version` row whose fix runs `harness-update.ts` is handled before the verdict:
+   `--pre-release` (`PRE_RELEASE=true`) wants the pre-release channel, a plain run the stable one.
+   A FAIL row means the harness is behind its channel's pinned tag, or is on stable under
+   `--pre-release`; run its fix command now. A WARN row means a plain run found a pre-release
+   install; use `AskUserQuestion` to offer moving back to stable, and run the fix only if chosen.
+   After `UPDATED`, tell the developer to run `/reload-plugins` and start orchestrate again, then
+   stop: this session still runs the old harness. On `UPDATE_REFUSED` or `UPDATE_FAILED`, print the
+   script's message and stop. Under `--auto`, never run the update; log the row and continue.
    For `DEGRADED <names>`, print the WARN rows and fixes, then use `AskUserQuestion`:
    fix now (invoke `setup-harness`, rerun doctor), continue without, or stop.
    Record skipped capabilities: `gh` means no PR, `samskara` means no publish.

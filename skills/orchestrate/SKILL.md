@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: Orchestrate end-to-end development from a task to an open PR through a multi-agent pipeline. Use when the user says orchestrate, run the pipeline, or full workflow; supplies a prompt, ticket, PRD, or design document to take to a PR; or passes --auto for an unattended CI run.
-argument-hint: "<prompt, ticket URL, or path/to/document> [--auto]"
+argument-hint: "<prompt, ticket URL, or path/to/document> [--auto] [--pre-release]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestion
 ---
 
