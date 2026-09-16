@@ -28,7 +28,7 @@ Pass `MODE_ARG` to invoked skills. In auto mode, apply these overrides to the st
 
 - Skip questions and self-approve planning's checkpoints and plan gate.
 - Use the current checkout as `WORKTREE_PATH`, capture its `BRANCH_NAME`, and skip worktree creation.
-- Skip every dashboard command; set `HARNESS_DIR=<WORKTREE_PATH>/.harness/<SPEC_NAME>` directly and omit dashboard-only variables from dispatches.
+- Skip every dashboard command; set `HARNESS_DIR=$(git rev-parse --show-toplevel)/.harness/<SPEC_NAME>` directly and omit dashboard-only variables from dispatches.
 - Produce all applicable design, plan, verification, and report artifacts for auditability.
 - Log doctor `DEGRADED` and `BLOCKED` verdicts and continue; a later stage diagnoses a prerequisite it needs.
 - Hook halts follow the auto-mode handling in [events.md](references/events.md#acting-on-a-fires-output).

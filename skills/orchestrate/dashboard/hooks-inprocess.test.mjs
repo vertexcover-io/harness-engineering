@@ -103,6 +103,28 @@ test("S6: askRun is a no-op returning 0 when the breadcrumb is absent", async ()
   assert.equal(exitCode, 0);
 });
 
+test("CLI 'init' run from a gitignored subfolder puts .harness at the git top level", () => {
+  const repo = mkdtempSync(join(tmpdir(), "dag-init-"));
+  const scratchTmp = mkdtempSync(join(tmpdir(), "dag-init-tmp-"));
+  spawnSync("git", ["init", "-q"], { cwd: repo });
+  writeFileSync(join(repo, ".gitignore"), ".workspaces/\n");
+  const workspace = join(repo, ".workspaces", "REF-1");
+  mkdirSync(workspace, { recursive: true });
+  try {
+    const r = spawnSync(process.execPath, [DAG_CLI, "init", "add-auth", "task", "REF-1", workspace], {
+      cwd: workspace,
+      env: { ...process.env, TMPDIR: scratchTmp },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(existsSync(join(repo, ".harness", "add-auth", "dag.json")), r.stdout);
+    assert.ok(!existsSync(join(workspace, ".harness")));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(scratchTmp, { recursive: true, force: true });
+  }
+});
+
 test("S7: dag-update.mjs CLI still exits 1 with usage on an unknown subcommand", () => {
   const r = spawnSync(process.execPath, [DAG_CLI, "bogus"], { encoding: "utf8" });
   assert.equal(r.status, 1);
