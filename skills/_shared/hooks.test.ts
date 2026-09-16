@@ -336,6 +336,7 @@ test("SC15 (regression): the six lifecycle messages match formatMessage's own ou
         failure: null,
         thread: event === "run-started" ? null : "999.1",
         artifacts: [],
+        assignee: null,
       });
       assert.deepEqual(captured, expected);
     }
@@ -850,6 +851,7 @@ test("SC44: the notifier mentions a person on a required failure, and stays quie
       failure: { name: "gate", event: "stage-completed", required, detail: "exit 1" },
       thread: null,
       artifacts: [],
+      assignee: null,
     });
 
   assert.equal(message(true).mention, true);
@@ -870,11 +872,79 @@ test("SC44b: with no SLACK_MEMBER_ID set, a mentioning event sends untagged", ()
     failure: null,
     thread: null,
     artifacts: [],
+    assignee: null,
   });
 
   assert.equal(message.mention, true);
   assert.equal(slackText(message, ""), "*Waiting for you · stage planning*");
   assert.equal(slackText(message, "U1"), "<@U1> *Waiting for you · stage planning*");
+});
+
+test("SC44c: with no SLACK_MEMBER_ID, the assignee's name addresses a mentioning event in its place", () => {
+  const message = (event: "run-started" | "question-pending" | "stage-started", assignee: string | null): Message =>
+    formatMessage({
+      event,
+      stage: "planning",
+      title: "t",
+      body: event === "run-started" ? "Add GST toggle : https://app.asana.com/0/1/2" : null,
+      questions: [],
+      failure: null,
+      thread: null,
+      artifacts: [],
+      assignee,
+    });
+
+  assert.equal(message("question-pending", "Priya S.").assignee, "Priya S.");
+  assert.equal(
+    slackText(message("run-started", "Priya S."), ""),
+    "*Harness run started: t*\nAssignee : Priya S.\nAdd GST toggle : https://app.asana.com/0/1/2",
+  );
+  assert.equal(slackText(message("question-pending", "Priya S."), ""), "*Waiting for you · stage planning*\nAssignee : Priya S.");
+  assert.equal(slackText(message("question-pending", "Priya S."), "U1"), "<@U1> *Waiting for you · stage planning*");
+  assert.equal(slackText(message("stage-started", "Priya S."), ""), "*Stage planning · started*");
+  assert.equal(slackText(message("question-pending", null), ""), "*Waiting for you · stage planning*");
+});
+
+test("SC44d: the notifier reads the run's assignee from the manifest, on run-started and after", async () => {
+  const dir = tmp();
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  writeConfig(dir, { notifier: { enabled: true, provider: "slack" } });
+  const artifactDir = join(dir, ".harness", "t");
+  mkdirSync(join(artifactDir, "hooks"), { recursive: true });
+  const seedManifest = (fields: Readonly<Record<string, unknown>>): void => {
+    writeFileSync(join(artifactDir, "manifest.json"), JSON.stringify({ spec_name: "t", pr_number: null, stages: {}, ...fields }));
+  };
+
+  const sent: Message[] = [];
+  const provider: Provider = {
+    send: async (msg) => {
+      sent.push(msg);
+      return "123.45";
+    },
+    upload: async () => {},
+  };
+  const fire = (event: "run-started" | "stage-started"): Promise<string> =>
+    notifierHook(
+      { event, stage: "coder", spec: "t", branch: "main", repoRoot: dir, artifactDir, data: { title: "t" } } as LifecyclePayload,
+      provider,
+    );
+
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    seedManifest({ assignee: "Priya S." });
+    await fire("run-started");
+    await fire("stage-started");
+    assert.deepEqual(sent.map((msg) => msg.assignee), ["Priya S.", "Priya S."]);
+
+    seedManifest({ assignee: "  " });
+    await fire("stage-started");
+    seedManifest({});
+    await fire("stage-started");
+    assert.deepEqual(sent.slice(2).map((msg) => msg.assignee), [null, null]);
+  } finally {
+    process.chdir(cwd);
+  }
 });
 
 test("SC45: a half-written fn entry is a FAIL row, not a throw — and fire skips it", async () => {

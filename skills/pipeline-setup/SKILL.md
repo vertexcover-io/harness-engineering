@@ -25,7 +25,8 @@ Prepares the environment for a development pipeline run. This skill is invoked a
 The first argument is `TASK_CONTEXT` — the resolved task prompt or spec content that describes what
 will be built. The caller also passes `PACKAGES`, the `orchestrate.config.json` package keys this run
 touches; every command below runs once per entry, or once against the root `commands` map when the
-caller passes none.
+caller passes none. When the run started from a ticket with an assignee, the caller also passes
+`TICKET_ASSIGNEE`, their name.
 
 A second argument names one **branch** of the steps below. The two halves run at different times:
 the fast half must finish before anything else starts, while the metric runs take minutes and
@@ -77,7 +78,8 @@ Steps:
 4. Write manifest skeleton to `.harness/<SPEC_NAME>/manifest.json`. Fill `run_info` from
    `node --experimental-strip-types <plugin-root>/skills/_shared/collect-run-info.ts --json`,
    verbatim — it records what produced this run, and any value it could not read comes back
-   `null`:
+   `null`. Write `assignee` only when the caller passed `TICKET_ASSIGNEE`; the notifier reads it
+   to name that person in Slack when there is no member id to tag:
 
 ```json
 {
@@ -86,6 +88,7 @@ Steps:
   "worktree": "<WORKTREE_PATH>",
   "started_at": "<ISO8601>",
   "run_info": { "harness": "1.29.0", "andromeda": "master@a2bd8cc", "session": "<uuid>" },
+  "assignee": "<TICKET_ASSIGNEE>",
   "pr_number": null,
   "stages": {}
 }

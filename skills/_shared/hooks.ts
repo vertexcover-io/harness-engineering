@@ -636,6 +636,17 @@ const askedQuestions = (v: unknown): readonly PendingQuestion[] =>
     return question === null ? [] : [{ question, answers: strings(q.answers) }];
   });
 
+// A field the setup step wrote to the manifest, or null when it is absent, blank, or not a string.
+const readManifestString = (artifactDir: string, key: string): string | null => {
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(join(artifactDir, "manifest.json"), "utf8"));
+    const value = typeof manifest === "object" && manifest !== null ? (manifest as Record<string, unknown>)[key] : null;
+    return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
 const isUploadableFile = (repoRoot: string, path: string): boolean => {
   const contained = containedPath(repoRoot, path);
   if (contained === null) return false;
@@ -659,6 +670,8 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
   // No thread file yet reads as unthreaded — today's behavior for a run with no prior thread.
   const thread =
     !starting && threadFile !== null && existsSync(threadFile) ? readFileSync(threadFile, "utf8").trim() : null;
+  // Setup writes the assignee to the manifest before run-started fires, so every event can read it.
+  const assignee = payload.artifactDir === undefined ? null : readManifestString(payload.artifactDir, "assignee");
   const artifacts =
     payload.event === "stage-completed"
       ? (payload.data.artifacts ?? [])
@@ -678,6 +691,7 @@ export const notifierHook = async (payload: LifecyclePayload, provider?: Provide
     failure: payload.event === "hook-failed" ? hookFailure(payload.data) : null,
     thread,
     artifacts,
+    assignee,
   };
   const message = formatMessage(args);
   const p = provider ?? resolveProvider(config);
