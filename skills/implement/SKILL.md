@@ -50,7 +50,9 @@ A `phases/phase-N.md` is already decomposed; take it as given rather than re-der
   reviewer and the quality gate can trace counts back to scenarios without a second file.
 - `## Commit` — the commit message.
 
-plan.md, one level up, carries the overview and `## Design References`.
+plan.md, one level up, carries the overview, `## Design References`, `## ADRs`, and
+`## Project Docs`. Before editing, open every ADR and doc they list. When a step would go against
+an ADR, stop and report it as blocked.
 
 ## 3. Implement and check
 

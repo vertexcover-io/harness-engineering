@@ -76,6 +76,9 @@ Do not split when the pieces share more than ~30% of files and ship together.
 
 - Read the PRD or input document fully. When it states something, cite it
   (`<path>#<section>`) — never restate it.
+- **Find why the task exists.** Look for the reason in the ticket, PRD, or prompt. A reason that
+  only restates the request ("move to pgvector" → "because we want pgvector") is no reason; step 2
+  asks for it.
 - **Dispatch Explore agents for the code sweep — always.** One per repo the work touches, on
   a fast model (`sonnet`). Send them before your first question, so they search while the
   user answers. Each returns findings inline with `file:line` pointers: what already does
@@ -84,6 +87,9 @@ Do not split when the pieces share more than ~30% of files and ship together.
 - **Dispatch a design scout too when the change has a user-facing surface.** Send it with the
   sweep, on the same fast model; read `references/design-scout.md` for the brief. It pulls the
   designs off the ticket into `.harness/<name>/design/` and returns the `design/INDEX.md` path.
+- **Dispatch the docs scout — always.** Send it with the sweep, on the same fast model; read
+  `references/docs-scout.md` for the brief. It returns one line per ADR or doc under `docs/`
+  that binds this task.
 - **Hand the user the live link before the first question.** Copy `scripts/plan-shell.html` (resolve
   the path from this skill's own directory) to `.harness/<name>/plan.html` and start the viewer,
   backgrounded:
@@ -106,6 +112,9 @@ Do not split when the pieces share more than ~30% of files and ship together.
   so the frames render. No INDEX: delete the `#designs` section, slot and all.
 - **The sweep locates; you read.** Open yourself every file a decision turns on. No index from
   the scout means no design was found, which is a fact the step records.
+- **Open every doc the docs scout returns, before the first question.** An active ADR is a
+  decision already made. Do not ask the user a question the ADR already answers. When the task
+  goes against an ADR, ask the user about that conflict.
 - **Open every frame the index names — all of them.** `design/INDEX.md` is a list to exhaust, not
   to sample: Read each file it names, images included, before you write a step. A screen you have
   not looked at is one you cannot write a step for. Two frames of one screen at different
@@ -128,6 +137,9 @@ Close every open fork. Keep a written tree, not a mental model:
 ```
 D<n>: <the decision> — blocks: D<a> · blocked-by: D<c> · [open|resolved|parked]
 ```
+
+When step 1 found no reason for the task, ask for it, as `D0`. The reason is recorded
+for the ADR. In `--auto`, record it in plan.md's `## Deferred`, marked `auto`.
 
 Resolve top-down: the decision that unblocks the most others first. To find the questions the
 user did not think of, walk `references/lenses.md` — read it before the first pass.
@@ -160,7 +172,8 @@ Last, check the answers **against each other**. Two answers can clash even when 
 fine alone — "sessions expire after 24h" vs "remember-me lasts 30 days". Ask about every
 clash now.
 
-**Done when:** every checklist item holds — actor identified · outcome stated · scope
+**Done when:** every checklist item holds — reason for the task known or deferred · actor
+identified · outcome stated · scope
 boundaries known · success criteria known or recorded as assumptions · answers checked against
 each other · every `D<n>` resolved or parked.
 
@@ -325,8 +338,10 @@ are `[phase N, step M]: <issue>`. A failed check below blocks the gate; anything
 recommendation:
 
 - **Inputs.** Every cited id resolves in the document named · every recorded decision
-  appears in a step, or `design.md` (when it exists) was updated to supersede it · every
-  repo and dependency the inputs name is touched by a phase or accounted for.
+  appears in a step, or `design.md` (when it exists) was updated to supersede it · every ADR
+  this run wrote still matches a decision in the plan · every row in `## ADRs` points to an ADR
+  that exists and is active · every path in `## Project Docs` exists · every repo and dependency the inputs name is touched
+  by a phase or accounted for.
 - **Phasing.** No two phases modify the same file unless ordered · every phase is provable
   by its own scenarios the moment it lands · a phase consuming what a "parallel" phase
   builds is not parallel.
@@ -352,6 +367,25 @@ recommendation:
   from a payload block · every internal id on the page has a tooltip entry · the
   above-the-fold view answers *what, why, what each phase unlocks* without a drill-down.
 
+### Record the ADRs
+
+Offer ADRs sparingly. Test the task itself and every approved decision against the four gates —
+all must hold:
+
+1. **Hard to reverse**: changing your mind later has a real cost.
+2. **Surprising without context**: a future reader will wonder "why did they do it this way?"
+3. **A real trade-off**: there were genuine alternatives, and one was picked for specific reasons.
+4. **Relevant to future work**: the next person or agent who has to make a code change would make
+   a different choice if they knew about it.
+
+If any gate fails, skip it. **One ADR per task, rarely add 2 ADRs**. If several decisions pass, check if they all can come under the same ADR. 
+
+For each that passes, invoke the `adr` skill with the decision, its reason, the rejected approaches
+from step 3, the ticket or PRD as source, and the ADRs the docs scout returned. For the task
+itself, the reason is the one step 1 found in the ticket, PRD, or prompt, or the user's answer to
+`D0`. No question to the user — the gates and the skill's review agent do the filtering. In
+`--auto`, when `D0` was deferred, skip the ADR for the task itself; the other decisions are still
+tested and recorded.
 Last, run the verifier — what a count can settle, a count settles:
 
 ```bash
@@ -363,8 +397,9 @@ nothing, every `IMG` key that is not a file in `design/`, every slot left unfill
 payload block missing or empty, and every diff block that is empty or holds a line opening with
 neither `+`, `-`, `@@` nor a space. A finding blocks the gate: fix it and run it again.
 
-**Done when:** the shell's slots are filled, the payloads are complete, the verifier exits clean,
-and the self-review found nothing blocking.
+**Done when:** the shell's slots are filled, the payloads are complete, every decision that passed
+the gates went to the `adr` skill, the verifier exits clean, and the self-review found nothing
+blocking.
 
 ## Step 8 — The plan gate
 
@@ -411,6 +446,10 @@ payloads included — re-run step 7's self-review, and re-present. Keep the view
 through revisions; every save shows up in the user's tab on its own. A revision is not a
 confirmation, and neither is a resolved comment; extract only after explicit approval.
 
+When a revision changes a decision an ADR from this run records, delete that ADR and its
+INDEX.md line — it is not committed yet — and run step 7's Record the ADRs again for the new
+decision. Then make `## ADRs` match what is on disk.
+
 On approval, extract the payloads, keep the review's comments, then stop the comment watcher
 and the viewer — the session dir under `/tmp` is deleted with it, and `comments.json` is the
 only record of what the reviewer asked:
@@ -428,28 +467,10 @@ does not own, and a watcher left armed fires into a later stage.
 The HTML is the source; the extracted files are build products. Never hand-edit them —
 re-run extraction after any HTML edit.
 
-### Record the ADRs
-
-Offer ADRs sparingly
-
-Only offer to create an ADR when all three are true:
-
-1. Hard to reverse: the cost of changing your mind later is meaningful
-2. Surprising without context: a future reader will wonder "why did they do it this way?"
-3. The result of a real trade-off: there were genuine alternatives and you picked one for specific reasons
-If any of the three is missing, skip the ADR. Use the format in `../_shared/adr.md`.
-
-Test every approved decision against the three gates. Write each pass to `docs/adr/` per
-that doc, and list any written in the hand-off summary below — no question; the gates
-already did the filtering. The short flow rarely produces a pass — a rename across 30
-files fails all three gates — but run the scan anyway: it costs a thought, not a
-touchpoint.
-
 Hand off: orchestrate dispatches one coder per phase file in dependency order, or the user
 works through them directly. Name the ADRs written in that hand-off.
 
-**Done when:** approval given, extraction ran, `plan.md` and `phases/` exist on disk, and
-every gate-passing decision has an ADR in `docs/adr/`.
+**Done when:** approval given, extraction ran, `plan.md` and `phases/` exist on disk.
 
 ## Rationalizations
 

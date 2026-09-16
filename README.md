@@ -370,6 +370,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/orchestrate` | Full pipeline: design → plan → code → PR → retro |
 | `/rework` | Applies QA or PR-review feedback to every PR on a ticket |
 | `/planning` | Breaks work into phases with dependency graph |
+| `/adr` | Records one architecture decision in `docs/adr/`, checked by a review agent, and adds it to the index |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
 | `/implement` | Manual coding entry point: TDD + code-quality, review when green |
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md, then applies the fixes |
@@ -401,6 +402,7 @@ harness/
 ├── hooks/
 │   └── hooks.json   # Session hooks for dashboard management (ask-user, DAG updates)
 └── skills/          # Reusable skills that extend Claude Code and Codex
+    ├── adr/
     ├── code-quality/
     ├── code-review/
     ├── coverage-guard/
