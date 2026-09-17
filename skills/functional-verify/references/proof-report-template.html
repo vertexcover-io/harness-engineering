@@ -1347,6 +1347,24 @@ code {
   const MAX_ROWS = 400, MAX_CHARS = 300000;
   const extOf = h => (String(h).split(/[?#]/)[0].split('.').pop() || '').toLowerCase();
 
+  /* The Open button hands the reader the inlined copy. It goes through a Blob URL
+     because a browser refuses to open a data: URI as a page, and it is prepared
+     ahead of the click so the button stays a plain link no popup blocker stops.
+     A file that was not inlined gets no button. */
+  let openUrl = null;
+  function setOpen(path) {
+    if (openUrl) { URL.revokeObjectURL(openUrl); openUrl = null; }
+    moOpen.style.display = 'none';
+    moOpen.removeAttribute('href');
+    moOpen.dataset.path = path || '';
+    if (!res(path)) return;
+    fetch(res(path)).then(r => r.blob()).then(blob => {
+      if (moOpen.dataset.path !== path) return;
+      openUrl = URL.createObjectURL(blob);
+      moOpen.href = openUrl; moOpen.style.display = '';
+    }).catch(() => {});
+  }
+
   function shell(title, meta, href, docMode) {
     moT.textContent = title || '';
     moMeta.textContent = meta || '';
@@ -1354,7 +1372,7 @@ code {
     moCap.style.display = 'none';
     moB.textContent = '';
     moB.classList.toggle('mo__body--doc', !!docMode);
-    if (href) { moOpen.href = href; moOpen.style.display = ''; } else { moOpen.style.display = 'none'; }
+    setOpen(href);
     moPrev.style.display = moNext.style.display = 'none';
     if (!mo.classList.contains('is-open')) { back = document.activeElement; mo.classList.add('is-open'); }
     document.getElementById('mo-x').focus();
@@ -1393,12 +1411,7 @@ code {
     moB.textContent = '';
     const d = el('div', 'mo__note');
     d.innerHTML = msg;
-    if (href) {
-      const p = el('p');
-      const a = el('a', null, 'Open ' + href.split('/').pop());
-      a.href = href; a.target = '_blank'; a.rel = 'noopener';
-      p.appendChild(a); d.appendChild(p);
-    }
+    if (href) { const p = el('p'); p.appendChild(el('code', null, href)); d.appendChild(p); }
     moB.appendChild(d);
   }
 
@@ -1469,6 +1482,7 @@ code {
     mo.classList.remove('is-open');
     moB.querySelectorAll('video').forEach(v => v.pause());
     moB.textContent = ''; gallery = null;
+    setOpen(null);
     if (back) back.focus();
   }
   document.getElementById('mo-x').addEventListener('click', shut);
