@@ -27,13 +27,23 @@ undo it by accident.
 A reason that only restates the decision ("move to pgvector because we want pgvector") is not a
 reason. Stop and return `dropped: no reason given` — the caller asks for one.
 
+The decision must be one the task in `Source` required. A decision that came up while doing the
+work but that the task never called for — a test runner chosen while building a component, a lint
+rule added while fixing a bug — is out of scope: return `dropped: out of scope` so the caller can
+raise it separately.
+
 ## The four gates — all must hold
 
-1. **Hard to reverse**: changing your mind later has a real cost.
+**A gate you have to argue for is a fail.**
+
+1. **Hard to reverse**: undoing this later means changing several files, migrating data, or
+   coordinating with other teams. If the undo is the same size as the change — one line back to
+   one line — this fails.
 2. **Surprising without context**: a future reader will look at the code and wonder "why did
-   they do it this way?"
-3. **A real trade-off**: there were genuine alternatives, and one was picked for specific
-   reasons.
+   they do it this way?", and a comment at the code site or a line in the PR would not settle it.
+3. **A real trade-off**: two people with the same facts could have landed on different answers.
+   Every option on the table is a good solution with its own pros and cons. If one option is
+   simply the right one, the choice was forced, and a forced choice is not a trade-off.
 4. **Relevant to future work**: the next person or agent who has to make a code change would
    make a different choice if they knew about it.
 
@@ -129,12 +139,14 @@ session history.
 It checks:
 
 1. **Gates** — all four hold.
-2. **Covered** — no active ADR already records this decision.
-3. **Restated request** — Decision Outcome gives a reason beyond the request itself.
-4. **Conflict** — every active ADR the draft contradicts is named for marking inactive.
-5. **Tags** — each tag names a component or connector, and none duplicates an existing tag
+2. **In scope** — the decision is one the task named in `source` required. A decision the task did
+   not call for fails here, however well it passes the gates.
+3. **Covered** — no active ADR already records this decision.
+4. **Restated request** — Decision Outcome gives a reason beyond the request itself.
+5. **Conflict** — every active ADR the draft contradicts is named for marking inactive.
+6. **Tags** — each tag names a component or connector, and none duplicates an existing tag
    under a different spelling (`db` vs `database`).
-6. **Format** — front matter has `status`, `date` and `tags` · the title states the decision · Context
+7. **Format** — front matter has `status`, `date` and `tags` · the title states the decision · Context
    and Problem Statement is 1–3 lines · Decision Outcome has a `because` · Consequences is at
    most 2 lines and every rule in the format section is followed.
 

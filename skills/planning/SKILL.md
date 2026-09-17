@@ -372,9 +372,16 @@ recommendation:
 Offer ADRs sparingly. Test the task itself and every approved decision against the four gates —
 all must hold:
 
-1. **Hard to reverse**: changing your mind later has a real cost.
-2. **Surprising without context**: a future reader will wonder "why did they do it this way?"
-3. **A real trade-off**: there were genuine alternatives, and one was picked for specific reasons.
+**A gate you have to argue for is a fail.**
+
+1. **Hard to reverse**: undoing this later means changing several files, migrating data, or
+   coordinating with other teams. If the undo is the same size as the change — one line back to one
+   line — this fails.
+2. **Surprising without context**: a future reader will wonder "why did they do it this way?", and
+   a comment at the code site or a line in the PR would not settle it.
+3. **A real trade-off**: two people with the same facts could have landed on different answers.
+   Every option on the table is a good solution with its own pros and cons. If one option is simply
+   the right one, the choice was forced, and a forced choice is not a trade-off.
 4. **Relevant to future work**: the next person or agent who has to make a code change would make
    a different choice if they knew about it.
 
