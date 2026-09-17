@@ -476,8 +476,9 @@ the round's whole output. Every other attempt writes the report, a terminal `FAI
    It writes every video, frame, baseline and artifact the report names into the report itself, so the one file
    shows them wherever it is moved. **The report loads nothing from disk**: until this runs every frame shows as
    missing, and a `FAILED` file stays missing. Each file gets `ok <path> <bytes>B` or `FAILED <path> — <reason>`.
-   A `FAILED` path is one the disk does not have at that report-relative path, or a type the report cannot show:
-   fix the path in the JSON island and run it again — a re-run replaces what the last one wrote.
+   A `FAILED` path is one the disk does not have at that report-relative path, a type the report cannot show, or
+   anything but an image from outside `verification/`: fix the path in the JSON island, or copy the file beside
+   the report, and run it again — a re-run replaces what the last one wrote.
 
 **Report back once Step 7 has closed the session and released or kept the stack** — the return is written once, and
 it has to say what Step 7 did. Everything the report excludes belongs here, written as durable facts a later run can

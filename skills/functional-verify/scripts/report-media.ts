@@ -20,7 +20,7 @@ import {
   closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync,
   writeFileSync,
 } from "node:fs";
-import { extname, join, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type ScenarioResult = {
@@ -282,12 +282,23 @@ export function withMediaIsland(html: string, media: Readonly<Record<string, str
   return html.replace(MEDIA_ISLAND, "").replace(DATA_ISLAND, (dataIsland) => island + dataIsland);
 }
 
-/** One named file as a data URI, or the reason it stays a path. */
+/** Whether a report-relative path stays inside the verification directory. */
+const isInside = (dir: string, path: string): boolean => {
+  const fromDir = relative(dir, resolve(dir, path));
+  return !fromDir.startsWith("..") && !isAbsolute(fromDir);
+};
+
+/** One named file as a data URI, or the reason it is left out of the report. */
 function inlineFile(dir: string, path: string): InlineResult {
   const mime = MIME_TYPES[extname(path).toLowerCase()];
   if (mime === undefined) return { path, bytes: null, uri: null, failure: "not a type the report shows" };
+  // A design baseline is an image kept outside the directory; nothing else the report names is,
+  // and a text file from outside it has no business inside an html that gets shared.
+  if (!mime.startsWith("image/") && !isInside(dir, path)) {
+    return { path, bytes: null, uri: null, failure: "outside the verification directory" };
+  }
   try {
-    const content = readFileSync(join(dir, path));
+    const content = readFileSync(resolve(dir, path));
     const uri = `data:${mime};base64,${content.toString("base64")}`;
     return { path, bytes: content.length, uri, failure: null };
   } catch {

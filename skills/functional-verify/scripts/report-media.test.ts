@@ -288,3 +288,27 @@ test("SC22: --inline without a readable report exits 2", () => {
   assert.equal(run("--inline").status, 2);
   assert.equal(run("--inline", bare, "extra").status, 2);
 });
+
+test("SC23: outside the verification directory only an image is inlined", () => {
+  const spec = sandbox("inline-outside");
+  const dir = join(spec, "verification");
+  mkdirSync(dir);
+  mkdirSync(join(spec, "design"));
+  writeFileSync(join(spec, "design", "modal.png"), "png-bytes");
+  writeFileSync(join(spec, "settings.json"), "{\"secret\":1}");
+  writeFileSync(join(dir, "proof-report.html"), reportHtml({
+    scenarios: [{
+      visualMatch: { baseline: "../design/modal.png" },
+      artifacts: [{ href: "../settings.json" }, { href: join(spec, "settings.json") }],
+    }],
+  }));
+
+  const r = run("--inline", dir);
+
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^ok \.\.\/design\/modal\.png 9B$/m);
+  assert.match(r.stdout, /^FAILED \.\.\/settings\.json — outside the verification directory$/m);
+  assert.match(r.stdout, /^FAILED \/.*settings\.json — outside the verification directory$/m);
+  const html = readFileSync(join(dir, "proof-report.html"), "utf8");
+  assert.doesNotMatch(html, new RegExp(Buffer.from("{\"secret\":1}").toString("base64")));
+});
