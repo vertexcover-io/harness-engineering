@@ -741,6 +741,8 @@ function startServer() {
     console.log(info);
     // server-info embeds the key — keep it owner-only.
     fs.writeFileSync(path.join(STATE_DIR, 'server-info'), info + '\n', { mode: 0o600 });
+    // A served file written before startup never fires screen-added, so open it now.
+    if (SERVE_FILE && fs.existsSync(SERVE_FILE)) maybeOpenBrowser();
   }
 
   server.on('error', (err) => {
