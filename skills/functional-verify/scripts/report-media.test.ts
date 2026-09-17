@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { checkFrameShape, parseCropWindow, pngSize, scenarioPrefixes } from "./build-videos.ts";
+import {
+  checkFrameShape, mediaPaths, parseCropWindow, parseReportData, pngSize, scenarioPrefixes,
+  withMediaIsland,
+} from "./report-media.ts";
 
-const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "build-videos.ts");
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "report-media.ts");
 
 const ffmpegMissing = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status !== 0;
 const needsFfmpeg = ffmpegMissing ? "ffmpeg is not on PATH" : false;
@@ -85,7 +88,7 @@ test("SC5: a directory with no screenshots folder at all exits 0 the same way", 
 
 test("SC6: a missing or extra argument, or an absent directory, exits 2", () => {
   assert.equal(run().status, 2);
-  assert.match(run().stderr, /usage: build-videos\.ts VERIFICATION_DIR/);
+  assert.match(run().stderr, /usage: report-media\.ts \[--inline\] VERIFICATION_DIR/);
   assert.equal(run("a", "b").status, 2);
   assert.equal(run(join(sandbox("gone"), "nope")).status, 2);
 });
@@ -181,3 +184,107 @@ test("SC8: a scenario ffmpeg cannot build is FAILED, and the run exits non-zero"
     assert.match(r.stdout, /^ok 01_good\.mp4 crop=/m);
     assert.match(r.stdout, /^FAILED 02_broken — ffmpeg: .+/m);
   });
+
+const island = (id: string, json: string): string =>
+  `<script type="application/json" id="${id}">${json}</script>`;
+
+const reportHtml = (data: unknown): string =>
+  `<html><body>\n${island("report-data", JSON.stringify(data))}\n<script>render()</script></body></html>`;
+
+const withReport = (name: string, data: unknown): string => {
+  const dir = withScreenshots(name);
+  writeFileSync(join(dir, "proof-report.html"), reportHtml(data));
+  return dir;
+};
+
+test("SC17: the report's media paths are every video, frame, baseline and artifact, once each", () => {
+  const data = {
+    scenarios: [
+      {
+        video: "01_a.mp4",
+        frames: [{ src: "screenshots/01_a__01_open.png", label: "open" }, "screenshots/01_a__02_saved.png"],
+        visualMatch: { baseline: "design/a.png" },
+        artifacts: [{ label: "export", href: "01_a_export.csv" }, "01_a.mp4"],
+      },
+      { frames: [{ src: "screenshots/01_a__01_open.png" }], visualMatch: { baseline: null } },
+      { video: "https://example.com/run.mp4", artifacts: [{ href: "data:text/plain,hi" }, { label: "no href" }] },
+      "not a scenario",
+    ],
+  };
+
+  assert.deepEqual(mediaPaths(data), [
+    "01_a.mp4",
+    "screenshots/01_a__01_open.png",
+    "screenshots/01_a__02_saved.png",
+    "design/a.png",
+    "01_a_export.csv",
+  ]);
+  assert.deepEqual(mediaPaths({}), []);
+});
+
+test("SC18: the report data is read out of its island, and anything else reads as null", () => {
+  assert.deepEqual(parseReportData(reportHtml({ scenarios: [] })), { scenarios: [] });
+  assert.equal(parseReportData("<html></html>"), null);
+  assert.equal(parseReportData(`<html>${island("report-data", "{not json")}</html>`), null);
+  assert.equal(parseReportData(`<html>${island("report-data", "[1]")}</html>`), null);
+});
+
+test("SC19: the media island lands before the data island, and a re-run replaces it", () => {
+  const once = withMediaIsland(reportHtml({}), { "a.png": "data:image/png;base64,AA==" });
+  const twice = withMediaIsland(once, { "b.png": "data:image/png;base64,BB==" });
+
+  assert.ok(once.indexOf('id="report-media"') < once.indexOf('id="report-data"'));
+  assert.match(once, /"a\.png":"data:image\/png;base64,AA=="/);
+  assert.equal(twice.match(/id="report-media"/g)?.length, 1);
+  assert.doesNotMatch(twice, /a\.png/);
+  assert.match(twice, /b\.png/);
+  assert.deepEqual(parseReportData(twice), {});
+});
+
+test("SC20: --inline writes every readable file into the report as a data URI", () => {
+  const dir = withReport("inline", {
+    scenarios: [{ video: "01_a.mp4", frames: [{ src: "screenshots/01_a__01_open.png" }] }],
+  });
+  writeFileSync(join(dir, "01_a.mp4"), "video-bytes");
+  writeFileSync(join(dir, "screenshots", "01_a__01_open.png"), "png-bytes");
+
+  const r = run("--inline", dir);
+
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^ok 01_a\.mp4 11B$/m);
+  assert.match(r.stdout, /^ok screenshots\/01_a__01_open\.png 9B$/m);
+  const html = readFileSync(join(dir, "proof-report.html"), "utf8");
+  assert.ok(html.includes(`"01_a.mp4":"data:video/mp4;base64,${Buffer.from("video-bytes").toString("base64")}"`));
+  assert.ok(html.includes(`data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`));
+});
+
+test("SC21: a file --inline cannot read is FAILED, exits 1, and the rest is still inlined", () => {
+  const dir = withReport("inline-missing", {
+    scenarios: [{ video: "01_a.mp4", artifacts: [{ href: "01_a.bin" }], visualMatch: { baseline: "gone.png" } }],
+  });
+  writeFileSync(join(dir, "01_a.mp4"), "video-bytes");
+  writeFileSync(join(dir, "01_a.bin"), "binary");
+
+  const r = run("--inline", dir);
+
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^ok 01_a\.mp4 11B$/m);
+  assert.match(r.stdout, /^FAILED gone\.png — no such file$/m);
+  assert.match(r.stdout, /^FAILED 01_a\.bin — not a type the report shows$/m);
+  const html = readFileSync(join(dir, "proof-report.html"), "utf8");
+  assert.match(html, /"01_a\.mp4":"data:video\/mp4/);
+  assert.doesNotMatch(html, /"gone\.png":/);
+});
+
+test("SC22: --inline without a readable report exits 2", () => {
+  const bare = sandbox("inline-bare");
+  assert.equal(run("--inline", bare).status, 2);
+  assert.match(run("--inline", bare).stderr, /no proof-report\.html under/);
+
+  writeFileSync(join(bare, "proof-report.html"), "<html></html>");
+  assert.equal(run("--inline", bare).status, 2);
+  assert.match(run("--inline", bare).stderr, /no report-data island/);
+
+  assert.equal(run("--inline").status, 2);
+  assert.equal(run("--inline", bare, "extra").status, 2);
+});
