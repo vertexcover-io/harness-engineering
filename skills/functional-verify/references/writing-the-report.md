@@ -307,6 +307,7 @@ sentence above passes it. `attempted` is what you actually ran, distinct approac
   entry behind it.
 - Every UI scenario names its `video`, every path is report-relative, and every file named in `artifacts[]` exists
   beside the report under the same `NN_<slug>` prefix. No frame or file resolves to a broken link.
+- `report-media.ts --inline` ran after the last edit to the report and printed `ok` for every file it names.
 - Every side-effect scenario carries the receipt Step 3 names for its sink — mail-viewer frames, the queue read, the
   captured artifact — or is `NOT VERIFIED` with that sink named.
 - Things this skill genuinely cannot reach (touch-hold gestures, real-device sensors, visual diffs against last

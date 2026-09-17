@@ -425,7 +425,7 @@ captured, and `references/writing-the-report.md` owns what the settings do and w
 
    ```bash
    node --experimental-strip-types \
-     "${CLAUDE_PLUGIN_ROOT}/skills/functional-verify/scripts/build-videos.ts" \
+     "${CLAUDE_PLUGIN_ROOT}/skills/functional-verify/scripts/report-media.ts" \
      /abs/path/to/.harness/<SPEC_NAME>/verification
    ```
 
@@ -465,6 +465,19 @@ the round's whole output. Every other attempt writes the report, a terminal `FAI
 2. `bugs[]` carries only what is still broken as you write — a bug an earlier round found and a fix has since closed
    gets no entry and no note anywhere in the report.
 3. Walk the reference's completion checklist; the report is done when every bullet holds.
+4. **Inline the media, last** — after this the report is too large to edit, so it runs once every other checklist bullet holds:
+
+   ```bash
+   node --experimental-strip-types \
+     "${CLAUDE_PLUGIN_ROOT}/skills/functional-verify/scripts/report-media.ts" \
+     --inline /abs/path/to/.harness/<SPEC_NAME>/verification
+   ```
+
+   It writes every video, frame, baseline and artifact the report names into the report itself, so the one file
+   shows them wherever it is moved. **The report loads nothing from disk**: until this runs every frame shows as
+   missing, and a `FAILED` file stays missing. Each file gets `ok <path> <bytes>B` or `FAILED <path> — <reason>`.
+   A `FAILED` path is one the disk does not have at that report-relative path, or a type the report cannot show:
+   fix the path in the JSON island and run it again — a re-run replaces what the last one wrote.
 
 **Report back once Step 7 has closed the session and released or kept the stack** — the return is written once, and
 it has to say what Step 7 did. Everything the report excludes belongs here, written as durable facts a later run can

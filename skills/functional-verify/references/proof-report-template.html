@@ -100,11 +100,13 @@
      TO ADD A COMPONENT: see the SECTIONS registry in the script below. One
      entry plus one render function; nothing else moves.
 
-     The video, every frame and every file open in a modal. Previews of text
-     files (csv, json, log) need the report served over http — opened straight
-     off disk the browser blocks file-to-file reads and the modal says so.
+     The video, every frame and every file open in a modal, and all of them
+     load from the report-media island below, which report-media.ts --inline
+     fills. Nothing loads from disk, so until it has run every frame shows as
+     missing — and once it has, this file shows them wherever it is moved.
      ========================================================================== -->
 
+<script type="application/json" id="report-media">{}</script>
 <script type="application/json" id="report-data">
 {
   "title": "<feature name>",
@@ -756,6 +758,13 @@ code {
 <script>
 (() => {
   const D = JSON.parse(document.getElementById('report-data').textContent);
+  /* report-media maps a path the data names to that file as a data URI — written by
+     report-media.ts --inline, never by hand. Nothing loads from disk: a path it does
+     not hold shows as missing here too, not only once the report has been moved. */
+  const MEDIA = JSON.parse(document.getElementById('report-media').textContent);
+  const res = p => MEDIA[p] || '';
+  const NOT_INLINED = '<strong>This file is not inside the report.</strong> ' +
+    'Run report-media.ts --inline and fix whatever it prints as FAILED.';
   const S = D.scenarios || [], BUGS = D.bugs || [], GAPS = D.gaps || [], COV = D.coverage || [];
 
   const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
@@ -914,12 +923,14 @@ code {
     const b = el('button', 'fr' + (video ? ' fr--v' : '')); b.type = 'button';
     const wrap = el('div', 'fr__wrap');
     if (src) {
-      const img = el('img'); img.src = src; img.alt = video ? '' : cap; img.loading = 'lazy';
-      img.addEventListener('error', () => {
+      const img = el('img'); img.alt = video ? '' : cap; img.loading = 'lazy';
+      const missing = () => {
         if (video) { img.remove(); wrap.insertBefore(el('div', 'fr__blank'), wrap.firstChild); }
         else { b.classList.add('is-missing'); b.disabled = true; }
-      });
+      };
+      img.addEventListener('error', missing);
       wrap.appendChild(img);
+      if (res(src)) img.src = res(src); else missing();
     } else {
       wrap.appendChild(el('div', 'fr__blank'));
     }
@@ -1352,8 +1363,8 @@ code {
   function showFrame() {
     const f = gallery[gi];
     shell(f.cap, (gi + 1) + ' / ' + gallery.length, f.src, false);
-    const img = el('img'); img.src = f.src; img.alt = f.cap;
-    moB.appendChild(img);
+    if (res(f.src)) { const img = el('img'); img.src = res(f.src); img.alt = f.cap; moB.appendChild(img); }
+    else note(NOT_INLINED, f.src);
     moPrev.style.display = moNext.style.display = gallery.length > 1 ? '' : 'none';
     moPrev.disabled = gi === 0; moNext.disabled = gi === gallery.length - 1;
   }
@@ -1364,11 +1375,12 @@ code {
   function openModal(o) {
     gallery = null;
     if (o.kind === 'image' && o.gallery) { gallery = o.gallery; gi = o.index || 0; return showFrame(); }
-    if (o.kind === 'image') { shell(o.title, '', o.src); const i = el('img'); i.src = o.src; i.alt = o.title || ''; moB.appendChild(i); return; }
+    if ((o.kind === 'image' || o.kind === 'video') && !res(o.src)) { shell(o.title, '', o.src); return note(NOT_INLINED, o.src); }
+    if (o.kind === 'image') { shell(o.title, '', o.src); const i = el('img'); i.src = res(o.src); i.alt = o.title || ''; moB.appendChild(i); return; }
     if (o.kind === 'video') {
       shell(o.title, '', o.src);
       const v = document.createElement('video');
-      v.src = o.src; v.controls = true; v.autoplay = true; v.playsInline = true;
+      v.src = res(o.src); v.controls = true; v.autoplay = true; v.playsInline = true;
       v.addEventListener('error', () => note('This video could not be loaded.', o.src));
       moB.appendChild(v);
       return;
@@ -1434,9 +1446,10 @@ code {
     if (['mp4', 'webm', 'mov', 'm4v'].includes(e)) return openModal({ kind: 'video', title: x.label, src: x.href });
 
     openModal({ title: x.label, meta: x.note || e, href: x.href });
+    if (!res(x.href)) return note(NOT_INLINED, x.href);
     moB.appendChild(el('div', 'mo__note', 'Loading…'));
     try {
-      const r = await fetch(x.href);
+      const r = await fetch(res(x.href));
       if (!r.ok) throw new Error(r.status);
       let text = await r.text();
       const truncated = text.length > MAX_CHARS;
@@ -1448,9 +1461,7 @@ code {
       moB.appendChild(el('pre', 'mo__pre', text));
       if (truncated) { moCap.style.display = ''; moCap.textContent = 'Truncated for display. Open the file for the whole thing.'; }
     } catch (err) {
-      note('<strong>The browser blocked reading this file.</strong> Chrome refuses ' +
-           'file-to-file reads, so previews work when the report is served over http ' +
-           '(or unzipped and opened through a local server).', x.href);
+      note('<strong>This file could not be shown.</strong>', x.href);
     }
   }
 

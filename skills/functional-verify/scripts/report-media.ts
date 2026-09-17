@@ -2,16 +2,25 @@
 // Builds one video per verification scenario from its promoted frames, then cropdetects each video
 // and fails the scenario unless the window it reports still carries the source frame's aspect
 // ratio — a frame stretched to fill the canvas shows a geometry that was never on screen.
-// Usage: build-videos.ts VERIFICATION_DIR
-// Prints one line per scenario — "ok NN_<slug>.mp4 crop=<window>", or
+// With --inline it instead writes every file the finished report names into the report itself,
+// as data URIs in a `report-media` island the template resolves paths through, so the one html
+// file carries its own videos and frames wherever it is moved.
+// Usage: report-media.ts VERIFICATION_DIR
+//        report-media.ts --inline VERIFICATION_DIR
+// Building prints one line per scenario — "ok NN_<slug>.mp4 crop=<window>", or
 // "FAILED NN_<slug> — <reason>" — and writes each NN_<slug>.mp4 beside the report.
-// Exits 0 when every scenario built, and when there are no frames at all; 1 when any scenario
-// failed; 2 when the argument, the directory, or a missing ffmpeg makes a build impossible.
+// Inlining prints one line per file — "ok <path> <bytes>B", or "FAILED <path> — <reason>" — and
+// a path that failed shows as missing in the report, which loads nothing from disk.
+// Exits 0 when every scenario built or every file inlined, and when there are no frames at all;
+// 1 when any scenario or file failed; 2 when the arguments, the directory, a missing ffmpeg or a
+// missing report makes the run impossible.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from "node:fs";
-import { readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import {
+  closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync,
+  writeFileSync,
+} from "node:fs";
+import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type ScenarioResult = {
@@ -29,6 +38,28 @@ type FrameSize = {
 type ShapeCheck = {
   readonly kind: "matches" | "stretched" | "unchecked";
   readonly note: string | null;
+};
+
+type InlineResult = {
+  readonly path: string;
+  readonly bytes: number | null;
+  readonly uri: string | null;
+  readonly failure: string | null;
+};
+
+const REPORT_NAME = "proof-report.html";
+
+const DATA_ISLAND = /<script type="application\/json" id="report-data">([\s\S]*?)<\/script>/;
+const MEDIA_ISLAND = /<script type="application\/json" id="report-media">[\s\S]*?<\/script>\n?/;
+
+// What the report's modal can show: images, video, and the text files it previews.
+const MIME_TYPES: Readonly<Record<string, string>> = {
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+  ".webp": "image/webp", ".avif": "image/avif", ".svg": "image/svg+xml",
+  ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+  ".csv": "text/csv", ".tsv": "text/tab-separated-values", ".json": "application/json",
+  ".txt": "text/plain", ".log": "text/plain", ".md": "text/markdown", ".xml": "application/xml",
+  ".html": "text/html",
 };
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -213,19 +244,94 @@ export const formatResult = (result: ScenarioResult): string =>
 
 const hasFfmpeg = (): boolean => spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
 
-export function main(args: readonly string[]): number {
-  const target = args[0];
-  if (target === undefined || args.length > 1) {
-    console.error("usage: build-videos.ts VERIFICATION_DIR");
+/** The report's JSON island, or null when it is absent or does not hold a JSON object. */
+export function parseReportData(html: string): Record<string, unknown> | null {
+  const json = html.match(DATA_ISLAND)?.[1];
+  if (json === undefined) return null;
+  try {
+    const data: unknown = JSON.parse(json);
+    return isRecord(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A path the report wrote bare, or under `key` of an object. */
+const pathOf = (entry: unknown, key: string): unknown => (isRecord(entry) ? entry[key] : entry);
+
+const listOf = (v: unknown): readonly unknown[] => (Array.isArray(v) ? v : []);
+
+/** Every file the report names — video, frames, design baseline, artifacts — once each, in order. */
+export function mediaPaths(data: Record<string, unknown>): readonly string[] {
+  const named = listOf(data["scenarios"]).filter(isRecord).flatMap((scenario) => [
+    scenario["video"],
+    ...listOf(scenario["frames"]).map((frame) => pathOf(frame, "src")),
+    isRecord(scenario["visualMatch"]) ? scenario["visualMatch"]["baseline"] : null,
+    ...listOf(scenario["artifacts"]).map((artifact) => pathOf(artifact, "href")),
+  ]);
+  const local = named
+    .filter((path): path is string => typeof path === "string" && path !== "")
+    .filter((path) => !/^[a-z][a-z0-9+.-]*:/i.test(path));
+  return [...new Set(local)];
+}
+
+/** The html with its media island written ahead of the data island, replacing one already there. */
+export function withMediaIsland(html: string, media: Readonly<Record<string, string>>): string {
+  const island = `<script type="application/json" id="report-media">${JSON.stringify(media)}</script>\n`;
+  // A replacer function, since a `$` in a replacement string is a pattern, not a character.
+  return html.replace(MEDIA_ISLAND, "").replace(DATA_ISLAND, (dataIsland) => island + dataIsland);
+}
+
+/** One named file as a data URI, or the reason it stays a path. */
+function inlineFile(dir: string, path: string): InlineResult {
+  const mime = MIME_TYPES[extname(path).toLowerCase()];
+  if (mime === undefined) return { path, bytes: null, uri: null, failure: "not a type the report shows" };
+  try {
+    const content = readFileSync(join(dir, path));
+    const uri = `data:${mime};base64,${content.toString("base64")}`;
+    return { path, bytes: content.length, uri, failure: null };
+  } catch {
+    return { path, bytes: null, uri: null, failure: "no such file" };
+  }
+}
+
+/** Inlines every file the report names, in the order it names them. Null when the island is unreadable. */
+export function inlineMedia(dir: string): readonly InlineResult[] | null {
+  const reportPath = join(dir, REPORT_NAME);
+  const html = readFileSync(reportPath, "utf8");
+  const data = parseReportData(html);
+  if (data === null) return null;
+
+  const results = mediaPaths(data).map((path) => inlineFile(dir, path));
+  const media = Object.fromEntries(
+    results.flatMap((result) => (result.uri === null ? [] : [[result.path, result.uri]])),
+  );
+  writeFileSync(reportPath, withMediaIsland(html, media));
+  return results;
+}
+
+export const formatInline = (result: InlineResult): string =>
+  result.failure !== null
+    ? `FAILED ${result.path} — ${result.failure}`
+    : `ok ${result.path} ${result.bytes}B`;
+
+function inlineMain(dir: string): number {
+  if (!existsSync(join(dir, REPORT_NAME))) {
+    console.error(`no ${REPORT_NAME} under ${dir} — write the report before inlining its media`);
     return 2;
   }
 
-  const dir = resolve(target);
-  if (!isDirectory(dir)) {
-    console.error(`no such directory: ${dir}`);
+  const results = inlineMedia(dir);
+  if (results === null) {
+    console.error(`no report-data island holding a JSON object in ${join(dir, REPORT_NAME)}`);
     return 2;
   }
 
+  for (const result of results) console.log(formatInline(result));
+  return results.some((result) => result.failure !== null) ? 1 : 0;
+}
+
+function buildMain(dir: string): number {
   const screenshots = join(dir, "screenshots");
   if (scenarioPrefixes(screenshots).length === 0) {
     console.log(`no frames under ${screenshots} — no videos to build`);
@@ -240,6 +346,23 @@ export function main(args: readonly string[]): number {
   const results = buildScenarios(dir);
   for (const result of results) console.log(formatResult(result));
   return results.some((result) => result.failure !== null) ? 1 : 0;
+}
+
+export function main(args: readonly string[]): number {
+  const inline = args[0] === "--inline";
+  const target = inline ? args[1] : args[0];
+  if (target === undefined || args.length > (inline ? 2 : 1)) {
+    console.error("usage: report-media.ts [--inline] VERIFICATION_DIR");
+    return 2;
+  }
+
+  const dir = resolve(target);
+  if (!isDirectory(dir)) {
+    console.error(`no such directory: ${dir}`);
+    return 2;
+  }
+
+  return inline ? inlineMain(dir) : buildMain(dir);
 }
 
 const invokedScript = (): string => {
