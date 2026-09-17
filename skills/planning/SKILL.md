@@ -84,14 +84,16 @@ Do not split when the pieces share more than ~30% of files and ship together.
 - **Dispatch a design scout too when the change has a user-facing surface.** Send it with the
   sweep, on the same fast model; read `references/design-scout.md` for the brief. It pulls the
   designs off the ticket into `.harness/<name>/design/` and returns the `design/INDEX.md` path.
-- **Open the live page before the first question.** Copy `scripts/plan-shell.html` (resolve
+- **Hand the user the live link before the first question.** Copy `scripts/plan-shell.html` (resolve
   the path from this skill's own directory) to `.harness/<name>/plan.html` and start the viewer,
   backgrounded:
   ```bash
-  bash <skill-dir>/scripts/start-server.sh --file <abs-path>/.harness/<name>/plan.html
+  bash <skill-dir>/scripts/start-server.sh --open --file <abs-path>/.harness/<name>/plan.html
   ```
-  Print the returned `url` to the user at once — it carries `?key=…`; never strip the query
-  string. Keep the startup JSON (the session dir is the parent of its `state_dir`) for the
+  **Before your next tool call**, post this line to the user, with the startup JSON's `url`
+  verbatim, `?key=…` included:
+  `Plan (live): <url>`
+  Keep the startup JSON (the session dir is the parent of its `state_dir`) for the
   step-8 shutdown. If the viewer fails to start, keep writing the file and present it as a
   `file://` link at step 8 — never block on the viewer. Then fill `SLOT:title`, `SLOT:brand`,
   `SLOT:nav` and `SLOT:hero` (the run-info line comes from
@@ -366,8 +368,7 @@ and the self-review found nothing blocking.
 
 ## Step 8 — The plan gate
 
-Present `plan.html` — the live-view URL when the viewer is running (the open tab already
-shows the finished page), plus its absolute path as a `file://` fallback — with a
+Present `plan.html` — the live-view URL when the viewer is running, plus its absolute path as a `file://` fallback — with a
 one-paragraph summary: the phase list and anything that changed since the checkpoint. Say in
 one line that they can comment on the page itself. One `AskUserQuestion`. In `--auto`,
 auto-approve.
