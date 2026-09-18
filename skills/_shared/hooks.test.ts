@@ -133,6 +133,26 @@ test("SC4: an fn hook is imported and called with the payload", async () => {
   assert.equal(out.results?.["onEvent"]?.result, "handled");
 });
 
+test("a relative fn module resolves against the repo root, not the cwd", async () => {
+  const root = realpathSync(tmp());
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  const workspace = join(root, ".workspaces", "X");
+  mkdirSync(workspace, { recursive: true });
+  writeConfig(root, {
+    hooks: {
+      "run-started": [{ name: "tag", fn: { module: "bin/hook.ts" } }],
+    },
+  });
+  const imported: string[] = [];
+  const importModule: FireDeps["importModule"] = async (path) => {
+    imported.push(path);
+    return { default: async () => "ok" };
+  };
+  const { out } = await runFire({ event: "run-started" }, baseDeps(workspace, { importModule }));
+  assert.deepEqual(imported, [join(root, "bin/hook.ts")]);
+  assert.equal(out.results?.["tag"]?.status, "success");
+});
+
 test("SC5: a required blocking failure halts", async () => {
   const dir = tmp();
   writeConfig(dir, {
