@@ -369,30 +369,19 @@ recommendation:
 
 ### Record the ADRs
 
-Offer ADRs sparingly. Test the task itself and every approved decision against the four gates —
-all must hold:
+For the task itself and for each approved `D<n>`, invoke the `adr` skill with the decision, its
+reason, the rejected approaches from step 3, the ticket or PRD as source, and the ADRs the docs
+scout returned. For the task itself, the reason is the one step 1 found in the ticket, PRD, or
+prompt, or the user's answer to `D0` — never one you inferred. No question to the user — the `adr` skill does the filtering.
 
-**A gate you have to argue for is a fail.**
+**Most tasks earn no ADR at all; a task that earns one earns one, rarely two.** Hence most
+candidates come back `dropped: <reason>`, which is the expected outcome. Never retry a dropped
+candidate.
 
-1. **Hard to reverse**: undoing this later means changing several files, migrating data, or
-   coordinating with other teams. If the undo is the same size as the change — one line back to one
-   line — this fails.
-2. **Surprising without context**: a future reader will wonder "why did they do it this way?", and
-   a comment at the code site or a line in the PR would not settle it.
-3. **A real trade-off**: two people with the same facts could have landed on different answers.
-   Every option on the table is a good solution with its own pros and cons. If one option is simply
-   the right one, the choice was forced, and a forced choice is not a trade-off.
-4. **Relevant to future work**: the next person or agent who has to make a code change would make
-   a different choice if they knew about it.
+Send them one at a time, never in parallel. Each invocation reads what is already on disk, so a
+candidate that overlaps an ADR written moments earlier in this same run comes back
+`covered by <NNNN>` instead of becoming a second ADR saying the same thing.
 
-If any gate fails, skip it. **One ADR per task, rarely add 2 ADRs**. If several decisions pass, check if they all can come under the same ADR. 
-
-For each that passes, invoke the `adr` skill with the decision, its reason, the rejected approaches
-from step 3, the ticket or PRD as source, and the ADRs the docs scout returned. For the task
-itself, the reason is the one step 1 found in the ticket, PRD, or prompt, or the user's answer to
-`D0`. No question to the user — the gates and the skill's review agent do the filtering. In
-`--auto`, when `D0` was deferred, skip the ADR for the task itself; the other decisions are still
-tested and recorded.
 Last, run the verifier — what a count can settle, a count settles:
 
 ```bash
@@ -404,9 +393,9 @@ nothing, every `IMG` key that is not a file in `design/`, every slot left unfill
 payload block missing or empty, and every diff block that is empty or holds a line opening with
 neither `+`, `-`, `@@` nor a space. A finding blocks the gate: fix it and run it again.
 
-**Done when:** the shell's slots are filled, the payloads are complete, every decision that passed
-the gates went to the `adr` skill, the verifier exits clean, and the self-review found nothing
-blocking.
+**Done when:** the shell's slots are filled, the payloads are complete, the task and every
+approved `D<n>` went to the `adr` skill, the verifier exits clean, and the self-review found
+nothing blocking.
 
 ## Step 8 — The plan gate
 
