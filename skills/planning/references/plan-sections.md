@@ -80,6 +80,8 @@ a complete plan.
 | `## Global constraints` | something binds every phase and is invisible to one built in isolation — fixed values, verbatim copy, platform limits. A value used in one phase belongs in that step. |
 | `## Signature index` | a name is defined in one phase and used in another |
 | `## Design References` | a phase builds a user-facing surface a design already defines — one row per screen, from `design/INDEX.md` |
+| `## ADRs` | the docs scout returned ADRs that bind this work, or step 7 wrote a new ADR |
+| `## Project Docs` | the docs scout returned docs under `docs/`, outside `docs/adr/`, that bind this work |
 | `## Blockers in existing code` | existing code must be repaired or worked around to build **or test** this |
 | `## Test Matrix` | requirements exist — one row per requirement |
 | `## Acceptance` | something is provable only after every phase lands |
@@ -129,6 +131,27 @@ signature index; where that is deliberate, the row records it as
 `design/<file> — not built: <reason>`, the one form `verify-plan.ts` reads as accounted for.
 
 Omit the section when no design exists — and **say so in the step instead**, per `step-card.md`.
+
+### ADRs
+
+One row per ADR the coder must follow. The coder never sees the docs scout's results or
+`docs/adr/`, and could undo a decision it was never told about.
+
+    | ADR | Status | What it requires of this work |
+    |---|---|---|
+    | docs/adr/0003-postgres-only-datastore.md | existing | embeddings stay in Postgres |
+    | docs/adr/0008-semantic-search-adds-vector-arm.md | new | keep the tsquery arm; add the vector arm beside it |
+
+- **existing** — every ADR the docs scout returned.
+- **new** — every ADR the `adr` skill wrote in step 7's Record the ADRs. A `covered by` result
+  lists that existing ADR; a `dropped` result adds nothing.
+
+### Project Docs
+
+One line per doc under `docs/`, outside `docs/adr/`, that the docs scout returned — the path only.
+
+    - docs/architecture/search.md
+    - docs/runbooks/reindex.md
 
 ### Blockers
 
