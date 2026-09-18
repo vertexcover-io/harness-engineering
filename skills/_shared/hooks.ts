@@ -763,12 +763,16 @@ const runCmd = (entry: CmdEntry, payload: Payload, deps: FireDeps): HookOutcome 
   return { failed: false, detail: "", output: r.stdout };
 };
 
+// Paths in the config are relative to the repo root that holds it — never to the cwd, which
+// is wherever the agent last cd'd (a workspace folder, a package dir).
+const resolveFromRoot = (repoRoot: string, path: string): string => (isAbsolute(path) ? path : join(repoRoot, path));
+
 const runFn = async (entry: FnEntry, payload: Payload, deps: FireDeps): Promise<HookOutcome> => {
   const fn = entry.fn;
   const timeoutMs = entry.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const call = (async (): Promise<HookOutcome> => {
-    const mod = await deps.importModule(fn.module);
+    const mod = await deps.importModule(resolveFromRoot(payload.repoRoot, fn.module));
     const exportName = fn.export ?? "default";
     const handler = mod[exportName];
     if (typeof handler !== "function") {
@@ -928,8 +932,6 @@ const NO_STAGE_EVENTS: ReadonlySet<string> = new Set(["run-started", "run-comple
 
 const doctorRow = (label: string, level: "OK" | "WARN" | "FAIL", detail?: string): string =>
   `${label.padEnd(28)} ${level}${detail !== undefined ? `: ${detail}` : ""}`;
-
-const resolveFromRoot = (repoRoot: string, path: string): string => (isAbsolute(path) ? path : join(repoRoot, path));
 
 // One row per hook entry (or per illegal event key), aligned like setup-harness's probe
 // output. FAIL means the config cannot mean anything; WARN means it parses but almost
