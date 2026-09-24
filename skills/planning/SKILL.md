@@ -425,8 +425,7 @@ was open never reached you.
 Handle each comment by what it asks for:
 
 - **A question** — answer it, change nothing. Status `answered`.
-- **A change** — make it in plan.html *and* the payload blocks, then say what you changed.
-  Status `changed`.
+- **A change** — follow Making a change below, then say what you changed. Status `changed`.
 - **One you should not make** — give the reason. Status `declined`. Never leave a thread open
   instead.
 
@@ -437,10 +436,34 @@ node <skill-dir>/scripts/comment-store.cjs reply <state-dir> --id <id> --text "<
 Clear the whole batch before presenting again: one unanswered thread reads as ignored. In
 `--auto` there is no reviewer — skip the watcher.
 
+### Making a change
+
+A change can come from a comment or from the terminal. Do these before you edit:
+
+- **Check the claim.** If the change says a file, function or spec heading exists, open it.
+  Do not edit the plan on a claim nobody checked.
+- **List what else changes.** Other steps that use this step's output. The phase's test
+  scenarios. The acceptance list. The Design System row. The commit message. ADRs.
+- **Explain before you edit when the change is serious.** Serious means: it goes against the
+  spec, an ADR or an approved decision; it drops a test scenario; it moves work to another
+  phase. Say what will happen if the change goes ahead, and wait for the answer. Any other
+  change: make it, then report it. Ask one question per message. When you are unsure, say
+  what you will do by default, and let the user say otherwise.
+- **Ask in the terminal, not in the comment thread.** If a comment's change needs an
+  answer first, ask in the terminal. Set the thread's status after the answer comes.
+
+Then make the change in plan.html *and* the payload blocks.
+
 After any revision, whether it came from a comment or the terminal: update plan.html —
-payloads included — re-run step 7's self-review, and re-present. Keep the viewer running
-through revisions; every save shows up in the user's tab on its own. A revision is not a
-confirmation, and neither is a resolved comment; extract only after explicit approval.
+payloads included — re-run step 7's self-review and the verifier, and re-present. If the
+plan now does something different from what the ticket, mock or spec asked, add a row to
+plan.md's `## Design corrections`. Keep the viewer running through revisions; every save
+shows up in the user's tab on its own. A revision is not a confirmation, and neither is a
+resolved comment; extract only after explicit approval.
+
+```bash
+node --experimental-strip-types <skill-dir>/scripts/verify-plan.ts .harness/<name>/plan.html
+```
 
 When a revision changes a decision an ADR from this run records, delete that ADR and its
 INDEX.md line — it is not committed yet — and run step 7's Record the ADRs again for the new
@@ -451,7 +474,6 @@ and the viewer — the session dir under `/tmp` is deleted with it, and `comment
 only record of what the reviewer asked:
 
 ```bash
-node --experimental-strip-types <skill-dir>/scripts/verify-plan.ts .harness/<name>/plan.html
 node <skill-dir>/scripts/extract-plan.mjs .harness/<name>/plan.html
 cp <state-dir>/comments.json .harness/<name>/comments.json 2>/dev/null || true
 bash <skill-dir>/scripts/stop-server.sh <session-dir>
@@ -475,6 +497,7 @@ works through them directly. Name the ADRs written in that hand-off.
 | "The user seems impatient" | A wrong plan costs more than one more question. Ask the highest-leverage one. |
 | "I'll flag it for the coder to check" | The coder has less context than you. Resolve it or ask the user. |
 | "The summary can gloss this decision" | The summary is what the user approves. A decision missing from it was never approved. |
+| "The change is small, just make it" | A small edit to one step can break other steps. List what else changes first. |
 | "This unit is untestable, so the test is e2e" | That is a finding about the code, not a level. Name it a Blocker and give a phase the step that opens it up. |
 | "The existing code has no tests, so this is how it is" | The input describes the code today. The plan says what it becomes. Never copy a constraint you are allowed to remove. |
 | "Most rows are e2e because the feature is user-facing" | User-facing describes the requirement. It never describes the level. Run the counterfactual on every row. |
