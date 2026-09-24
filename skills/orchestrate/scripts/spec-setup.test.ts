@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -11,12 +12,11 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "spec-setup.ts");
 
 type Run = { readonly code: number; readonly stdout: string; readonly stderr: string };
 
+const scriptArgs = (...args: readonly string[]): string[] => ["--experimental-strip-types", SCRIPT, ...args];
+const ENV = { ...process.env, SESSION_ID: "sess-test" };
+
 const run = (cwd: string, ...args: readonly string[]): Run => {
-  const r = spawnSync(process.execPath, ["--experimental-strip-types", SCRIPT, ...args], {
-    cwd,
-    encoding: "utf8",
-    env: { ...process.env, SESSION_ID: "sess-test" },
-  });
+  const r = spawnSync(process.execPath, scriptArgs(...args), { cwd, encoding: "utf8", env: ENV });
   return { code: r.status ?? -1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 };
 
@@ -31,6 +31,35 @@ const readJson = (path: string): Record<string, unknown> =>
   JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
 
 const echoExit = (text: string, code: number): string => `sh -c 'echo "${text}"; exit ${code}'`;
+
+// Forks a worker the way vitest forks its pool, and leaves its pid where the test can find it.
+const FORKS_WORKER = `sh -c 'sleep 30 & echo $! > worker.pid; wait'`;
+
+const isAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const waitFor = async (check: () => boolean, ms: number): Promise<boolean> => {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (check()) return true;
+    await new Promise((tick) => setTimeout(tick, 50));
+  }
+  return check();
+};
+
+const readPid = (path: string): number => Number(readFileSync(path, "utf8").trim());
+
+const waitForWorker = async (repo: string): Promise<number> => {
+  const path = join(repo, "worker.pid");
+  assert.ok(await waitFor(() => existsSync(path) && readPid(path) > 0, 5000), "worker never started");
+  return readPid(path);
+};
 
 test("init creates the artifact tree and manifest, and prints the paths", () => {
   const repo = makeRepo({ commands: {} });
@@ -234,6 +263,89 @@ test("baseline runs each package's bootstrap first", () => {
   const baseline = readJson(join(repo, ".harness", "add-auth", "baseline.json"));
   assert.equal((baseline["api"] as Record<string, Record<string, unknown>>)["test"]?.["exit"], 0);
 });
+
+test("baseline records a command that runs past its package's timeout as failed and kills its workers", async () => {
+  const repo = makeRepo({
+    commands: {},
+    packages: {
+      slow: { path: ".", timeoutSeconds: 0.5, commands: { test_all: FORKS_WORKER } },
+      fast: { path: ".", commands: { test_all: echoExit("1 passed", 0) } },
+    },
+  });
+
+  const started = Date.now();
+  const r = run(repo, "baseline", "add-auth");
+
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(Date.now() - started < 10_000, "baseline waited for the whole command");
+  const baseline = readJson(join(repo, ".harness", "add-auth", "baseline.json")) as Record<string, Record<string, Record<string, unknown>>>;
+  assert.equal(baseline["slow"]?.["test"]?.["exit"], 124);
+  assert.equal(baseline["fast"]?.["test"]?.["exit"], 0);
+  const worker = readPid(join(repo, "worker.pid"));
+  assert.ok(await waitFor(() => !isAlive(worker), 2000), "worker outlived the timeout");
+});
+
+test("baseline records a finished command without waiting on the workers it left running, and kills them", async () => {
+  const repo = makeRepo({
+    commands: {},
+    packages: { api: { path: ".", timeoutSeconds: 5, commands: { test_all: `sh -c 'sleep 30 & echo $! > worker.pid; echo "1 passed"'` } } },
+  });
+
+  const r = run(repo, "baseline", "add-auth");
+
+  assert.equal(r.code, 0, r.stderr);
+  const baseline = readJson(join(repo, ".harness", "add-auth", "baseline.json")) as Record<string, Record<string, Record<string, unknown>>>;
+  assert.equal(baseline["api"]?.["test"]?.["exit"], 0);
+  assert.equal(baseline["api"]?.["test"]?.["passed"], 1);
+  const worker = readPid(join(repo, "worker.pid"));
+  assert.ok(await waitFor(() => !isAlive(worker), 2000), "leftover worker survived");
+});
+
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
+  test(`${signal} stops the baseline and kills the command's whole process group`, async () => {
+    const repo = makeRepo({ commands: { test_all: FORKS_WORKER } });
+    const script = spawn(process.execPath, scriptArgs("baseline", "add-auth"), { cwd: repo, stdio: "ignore", env: ENV });
+    const exited = once(script, "exit");
+    const worker = await waitForWorker(repo);
+
+    script.kill(signal);
+
+    const [code] = await exited;
+    assert.notEqual(code, 0);
+    assert.ok(await waitFor(() => !isAlive(worker), 2000), `worker outlived ${signal}`);
+    assert.ok(!existsSync(join(repo, ".harness", "add-auth", "baseline.json")));
+  });
+}
+
+test("baseline kills the command's process group and exits when the process that started it dies", async () => {
+  const repo = makeRepo({ commands: { test_all: FORKS_WORKER } });
+  const launcher = spawn(
+    "sh",
+    ["-c", `'${process.execPath}' --experimental-strip-types '${SCRIPT}' baseline add-auth & echo $! > script.pid; exec sleep 30`],
+    { cwd: repo, stdio: "ignore" },
+  );
+  const worker = await waitForWorker(repo);
+  const script = readPid(join(repo, "script.pid"));
+
+  launcher.kill("SIGKILL");
+
+  assert.ok(await waitFor(() => !isAlive(worker), 5000), "worker outlived the launcher");
+  assert.ok(await waitFor(() => !isAlive(script), 5000), "script outlived the launcher");
+  assert.ok(!existsSync(join(repo, ".harness", "add-auth", "baseline.json")));
+});
+
+for (const timeout of [0, -5, "300"]) {
+  test(`baseline halts on timeoutSeconds ${JSON.stringify(timeout)} and writes nothing`, () => {
+    const repo = makeRepo({ commands: {}, packages: { api: { path: ".", timeoutSeconds: timeout, commands: { test_all: "true" } } } });
+
+    const r = run(repo, "baseline", "add-auth");
+
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /CONFIG_INVALID/);
+    assert.match(r.stderr, /timeoutSeconds/);
+    assert.ok(!existsSync(join(repo, ".harness", "add-auth", "baseline.json")));
+  });
+}
 
 const NODE_TEST_OUT = [
   "\u2139 tests 9", "\u2139 suites 0", "\u2139 pass 9", "\u2139 fail 0",

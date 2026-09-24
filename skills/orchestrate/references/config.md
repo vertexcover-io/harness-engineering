@@ -88,6 +88,10 @@ Resolve a key for the package the run named: `packages.<PKG>.commands`, then roo
 `packages.<PKG>.path` is the directory to run in, resolved against the run's `WORKTREE_PATH`
 (`manifest.worktree`).
 
+`packages.<PKG>.timeoutSeconds` caps each baseline command for that package: 300 (5 minutes)
+when unset. A command that runs past it is killed and recorded as failed. Raise it for a package
+whose install or suite takes longer.
+
 Placeholders: `{NAME}` or `{NAME...}` take one or more values, and `[...]` is a segment included
 only when the run asks for what it carries. So
 `scripts/stack.sh up {BRANCH} {SERVICE...} [--seed-demo]` runs as
