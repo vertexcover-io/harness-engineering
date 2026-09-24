@@ -5,15 +5,16 @@
 //   spec-setup.ts baseline <SPEC_NAME> [--packages a,b]  → .harness/<SPEC_NAME>/baseline.json
 // .harness and the config live at the git top level; baseline runs package commands under the manifest's
 // worktree when init was given one. Exit 0 on success, 2 on a halt (config missing/stale, unknown package,
-// invalid custom fields, missing worktree). A red suite is a result, not a halt: the baseline records it.
+// invalid custom fields or timeout, missing worktree, stopped by a signal or by its launcher exiting).
+// A red suite is a result, not a halt: the baseline records it.
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type Commands = Readonly<Record<string, string | null | undefined>>;
-type Package = { readonly path?: string; readonly commands?: Commands };
+type Package = { readonly path?: string; readonly timeoutSeconds?: unknown; readonly commands?: Commands };
 type Config = { readonly commands?: Commands; readonly packages?: Readonly<Record<string, Package>> };
 type Counts = { readonly passed: number | null; readonly failed: number | null; readonly skipped: number | null };
 type Metrics = {
@@ -36,6 +37,10 @@ const ARTIFACT_SUBDIRS = [
   "design",
   "reports",
 ] as const;
+
+const DEFAULT_TIMEOUT_SECONDS = 5 * 60;
+const TIMED_OUT_EXIT = 124;
+const LAUNCHER_POLL_MS = 1000;
 
 const halt = (code: string, detail: string): never => {
   console.error(`${code}: ${detail}`);
@@ -147,26 +152,77 @@ const isUnresolvable = (out: Outcome): boolean => {
   return LAUNCH_FAILURE.test(out.stderr.split("\n").slice(0, 3).join("\n"));
 };
 
-const runCommand = (cwd: string, command: string, packageName: string): Outcome => {
-  const r = spawnSync(command, { cwd, shell: true, encoding: "utf8", env: { ...process.env, CI: "1" } });
-  const where = `'${command}' (package ${packageName})`;
-  if (r.error !== undefined) return halt("CONFIG_STALE", `${where} could not start: ${r.error.message}`);
-  const out = { exit: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
-  if (isUnresolvable(out)) return halt("CONFIG_STALE", `${where} does not resolve — ${CONFIG_FILE} needs updating`);
-  return out;
+// Commands run one at a time, so one process group is the only one that can be running.
+let runningGroup: number | null = null;
+
+// SIGKILL, not SIGTERM: a test runner can ignore SIGTERM, and a stuck group would outlive the baseline.
+const killGroup = (pid: number): void => {
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    // The group already exited.
+  }
 };
 
-const measure = (config: Config, root: string, name: string, pkg: Package): Metrics => {
+// Anything that ends this script ends the running group first. The launcher check is a poll
+// because a dead parent sends no signal: the script is only reparented.
+const guardGroups = (): void => {
+  const stop = (reason: string): void => {
+    if (runningGroup !== null) killGroup(runningGroup);
+    halt("BASELINE_STOPPED", reason);
+  };
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(signal, () => stop(`received ${signal}`));
+  const launcher = process.ppid;
+  setInterval(() => {
+    if (process.ppid !== launcher) stop("the process that started it exited");
+  }, LAUNCHER_POLL_MS).unref();
+};
+
+type Run = { readonly cwd: string; readonly command: string; readonly packageName: string; readonly timeoutSeconds: number };
+
+// Detached gives the command its own process group, so the workers it forks die with it.
+const runCommand = ({ cwd, command, packageName, timeoutSeconds }: Run): Promise<Outcome> =>
+  new Promise((settle) => {
+    const where = `'${command}' (package ${packageName})`;
+    const child = spawn(command, { cwd, shell: true, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CI: "1" } });
+    child.on("error", (error) => halt("CONFIG_STALE", `${where} could not start: ${error.message}`));
+    const pid = child.pid;
+    if (pid === undefined) return;
+    runningGroup = pid;
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup(pid);
+    }, timeoutSeconds * 1000);
+    // A worker left behind holds the pipes open, and close would wait for the timeout.
+    child.on("exit", () => killGroup(pid));
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      runningGroup = null;
+      const out = timedOut
+        ? { exit: TIMED_OUT_EXIT, stdout, stderr: `${stderr}\ntimed out after ${timeoutSeconds}s` }
+        : { exit: code ?? 1, stdout, stderr };
+      settle(isUnresolvable(out) ? halt("CONFIG_STALE", `${where} does not resolve — ${CONFIG_FILE} needs updating`) : out);
+    });
+  });
+
+type Target = { readonly name: string; readonly pkg: Package; readonly timeoutSeconds: number };
+
+const measure = async (config: Config, root: string, { name, pkg, timeoutSeconds }: Target): Promise<Metrics> => {
   const cwd = resolve(root, pkg.path ?? ".");
-  const run = (key: string): Outcome | null => {
+  const run = async (key: string): Promise<Outcome | null> => {
     const command = resolveCommand(config, pkg, key);
-    return command === null ? null : runCommand(cwd, command, name);
+    return command === null ? null : runCommand({ cwd, command, packageName: name, timeoutSeconds });
   };
 
-  run("bootstrap");
-  const typecheck = run("typecheck");
-  const lint = run("lint");
-  const test = run("test_all") ?? run("coverage_all");
+  await run("bootstrap");
+  const typecheck = await run("typecheck");
+  const lint = await run("lint");
+  const test = (await run("test_all")) ?? (await run("coverage_all"));
 
   return {
     type_check: typecheck && { exit: typecheck.exit, errors: parseTypecheck(text(typecheck)) },
@@ -186,6 +242,12 @@ const selectPackages = (config: Config, names: readonly string[]): ReadonlyArray
   });
 };
 
+const timeoutFor = (name: string, pkg: Package): number => {
+  const seconds = pkg.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  if (typeof seconds === "number" && seconds > 0) return seconds;
+  return halt("CONFIG_INVALID", `packages.${name}.timeoutSeconds must be a positive number of seconds`);
+};
+
 // A multi-repo workspace sits in a gitignored folder under the root, so only the caller knows it.
 const worktreeFor = (root: string, specName: string): string => {
   const path = join(root, ".harness", specName, "manifest.json");
@@ -196,10 +258,15 @@ const worktreeFor = (root: string, specName: string): string => {
   return existsSync(worktree) ? worktree : halt("WORKTREE_MISSING", `manifest worktree ${worktree} does not exist`);
 };
 
-const baseline = (root: string, specName: string, packageNames: readonly string[]): void => {
+const baseline = async (root: string, specName: string, packageNames: readonly string[]): Promise<void> => {
   const config = readConfig(root);
   const worktree = worktreeFor(root, specName);
-  const entries = selectPackages(config, packageNames).map(([name, pkg]) => [name, measure(config, worktree, name, pkg)] as const);
+  // Every timeout is checked before any command runs, so a bad one halts before minutes of work.
+  const targets = selectPackages(config, packageNames).map(([name, pkg]) => ({ name, pkg, timeoutSeconds: timeoutFor(name, pkg) }));
+  guardGroups();
+  const entries: Array<readonly [string, Metrics]> = [];
+  // One package at a time: installs share a package store, and suites share ports and databases.
+  for (const target of targets) entries.push([target.name, await measure(config, worktree, target)]);
   const result = { ...Object.fromEntries(entries), timestamp: new Date().toISOString() };
   const path = join(root, ".harness", specName, "baseline.json");
   mkdirSync(dirname(path), { recursive: true });
@@ -237,7 +304,7 @@ const readCustomFields = (argv: readonly string[]): Readonly<Record<string, stri
   return parsed as Record<string, string>;
 };
 
-const main = (argv: readonly string[]): void => {
+const main = async (argv: readonly string[]): Promise<void> => {
   const [command, specName] = argv;
   if (!specName || (command !== "init" && command !== "baseline")) {
     console.error("usage: spec-setup.ts <init|baseline> <SPEC_NAME> [--custom-fields <json>] [--packages a,b]");
@@ -249,7 +316,7 @@ const main = (argv: readonly string[]): void => {
   }
   const root = git(process.cwd(), "rev-parse", "--show-toplevel") ?? process.cwd();
   if (command === "init") return init(root, specName, readCustomFields(argv));
-  baseline(root, specName, readPackagesFlag(argv));
+  await baseline(root, specName, readPackagesFlag(argv));
 };
 
-if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) main(process.argv.slice(2));
+if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) await main(process.argv.slice(2));
