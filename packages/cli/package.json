@@ -14,6 +14,8 @@
     "build": "bun build ./src/index.ts --compile --outfile dist/harness"
   },
   "dependencies": {
-    "@harness/core": "workspace:*"
+    "@commander-js/extra-typings": "^15.0.0",
+    "@harness/core": "workspace:*",
+    "commander": "^15.0.0"
   }
 }

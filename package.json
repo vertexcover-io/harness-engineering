@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=22.6",
+    "node": ">=22.12",
     "bun": ">=1.2"
   },
   "scripts": {
