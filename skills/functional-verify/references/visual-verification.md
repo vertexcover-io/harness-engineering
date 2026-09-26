@@ -36,6 +36,10 @@ wrong-footed by, a bug that routes through Step 4.
 Where `plan.md`'s `## Design References` names an image for the screen — a mockup, a Figma export, a photo of a
 whiteboard — **that image is the baseline**, and the questions marked *(design)* below have an answer.
 
+**Open the baseline image and the shot frame with the Read tool, then compare the two pictures.** Do not grade
+from the description in plan.md or design.md. `visualMatch` grades layout and design; text that differs is not a
+finding.
+
 **It is authoritative about intent, not about measurement.** A supplied image routinely carries spacing nobody
 decided: padding off the grid, gaps that differ between two rows of the same list, a margin that is wherever the
 author's cursor landed. Grading against those numbers produces a long list of findings that are all noise and
@@ -76,8 +80,8 @@ Ask all of these of each frame, in this order, so two runs of the same screen re
   **BLOCKER**, not a style difference.
 
 **3. Copy**
-- *(design)* Text differing in **meaning** rather than casing or punctuation → **BLOCKER**.
-- *(always)* Nothing reads `lorem`, `TODO`, `xxx`, `{{…}}`, `undefined`, `NaN`, or `[object Object]`.
+- *(always)* Nothing reads `lorem`, `TODO`, `xxx`, `{{…}}`, `undefined`, `NaN`, or `[object Object]`. Text that
+  differs from the baseline is not a finding.
 
 **4. Colour and type**
 - *(design)* Colour roles hold — a primary action rendered with a secondary's weight, or the reverse, is a

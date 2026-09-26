@@ -162,7 +162,7 @@ screen was drawn before it was built and whether the build kept to the drawing.
 "visualMatch": {
   "baseline": "docs/design/reconciliation-detailed.png",
   "fidelity": 92,
-  "matched": "Region order, the filter row's controls, the Complete Match chip and its copy all read as drawn.",
+  "matched": "Compared design/reconciliation-detailed.png with 03_reconcile__02_filtered.png: region order, the filter row's controls and the Complete Match chip all read as drawn.",
   "findings": [
     { "severity": "HIGH",
       "what": "The period selector is drawn as the screen's primary control and renders as a tertiary one",
@@ -176,11 +176,12 @@ screen was drawn before it was built and whether the build kept to the drawing.
 - **`baseline`** is the reference image's path, or `null` for a screen nobody drew. `null` renders as
   **no design reference** — visibly not a pass, because absence of a check must never read as one.
 - **`fidelity`** is derived, per `visual-verification.md`: 100, less 25 a BLOCKER and 8 a HIGH, floored at 0.
+  It grades layout and design; text differences do not count.
   It is `null` wherever `baseline` is. **A scenario whose findings carry a BLOCKER is a `FAILURE`** — the
   divergence is a bug, filmed from its own repro like any other, and its fidelity is not a second opinion the
   reader gets to weigh against the verdict.
-- **`matched`** is one sentence on what lined up. A findings list with nothing beside it reads as a broken screen
-  even when nine tenths of it was right.
+- **`matched`** is one sentence on what lined up, and it names the baseline file and the frame that were
+  compared. A findings list with nothing beside it reads as a broken screen even when nine tenths of it was right.
 - **`findings[]`** carry `severity` of `BLOCKER` or `HIGH` only. **A spacing or pixel delta against the baseline
   is not a finding** and never appears here; where one broke something in the build, that break is a sanity
   finding on its own terms, with its own measurement.
@@ -302,7 +303,8 @@ sentence above passes it. `attempted` is what you actually ran, distinct approac
   measured rect, a captured webhook body. Where that observation is mechanism rather than surface, it is a `proofs[]`
   entry, written once.
 - Every UI scenario carries a `visualMatch`: a `baseline` path with a derived `fidelity` where a design defines the
-  screen, or `baseline: null` where none does. No `findings[]` entry rests on a spacing delta alone, every entry
+  screen, or `baseline: null` where none does. Every `matched` with a baseline names the two files compared. No
+  `findings[]` entry rests on a spacing delta alone, every entry
   cites a measurement or a computed style, and every `BLOCKER` has made its scenario a `FAILURE` with a `bugs[]`
   entry behind it.
 - Every UI scenario names its `video`, every path is report-relative, and every file named in `artifacts[]` exists
