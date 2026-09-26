@@ -48,9 +48,21 @@ every finding and dispatch again. Present only on `PASS`. Skip the reviewer in `
 
 ## 5. Re-present
 
-Same shape as step 5's checkpoint, with one block added at the top: **Changed** — what
-changed and why, one line each, naming the affected `D<n>` and phases. Then
-`AskUserQuestion`: header `Approve?`, options `Approve (Recommended)` / `Revise`.
+Write one message to the user with these blocks, in order:
+
+1. **Changed** — one line per change: what changed, why, and the `D<n>` and phases it touched.
+2. **Decisions** — the full `D<n>` list as it now stands, one line each. Mark the new and the
+   altered ones.
+3. **Phases** — one line per phase: title and step count. Mark the ones that changed.
+4. **Scenarios** — the total, and what was added, moved or dropped.
+5. **Next** — one sentence.
+
+Then `AskUserQuestion`. Its question text repeats the Changed lines, one per line, above the
+question, so the reviewer reads them where the choice is made. Header `Approve?`, options
+`Approve (Recommended)` / `Revise`.
+
+A presentation that exists only in your reasoning was not presented. It counts when it is in
+a message the user can read.
 
 Do not restart the viewer after an edit; the page in the user's tab updates by itself. Do
 not run extraction until the user answers `Approve`. A change made or a comment closed is
