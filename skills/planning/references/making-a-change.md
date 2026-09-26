@@ -1,69 +1,106 @@
 # Making a change — revising a presented plan
 
-A change to plan.html can come from a comment on the page or from the terminal. Handle every
-change in this order.
+### Step 1: Understand the requested change
 
-## 1. Check the claim
+Establish what the user wants to change in the plan and what outcome they expect. Read the
+relevant parts of plan.html and the source documents needed to understand the request.
 
-If the change says a file, function or spec heading exists, open it. Do not edit on an
-unchecked claim.
+Do not edit any files yet.
 
-## 2. Ask before a serious change
+### Step 2: Trace what the change affects
 
-Serious means: it goes against the spec, an ADR or an approved decision; it drops a test
-scenario; it moves work to another phase. For a serious change, say what will happen if it
-goes ahead and wait for the answer. Any other change: make it, then report it.
+Find every existing decision and plan region directly affected by the requested change.
+Check plan.html, `design.md`, this run's ADRs and any other source file used by the plan.
 
-Ask one question per message, in the terminal, never in the comment thread. When you are
-unsure, say what you will do by default and let the user say otherwise. Set the thread's
-status after the answer comes.
+Follow the impact through dependent decisions and steps. A change to one decision may affect
+another decision, a phase, its test scenarios, the acceptance list, the Design System row,
+an ADR or a commit message.
 
-## 3. Make the change in every file it affects
+Read the full `D<n>` decision list. Do not stop after finding the first affected decision.
 
-- plan.html and its payload blocks. Never edit `plan.md` or a `phase-N.md` directly; edit its
-  block in plan.html, then re-run extraction if that file exists on disk.
+### Step 3: Decide how to handle each impact
+
+For every affected item, decide whether it must change to keep the plan and its source files
+consistent.
+
+- If only one reasonable change follows from the user's request, record it for step 4. Do
+  not interrupt the user. Include it in the change summary later.
+- If more than one workable solution exists, or the correct change is not obvious, ask the
+  user to decide. Explain the options and recommend one.
+- Ask one question per message, in the terminal, never in the comment thread. Set the
+  thread's status after the answer comes.
+
+A user's answer may affect more decisions or files. Trace those new impacts and repeat this
+phase until every required change is known and no question remains unresolved.
+
+### Step 4: Make the settled changes
+
+Once every comment has a status and every question has an answer, make all agreed and
+required changes.
+
+Update every affected source:
+
+- plan.html and its payload blocks.
 - `design.md`, when it exists.
-- Every step that uses the changed step's output. The phase's test scenarios. The acceptance
-  list. The Design System row. The commit message.
-- The other `D<n>` decisions. Read the whole list. Update each one the change affects. When
-  one needs the user's call, leave it as it is and name it in the Changed block as a question.
-- When it changes a decision an ADR from this run records: delete that ADR and its INDEX.md
-  line — it is not committed yet — and run step 7's Record the ADRs again. Then make `## ADRs`
-  match what is on disk.
-- If the plan now does something different from what the ticket, mock or spec asked, add a
-  row to plan.md's `## Design corrections`.
+- This run's ADRs and their `INDEX.md` entries.
+- Every affected `D<n>` decision, phase step, test scenario, acceptance item, Design System
+  row and commit message.
+- Any other source file that must change to keep the plan coherent.
 
-## 4. When the round is done, review once
+Never edit `plan.md` or a `phase-N.md` directly. The extraction script derives those files
+from plan.html after the user approves the plan and the final review passes.
 
-The round is done when every comment in the batch has a status and every terminal question
-has its answer. Run the verifier:
+When a changed decision invalidates an ADR from this run, delete that ADR and its `INDEX.md`
+entry, run the planning flow's Record the ADRs step again, and make plan.html's `## ADRs`
+section match the files on disk.
+
+If the plan now differs from the ticket, mock or spec, record the difference in the plan's
+`## Design corrections` payload block.
+
+### Step 5: Verify the edited plan
+
+Run:
 
 ```bash
 node --experimental-strip-types <skill-dir>/scripts/verify-plan.ts .harness/<name>/plan.html
 ```
 
-Then dispatch one fresh-context reviewer. It receives the paths to plan.html, `design.md`
-and this run's ADRs, plus the list of what changed — never the session history. Its one
-question: are these files in sync with each other and with the change? It returns `PASS`,
-or `FAIL` with one line per finding: `<file>: <what disagrees with what>`. On `FAIL`, fix
-every finding and dispatch again. Present only on `PASS`. Skip the reviewer in `--auto`.
+Fix every verifier failure before presenting the revised plan.
 
-## 5. Re-present
+### Step 6: Summarize and ask for approval
 
-Do this once, after every comment in the round is resolved and the reviewer returned `PASS`.
-Write one message to the user with these blocks, in order:
+Briefly summarize all changes made to the plan and its related files, including required
+changes that did not need a user decision.
 
-1. **Changed** — one line per change: what changed, why, and the `D<n>` and phases it touched.
-2. **Decisions** — the full `D<n>` list as it now stands, one line each. Mark the new and the
-   altered ones.
-3. **Phases** — one line per phase: title and step count. Mark the ones that changed.
-4. **Scenarios** — the total, and what was added, moved or dropped.
-5. **Next** — one sentence.
+Then ask the user to approve the revised plan or request another change.
 
-Then `AskUserQuestion`. Its question text repeats the Changed lines, one per line, above the
-question, so the reviewer reads them where the choice is made. Header `Approve?`, options
-`Approve (Recommended)` / `Revise`.
+If the user requests another change, return to step 1. Do not treat a closed comment or an
+applied edit as approval.
 
-Do not restart the viewer after an edit; the page in the user's tab updates by itself. Do
-not run extraction until the user answers `Approve`. A change made or a comment closed is
-not an approval.
+### Step 7: Run the final consistency review
+
+After the user approves the revised plan, dispatch one fresh-context reviewer. Give it only
+the paths to plan.html, `design.md`, this run's ADRs and every other source file involved in
+the plan. Do not pass the session history.
+
+Ask it whether the files agree with one another and form one coherent plan. It must return
+one of:
+
+- `PASS`
+- `FAIL`, followed by one line per finding:
+  `<file>: <what conflicts with, contradicts or is unclear in another file>`
+
+On `FAIL`, present every finding to the user. If resolving a finding requires a decision,
+return to step 1. After making any resulting changes, verify the plan, summarize it and ask
+for approval again before dispatching another fresh-context reviewer.
+
+Skip the reviewer in `--auto`. After the reviewer returns `PASS`, or after verification in
+`--auto`, run the extraction script to sync `plan.md` and every `phase-N.md` with plan.html:
+
+```bash
+node <skill-dir>/scripts/extract-plan.mjs .harness/<name>/plan.html
+```
+
+Then continue to the next planning stage.
+
+Do not restart the viewer after an edit. The page in the user's tab updates by itself.
