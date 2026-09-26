@@ -1,1 +1,14 @@
 export type { AgentProvider, AgentRequest, AgentResult, Effort, Session } from "./agent.ts";
+export {
+  type Check,
+  type CheckContext,
+  type CheckStatus,
+  CheckStatusSchema,
+  checkBinary,
+  type Exec,
+  type ExecResult,
+  fail,
+  type Outcome,
+  ok,
+  warn,
+} from "./check.ts";
