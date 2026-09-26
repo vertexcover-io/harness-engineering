@@ -48,6 +48,9 @@
     "packages/sdk": {
       "name": "@harness/sdk",
       "version": "0.0.0",
+      "dependencies": {
+        "zod": "^4",
+      },
     },
     "packages/server": {
       "name": "@harness/server",
