@@ -48,6 +48,7 @@ every finding and dispatch again. Present only on `PASS`. Skip the reviewer in `
 
 ## 5. Re-present
 
+Do this once, after every comment in the round is resolved and the reviewer returned `PASS`.
 Write one message to the user with these blocks, in order:
 
 1. **Changed** — one line per change: what changed, why, and the `D<n>` and phases it touched.
