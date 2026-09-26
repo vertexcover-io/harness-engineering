@@ -1,0 +1,16 @@
+{
+  "name": "@harness/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@harness/core": "workspace:*",
+    "hono": "^4.13.9"
+  }
+}

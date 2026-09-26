@@ -3,10 +3,18 @@
   "version": "1.32.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "engines": {
-    "node": ">=22.6"
+    "node": ">=22.6",
+    "bun": ">=1.2"
   },
   "scripts": {
+    "typecheck": "bun run --filter '@harness/*' typecheck",
+    "test": "bun test ./packages",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
     "release:version": "bun scripts/version.ts",
     "release:version:node": "node scripts/version.ts",
     "test:scripts": "node --test scripts/*.test.ts",
@@ -15,7 +23,16 @@
     "test:skills": "node --experimental-strip-types --test \"skills/**/*.test.ts\" \"skills/**/*.test.mjs\""
   },
   "pi": {
-    "skills": ["./skills"],
-    "extensions": ["./extensions/pi/harness-hooks.ts"]
+    "skills": [
+      "./skills"
+    ],
+    "extensions": [
+      "./extensions/pi/harness-hooks.ts"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
   }
 }

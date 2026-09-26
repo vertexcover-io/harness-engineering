@@ -1,0 +1,19 @@
+{
+  "name": "@harness/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "harness": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "bun build ./src/index.ts --compile --outfile dist/harness"
+  },
+  "dependencies": {
+    "@harness/core": "workspace:*"
+  }
+}
