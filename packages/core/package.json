@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@harness/workflow": "workspace:*"
+    "@harness/workflow": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4"
   }
 }
