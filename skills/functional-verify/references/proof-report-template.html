@@ -81,7 +81,7 @@
                    against the design that defines it. baseline is the
                    reference image's path, or null for a screen nobody drew;
                    fidelity is derived (100, less 25 a BLOCKER and 8 a HIGH),
-                   null when baseline is. matched is one sentence on what lined
+                   null when baseline is. matched names the two files compared, then one sentence on what lined
                    up. findings[] are {severity,what,baselineShows,buildShows,
                    evidence}, severity BLOCKER | HIGH only — a spacing delta
                    against the baseline is not a finding. The baseline renders
@@ -170,7 +170,7 @@
       "visualMatch": {
         "baseline": "<path to the design that defines this screen, or null if nobody drew it>",
         "fidelity": 100,
-        "matched": "<one sentence on what lined up>",
+        "matched": "<the baseline file and the frame compared, then one sentence on what lined up>",
         "findings": [
           {
             "severity": "<BLOCKER | HIGH — never a spacing delta>",

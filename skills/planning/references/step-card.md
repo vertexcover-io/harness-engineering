@@ -103,6 +103,8 @@ contract: element order · spacing · type scale and weight · colour role · co
 divider placement · icon · empty-state copy word for word. Planning's steps 1 and 2 mean this
 list; it is defined here and nowhere else.
 
+In a specced run, the `spec:` line `_shared/design-spec.md` gives replaces the style facts.
+
 In the drill-down the frame is a panel, and a panel is three parts — summary, `.d-body`, content:
 
 ```html
@@ -110,7 +112,8 @@ In the drill-down the frame is a panel, and a panel is three parts — summary, 
   <summary>Design — the name block hovered</summary>
   <div class="d-body">
     <img data-img="menu-super-admin-hover.png" alt="User menu with the name block highlighted">
-    <div class="cap">Settles how far the hover background extends across the name block.</div>
+    <div class="cap">Settles how far the hover background extends across the name block.
+      spec: design/spec.md#user-menu</div>
   </div>
 </details>
 ```

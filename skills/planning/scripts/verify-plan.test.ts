@@ -50,15 +50,20 @@ const framePanel = (file: string): string =>
 type SpecParts = {
   readonly html: string;
   readonly index?: string;
+  readonly specMd?: string;
   readonly designFiles?: readonly string[];
 };
 
-const spec = ({ html, index, designFiles = [] }: SpecParts): string => {
+const spec = ({ html, index, specMd, designFiles = [] }: SpecParts): string => {
   const dir = mkdtempSync(join(tmpdir(), "verify-plan-"));
   writeFileSync(join(dir, "plan.html"), html);
   if (index !== undefined) {
     mkdirSync(join(dir, "design"), { recursive: true });
     writeFileSync(join(dir, "design", "INDEX.md"), index);
+  }
+  if (specMd !== undefined) {
+    mkdirSync(join(dir, "design"), { recursive: true });
+    writeFileSync(join(dir, "design", "spec.md"), specMd);
   }
   for (const file of designFiles) {
     mkdirSync(join(dir, "design"), { recursive: true });
@@ -127,6 +132,104 @@ test("an IMG key that is not a file in design\\/ is a finding", () => {
   const findings = verifyPlan(plan);
   assert.equal(findings.length, 1);
   assert.match(findings[0]?.message ?? "", /ghost\.png/);
+});
+
+const SPEC_TWO = `# Mapping screen
+
+## Template select
+
+width: 320
+
+### States
+
+## Formula row
+`;
+
+test("a plan whose steps cite every spec heading has no findings", () => {
+  const payloads = `<script type="text/markdown" data-file="plan.md">
+# Plan
+</script>
+<script type="text/markdown" data-file="phases/phase-1.md">
+## Implementation
+1. **Build the picker**
+   spec: design/spec.md#template-select
+2. **Build the row**
+   spec: design/spec.md#formula-row
+</script>`;
+  const plan = spec({ html: planHtml({ payloads }), specMd: SPEC_TWO });
+
+  assert.deepEqual(verifyPlan(plan), []);
+});
+
+test("one step citing several spec headings covers all of them", () => {
+  const payloads = `<script type="text/markdown" data-file="plan.md">
+# Plan
+</script>
+<script type="text/markdown" data-file="phases/phase-1.md">
+## Implementation
+1. **Build the mapping row**
+   spec: design/spec.md#template-select
+   spec: design/spec.md#formula-row
+</script>`;
+  const plan = spec({ html: planHtml({ payloads }), specMd: SPEC_TWO });
+
+  assert.deepEqual(verifyPlan(plan), []);
+});
+
+test("a spec heading that no step cites is a finding naming the heading and its slug", () => {
+  const payloads = `<script type="text/markdown" data-file="plan.md">
+# Plan
+</script>
+<script type="text/markdown" data-file="phases/phase-1.md">
+## Implementation
+1. **Build the picker**
+   spec: design/spec.md#template-select
+</script>`;
+  const plan = spec({ html: planHtml({ payloads }), specMd: SPEC_TWO });
+
+  const findings = verifyPlan(plan);
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]?.check, "spec");
+  assert.match(findings[0]?.message ?? "", /Formula row/);
+  assert.match(findings[0]?.message ?? "", /#formula-row/);
+});
+
+test("a citation outside a phase payload does not count", () => {
+  const payloads = `<script type="text/markdown" data-file="plan.md">
+# Plan
+spec: design/spec.md#formula-row
+</script>
+<script type="text/markdown" data-file="phases/phase-1.md">
+## Implementation
+1. **Build the picker**
+   spec: design/spec.md#template-select
+</script>`;
+  const steps = `<p>spec: design/spec.md#formula-row</p>`;
+  const plan = spec({ html: planHtml({ steps, payloads }), specMd: SPEC_TWO });
+
+  const findings = verifyPlan(plan).filter((f) => f.check === "spec");
+  assert.equal(findings.length, 1);
+  assert.match(findings[0]?.message ?? "", /formula-row/);
+});
+
+test("a spec heading recorded as not built is accounted for", () => {
+  const payloads = `<script type="text/markdown" data-file="plan.md">
+## Design System
+
+design/spec.md#formula-row — not built: formulas ship in REF-25062
+</script>
+<script type="text/markdown" data-file="phases/phase-1.md">
+## Implementation
+1. **Build the picker**
+   spec: design/spec.md#template-select
+</script>`;
+  const plan = spec({ html: planHtml({ payloads }), specMd: SPEC_TWO });
+
+  assert.deepEqual(verifyPlan(plan), []);
+});
+
+test("no spec.md means the spec check stays silent", () => {
+  assert.deepEqual(verifyPlan(spec({ html: planHtml({}), index: INDEX_ONE, designFiles: ["04-states.png"] })).filter((f) => f.check === "spec"), []);
 });
 
 test("no design index means the design checks stay silent", () => {

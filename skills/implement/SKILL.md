@@ -44,7 +44,9 @@ Resolve the behavior to implement and the existing tests that exercise it before
 
 A `phases/phase-N.md` is already decomposed; take it as given rather than re-deriving the feature:
 
-- `## Implementation` — the build steps, in order.
+- `## Implementation` — the build steps, in order. When a step has `spec:` lines, read
+  `skills/_shared/design-spec.md` first: each line points to a heading in `design/spec.md`, and
+  that heading holds the properties and values the step must use.
 - `## Test Scenarios` — `### Unit`, `### API`, `### E2E`, each scenario numbered `SC<n>`. One test
   per scenario, at the altitude it sits under. Carry the id in the test title (`SC12: …`) so a
   reviewer and the quality gate can trace counts back to scenarios without a second file.

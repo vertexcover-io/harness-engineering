@@ -1,5 +1,6 @@
 #!/usr/bin/env node --experimental-strip-types
-// Checks a written plan.html against its design index, its own slot markers and its agent payloads.
+// Checks a written plan.html against its design index, its design spec, its own slot markers and
+// its agent payloads.
 // Usage: verify-plan.ts <path/to/plan.html>
 // Prints one line per finding and exits 1; prints an "ok" line with the counts and exits 0 when
 // clean. A missing argument or an unreadable plan.html is also exit 1.
@@ -9,7 +10,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export type Finding = {
-  readonly check: "design" | "slot" | "payload" | "diff";
+  readonly check: "design" | "spec" | "slot" | "payload" | "diff";
   readonly message: string;
 };
 
@@ -19,6 +20,10 @@ type Payload = {
 };
 
 const ROW_IMAGE = /[\w./-]+\.(?:png|jpe?g|webp|gif|svg)/;
+// A component in design/spec.md is a level-2 heading; the title is level 1 and anything deeper
+// belongs to the component above it. A step cites one as `spec: design/spec.md#<slug>`.
+const SPEC_HEADING = /^##\s+(.+?)\s*$/;
+const SPEC_CITATION = /spec:\s*design\/spec\.md#([\w-]+)/g;
 const IMG_ATTR = /data-img="([^"]+)"/g;
 const IMG_ENTRY = /^\s*["']([^"']+)["']\s*:/;
 const HTML_COMMENT = /<!--[\s\S]*?-->/g;
@@ -112,6 +117,62 @@ const isExcused = (lines: readonly string[], file: string): boolean => {
   return lines.some((line) => form.test(line));
 };
 
+// The slug GitHub gives a heading, so `## Template select` and `#template-select` name one thing.
+const slug = (heading: string): string =>
+  heading
+    .toLowerCase()
+    .replace(/`/g, "")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+
+function specHeadings(specPath: string): readonly string[] {
+  const text = readText(specPath);
+  if (text === null) return [];
+  const headings = text
+    .split("\n")
+    .map((line) => SPEC_HEADING.exec(line)?.[1])
+    .filter((heading): heading is string => heading !== undefined);
+  return unique(headings);
+}
+
+// A citation counts only inside a phases/*.md payload: that file is what the coder reads, so a
+// `spec:` line in plan.md or in page prose leaves the coder with nothing to build against.
+function citedSlugs(html: string): readonly string[] {
+  const steps = payloads(html)
+    .filter(({ file }) => file.startsWith("phases/"))
+    .map(({ body }) => body)
+    .join("\n");
+  const values = [...steps.matchAll(SPEC_CITATION)]
+    .map((match) => match[1])
+    .filter((value): value is string => value !== undefined)
+    .map(slug);
+  return unique(values);
+}
+
+// The same one-line escape hatch as a frame: "design/spec.md#<slug> — not built: <reason>".
+const isSpecExcused = (lines: readonly string[], headingSlug: string): boolean => {
+  const form = new RegExp(String.raw`design/spec\.md#${escapeRegExp(headingSlug)}\s*[—-]\s*not built:\s*\S`, "i");
+  return lines.some((line) => form.test(line));
+};
+
+function specFindings(html: string, designDir: string): readonly Finding[] {
+  const specPath = join(designDir, "spec.md");
+  if (!existsSync(specPath)) return [];
+
+  const cited = citedSlugs(html);
+  const lines = html.split("\n");
+
+  return specHeadings(specPath)
+    .map((heading) => ({ heading, headingSlug: slug(heading) }))
+    .filter(({ headingSlug }) => !cited.includes(headingSlug))
+    .filter(({ headingSlug }) => !isSpecExcused(lines, headingSlug))
+    .map(({ heading, headingSlug }): Finding => ({
+      check: "spec",
+      message: `"${heading}" is a heading in design/spec.md but no step cites it — add "spec: design/spec.md#${headingSlug}" to the step that builds it, or record "design/spec.md#${headingSlug} — not built: reason"`,
+    }));
+}
+
 function designFindings(html: string, designDir: string): readonly Finding[] {
   if (!existsSync(join(designDir, "INDEX.md"))) return [];
 
@@ -202,6 +263,7 @@ export function verifyPlan(htmlPath: string): readonly Finding[] {
   const designDir = join(dirname(resolve(htmlPath)), "design");
   return [
     ...designFindings(html, designDir),
+    ...specFindings(html, designDir),
     ...slotFindings(html),
     ...payloadFindings(payloads(html)),
     ...diffFindings(html),

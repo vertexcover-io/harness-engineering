@@ -87,6 +87,8 @@ Do not split when the pieces share more than ~30% of files and ship together.
 - **Dispatch a design scout too when the change has a user-facing surface.** Send it with the
   sweep, on the same fast model; read `references/design-scout.md` for the brief. It pulls the
   designs off the ticket into `.harness/<name>/design/` and returns the `design/INDEX.md` path.
+  When it saved `design/spec.md`, read `<skill-dir>/../_shared/design-spec.md`: the run is
+  specced, and that file says what changes.
 - **Dispatch the docs scout — always.** Send it with the sweep, on the same fast model; read
   `references/docs-scout.md` for the brief. It returns one line per ADR or doc under `docs/`
   that binds this task.
@@ -119,8 +121,10 @@ Do not split when the pieces share more than ~30% of files and ship together.
   to sample: Read each file it names, images included, before you write a step. A screen you have
   not looked at is one you cannot write a step for. Two frames of one screen at different
   viewports are two screens — a phone sheet is not the desktop panel scaled down, and each
-  settles its own order, spacing and copy. What you take from a frame is what its prose source
-  cannot carry — the style facts `references/step-card.md` lists under Designs.
+  settles its own order, spacing and copy. Read the mock and the spec whole when they exist.
+  Unspecced, read the style facts off each frame per the Designs list in
+  `references/step-card.md`. Specced, the spec holds the style facts and the frame settles
+  layout and order.
 - When the repo holds fewer than 3 examples of the pattern this work needs, also research
   externally — prior art, known failure modes, current API facts. Findings return inline
   with source URLs.
@@ -294,7 +298,8 @@ Three rules bind every step you write:
   `build to design/x.png`, per `references/step-card.md` — and carries that frame's style facts
   in its contract. Every screen in `design/INDEX.md` is claimed by at least one step; a screen no
   step builds is recorded in plan.md as `design/<file> — not built: <reason>`. A coder who cannot
-  see the frame rebuilds it from imagination.
+  see the frame rebuilds it from imagination. In a specced run, every heading in the spec is
+  cited by a step, in the form `_shared/design-spec.md` gives.
 
 **Done when:** every phase has a capability title, every requirement has a matrix row, every
 scenario has exactly one home and names a failure no other scenario catches, and every file
