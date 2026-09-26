@@ -136,9 +136,14 @@ function specHeadings(specPath: string): readonly string[] {
   return unique(headings);
 }
 
+// A citation counts only inside a phases/*.md payload: that file is what the coder reads, so a
+// `spec:` line in plan.md or in page prose leaves the coder with nothing to build against.
 function citedSlugs(html: string): readonly string[] {
-  const markup = html.replace(HTML_COMMENT, "");
-  const values = [...markup.matchAll(SPEC_CITATION)]
+  const steps = payloads(html)
+    .filter(({ file }) => file.startsWith("phases/"))
+    .map(({ body }) => body)
+    .join("\n");
+  const values = [...steps.matchAll(SPEC_CITATION)]
     .map((match) => match[1])
     .filter((value): value is string => value !== undefined)
     .map(slug);

@@ -87,8 +87,8 @@ Do not split when the pieces share more than ~30% of files and ship together.
 - **Dispatch a design scout too when the change has a user-facing surface.** Send it with the
   sweep, on the same fast model; read `references/design-scout.md` for the brief. It pulls the
   designs off the ticket into `.harness/<name>/design/` and returns the `design/INDEX.md` path.
-  When it saved both a spec and an HTML mock, read `<skill-dir>/../_shared/design-spec.md`: the
-  run is specced, and that file says what changes.
+  When it saved `design/spec.md`, read `<skill-dir>/../_shared/design-spec.md`: the run is
+  specced, and that file says what changes.
 - **Dispatch the docs scout — always.** Send it with the sweep, on the same fast model; read
   `references/docs-scout.md` for the brief. It returns one line per ADR or doc under `docs/`
   that binds this task.

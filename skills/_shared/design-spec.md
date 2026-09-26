@@ -1,7 +1,6 @@
 # Design spec — the contract
 
-A run is specced when the design scout saved both `design/spec.md` and `design/<slug>/index.html`
-under `.harness/<name>/`. With only one of them, the run is unspecced and this file does not apply.
+A run is specced when `.harness/<name>/design/spec.md` exists. Without it, this file does not apply.
 
 `design/spec.md` holds the properties, styles, states and copy of every component the design uses.
 It is the source of those values; the mock and the images are not.

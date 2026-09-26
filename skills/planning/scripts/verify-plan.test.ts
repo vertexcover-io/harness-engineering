@@ -194,6 +194,24 @@ test("a spec heading that no step cites is a finding naming the heading and its 
   assert.match(findings[0]?.message ?? "", /#formula-row/);
 });
 
+test("a citation outside a phase payload does not count", () => {
+  const payloads = `<script type="text/markdown" data-file="plan.md">
+# Plan
+spec: design/spec.md#formula-row
+</script>
+<script type="text/markdown" data-file="phases/phase-1.md">
+## Implementation
+1. **Build the picker**
+   spec: design/spec.md#template-select
+</script>`;
+  const steps = `<p>spec: design/spec.md#formula-row</p>`;
+  const plan = spec({ html: planHtml({ steps, payloads }), specMd: SPEC_TWO });
+
+  const findings = verifyPlan(plan).filter((f) => f.check === "spec");
+  assert.equal(findings.length, 1);
+  assert.match(findings[0]?.message ?? "", /formula-row/);
+});
+
 test("a spec heading recorded as not built is accounted for", () => {
   const payloads = `<script type="text/markdown" data-file="plan.md">
 ## Design System
