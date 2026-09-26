@@ -83,6 +83,7 @@
     "api": {
       "path": "packages/api",
       "runner": "vitest",
+      "timeoutSeconds": 600,
       "commands": {
         "bootstrap": "pnpm install",
         "build": "pnpm --filter api build",

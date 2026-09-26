@@ -84,9 +84,13 @@ outside a plugin runtime, resolve the checkout's absolute path before changing d
    ```
    Bash("node --experimental-strip-types '<SETUP_SCRIPT>' baseline '<SPEC_NAME>' --packages '<PACKAGES>'", run_in_background: true)
    ```
-   Store the background task handle. The script bootstraps packages, runs typecheck, lint and
-   `test_all`, and writes `baseline.json`; red results are the baseline.
+   Store the background task handle. If the run halts before the join, stop this task first
+   (`TaskStop` in Claude Code); the script kills its commands' workers when stopped.
+   The script bootstraps packages, runs typecheck, lint and `test_all`, and writes
+   `baseline.json`; red results are the baseline, and so is a command past its package's
+   `timeoutSeconds` ([config.md](config.md#commands)), recorded as exit 124.
    Exit 2 halts with `CONFIG_STALE` (name the command, package, and config to update),
+   `CONFIG_INVALID` (a `timeoutSeconds` that is not a positive number),
    `PACKAGE_UNKNOWN` (name the missing package and `setup-harness`), or `WORKTREE_MISSING`
    (the `worktree` passed at step 7 does not exist).
 
