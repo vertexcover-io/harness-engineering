@@ -32,6 +32,7 @@
       "name": "@harness/core",
       "version": "0.0.0",
       "dependencies": {
+        "@harness/sdk": "workspace:*",
         "@harness/workflow": "workspace:*",
         "yaml": "^2.9.1",
         "zod": "^4",
@@ -43,6 +44,10 @@
       "dependencies": {
         "@harness/core": "workspace:*",
       },
+    },
+    "packages/sdk": {
+      "name": "@harness/sdk",
+      "version": "0.0.0",
     },
     "packages/server": {
       "name": "@harness/server",
@@ -85,6 +90,8 @@
     "@harness/core": ["@harness/core@workspace:packages/core"],
 
     "@harness/plugins": ["@harness/plugins@workspace:packages/plugins"],
+
+    "@harness/sdk": ["@harness/sdk@workspace:packages/sdk"],
 
     "@harness/server": ["@harness/server@workspace:packages/server"],
 
