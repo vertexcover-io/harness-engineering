@@ -25,6 +25,8 @@ status after the answer comes.
 - `design.md`, when it exists.
 - Every step that uses the changed step's output. The phase's test scenarios. The acceptance
   list. The Design System row. The commit message.
+- The other `D<n>` decisions. Read the whole list. Update each one the change affects. When
+  one needs the user's call, leave it as it is and name it in the Changed block as a question.
 - When it changes a decision an ADR from this run records: delete that ADR and its INDEX.md
   line — it is not committed yet — and run step 7's Record the ADRs again. Then make `## ADRs`
   match what is on disk.
