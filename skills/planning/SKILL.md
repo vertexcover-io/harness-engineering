@@ -404,6 +404,9 @@ one-paragraph summary: the phase list and anything that changed since the checkp
 one line that they can comment on the page itself. One `AskUserQuestion`. In `--auto`,
 auto-approve.
 
+Any change asked from here on, in a comment or in the terminal: **read
+`references/making-a-change.md` before you edit.**
+
 ### Comments from the page
 
 The reviewer can mark up plan.html directly instead of describing a change in the terminal.
@@ -425,8 +428,7 @@ was open never reached you.
 Handle each comment by what it asks for:
 
 - **A question** — answer it, change nothing. Status `answered`.
-- **A change** — make it in plan.html *and* the payload blocks, then say what you changed.
-  Status `changed`.
+- **A change** — make it, then say what you changed. Status `changed`.
 - **One you should not make** — give the reason. Status `declined`. Never leave a thread open
   instead.
 
@@ -437,21 +439,11 @@ node <skill-dir>/scripts/comment-store.cjs reply <state-dir> --id <id> --text "<
 Clear the whole batch before presenting again: one unanswered thread reads as ignored. In
 `--auto` there is no reviewer — skip the watcher.
 
-After any revision, whether it came from a comment or the terminal: update plan.html —
-payloads included — re-run step 7's self-review, and re-present. Keep the viewer running
-through revisions; every save shows up in the user's tab on its own. A revision is not a
-confirmation, and neither is a resolved comment; extract only after explicit approval.
-
-When a revision changes a decision an ADR from this run records, delete that ADR and its
-INDEX.md line — it is not committed yet — and run step 7's Record the ADRs again for the new
-decision. Then make `## ADRs` match what is on disk.
-
 On approval, extract the payloads, keep the review's comments, then stop the comment watcher
 and the viewer — the session dir under `/tmp` is deleted with it, and `comments.json` is the
 only record of what the reviewer asked:
 
 ```bash
-node --experimental-strip-types <skill-dir>/scripts/verify-plan.ts .harness/<name>/plan.html
 node <skill-dir>/scripts/extract-plan.mjs .harness/<name>/plan.html
 cp <state-dir>/comments.json .harness/<name>/comments.json 2>/dev/null || true
 bash <skill-dir>/scripts/stop-server.sh <session-dir>
@@ -475,6 +467,8 @@ works through them directly. Name the ADRs written in that hand-off.
 | "The user seems impatient" | A wrong plan costs more than one more question. Ask the highest-leverage one. |
 | "I'll flag it for the coder to check" | The coder has less context than you. Resolve it or ask the user. |
 | "The summary can gloss this decision" | The summary is what the user approves. A decision missing from it was never approved. |
+| "The change is small, just make it" | A small edit to one step can break other steps. Change every file it affects. |
+| "I'll review now while it's fresh" | Review once per round, not per change. Finish the round first. |
 | "This unit is untestable, so the test is e2e" | That is a finding about the code, not a level. Name it a Blocker and give a phase the step that opens it up. |
 | "The existing code has no tests, so this is how it is" | The input describes the code today. The plan says what it becomes. Never copy a constraint you are allowed to remove. |
 | "Most rows are e2e because the feature is user-facing" | User-facing describes the requirement. It never describes the level. Run the counterfactual on every row. |
