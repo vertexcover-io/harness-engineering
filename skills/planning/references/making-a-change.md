@@ -61,9 +61,6 @@ Then `AskUserQuestion`. Its question text repeats the Changed lines, one per lin
 question, so the reviewer reads them where the choice is made. Header `Approve?`, options
 `Approve (Recommended)` / `Revise`.
 
-A presentation that exists only in your reasoning was not presented. It counts when it is in
-a message the user can read.
-
 Do not restart the viewer after an edit; the page in the user's tab updates by itself. Do
 not run extraction until the user answers `Approve`. A change made or a comment closed is
 not an approval.
