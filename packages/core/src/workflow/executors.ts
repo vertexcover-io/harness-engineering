@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { spawn } from "@harness/sdk";
 import { z } from "zod";
 import type { JsonValue } from "../contracts.ts";
 import {
@@ -28,69 +28,22 @@ const MAX_OUTPUT_BYTES = 1_048_576;
 
 const aborted = (): NodeFailure => new NodeFailure("aborted", "run aborted");
 
-const killGroup = (pid: number | undefined): void => {
-  if (pid === undefined) return;
-  try {
-    process.kill(-pid, "SIGKILL");
-  } catch {
-    // the group already exited
-  }
-};
-
-export const runScript = (request: ScriptRequest): Promise<ScriptResult> =>
-  new Promise((resolveResult, reject) => {
-    const [command, args] =
-      request.runtime === "sh" ? ["sh", ["-c", request.script]] : ["bun", ["-e", request.script]];
-    const child = spawn(command, args, {
-      cwd: request.cwd,
-      detached: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let failure: NodeFailure | undefined;
-    const stop = (reason: NodeFailure): void => {
-      if (failure !== undefined) return;
-      failure = reason;
-      killGroup(child.pid);
-    };
-    const collect = (sink: Buffer[]) => {
-      let kept = 0;
-      return (chunk: Buffer) => {
-        const part = chunk.subarray(0, Math.max(0, MAX_OUTPUT_BYTES - kept));
-        if (part.length === 0) return;
-        sink.push(part);
-        kept += part.length;
-      };
-    };
-    const onAbort = (): void => stop(aborted());
-    const timer =
-      request.timeoutMs === undefined
-        ? undefined
-        : setTimeout(
-            () => stop(new NodeFailure("timeout", `timed out after ${request.timeoutMs}ms`)),
-            request.timeoutMs,
-          );
-    request.signal.addEventListener("abort", onAbort, { once: true });
-    if (request.signal.aborted) onAbort();
-    child.stdout.on("data", collect(stdout));
-    child.stderr.on("data", collect(stderr));
-    child.on("error", (error) =>
-      stop(new NodeFailure("exception", error.message, undefined, { cause: error })),
-    );
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      request.signal.removeEventListener("abort", onAbort);
-      if (failure !== undefined) return reject(failure);
-      resolveResult({
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
-        exitCode: code ?? 128,
-      });
-    });
-    child.stdin.on("error", () => undefined);
-    child.stdin.end(JSON.stringify(request.input));
+export const runScript = async (request: ScriptRequest): Promise<ScriptResult> => {
+  const [command, args] =
+    request.runtime === "sh" ? ["sh", ["-c", request.script]] : ["bun", ["-e", request.script]];
+  const result = await spawn(command, args, {
+    cwd: request.cwd,
+    input: JSON.stringify(request.input),
+    signal: request.signal,
+    maxOutputBytes: MAX_OUTPUT_BYTES,
+    ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
   });
+  if (result.stopped === "aborted") throw aborted();
+  if (result.stopped === "timeout") {
+    throw new NodeFailure("timeout", `timed out after ${request.timeoutMs}ms`);
+  }
+  return { stdout: result.stdout, stderr: result.stderr, exitCode: result.code };
+};
 
 export const importModule = async (
   modulePath: string,

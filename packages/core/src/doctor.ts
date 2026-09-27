@@ -5,19 +5,23 @@ import {
   type CheckStatus,
   CheckStatusSchema,
   checkBinary,
+  createGit,
   type Exec,
+  execWithTimeout,
   fail,
+  type ILogger,
+  NOT_FOUND,
+  noopLogger,
   type Outcome,
   ok,
   warn,
 } from "@harness/sdk";
 import * as z from "zod";
-import type { Result } from "./contracts.ts";
-import { execWithTimeout, findRepoRoot, NOT_FOUND } from "./exec.ts";
+import { NonEmptyStringSchema, type Result } from "./contracts.ts";
 import { readIfExists } from "./files.ts";
 
 export const DoctorRowSchema = z.object({
-  name: z.string().min(1),
+  name: NonEmptyStringSchema,
   status: CheckStatusSchema,
   optional: z.boolean(),
   detail: z.string(),
@@ -39,7 +43,7 @@ export type DoctorJson = z.infer<typeof DoctorJsonSchema>;
 
 // A project doctor's rows are untrusted output: a wrongly typed field falls back as in v1.
 const ProjectRowSchema = z.object({
-  name: z.string().min(1),
+  name: NonEmptyStringSchema,
   status: CheckStatusSchema,
   optional: z.boolean().catch(false),
   detail: z.string().catch(""),
@@ -62,14 +66,14 @@ const parseJson = (text: string): Result<unknown> => {
 };
 
 const checkGitRepo = async ({ root, exec }: CheckContext): Promise<Outcome> =>
-  (await findRepoRoot(root, exec)) === null ? fail("not inside a git repository") : ok(root);
+  (await createGit(exec).repoRoot(root)) === null ? fail("not inside a git repository") : ok(root);
 
 const checkHarnessIgnored = async ({ root, exec }: CheckContext): Promise<Outcome> => {
-  const { code } = await exec("git", ["check-ignore", join(root, ".harness", "probe")], root);
-  return code === 0 ? ok(".harness/ is gitignored") : fail(".harness/ is not gitignored");
+  const ignored = await createGit(exec).isIgnored(root, join(root, ".harness", "probe"));
+  return ignored ? ok(".harness/ is gitignored") : fail(".harness/ is not gitignored");
 };
 
-const ConfigSchema = z.object({ doctor: z.string().min(1).optional() });
+const ConfigSchema = z.object({ doctor: NonEmptyStringSchema.optional() });
 type Config = z.infer<typeof ConfigSchema>;
 
 // null when the file is absent. The config check and the project doctor both read through here,
@@ -169,16 +173,23 @@ export const CHECKS: readonly Check[] = [
 const cap = (status: CheckStatus, optional: boolean): CheckStatus =>
   optional && status === "fail" ? "warn" : status;
 
-const runCheck = async (check: Check, context: CheckContext): Promise<Outcome> => {
+const runCheck = async (check: Check, context: CheckContext, log: ILogger): Promise<Outcome> => {
   try {
     return await check.run(context);
   } catch (error) {
+    log.error({ check: check.name, err: error }, "doctor check crashed; reported as FAIL");
     return fail(errorMessage(error));
   }
 };
 
-export const evaluate = async (check: Check, context: CheckContext): Promise<DoctorRow> => {
-  const { status, detail, fix } = await runCheck(check, context);
+export const evaluate = async (
+  check: Check,
+  context: CheckContext,
+  log: ILogger = noopLogger,
+): Promise<DoctorRow> => {
+  const start = Date.now();
+  const { status, detail, fix } = await runCheck(check, context, log);
+  log.debug({ check: check.name, status, durationMs: Date.now() - start }, "doctor check finished");
   return {
     name: check.name,
     optional: check.optional === true,
@@ -257,18 +268,21 @@ export type DoctorOptions = {
   readonly exec?: Exec;
   // Checks a caller adds, such as a plugin's own tools; their rows follow the built-in ones.
   readonly extraChecks?: readonly Check[];
+  readonly log?: ILogger;
 };
 
 export const runDoctor = async ({
   cwd,
   exec = execWithTimeout(DOCTOR_TIMEOUT_MS),
   extraChecks = [],
+  log: parentLog = noopLogger,
 }: DoctorOptions): Promise<DoctorReport> => {
+  const log = parentLog.child({ component: "doctor" });
   // Outside a repository the checks still run, against cwd; git-repo reports the problem.
-  const root = (await findRepoRoot(cwd, exec)) ?? cwd;
+  const root = (await createGit(exec).repoRoot(cwd)) ?? cwd;
   const checks = [...CHECKS, ...extraChecks];
   const [rows, projectRows] = await Promise.all([
-    Promise.all(checks.map((check) => evaluate(check, { root, exec }))),
+    Promise.all(checks.map((check) => evaluate(check, { root, exec }, log))),
     projectDoctor(root, exec),
   ]);
   return summarize([...rows, ...projectRows]);

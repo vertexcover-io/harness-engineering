@@ -2,9 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Check, checkBinary, type Exec, fail } from "@harness/sdk";
+import { type Check, checkBinary, type Exec, execWithTimeout, fail } from "@harness/sdk";
 import { evaluate, runDoctor, summarize, verdict } from "./doctor.ts";
-import { execWithTimeout } from "./exec.ts";
 
 const key = (command: string, args: readonly string[]): string => `${command} ${args.join(" ")}`;
 
@@ -37,7 +36,7 @@ afterAll(async () => {
 const allToolsOk = (root: string): Record<string, { code: number; stdout: string }> => ({
   "git --version": { code: 0, stdout: "git version 2.43.0" },
   "git rev-parse --show-toplevel": { code: 0, stdout: root },
-  [key("git", ["check-ignore", join(root, ".harness", "probe")])]: { code: 0, stdout: "" },
+  [key("git", ["check-ignore", "-q", join(root, ".harness", "probe")])]: { code: 0, stdout: "" },
   "jq --version": { code: 0, stdout: "jq-1.7" },
   "curl --version": { code: 0, stdout: "curl 8.4.0" },
   "gh --version": { code: 0, stdout: "gh version 2.40.0" },

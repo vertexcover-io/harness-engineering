@@ -34,7 +34,15 @@ export {
   NodeStartedEvent,
   storeEmitter,
 } from "./events.ts";
-export { execWithTimeout, findRepoRoot, killRunning } from "./exec.ts";
+export { readIfExists, withLock } from "./files.ts";
+export {
+  type CapturedLine,
+  type CaptureLogger,
+  captureLogger,
+  createLogger,
+  type LogBase,
+  resolveLevel,
+} from "./logging.ts";
 export { type LoadedStage, loadStage, type SchemaRegistry } from "./stage.ts";
 export { type EventHandler, type EventHandlers, projectEvents, syncState } from "./state.ts";
 export * from "./workflow/index.ts";
