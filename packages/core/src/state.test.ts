@@ -91,13 +91,13 @@ describe("projectEvents", () => {
 });
 
 describe("syncState", () => {
-  let taskDir = "";
+  let runDir = "";
   beforeEach(async () => {
-    taskDir = await mkdtemp(join(tmpdir(), "task-"));
+    runDir = await mkdtemp(join(tmpdir(), "run-"));
   });
 
   const append = async (id: string, payload: string): Promise<void> => {
-    const result = await jsonlEventStore(taskDir).append({
+    const result = await jsonlEventStore(runDir).append({
       id,
       ts: "2026-09-26T10:00:00Z",
       type: "workflow.file.opened",
@@ -109,15 +109,15 @@ describe("syncState", () => {
   };
 
   const readState = async (): Promise<unknown> =>
-    JSON.parse(await readFile(join(taskDir, "state.json"), "utf8"));
+    JSON.parse(await readFile(join(runDir, "state.json"), "utf8"));
 
   test("a stale state.json catches up from events appended after its cursor", async () => {
     await append("a", "a.ts");
-    await syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers });
+    await syncState({ runDir, store: jsonlEventStore(runDir), seed, handlers });
     await append("b", "b.ts");
     await append("c", "c.ts");
 
-    const state = await syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers });
+    const state = await syncState({ runDir, store: jsonlEventStore(runDir), seed, handlers });
 
     expect(state).toEqual({ ...seed, currentFile: "c.ts", lastEventSeq: 3 });
     expect(await readState()).toEqual(state);
@@ -125,27 +125,27 @@ describe("syncState", () => {
 
   test("syncState resumes from the stored state, not the seed", async () => {
     await append("a", "a.ts");
-    await syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers });
+    await syncState({ runDir, store: jsonlEventStore(runDir), seed, handlers });
     const other = { ...seed, scope: "bugfix" };
     expect(
-      (await syncState({ taskDir, store: jsonlEventStore(taskDir), seed: other, handlers })).scope,
+      (await syncState({ runDir, store: jsonlEventStore(runDir), seed: other, handlers })).scope,
     ).toBe("feature");
   });
 
-  test("writing state.json leaves no temp files behind and adds no task-root entries", async () => {
+  test("writing state.json leaves no temp files behind and adds no run-folder entries", async () => {
     await append("a", "a.ts");
-    await syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers });
-    expect((await readdir(taskDir)).sort()).toEqual(["artifacts", "event.jsonl", "state.json"]);
-    expect((await readdir(join(taskDir, "artifacts"))).filter((f) => f.includes("state"))).toEqual(
+    await syncState({ runDir, store: jsonlEventStore(runDir), seed, handlers });
+    expect((await readdir(runDir)).sort()).toEqual(["artifacts", "event.jsonl", "state.json"]);
+    expect((await readdir(join(runDir, "artifacts"))).filter((f) => f.includes("state"))).toEqual(
       [],
     );
   });
 
   test("a truncated event line is surfaced as an error, not skipped", async () => {
     await append("a", "a.ts");
-    await writeFile(join(taskDir, "event.jsonl"), '{"seq":', { flag: "a" });
+    await writeFile(join(runDir, "event.jsonl"), '{"seq":', { flag: "a" });
     await expect(
-      syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers }),
+      syncState({ runDir, store: jsonlEventStore(runDir), seed, handlers }),
     ).rejects.toThrow(/line 2/);
   });
 
@@ -163,9 +163,9 @@ describe("syncState", () => {
       },
     };
 
-    const slow = syncState({ taskDir, store, seed, handlers });
+    const slow = syncState({ runDir, store, seed, handlers });
     await Bun.sleep(20);
-    const fast = syncState({ taskDir, store, seed, handlers });
+    const fast = syncState({ runDir, store, seed, handlers });
     await Bun.sleep(20);
     releaseSlowRead.resolve();
     await Promise.all([slow, fast]);

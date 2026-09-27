@@ -29,8 +29,8 @@ const parseLine = (line: string, index: number): Event => {
   return parsed.data;
 };
 
-const readJsonl = async (taskDir: string): Promise<readonly Event[]> => {
-  const text = await readIfExists(join(taskDir, "event.jsonl"));
+const readJsonl = async (runDir: string): Promise<readonly Event[]> => {
+  const text = await readIfExists(join(runDir, "event.jsonl"));
   if (!text) return [];
   const lines = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n");
   return lines.map(parseLine);
@@ -56,18 +56,18 @@ const appendOnce = async (options: {
   return event;
 };
 
-const appendJsonl = (taskDir: string, draft: EventDraft): Promise<Result<Event>> =>
-  withLock(join(taskDir, "artifacts", ".event-log.lock"), async () =>
+const appendJsonl = (runDir: string, draft: EventDraft): Promise<Result<Event>> =>
+  withLock(join(runDir, "artifacts", ".event-log.lock"), async () =>
     appendOnce({
-      events: await readJsonl(taskDir),
+      events: await readJsonl(runDir),
       draft,
-      persist: (event) => appendFile(join(taskDir, "event.jsonl"), `${JSON.stringify(event)}\n`),
+      persist: (event) => appendFile(join(runDir, "event.jsonl"), `${JSON.stringify(event)}\n`),
     }),
   );
 
-export const jsonlEventStore = (taskDir: string): IEventStore => ({
-  read: () => readJsonl(taskDir),
-  append: (draft) => appendJsonl(taskDir, draft),
+export const jsonlEventStore = (runDir: string): IEventStore => ({
+  read: () => readJsonl(runDir),
+  append: (draft) => appendJsonl(runDir, draft),
 });
 
 export const memoryEventStore = (): IEventStore => {

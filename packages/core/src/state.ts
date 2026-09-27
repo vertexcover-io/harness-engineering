@@ -36,24 +36,24 @@ const readState = async (path: string): Promise<State | null> => {
   return text === null ? null : StateSchema.parse(JSON.parse(text));
 };
 
-const writeStateAtomically = async (taskDir: string, state: State): Promise<void> => {
-  const artifactsDir = join(taskDir, "artifacts");
+const writeStateAtomically = async (runDir: string, state: State): Promise<void> => {
+  const artifactsDir = join(runDir, "artifacts");
   const tempPath = join(artifactsDir, `.state.${process.pid}.${crypto.randomUUID()}.tmp`);
   await mkdir(artifactsDir, { recursive: true });
   await writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`);
-  await rename(tempPath, join(taskDir, "state.json"));
+  await rename(tempPath, join(runDir, "state.json"));
 };
 
 export const syncState = async (options: {
-  readonly taskDir: string;
+  readonly runDir: string;
   readonly store: IEventStore;
   readonly seed: State;
   readonly handlers: EventHandlers;
 }): Promise<State> =>
-  withLock(join(options.taskDir, "artifacts", ".state.lock"), async () => {
-    const current = (await readState(join(options.taskDir, "state.json"))) ?? options.seed;
+  withLock(join(options.runDir, "artifacts", ".state.lock"), async () => {
+    const current = (await readState(join(options.runDir, "state.json"))) ?? options.seed;
     const events = await options.store.read();
     const next = projectEvents({ state: current, events, handlers: options.handlers });
-    await writeStateAtomically(options.taskDir, next);
+    await writeStateAtomically(options.runDir, next);
     return next;
   });

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { z } from "zod";
-import { type JsonValue, JsonValueSchema } from "../contracts.ts";
+import type { JsonValue } from "../contracts.ts";
 import { type EmitInput, ERROR_MESSAGE_LIMIT, type IEventEmitter } from "../events.ts";
 import { walkNodes } from "./compile.ts";
 import {
@@ -106,8 +106,8 @@ const INPUT_TYPES: Record<InputDeclaration["type"], z.ZodType<JsonValue>> = {
   string: z.string(),
   number: z.number(),
   boolean: z.boolean(),
-  object: z.record(z.string(), JsonValueSchema),
-  array: z.array(JsonValueSchema),
+  object: z.record(z.string(), z.json()),
+  array: z.array(z.json()),
 };
 
 const inputField = (declaration: InputDeclaration): z.ZodType<JsonValue | undefined> => {

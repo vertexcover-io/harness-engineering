@@ -14,26 +14,26 @@ const draft = (id: string, extra: Partial<EventDraft> = {}): EventDraft => ({
   ...extra,
 });
 
-const logLines = async (taskDir: string): Promise<string[]> =>
-  (await readFile(join(taskDir, "event.jsonl"), "utf8")).trim().split("\n");
+const logLines = async (runDir: string): Promise<string[]> =>
+  (await readFile(join(runDir, "event.jsonl"), "utf8")).trim().split("\n");
 
-let taskDir = "";
+let runDir = "";
 let log: IEventStore;
 beforeEach(async () => {
-  taskDir = await mkdtemp(join(tmpdir(), "task-"));
-  log = jsonlEventStore(taskDir);
+  runDir = await mkdtemp(join(tmpdir(), "run-"));
+  log = jsonlEventStore(runDir);
 });
 
 describe("jsonlEventStore", () => {
-  test("the first event gets seq 1 and only event.jsonl and artifacts/ appear in the task root", async () => {
+  test("the first event gets seq 1 and only event.jsonl and artifacts/ appear in the run folder", async () => {
     const result = await log.append(draft("a"));
     expect(result).toEqual({ ok: true, value: { schemaVersion: 1, seq: 1, ...draft("a") } });
-    expect((await readdir(taskDir)).sort()).toEqual(["artifacts", "event.jsonl"]);
+    expect((await readdir(runDir)).sort()).toEqual(["artifacts", "event.jsonl"]);
     expect(await log.read()).toEqual([{ schemaVersion: 1, seq: 1, ...draft("a") }]);
   });
 
   test("25 appends from 5 competing processes get seqs 1..25 with no duplicates", async () => {
-    const script = join(taskDir, "..", `appender-${crypto.randomUUID()}.ts`);
+    const script = join(runDir, "..", `appender-${crypto.randomUUID()}.ts`);
     await writeFile(
       script,
       `import { jsonlEventStore } from ${JSON.stringify(join(import.meta.dir, "event-store.ts"))};
@@ -47,13 +47,13 @@ for (let i = 0; i < 5; i++) {
 }`,
     );
     const workers = ["w0", "w1", "w2", "w3", "w4"].map(
-      (worker) => Bun.spawn(["bun", script, taskDir, worker], { stderr: "inherit" }).exited,
+      (worker) => Bun.spawn(["bun", script, runDir, worker], { stderr: "inherit" }).exited,
     );
     expect(await Promise.all(workers)).toEqual([0, 0, 0, 0, 0]);
     const events = await log.read();
     expect(events.map((event) => event.seq)).toEqual(Array.from({ length: 25 }, (_, i) => i + 1));
     expect(new Set(events.map((event) => event.id)).size).toBe(25);
-    expect(await readdir(join(taskDir, "artifacts"))).toEqual([]);
+    expect(await readdir(join(runDir, "artifacts"))).toEqual([]);
   }, 20_000);
 
   test("re-submitting an existing id returns the stored event and appends nothing", async () => {
@@ -61,7 +61,7 @@ for (let i = 0; i < 5; i++) {
     await log.append(draft("b"));
     const repeat = await log.append(draft("a", { payload: "changed" }));
     expect(repeat).toEqual({ ok: true, value: { schemaVersion: 1, seq: 1, ...draft("a") } });
-    expect(await logLines(taskDir)).toHaveLength(2);
+    expect(await logLines(runDir)).toHaveLength(2);
   });
 
   test.each([
@@ -82,20 +82,20 @@ for (let i = 0; i < 5; i++) {
     ],
     ["a sequence gap", `${JSON.stringify({ schemaVersion: 1, seq: 2, ...draft("a") })}\n`, /seq/],
   ])("throws on %s instead of repairing it", async (_label, content, message) => {
-    await writeFile(join(taskDir, "event.jsonl"), content);
+    await writeFile(join(runDir, "event.jsonl"), content);
     await expect(log.append(draft("b"))).rejects.toThrow(message);
-    expect(await readFile(join(taskDir, "event.jsonl"), "utf8")).toBe(content);
+    expect(await readFile(join(runDir, "event.jsonl"), "utf8")).toBe(content);
   });
 
   test("a lock left by a dead process fails with the lock path instead of being broken", async () => {
-    const lock = join(taskDir, "artifacts", ".event-log.lock");
+    const lock = join(runDir, "artifacts", ".event-log.lock");
     await mkdir(lock, { recursive: true });
     await writeFile(join(lock, "owner"), "999999999");
     await expect(log.append(draft("a"))).rejects.toThrow(lock);
   });
 
   test("a lock with no owner file fails with the lock path instead of waiting forever", async () => {
-    const lock = join(taskDir, "artifacts", ".event-log.lock");
+    const lock = join(runDir, "artifacts", ".event-log.lock");
     await mkdir(lock, { recursive: true });
     await writeFile(join(lock, "stray"), "");
     await expect(log.append(draft("a"))).rejects.toThrow(lock);

@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-export const TextSchema = z.string().min(1);
+export const NonEmptyStringSchema = z.string().min(1);
 export const SlugSchema = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 export const SkillNameSchema = z
   .string()
@@ -9,26 +9,24 @@ const CommandNameSchema = z.string().regex(/^(?:[a-z][a-z0-9-]*:)?[a-z0-9][a-z0-
 const UniqueSlugsSchema = z
   .array(SlugSchema)
   .refine((values) => new Set(values).size === values.length, "Names must be unique");
-const TimeSchema = z.iso.datetime();
-export const JsonValueSchema = z.json();
-export const JsonObjectSchema = z.record(z.string(), JsonValueSchema);
+export const JsonObjectSchema = z.record(z.string(), z.json());
 export const isNormalizedRelativePath = (value: string): boolean =>
   !value.startsWith("/") &&
   !/^[A-Za-z]:/.test(value) &&
   !value.includes("\\") &&
   value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
-const TaskPathSchema = TextSchema.refine(
+const RunPathSchema = NonEmptyStringSchema.refine(
   isNormalizedRelativePath,
-  "Expected a normalized path relative to the task folder",
+  "Expected a normalized path relative to the run folder",
 );
-const ArtifactPathSchema = TaskPathSchema.refine(
+const ArtifactPathSchema = RunPathSchema.refine(
   (value) => value.startsWith("artifacts/"),
   "Artifact paths must be inside artifacts/",
 );
 const SchemaKeySchema = z.string().regex(/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*\.v[1-9]\d*$/);
 
 export const ArtifactRefSchema = z.strictObject({
-  name: TextSchema,
+  name: NonEmptyStringSchema,
   path: ArtifactPathSchema,
 });
 
@@ -43,18 +41,18 @@ export const StageRunSchema = z.union([
 ]);
 
 export const StagePortSchema = z.strictObject({
-  description: TextSchema,
+  description: NonEmptyStringSchema,
   schema: SchemaKeySchema,
 });
 
 export const StageSchema = z.strictObject({
   name: SlugSchema,
-  description: TextSchema,
+  description: NonEmptyStringSchema,
   run: StageRunSchema,
   mode: z.enum(["inline", "subagent"]),
   tags: UniqueSlugsSchema.optional(),
-  "allowed-tools": z.array(TextSchema),
-  tier: TextSchema,
+  "allowed-tools": z.array(NonEmptyStringSchema),
+  tier: NonEmptyStringSchema,
   inputs: StagePortSchema,
   outputs: StagePortSchema,
   consumes: z.array(ArtifactDeclarationSchema).optional(),
@@ -71,23 +69,23 @@ export const TokenUsageSchema = z.strictObject({
 });
 
 export const AgentStateSchema = z.strictObject({
-  agent: TextSchema,
-  model: TextSchema,
-  sessionId: TextSchema.nullable(),
+  agent: NonEmptyStringSchema,
+  model: NonEmptyStringSchema,
+  sessionId: NonEmptyStringSchema.nullable(),
   tokens: TokenUsageSchema.nullable(),
 });
 
 export const NodeRunSchema = z
   .strictObject({
-    nodeRunId: TextSchema,
-    nodeId: TextSchema,
+    nodeRunId: NonEmptyStringSchema,
+    nodeId: NonEmptyStringSchema,
     index: z.int().positive(),
     status: z.enum(["running", "completed", "failed", "skipped", "cancelled", "interrupted"]),
-    startedAt: TimeSchema.nullable(),
-    completedAt: TimeSchema.nullable(),
+    startedAt: z.iso.datetime().nullable(),
+    completedAt: z.iso.datetime().nullable(),
     result: z.string().max(500).nullable(),
     artifacts: z.array(ArtifactRefSchema),
-    parentNodeRunId: TextSchema.optional(),
+    parentNodeRunId: NonEmptyStringSchema.optional(),
     iteration: z.int().positive().optional(),
     stage: SlugSchema.optional(),
     agentState: AgentStateSchema.optional(),
@@ -110,24 +108,24 @@ export const NodeRunSchema = z
   });
 
 export const PullRequestSchema = z.strictObject({
-  id: TextSchema,
+  id: NonEmptyStringSchema,
   url: z.url(),
 });
 
 export const GitStateSchema = z.strictObject({
-  branch: TextSchema,
-  baseBranch: TextSchema,
-  startSha: TextSchema,
+  branch: NonEmptyStringSchema,
+  baseBranch: NonEmptyStringSchema,
+  startSha: NonEmptyStringSchema,
   pr: PullRequestSchema.optional(),
 });
 
 export const RepositorySchema = z.strictObject({
-  path: TextSchema,
+  path: NonEmptyStringSchema,
   git: GitStateSchema,
 });
 
 export const WorkspaceSchema = z.strictObject({
-  path: TextSchema,
+  path: NonEmptyStringSchema,
   repositories: z
     .record(SlugSchema, RepositorySchema)
     .refine(
@@ -136,8 +134,8 @@ export const WorkspaceSchema = z.strictObject({
     ),
 });
 
-export const TicketSchema = z.record(TextSchema, JsonValueSchema);
-export const NotificationSchema = z.record(TextSchema, JsonValueSchema);
+export const TicketSchema = z.record(NonEmptyStringSchema, z.json());
+export const NotificationSchema = z.record(NonEmptyStringSchema, z.json());
 
 export const WorkflowRefSchema = z.strictObject({
   name: SlugSchema,
@@ -149,20 +147,20 @@ export const StateSchema = z
     schemaVersion: z.literal(1),
     lastEventSeq: z.int().nonnegative(),
     specName: SlugSchema,
-    harnessVersion: TextSchema,
+    harnessVersion: NonEmptyStringSchema,
     workflow: WorkflowRefSchema,
     input: JsonObjectSchema,
-    scope: TextSchema,
+    scope: NonEmptyStringSchema,
     options: JsonObjectSchema,
-    startedAt: TimeSchema,
-    completedAt: TimeSchema.nullable(),
+    startedAt: z.iso.datetime(),
+    completedAt: z.iso.datetime().nullable(),
     outcome: z.enum(["completed", "failed", "cancelled"]).nullable(),
-    currentFile: TextSchema.nullable(),
+    currentFile: NonEmptyStringSchema.nullable(),
     workspace: WorkspaceSchema,
     ticket: TicketSchema.optional(),
     notification: NotificationSchema.optional(),
-    activeNodeRuns: z.array(TextSchema),
-    nodeRuns: z.record(TextSchema, NodeRunSchema),
+    activeNodeRuns: z.array(NonEmptyStringSchema),
+    nodeRuns: z.record(NonEmptyStringSchema, NodeRunSchema),
   })
   .superRefine((state, context) => {
     const active = new Set(state.activeNodeRuns);
@@ -216,16 +214,16 @@ export const EventSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
     seq: z.int().positive(),
-    id: TextSchema,
-    ts: TimeSchema,
+    id: NonEmptyStringSchema,
+    ts: z.iso.datetime(),
     type: EventTypeSchema,
-    source: TextSchema,
-    runId: TextSchema,
-    nodeId: TextSchema.optional(),
-    nodeRunId: TextSchema.optional(),
+    source: NonEmptyStringSchema,
+    runId: NonEmptyStringSchema,
+    nodeId: NonEmptyStringSchema.optional(),
+    nodeRunId: NonEmptyStringSchema.optional(),
     stage: SlugSchema.optional(),
     repoId: SlugSchema.optional(),
-    payload: JsonValueSchema,
+    payload: z.json(),
   })
   .superRefine((event, context) => {
     if ((event.nodeId === undefined) !== (event.nodeRunId === undefined)) {
@@ -248,7 +246,7 @@ export const EventSchema = z
     }
   });
 
-export type JsonValue = z.infer<typeof JsonValueSchema>;
+export type JsonValue = z.infer<z.ZodJSONSchema>;
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
 export type ArtifactDeclaration = z.infer<typeof ArtifactDeclarationSchema>;
