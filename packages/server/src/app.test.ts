@@ -321,8 +321,14 @@ describe("POST /runs/:id/init", () => {
 
     const eventLines = readFileSync(join(dir, "event.jsonl"), "utf8").trim().split("\n");
     expect(eventLines).toHaveLength(1);
-    const event = JSON.parse(eventLines[0] as string) as { type: string; seq: number };
+    const event = JSON.parse(eventLines[0] as string) as {
+      type: string;
+      seq: number;
+      runId: string;
+      ts: string;
+    };
     expect(event.type).toBe("workflow.started");
+    expect(event.runId).toBe(run.id);
     expect(event.seq).toBe(1);
 
     expect(body.state.lastEventSeq).toBe(1);

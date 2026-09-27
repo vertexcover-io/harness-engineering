@@ -33,6 +33,7 @@ export {
   NodeFailedEvent,
   NodeStartedEvent,
   storeEmitter,
+  WorkflowStartedEvent,
 } from "./events.ts";
 export { readIfExists, withLock } from "./files.ts";
 export {

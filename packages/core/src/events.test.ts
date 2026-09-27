@@ -7,6 +7,17 @@ import { projectEvents } from "./state.ts";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe("storeEmitter", () => {
+  test("workflow.started without a workflow name is refused and nothing is stored", async () => {
+    const store = memoryEventStore();
+    const result = await storeEmitter(store, { runId: "r-1" }).emit({
+      type: "workflow.started",
+      source: "test",
+      payload: { inputs: {} },
+    });
+    expect(result.ok).toBe(false);
+    expect(await store.read()).toEqual([]);
+  });
+
   test("SC1: an event emitted with no id is stored as seq 1 with a UUID, the current time and the emitter's runId", async () => {
     const store = memoryEventStore();
     const before = Date.now();
@@ -117,6 +128,22 @@ const project = (events: readonly Event[]): State =>
 const build = { nodeId: "build", nodeRunId: "build" };
 
 describe("coreHandlers", () => {
+  test("workflow.started sets the run's startedAt to the event's time", () => {
+    const state = project([
+      {
+        schemaVersion: 1,
+        seq: 1,
+        id: "workflow-started",
+        ts: "2026-09-27T09:00:00Z",
+        type: "workflow.started",
+        source: "test",
+        runId: "r-1",
+        payload: { workflow: "feature", inputs: {} },
+      },
+    ]);
+    expect(state.startedAt).toBe("2026-09-27T09:00:00Z");
+  });
+
   test("SC6: a started node is running and active, with index 1 and no artifacts", () => {
     const state = project([nodeEvent(1, "started", build, { nodeType: "exec" })]);
     expect(state.nodeRuns.build).toEqual({
