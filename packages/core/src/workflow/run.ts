@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { z } from "zod";
 import { type JsonValue, JsonValueSchema } from "../contracts.ts";
+import { type EmitInput, ERROR_MESSAGE_LIMIT, type IEventEmitter } from "../events.ts";
 import { walkNodes } from "./compile.ts";
 import {
   evaluateBoolean,
@@ -33,6 +34,7 @@ export type RunOptions = Readonly<{
   maxConcurrency?: number;
   signal?: AbortSignal;
   agents?: Readonly<Record<string, AgentAdapter>>;
+  emitter?: IEventEmitter;
 }>;
 
 type SchemaLike = {
@@ -50,6 +52,12 @@ type RunContext = Readonly<{
   schemas: ReadonlyMap<string, SchemaLike>;
   plan: WorkflowPlan;
   agents: Readonly<Record<string, AgentAdapter>>;
+  events: NodeEvents;
+}>;
+
+type NodeEvents = Readonly<{
+  send: (input: Omit<EmitInput, "source">) => Promise<void>;
+  lostError: () => WorkflowError | undefined;
 }>;
 
 type LeafNode = ExecNode | AgentNode;
@@ -142,10 +150,21 @@ const preflightFunctions = async (
   return new Map(loaded);
 };
 
+// The stack of the error a node actually threw, not of the NodeFailure wrapping it.
+const stackOf = (failure: NodeFailure): string | undefined =>
+  failure.cause instanceof Error ? failure.cause.stack : failure.stack;
+
 const toFailure = (error: unknown): NodeFailure =>
   error instanceof NodeFailure
     ? error
-    : new NodeFailure("exception", error instanceof Error ? error.message : String(error));
+    : new NodeFailure(
+        "exception",
+        error instanceof Error ? error.message : String(error),
+        undefined,
+        {
+          cause: error,
+        },
+      );
 
 const parseJson = (stdout: string, path: string): JsonValue => {
   try {
@@ -201,7 +220,7 @@ const failedRecord = (
   attempts: 1,
   startedAt,
   endedAt: Date.now(),
-  error: { kind: failure.kind, message: failure.message },
+  error: { kind: failure.kind, message: failure.message, stack: stackOf(failure) },
   ...(input === undefined ? {} : { input }),
   ...(failure.output === undefined ? {} : { output: failure.output }),
 });
@@ -333,7 +352,9 @@ const toValidation = <T>(work: () => T): T => {
   try {
     return work();
   } catch (error) {
-    throw error instanceof WorkflowError ? new NodeFailure("validation", error.message) : error;
+    throw error instanceof WorkflowError
+      ? new NodeFailure("validation", error.message, undefined, { cause: error })
+      : error;
   }
 };
 
@@ -401,6 +422,60 @@ const runLoop = (
   return pass(1, null, {});
 };
 
+// send never throws: runNode's catch would turn a thrown error into one failed node, but a
+// lost event must stop the whole run. So the first loss is kept, the run is aborted, later
+// sends are dropped, and runWorkflow throws lostError() once every node has settled.
+const guardedEmitter = (emitter: IEventEmitter | undefined, abort: () => void): NodeEvents => {
+  let lost: WorkflowError | undefined;
+  const send = async (input: Omit<EmitInput, "source">): Promise<void> => {
+    if (emitter === undefined || lost !== undefined) return;
+    const stop = (reason: string, cause?: unknown): void => {
+      lost ??= new WorkflowError(
+        "event-lost",
+        `${input.type} for ${input.nodeRunId} was not stored: ${reason}`,
+        input.nodeRunId ?? "",
+        { cause },
+      );
+      abort();
+    };
+    try {
+      const result = await emitter.emit({ ...input, source: "workflow" });
+      if (!result.ok) stop(result.error);
+    } catch (error) {
+      stop(error instanceof Error ? error.message : String(error), error);
+    }
+  };
+  return { send, lostError: () => lost };
+};
+
+const nodeStarted = (ctx: RunContext, node: WorkflowNode, path: string): Promise<void> =>
+  ctx.events.send({
+    type: "workflow.node.started",
+    nodeId: node.id,
+    nodeRunId: path,
+    payload: { nodeType: node.type },
+  });
+
+const nodeEnded = (ctx: RunContext, nodeId: string, record: NodeRecord): Promise<void> =>
+  ctx.events.send({
+    type: `workflow.node.${record.status}`,
+    nodeId,
+    nodeRunId: record.path,
+    payload: {
+      nodeType: record.type,
+      attempts: record.attempts,
+      ...(record.error === undefined
+        ? {}
+        : {
+            error: {
+              kind: record.error.kind,
+              message: record.error.message.slice(0, ERROR_MESSAGE_LIMIT),
+              ...(record.error.stack === undefined ? {} : { stack: record.error.stack }),
+            },
+          }),
+    },
+  });
+
 const runNode = async (
   node: WorkflowNode,
   scope: Scope,
@@ -413,6 +488,7 @@ const runNode = async (
     if (node.type !== "switch" && node.when !== undefined && !evaluateBoolean(node.when, scope)) {
       return only(idleRecord(node, path, "skipped"));
     }
+    await nodeStarted(ctx, node, path);
     const input = resolveValue(node.input, scope);
     if (node.type === "exec" || node.type === "agent") {
       return only(await runLeaf(node, input, path, startedAt, ctx));
@@ -461,7 +537,9 @@ async function runScope(
   const views: Record<string, NodeRecord> = Object.create(null);
   const records: Record<string, NodeRecord> = Object.create(null);
   const running = new Map<string, Promise<void>>();
-  const settle = (id: string, { self, records: nested }: Settled): void => {
+  // Only `self` is emitted: nested records already had their end event in their own scope.
+  const settle = async (id: string, { self, records: nested }: Settled): Promise<void> => {
+    await nodeEnded(ctx, id, self);
     running.delete(id);
     views[id] = self;
     Object.assign(records, nested, { [self.path]: self });
@@ -473,7 +551,7 @@ async function runScope(
       const state = readiness(node, views, ctx.signal);
       if (state === "wait") continue;
       if (state !== "ready") {
-        settle(node.id, only(idleRecord(node, prefix + node.id, state)));
+        await settle(node.id, only(idleRecord(node, prefix + node.id, state)));
         continue;
       }
       const scope =
@@ -575,8 +653,11 @@ export const runWorkflow = async (
     schemas,
     plan,
     agents,
+    events: guardedEmitter(options.emitter, () => controller.abort()),
   };
   const { records } = await runScope(plan.nodes, workflowInputs, "", ctx);
+  const lost = ctx.events.lostError();
+  if (lost !== undefined) throw lost;
   const failed = Object.values(records).some(
     (r) => r.status === "failed" || r.status === "cancelled",
   );

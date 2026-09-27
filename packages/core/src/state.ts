@@ -2,7 +2,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import { type Event, type State, StateSchema } from "./contracts.ts";
-import type { EventLog } from "./event-log.ts";
+import type { IEventStore } from "./event-store.ts";
 import { readIfExists, withLock } from "./files.ts";
 
 export type EventHandler = (state: State, event: Event) => State;
@@ -46,13 +46,13 @@ const writeStateAtomically = async (taskDir: string, state: State): Promise<void
 
 export const syncState = async (options: {
   readonly taskDir: string;
-  readonly eventLog: EventLog;
+  readonly store: IEventStore;
   readonly seed: State;
   readonly handlers: EventHandlers;
 }): Promise<State> =>
   withLock(join(options.taskDir, "artifacts", ".state.lock"), async () => {
     const current = (await readState(join(options.taskDir, "state.json"))) ?? options.seed;
-    const events = await options.eventLog.read();
+    const events = await options.store.read();
     const next = projectEvents({ state: current, events, handlers: options.handlers });
     await writeStateAtomically(options.taskDir, next);
     return next;

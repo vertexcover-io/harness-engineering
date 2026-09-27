@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { JsonValue } from "../contracts.ts";
+import { type Event, type JsonValue, type State, StateSchema } from "../contracts.ts";
+import { jsonlEventStore, memoryEventStore } from "../event-store.ts";
+import { coreHandlers, type IEventEmitter, storeEmitter } from "../events.ts";
+import { projectEvents, syncState } from "../state.ts";
 import { compileWorkflow } from "./compile.ts";
 import { type RunOptions, runWorkflow } from "./run.ts";
 import { type AgentAdapter, type AgentRequest, type RunResult, WorkflowError } from "./types.ts";
@@ -898,3 +901,202 @@ describe("agents", () => {
     expect(existsSync(join(root, "MARKER"))).toBe(false);
   });
 });
+
+const eventsWorkflow = `name: t
+nodes:
+  - id: a
+    type: exec
+    runtime: sh
+    script: echo hi
+    input: null
+  - id: l
+    type: loop
+    dependsOn: [a]
+    maxIterations: 3
+    until: "{{ iteration.nodes.x.output.passed }}"
+    input: null
+    nodes:
+      - id: x
+        type: exec
+        module: ./fns/twice.ts
+        functionName: twice
+        input: { index: "{{ iteration.index }}" }
+`;
+
+const eventsRoot = (): string => {
+  const root = makeRoot();
+  writeFile(
+    root,
+    "fns/twice.ts",
+    "export const twice = (input) => ({ passed: input.index >= 2 });\n",
+  );
+  return root;
+};
+
+const statuses = (result: RunResult): Record<string, string> =>
+  Object.fromEntries(Object.entries(result.nodes).map(([path, r]) => [path, r.status]));
+
+const typesFor = (events: readonly Event[], nodeRunId: string): string[] =>
+  events.filter((e) => e.nodeRunId === nodeRunId).map((e) => e.type);
+
+describe("node events", () => {
+  test("SC10: a run emits started then one end event for every node, children before their container", async () => {
+    const store = memoryEventStore();
+    const root = eventsRoot();
+    const result = await run(
+      root,
+      eventsWorkflow,
+      {},
+      { emitter: storeEmitter(store, { runId: "r-1" }) },
+    );
+    const events = await store.read();
+    for (const path of ["a", "l", "l[1].x", "l[2].x"])
+      expect(typesFor(events, path)).toEqual(["workflow.node.started", "workflow.node.completed"]);
+    const endSeq = (path: string) =>
+      events.find((e) => e.nodeRunId === path && e.type === "workflow.node.completed")?.seq ?? 0;
+    expect(endSeq("l[1].x")).toBeLessThan(endSeq("l"));
+    expect(endSeq("l[2].x")).toBeLessThan(endSeq("l"));
+    expect(events.every((e) => e.source === "workflow")).toBe(true);
+    expect(events.find((e) => e.nodeRunId === "l[2].x")?.nodeId).toBe("x");
+    expect(statuses(result)).toEqual(statuses(await run(eventsRoot(), eventsWorkflow)));
+  });
+
+  test("SC11: a node whose when is false emits only a skipped event with 0 attempts", async () => {
+    const store = memoryEventStore();
+    await run(
+      makeRoot(),
+      'name: t\nnodes:\n  - id: b\n    type: exec\n    runtime: sh\n    script: echo hi\n    input: null\n    when: "{{ false }}"\n',
+      {},
+      { emitter: storeEmitter(store, { runId: "r-1" }) },
+    );
+    const events = await store.read();
+    expect(events.map((e) => e.type)).toEqual(["workflow.node.skipped"]);
+    expect(events[0]?.payload).toMatchObject({ attempts: 0 });
+  });
+
+  const twoSteps = (root: string): string =>
+    `name: t\nnodes:\n  - id: a\n    type: exec\n    runtime: sh\n    script: echo a\n    input: null\n  - id: b\n    type: exec\n    runtime: sh\n    dependsOn: [a]\n    script: touch ${join(root, "B_RAN")}\n    input: null\n`;
+
+  const failingEmitter = (failOn: number, fail: () => ReturnType<IEventEmitter["emit"]>) => {
+    const inner = storeEmitter(memoryEventStore(), { runId: "r-1" });
+    let calls = 0;
+    const emitter: IEventEmitter = {
+      emit: (input) => {
+        calls += 1;
+        return calls === failOn ? fail() : inner.emit(input);
+      },
+    };
+    return { emitter, calls: () => calls };
+  };
+
+  test("SC12: an emitter that refuses the second event stops the run, which rejects with its error", async () => {
+    const root = makeRoot();
+    const { emitter, calls } = failingEmitter(2, async () => ({ ok: false, error: "disk full" }));
+    const rejection = await run(root, twoSteps(root), {}, { emitter }).then(
+      () => new Error("expected a rejection"),
+      (error: unknown) => error,
+    );
+    expect(rejection).toBeInstanceOf(WorkflowError);
+    expect((rejection as WorkflowError).code).toBe("event-lost");
+    expect(String(rejection)).toContain("disk full");
+    expect(String(rejection)).toContain("workflow.node.completed");
+    expect(existsSync(join(root, "B_RAN"))).toBe(false);
+    expect(calls()).toBe(2);
+  });
+
+  test("SC13: an emitter that throws stops the run, which rejects instead of recording a failed node", async () => {
+    const root = makeRoot();
+    const { emitter } = failingEmitter(1, async () => {
+      throw new Error("socket closed");
+    });
+    const rejection = await run(root, twoSteps(root), {}, { emitter }).then(
+      () => new Error("expected a rejection"),
+      (error: unknown) => error,
+    );
+    expect(String(rejection)).toContain("socket closed");
+    expect((rejection as Error).cause).toBeInstanceOf(Error);
+    expect(((rejection as Error).cause as Error).message).toBe("socket closed");
+    expect(existsSync(join(root, "B_RAN"))).toBe(false);
+  });
+
+  test("SC14: a run's events in event.jsonl build a valid state.json with every node completed", async () => {
+    const taskDir = makeRoot();
+    const store = jsonlEventStore(taskDir);
+    await run(eventsRoot(), eventsWorkflow, {}, { emitter: storeEmitter(store, { runId: "r-1" }) });
+    const state = await syncState({ taskDir, store, seed: stateSeed, handlers: coreHandlers });
+    expect(
+      StateSchema.safeParse(JSON.parse(readFileSync(join(taskDir, "state.json"), "utf8"))).success,
+    ).toBe(true);
+    expect(
+      Object.fromEntries(Object.values(state.nodeRuns).map((r) => [r.nodeRunId, r.status])),
+    ).toEqual({
+      a: "completed",
+      l: "completed",
+      "l[1].x": "completed",
+      "l[2].x": "completed",
+    });
+    expect(state.activeNodeRuns).toEqual([]);
+    expect(state.lastEventSeq).toBe(8);
+    expect((await store.read()).every((e) => e.runId === "r-1")).toBe(true);
+  });
+
+  test("a node cancelled by a failed dependency emits only a cancelled event, projected as cancelled", async () => {
+    const store = memoryEventStore();
+    await run(
+      makeRoot(),
+      "name: t\nnodes:\n  - id: a\n    type: exec\n    runtime: sh\n    script: exit 1\n    input: null\n  - id: b\n    type: exec\n    runtime: sh\n    dependsOn: [a]\n    script: echo b\n    input: null\n",
+      {},
+      { emitter: storeEmitter(store, { runId: "r-1" }) },
+    );
+    const events = await store.read();
+    expect(typesFor(events, "b")).toEqual(["workflow.node.cancelled"]);
+    const state = projectEvents({ state: stateSeed, events, handlers: coreHandlers });
+    expect(state.nodeRuns.b?.status).toBe("cancelled");
+  });
+
+  test("a failed node's event keeps a message cut to 500 characters and the stack of the error it threw", async () => {
+    const root = makeRoot();
+    writeFile(
+      root,
+      "fns/boom.ts",
+      'export const boom = () => { throw new Error("x".repeat(700)); };\n',
+    );
+    const store = memoryEventStore();
+    await run(
+      root,
+      "name: t\nnodes:\n  - id: a\n    type: exec\n    module: ./fns/boom.ts\n    functionName: boom\n    input: null\n",
+      {},
+      { emitter: storeEmitter(store, { runId: "r-1" }) },
+    );
+    const failed = (await store.read()).find((e) => e.type === "workflow.node.failed");
+    expect(failed?.payload).toMatchObject({
+      error: {
+        message: expect.stringMatching(/^[\s\S]{1,500}$/),
+        stack: expect.stringContaining("boom.ts"),
+      },
+    });
+  });
+});
+
+const stateSeed: State = {
+  schemaVersion: 1,
+  lastEventSeq: 0,
+  specName: "add-login",
+  harnessVersion: "2.0.0",
+  workflow: { name: "feature", path: "workflow.yaml" },
+  input: {},
+  scope: "feature",
+  options: {},
+  startedAt: "2026-09-26T10:00:00Z",
+  completedAt: null,
+  outcome: null,
+  currentFile: null,
+  workspace: {
+    path: "/work",
+    repositories: {
+      app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
+    },
+  },
+  activeNodeRuns: [],
+  nodeRuns: {},
+};

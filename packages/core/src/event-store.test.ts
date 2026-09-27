@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type EventDraft, type EventLog, jsonlEventLog } from "./event-log.ts";
+import { type EventDraft, type IEventStore, jsonlEventStore } from "./event-store.ts";
 
 const draft = (id: string, extra: Partial<EventDraft> = {}): EventDraft => ({
   id,
   ts: "2026-09-26T10:00:00Z",
   type: "workflow.node.started",
   source: "test",
+  runId: "r-test",
   payload: { id },
   ...extra,
 });
@@ -17,13 +18,13 @@ const logLines = async (taskDir: string): Promise<string[]> =>
   (await readFile(join(taskDir, "event.jsonl"), "utf8")).trim().split("\n");
 
 let taskDir = "";
-let log: EventLog;
+let log: IEventStore;
 beforeEach(async () => {
   taskDir = await mkdtemp(join(tmpdir(), "task-"));
-  log = jsonlEventLog(taskDir);
+  log = jsonlEventStore(taskDir);
 });
 
-describe("jsonlEventLog", () => {
+describe("jsonlEventStore", () => {
   test("the first event gets seq 1 and only event.jsonl and artifacts/ appear in the task root", async () => {
     const result = await log.append(draft("a"));
     expect(result).toEqual({ ok: true, value: { schemaVersion: 1, seq: 1, ...draft("a") } });
@@ -35,12 +36,12 @@ describe("jsonlEventLog", () => {
     const script = join(taskDir, "..", `appender-${crypto.randomUUID()}.ts`);
     await writeFile(
       script,
-      `import { jsonlEventLog } from ${JSON.stringify(join(import.meta.dir, "event-log.ts"))};
+      `import { jsonlEventStore } from ${JSON.stringify(join(import.meta.dir, "event-store.ts"))};
 const [dir, worker] = process.argv.slice(2);
-const log = jsonlEventLog(dir);
+const log = jsonlEventStore(dir);
 for (let i = 0; i < 5; i++) {
   const result = await log.append({
-    id: worker + "-" + i, ts: "2026-09-26T10:00:00Z", type: "workflow.tick", source: "w", payload: null,
+    id: worker + "-" + i, ts: "2026-09-26T10:00:00Z", type: "workflow.tick", source: "w", runId: "r-test", payload: null,
   });
   if (!result.ok) throw new Error(result.error);
 }`,
