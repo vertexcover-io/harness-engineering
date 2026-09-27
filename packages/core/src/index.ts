@@ -19,7 +19,21 @@ export {
   summarize,
   verdict,
 } from "./doctor.ts";
-export { type EventDraft, type EventLog, jsonlEventLog } from "./event-log.ts";
+export {
+  type EventDraft,
+  type IEventStore,
+  jsonlEventStore,
+  memoryEventStore,
+} from "./event-store.ts";
+export {
+  coreHandlers,
+  type EmitInput,
+  type IEventEmitter,
+  NodeEndedEvent,
+  NodeFailedEvent,
+  NodeStartedEvent,
+  storeEmitter,
+} from "./events.ts";
 export { execWithTimeout, findRepoRoot, killRunning } from "./exec.ts";
 export { type LoadedStage, loadStage, type SchemaRegistry } from "./stage.ts";
 export { type EventHandler, type EventHandlers, projectEvents, syncState } from "./state.ts";

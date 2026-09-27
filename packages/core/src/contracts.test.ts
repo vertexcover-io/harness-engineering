@@ -104,6 +104,7 @@ const baseEvent = {
   ts: "2026-09-26T10:00:00Z",
   type: "workflow.started",
   source: "runner",
+  runId: "r-test",
   payload: { anything: true },
 };
 const nodeFields = { nodeId: "plan", nodeRunId: "plan-1" };
@@ -142,6 +143,7 @@ describe("EventSchema", () => {
     ],
     ["a stage event without node IDs", { ...baseEvent, type: "stage.planning.question" }],
     ["seq 0", { ...baseEvent, seq: 0 }],
+    ["an event without a runId", { ...baseEvent, runId: undefined }],
     ["an unknown envelope field", { ...baseEvent, extra: 1 }],
     ["an undefined payload", { ...baseEvent, payload: undefined }],
     ["a BigInt payload", { ...baseEvent, payload: 1n }],

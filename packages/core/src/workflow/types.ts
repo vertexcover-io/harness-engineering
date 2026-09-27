@@ -199,6 +199,7 @@ export const WorkflowErrorCodeSchema = z.enum([
   "include-limit",
   "missing-adapter",
   "missing-schema",
+  "event-lost",
 ]);
 
 export const NodeRecordSchema = z.object({
@@ -210,7 +211,9 @@ export const NodeRecordSchema = z.object({
   attempts: z.number().int().min(0),
   startedAt: z.number().optional(),
   endedAt: z.number().optional(),
-  error: z.object({ kind: FailureKindSchema, message: z.string() }).optional(),
+  error: z
+    .object({ kind: FailureKindSchema, message: z.string(), stack: z.string().optional() })
+    .optional(),
 });
 
 export const RunResultSchema = z.object({
@@ -268,8 +271,9 @@ export class WorkflowError extends Error {
     readonly code: WorkflowErrorCode,
     message: string,
     readonly path = "",
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "WorkflowError";
   }
 }
@@ -279,8 +283,9 @@ export class NodeFailure extends Error {
     readonly kind: FailureKind,
     message: string,
     readonly output?: JsonValue,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "NodeFailure";
   }
 }

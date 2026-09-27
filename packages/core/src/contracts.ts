@@ -220,6 +220,7 @@ export const EventSchema = z
     ts: TimeSchema,
     type: EventTypeSchema,
     source: TextSchema,
+    runId: TextSchema,
     nodeId: TextSchema.optional(),
     nodeRunId: TextSchema.optional(),
     stage: SlugSchema.optional(),

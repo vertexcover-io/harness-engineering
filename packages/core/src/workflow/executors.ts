@@ -74,7 +74,9 @@ export const runScript = (request: ScriptRequest): Promise<ScriptResult> =>
     if (request.signal.aborted) onAbort();
     child.stdout.on("data", collect(stdout));
     child.stderr.on("data", collect(stderr));
-    child.on("error", (error) => stop(new NodeFailure("exception", error.message)));
+    child.on("error", (error) =>
+      stop(new NodeFailure("exception", error.message, undefined, { cause: error })),
+    );
     child.on("close", (code) => {
       clearTimeout(timer);
       request.signal.removeEventListener("abort", onAbort);
@@ -142,7 +144,12 @@ export const withTimeout = <T>(
         reject(
           error instanceof NodeFailure
             ? error
-            : new NodeFailure("exception", error instanceof Error ? error.message : String(error)),
+            : new NodeFailure(
+                "exception",
+                error instanceof Error ? error.message : String(error),
+                undefined,
+                { cause: error },
+              ),
         ),
       )
       .finally(() => {

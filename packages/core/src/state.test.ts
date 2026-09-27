@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Event, JsonValue, State } from "./contracts.ts";
-import { type EventLog, jsonlEventLog } from "./event-log.ts";
+import { type IEventStore, jsonlEventStore } from "./event-store.ts";
 import { type EventHandlers, projectEvents, syncState } from "./state.ts";
 
 const seed: State = {
@@ -36,6 +36,7 @@ const event = (seq: number, type: string, payload: JsonValue = null): Event => (
   ts: "2026-09-26T10:00:00Z",
   type,
   source: "test",
+  runId: "r-test",
   payload,
 });
 
@@ -96,11 +97,12 @@ describe("syncState", () => {
   });
 
   const append = async (id: string, payload: string): Promise<void> => {
-    const result = await jsonlEventLog(taskDir).append({
+    const result = await jsonlEventStore(taskDir).append({
       id,
       ts: "2026-09-26T10:00:00Z",
       type: "workflow.file.opened",
       source: "test",
+      runId: "r-test",
       payload,
     });
     if (!result.ok) throw new Error(result.error);
@@ -111,11 +113,11 @@ describe("syncState", () => {
 
   test("a stale state.json catches up from events appended after its cursor", async () => {
     await append("a", "a.ts");
-    await syncState({ taskDir, eventLog: jsonlEventLog(taskDir), seed, handlers });
+    await syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers });
     await append("b", "b.ts");
     await append("c", "c.ts");
 
-    const state = await syncState({ taskDir, eventLog: jsonlEventLog(taskDir), seed, handlers });
+    const state = await syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers });
 
     expect(state).toEqual({ ...seed, currentFile: "c.ts", lastEventSeq: 3 });
     expect(await readState()).toEqual(state);
@@ -123,16 +125,16 @@ describe("syncState", () => {
 
   test("syncState resumes from the stored state, not the seed", async () => {
     await append("a", "a.ts");
-    await syncState({ taskDir, eventLog: jsonlEventLog(taskDir), seed, handlers });
+    await syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers });
     const other = { ...seed, scope: "bugfix" };
     expect(
-      (await syncState({ taskDir, eventLog: jsonlEventLog(taskDir), seed: other, handlers })).scope,
+      (await syncState({ taskDir, store: jsonlEventStore(taskDir), seed: other, handlers })).scope,
     ).toBe("feature");
   });
 
   test("writing state.json leaves no temp files behind and adds no task-root entries", async () => {
     await append("a", "a.ts");
-    await syncState({ taskDir, eventLog: jsonlEventLog(taskDir), seed, handlers });
+    await syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers });
     expect((await readdir(taskDir)).sort()).toEqual(["artifacts", "event.jsonl", "state.json"]);
     expect((await readdir(join(taskDir, "artifacts"))).filter((f) => f.includes("state"))).toEqual(
       [],
@@ -143,7 +145,7 @@ describe("syncState", () => {
     await append("a", "a.ts");
     await writeFile(join(taskDir, "event.jsonl"), '{"seq":', { flag: "a" });
     await expect(
-      syncState({ taskDir, eventLog: jsonlEventLog(taskDir), seed, handlers }),
+      syncState({ taskDir, store: jsonlEventStore(taskDir), seed, handlers }),
     ).rejects.toThrow(/line 2/);
   });
 
@@ -151,7 +153,7 @@ describe("syncState", () => {
     const opened = (seq: number, file: string): Event => event(seq, "workflow.file.opened", file);
     const releaseSlowRead = Promise.withResolvers<void>();
     let reads = 0;
-    const eventLog: EventLog = {
+    const store: IEventStore = {
       append: () => Promise.reject(new Error("unused")),
       read: async () => {
         reads += 1;
@@ -161,9 +163,9 @@ describe("syncState", () => {
       },
     };
 
-    const slow = syncState({ taskDir, eventLog, seed, handlers });
+    const slow = syncState({ taskDir, store, seed, handlers });
     await Bun.sleep(20);
-    const fast = syncState({ taskDir, eventLog, seed, handlers });
+    const fast = syncState({ taskDir, store, seed, handlers });
     await Bun.sleep(20);
     releaseSlowRead.resolve();
     await Promise.all([slow, fast]);
