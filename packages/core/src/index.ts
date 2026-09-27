@@ -23,6 +23,7 @@ export { type EventDraft, type EventLog, jsonlEventLog } from "./event-log.ts";
 export { execWithTimeout, findRepoRoot, killRunning } from "./exec.ts";
 export { type LoadedStage, loadStage, type SchemaRegistry } from "./stage.ts";
 export { type EventHandler, type EventHandlers, projectEvents, syncState } from "./state.ts";
+export * from "./workflow/index.ts";
 export {
   createWorktrees,
   findRoot,

@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { z } from "zod";
+import { type JsonValue, JsonValueSchema } from "../contracts.ts";
 import { walkNodes } from "./compile.ts";
 import {
   evaluateBoolean,
@@ -15,8 +16,6 @@ import {
   type ExecNode,
   type IncludeNode,
   type InputDeclarations,
-  type JsonValue,
-  JsonValueSchema,
   type LoopNode,
   type NodeContext,
   NodeFailure,

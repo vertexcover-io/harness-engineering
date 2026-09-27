@@ -2,11 +2,10 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { type JsonValue, JsonValueSchema } from "../contracts.ts";
 import {
   type AgentAdapter,
   type AgentNode,
-  type JsonValue,
-  JsonValueSchema,
   type NodeContext,
   NodeFailure,
   WorkflowError,

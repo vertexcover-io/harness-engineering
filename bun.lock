@@ -33,7 +33,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@harness/sdk": "workspace:*",
-        "@harness/workflow": "workspace:*",
         "yaml": "^2.9.1",
         "zod": "^4",
       },
@@ -58,14 +57,6 @@
       "dependencies": {
         "@harness/core": "workspace:*",
         "hono": "^4.13.9",
-      },
-    },
-    "packages/workflow": {
-      "name": "@harness/workflow",
-      "version": "0.0.0",
-      "dependencies": {
-        "yaml": "^2.9.1",
-        "zod": "^4.6.5",
       },
     },
   },
@@ -101,8 +92,6 @@
     "@harness/sdk": ["@harness/sdk@workspace:packages/sdk"],
 
     "@harness/server": ["@harness/server@workspace:packages/server"],
-
-    "@harness/workflow": ["@harness/workflow@workspace:packages/workflow"],
 
     "@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
 

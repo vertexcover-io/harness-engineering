@@ -1,4 +1,5 @@
-import { type JsonValue, NodeFailure, type NodeRecord } from "./types.ts";
+import type { JsonValue } from "../contracts.ts";
+import { NodeFailure, type NodeRecord } from "./types.ts";
 
 export type NodeView = Readonly<Pick<NodeRecord, "status" | "input" | "output">>;
 

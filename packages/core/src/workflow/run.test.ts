@@ -2,15 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import type { JsonValue } from "../contracts.ts";
 import { compileWorkflow } from "./compile.ts";
 import { type RunOptions, runWorkflow } from "./run.ts";
-import {
-  type AgentAdapter,
-  type AgentRequest,
-  type JsonValue,
-  type RunResult,
-  WorkflowError,
-} from "./types.ts";
+import { type AgentAdapter, type AgentRequest, type RunResult, WorkflowError } from "./types.ts";
 
 const makeRoot = (): string => mkdtempSync(join(tmpdir(), "wf-run-"));
 
