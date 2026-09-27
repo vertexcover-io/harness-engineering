@@ -16,6 +16,8 @@
   "dependencies": {
     "@commander-js/extra-typings": "^15.0.0",
     "@harness/core": "workspace:*",
+    "@harness/sdk": "workspace:*",
+    "@harness/server": "workspace:*",
     "commander": "^15.0.0"
   }
 }

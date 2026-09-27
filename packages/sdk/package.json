@@ -11,5 +11,8 @@
   },
   "dependencies": {
     "zod": "^4"
+  },
+  "devDependencies": {
+    "@harness/core": "workspace:*"
   }
 }
