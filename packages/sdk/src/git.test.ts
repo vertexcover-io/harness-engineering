@@ -86,16 +86,37 @@ const CASES: Case[] = [
     ],
   },
   {
-    name: "addWorktree for a branch that does not exist yet",
-    run: (git) => git.addWorktree("/cwd", { path: "/wt", branch: "feat/x", base: "main" }),
+    name: "hasRemote",
+    run: (git) => git.hasRemote("/cwd", "origin"),
+    expected: [{ command: "git", args: ["remote", "get-url", "origin"], cwd: "/cwd" }],
+  },
+  {
+    name: "fetch",
+    run: (git) => git.fetch("/cwd", { remote: "origin", ref: "main" }),
+    expected: [{ command: "git", args: ["fetch", "origin", "--", "main"], cwd: "/cwd" }],
+  },
+  {
+    name: "remoteHasBranch",
+    run: (git) => git.remoteHasBranch("/cwd", "origin", "main"),
     expected: [
       {
         command: "git",
-        args: ["rev-parse", "--verify", "--quiet", "refs/heads/feat/x"],
+        args: ["ls-remote", "--exit-code", "--heads", "origin", "refs/heads/main"],
         cwd: "/cwd",
       },
+    ],
+  },
+  {
+    name: "addWorktree with a base creates the branch from it",
+    run: (git) => git.addWorktree("/cwd", { path: "/wt", branch: "feat/x", base: "main" }),
+    expected: [
       { command: "git", args: ["worktree", "add", "-b", "feat/x", "/wt", "main"], cwd: "/cwd" },
     ],
+  },
+  {
+    name: "addWorktree with no base checks the existing branch out",
+    run: (git) => git.addWorktree("/cwd", { path: "/wt", branch: "feat/x" }),
+    expected: [{ command: "git", args: ["worktree", "add", "/wt", "feat/x"], cwd: "/cwd" }],
   },
   {
     name: "listWorktrees",
@@ -114,8 +135,6 @@ const CASES: Case[] = [
   },
 ];
 
-// addWorktree needs code:1 so its branchExists probe reports "not found" and takes the -b path;
-// every other call ignores the exit code entirely, so one shared fixture covers all cases.
 describe("createGit", () => {
   test.each(CASES)(
     "SC28: $name sends exactly the documented git arguments",
@@ -210,6 +229,39 @@ describe("createGit (integration)", () => {
     expect(await createGit(realExec).defaultBranch(clonePath)).toBe("main");
   });
 
+  test("hasRemote is false with no origin and true in a clone; fetch fails once origin is gone", async () => {
+    const root = makeRepo();
+    const git = createGit(realExec);
+    expect(await git.hasRemote(root, "origin")).toBe(false);
+
+    const clonePath = join(tempDir(), "clone");
+    gitCmd(tmpdir(), "clone", "-q", root, clonePath);
+    expect(await git.hasRemote(clonePath, "origin")).toBe(true);
+    expect((await git.fetch(clonePath, { remote: "origin", ref: "main" })).ok).toBe(true);
+
+    gitCmd(clonePath, "remote", "set-url", "origin", join(tempDir(), "gone"));
+    const fetched = await git.fetch(clonePath, { remote: "origin", ref: "main" });
+    expect(fetched.ok ? "" : fetched.error).toContain("gone");
+  });
+
+  test("remoteHasBranch is true for a branch on origin, false for one that is not, and an error once origin is gone", async () => {
+    const root = makeRepo();
+    const git = createGit(realExec);
+    const clonePath = join(tempDir(), "clone");
+    gitCmd(tmpdir(), "clone", "-q", root, clonePath);
+    expect(await git.remoteHasBranch(clonePath, "origin", "main")).toEqual({
+      ok: true,
+      value: true,
+    });
+    expect(await git.remoteHasBranch(clonePath, "origin", "nope")).toEqual({
+      ok: true,
+      value: false,
+    });
+
+    gitCmd(clonePath, "remote", "set-url", "origin", join(tempDir(), "gone"));
+    expect((await git.remoteHasBranch(clonePath, "origin", "main")).ok).toBe(false);
+  });
+
   test("SC31: addWorktree creates a new branch from base, then checks out the existing branch", async () => {
     const root = makeRepo();
     const git = createGit(realExec);
@@ -236,7 +288,7 @@ describe("createGit (integration)", () => {
     );
     const wt2 = join(tempDir(), "wt2");
 
-    const checkedOut = await git.addWorktree(root, { path: wt2, branch: "feat/new", base: "HEAD" });
+    const checkedOut = await git.addWorktree(root, { path: wt2, branch: "feat/new" });
     expect(checkedOut.ok).toBe(true);
     // Still the old tip, not the new HEAD: proof it checked the branch out rather than recreating it.
     expect(gitCmd(wt2, "rev-parse", "HEAD")).toBe(base);
