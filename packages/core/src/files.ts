@@ -1,6 +1,8 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { parse } from "yaml";
+import type { Result } from "./contracts.ts";
 
 const LOCK_RETRY_MS = 10;
 
@@ -18,6 +20,22 @@ const ifExists = async <T>(read: () => Promise<T>): Promise<T | null> => {
 
 export const readIfExists = (path: string): Promise<string | null> =>
   ifExists(() => readFile(path, "utf8"));
+
+export const readText = async (path: string): Promise<Result<string>> => {
+  try {
+    return { ok: true, value: await readFile(path, "utf8") };
+  } catch (error) {
+    return { ok: false, error: `${path}: cannot read file: ${String(error)}` };
+  }
+};
+
+export const parseYaml = (text: string, path: string): Result<unknown> => {
+  try {
+    return { ok: true, value: parse(text) };
+  } catch (error) {
+    return { ok: false, error: `${path}: invalid YAML: ${String(error)}` };
+  }
+};
 
 const isProcessAlive = (pid: number): boolean => {
   try {

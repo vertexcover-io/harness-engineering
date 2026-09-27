@@ -101,6 +101,11 @@ describe("loadStage", () => {
       validYaml.replace("planning.output.v1", "planning.output.v2"),
       /planning\.output\.v2/,
     ],
+    [
+      "a model, since a stage asks for a model only through its tier",
+      validYaml.replace("tier: balanced", "tier: balanced\nmodel: opus"),
+      /model/,
+    ],
     ["malformed YAML", "name: [unclosed", /YAML/i],
   ])("rejects %s", async (_label, yaml, message) => {
     const result = await loadStage(await writeStage("planning.yaml", yaml), registry);

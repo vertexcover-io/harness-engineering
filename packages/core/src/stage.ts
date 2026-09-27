@@ -1,8 +1,7 @@
-import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import { parse } from "yaml";
 import * as z from "zod";
 import { type Result, type Stage, StageSchema } from "./contracts.ts";
+import { parseYaml, readText } from "./files.ts";
 
 export type SchemaRegistry = Readonly<Record<string, z.ZodType>>;
 
@@ -10,22 +9,6 @@ export type LoadedStage = {
   readonly stage: Stage;
   readonly inputSchema: z.ZodType;
   readonly outputSchema: z.ZodType;
-};
-
-const readText = async (path: string): Promise<Result<string>> => {
-  try {
-    return { ok: true, value: await readFile(path, "utf8") };
-  } catch (error) {
-    return { ok: false, error: `${path}: cannot read file: ${String(error)}` };
-  }
-};
-
-const parseYaml = (text: string, path: string): Result<unknown> => {
-  try {
-    return { ok: true, value: parse(text) };
-  } catch (error) {
-    return { ok: false, error: `${path}: invalid YAML: ${String(error)}` };
-  }
 };
 
 export const loadStage = async (
