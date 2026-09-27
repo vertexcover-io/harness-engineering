@@ -3,10 +3,10 @@ import { EffortSchema } from "@harness/sdk";
 import * as z from "zod";
 import {
   isNormalizedRelativePath,
+  NonEmptyStringSchema,
   type Result,
   SkillNameSchema,
   SlugSchema,
-  TextSchema,
 } from "./contracts.ts";
 import { parseYaml, readIfExists } from "./files.ts";
 
@@ -22,7 +22,7 @@ const EnvNameSchema = z.string().regex(/^[A-Z_][A-Z0-9_]*$/, "Expected an UPPER_
 // "." is the repository root itself, the path of a single-package repository.
 const isRepoPath = (value: string): boolean => value === "." || isNormalizedRelativePath(value);
 
-const RepoPathSchema = TextSchema.refine(
+const RepoPathSchema = NonEmptyStringSchema.refine(
   isRepoPath,
   "Expected a path relative to the repository root",
 );
@@ -37,17 +37,17 @@ const recordOf = <T extends z.ZodType>(key: z.ZodType<string>, value: T) =>
   });
 
 // null means the project has no such command (NOT_APPLICABLE); callers never fall back to another key.
-const CommandsSchema = recordOf(NameSchema, TextSchema.nullable());
+const CommandsSchema = recordOf(NameSchema, NonEmptyStringSchema.nullable());
 
 const TierSchema = z.strictObject({
   agent: SlugSchema,
-  model: TextSchema.optional(),
+  model: NonEmptyStringSchema.optional(),
   effort: EffortSchema.optional(),
 });
 
 const PackageSchema = z.strictObject({
   path: RepoPathSchema,
-  runner: TextSchema.optional(),
+  runner: NonEmptyStringSchema.optional(),
   timeoutSeconds: z.int().positive().default(300),
   commands: CommandsSchema.default({}),
 });
@@ -65,14 +65,14 @@ const EnvironmentsSchema = z
 // setup and teardown run in every repo's worktree; a package's commands.worktreeSetup/worktreeTeardown override them in multi layout.
 const WorktreeSchema = z.strictObject({
   layout: z.enum(["mono", "multi"]).default("mono"),
-  path: TextSchema.optional(),
-  setup: TextSchema.optional(),
-  teardown: TextSchema.optional(),
+  path: NonEmptyStringSchema.optional(),
+  setup: NonEmptyStringSchema.optional(),
+  teardown: NonEmptyStringSchema.optional(),
 });
 
 export const ConfigSchema = z.strictObject({
   version: z.literal(2),
-  doctor: TextSchema.optional(),
+  doctor: NonEmptyStringSchema.optional(),
   tiers: recordOf(NameSchema, TierSchema).default({}),
   packages: recordOf(NameSchema, PackageSchema).default({}),
   environments: EnvironmentsSchema.optional(),

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type JsonValue, JsonValueSchema } from "../contracts.ts";
+import { type JsonValue, NonEmptyStringSchema } from "../contracts.ts";
 
 export const NodeIdSchema = z
   .string()
@@ -17,7 +17,7 @@ const RetrySchema = z.strictObject({
 
 const baseFields = {
   id: NodeIdSchema,
-  input: JsonValueSchema,
+  input: z.json(),
   dependsOn: z.array(NodeIdSchema).default([]),
 };
 
@@ -25,7 +25,7 @@ const guardedFields = { ...baseFields, when: ExpressionSchema.optional() };
 
 const leafFields = {
   ...guardedFields,
-  cwd: z.string().min(1).optional(),
+  cwd: NonEmptyStringSchema.optional(),
   timeoutMs: z.number().int().positive().optional(),
   retry: RetrySchema.optional(),
 };
@@ -35,14 +35,14 @@ export const ExecNodeSchema = z
     ...leafFields,
     type: z.literal("exec"),
     runtime: z.enum(["sh", "bun"]).optional(),
-    script: z.string().min(1).optional(),
-    module: z.string().min(1).optional(),
-    functionName: z.string().min(1).optional(),
+    script: NonEmptyStringSchema.optional(),
+    module: NonEmptyStringSchema.optional(),
+    functionName: NonEmptyStringSchema.optional(),
     output: z
       .strictObject({
         format: z.enum(["text", "json"]).optional(),
-        module: z.string().min(1).optional(),
-        zodSchema: z.string().min(1).optional(),
+        module: NonEmptyStringSchema.optional(),
+        zodSchema: NonEmptyStringSchema.optional(),
       })
       .optional(),
   })
@@ -96,7 +96,7 @@ export type SwitchNode = z.infer<typeof SwitchNodeFieldsSchema> & {
 export const IncludeNodeSchema = z.strictObject({
   ...guardedFields,
   type: z.literal("include"),
-  workflow: z.string().min(1),
+  workflow: NonEmptyStringSchema,
 });
 
 const LoopNodeFieldsSchema = z.strictObject({
@@ -112,10 +112,12 @@ export const AgentNodeSchema = z
   .strictObject({
     ...leafFields,
     type: z.literal("agent"),
-    adapter: z.string().min(1),
-    stage: z.string().min(1).optional(),
-    prompt: z.string().min(1).optional(),
-    output: z.strictObject({ module: z.string().min(1), zodSchema: z.string().min(1) }).optional(),
+    adapter: NonEmptyStringSchema,
+    stage: NonEmptyStringSchema.optional(),
+    prompt: NonEmptyStringSchema.optional(),
+    output: z
+      .strictObject({ module: NonEmptyStringSchema, zodSchema: NonEmptyStringSchema })
+      .optional(),
   })
   .superRefine((node, ctx) => {
     if (node.stage === undefined && node.prompt === undefined) {
@@ -152,11 +154,11 @@ export const SwitchNodeSchema = SwitchNodeFieldsSchema.extend({
 const InputDeclarationSchema = z.strictObject({
   type: z.enum(["string", "number", "boolean", "object", "array"]),
   required: z.boolean().default(false),
-  default: JsonValueSchema.optional(),
+  default: z.json().optional(),
 });
 
 export const WorkflowSchema = z.strictObject({
-  name: z.string().min(1),
+  name: NonEmptyStringSchema,
   version: z.union([z.string(), z.number()]).optional(),
   inputs: z.record(NodeIdSchema, InputDeclarationSchema).default({}),
   maxConcurrency: z.number().int().positive().default(4),
@@ -206,8 +208,8 @@ export const NodeRecordSchema = z.object({
   path: z.string(),
   type: z.string(),
   status: NodeStatusSchema,
-  input: JsonValueSchema.optional(),
-  output: JsonValueSchema.optional(),
+  input: z.json().optional(),
+  output: z.json().optional(),
   attempts: z.number().int().min(0),
   startedAt: z.number().optional(),
   endedAt: z.number().optional(),

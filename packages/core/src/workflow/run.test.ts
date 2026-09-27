@@ -1020,12 +1020,12 @@ describe("node events", () => {
   });
 
   test("SC14: a run's events in event.jsonl build a valid state.json with every node completed", async () => {
-    const taskDir = makeRoot();
-    const store = jsonlEventStore(taskDir);
+    const runDir = makeRoot();
+    const store = jsonlEventStore(runDir);
     await run(eventsRoot(), eventsWorkflow, {}, { emitter: storeEmitter(store, { runId: "r-1" }) });
-    const state = await syncState({ taskDir, store, seed: stateSeed, handlers: coreHandlers });
+    const state = await syncState({ runDir, store, seed: stateSeed, handlers: coreHandlers });
     expect(
-      StateSchema.safeParse(JSON.parse(readFileSync(join(taskDir, "state.json"), "utf8"))).success,
+      StateSchema.safeParse(JSON.parse(readFileSync(join(runDir, "state.json"), "utf8"))).success,
     ).toBe(true);
     expect(
       Object.fromEntries(Object.values(state.nodeRuns).map((r) => [r.nodeRunId, r.status])),

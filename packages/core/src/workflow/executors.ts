@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { type JsonValue, JsonValueSchema } from "../contracts.ts";
+import { z } from "zod";
+import type { JsonValue } from "../contracts.ts";
 import {
   type AgentAdapter,
   type AgentNode,
@@ -159,7 +160,7 @@ export const withTimeout = <T>(
   });
 
 export const asJson = (value: unknown, path: string): JsonValue => {
-  const parsed = JsonValueSchema.safeParse(value);
+  const parsed = z.json().safeParse(value);
   if (!parsed.success)
     throw new NodeFailure("validation", `${path} returned a value that is not JSON`);
   return parsed.data;

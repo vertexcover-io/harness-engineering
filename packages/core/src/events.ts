@@ -1,5 +1,11 @@
 import * as z from "zod";
-import { type Event, type NodeRun, type Result, type State, TextSchema } from "./contracts.ts";
+import {
+  type Event,
+  type NodeRun,
+  NonEmptyStringSchema,
+  type Result,
+  type State,
+} from "./contracts.ts";
 import type { EventDraft, IEventStore } from "./event-store.ts";
 import type { EventHandler, EventHandlers } from "./state.ts";
 
@@ -15,7 +21,7 @@ const attempts = z.int().nonnegative();
 // Each event family adds the top-level fields its events must carry; other envelope
 // fields pass through, since EventSchema checks them when the store appends.
 const nodeEvent = <P extends z.ZodType>(payload: P) =>
-  z.object({ nodeId: TextSchema, nodeRunId: TextSchema, payload });
+  z.object({ nodeId: NonEmptyStringSchema, nodeRunId: NonEmptyStringSchema, payload });
 
 export const NodeStartedEvent = nodeEvent(z.strictObject({ nodeType }));
 export const NodeEndedEvent = nodeEvent(
