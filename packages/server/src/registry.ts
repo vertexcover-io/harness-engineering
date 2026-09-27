@@ -28,6 +28,14 @@ const addRun =
   (registry) =>
     withRun(registry, run);
 
+const removeRun =
+  (runId: string): Change =>
+  (registry) => {
+    if (registry.runs[runId] === undefined) return registry;
+    const { [runId]: _removed, ...runs } = registry.runs;
+    return { ...registry, runs };
+  };
+
 const initRun =
   (runId: string, name: string): Change =>
   (registry) => {
@@ -49,6 +57,7 @@ const linkSession =
 export type Registry = Readonly<{
   findRun: (runId: string) => Promise<WorkflowRun | undefined>;
   addRun: (run: WorkflowRun) => Promise<void>;
+  removeRun: (runId: string) => Promise<void>;
   initRun: (runId: string, name: string) => Promise<void>;
   // Resolves true when the session was new, false when it was already linked.
   linkSession: (runId: string, session: SessionRef) => Promise<boolean>;
@@ -81,6 +90,9 @@ export const createRegistry = (path: string, parentLog: ILogger = noopLogger): R
     findRun: async (runId) => (await read()).runs[runId],
     addRun: async (run) => {
       await update(addRun(run));
+    },
+    removeRun: async (runId) => {
+      await update(removeRun(runId));
     },
     initRun: async (runId, name) => {
       await update(initRun(runId, name));
