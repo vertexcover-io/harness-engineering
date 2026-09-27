@@ -4,13 +4,19 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@harness/agents": "workspace:*",
     "@harness/core": "workspace:*",
-    "hono": "^4.13.9"
+    "@harness/sdk": "workspace:*",
+    "@hono/zod-validator": "^0.9.1",
+    "hono": "^4.13.9",
+    "pino-pretty": "^13",
+    "zod": "^4"
   }
 }
