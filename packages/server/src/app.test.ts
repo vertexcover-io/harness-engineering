@@ -1,15 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { captureLogger } from "@harness/core";
-import type { IAgentProvider, IGit, ITerminal, LaunchOptions, Result } from "@harness/sdk";
-import { createGit, noopLogger } from "@harness/sdk";
+import { captureLogger, createRegistry } from "@harness/core";
+import type { IAgentProvider, ITerminal, LaunchOptions, Result } from "@harness/sdk";
+import { noopLogger } from "@harness/sdk";
 import { createApp } from "./app.ts";
 import { createHarnessClient } from "./client.ts";
-import { type SessionRef, socketPath, type WorkflowRun } from "./protocol.ts";
-import { createRegistry } from "./registry.ts";
+import { socketPath } from "./protocol.ts";
 
 const tempWorkspace = (): { workflowPath: string; cwd: string } => {
   const cwd = mkdtempSync(join(tmpdir(), "harness-app-"));
@@ -41,24 +39,9 @@ const fakeProvider = (
   run: () => Promise.resolve({ ok: false, error: new Error("not implemented") }),
 });
 
-const fakeGit = (): IGit => ({
-  repoRoot: (cwd) => Promise.resolve(cwd),
-  commonDir: () => Promise.resolve(null),
-  currentBranch: () => Promise.resolve({ ok: true, value: "main" }),
-  headSha: () => Promise.resolve({ ok: true, value: "0000000" }),
-  defaultBranch: () => Promise.resolve(null),
-  isValidBranchName: () => Promise.resolve(true),
-  branchExists: () => Promise.resolve(false),
-  isIgnored: () => Promise.resolve(false),
-  addWorktree: () => Promise.resolve({ ok: true, value: undefined }),
-  listWorktrees: () => Promise.resolve({ ok: true, value: [] }),
-  removeWorktree: () => Promise.resolve({ ok: true, value: undefined }),
-});
-
 const buildDeps = async (
   launch: (options: LaunchOptions) => Promise<Result<{ sessionId: string }>>,
   log = noopLogger,
-  git: IGit = fakeGit(),
 ) => {
   const registryPath = join(mkdtempSync(join(tmpdir(), "harness-registry-")), "registry.json");
   const registry = createRegistry(registryPath, log);
@@ -67,48 +50,11 @@ const buildDeps = async (
     registry,
     provider: fakeProvider(launch),
     terminal: fakeTerminal(),
-    git,
     log,
     home: "/home/.harness",
     pid: 4242,
     version: "0.0.0-test",
   };
-};
-
-const gitCmd = (cwd: string, ...args: string[]): string =>
-  execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
-
-const makeGitRepo = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "harness-app-repo-"));
-  gitCmd(dir, "init", "-q", "-b", "main");
-  gitCmd(
-    dir,
-    "-c",
-    "user.email=t@t",
-    "-c",
-    "user.name=t",
-    "commit",
-    "-q",
-    "--allow-empty",
-    "-m",
-    "init",
-  );
-  return dir;
-};
-
-const startRun = async (
-  app: ReturnType<typeof createApp>,
-  body: { workflow: string; workflowPath: string; inputs: Record<string, unknown>; cwd: string },
-): Promise<{ id: string; sessions: readonly SessionRef[]; name: WorkflowRun["name"] }> => {
-  const res = await app.request("/runs", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const json = (await res.json()) as {
-    run: { id: string; sessions: SessionRef[]; name: WorkflowRun["name"] };
-  };
-  return json.run;
 };
 
 describe("POST /runs", () => {
@@ -172,26 +118,14 @@ describe("POST /runs", () => {
     expect(await deps.registry.findRun(json.run.id)).toBeDefined();
   });
 
-  test("init called by the agent while it is still starting finds its run", async () => {
-    const cwd = makeGitRepo();
-    const workflowPath = join(cwd, "ok.yaml");
-    writeFileSync(workflowPath, "name: ok\nnodes: []\n");
-    let initStatus = 0;
-    let app: ReturnType<typeof createApp> | undefined;
-    const deps = await buildDeps(
-      async (options) => {
-        const res = await app?.request(`/runs/${options.env?.HARNESS_RUN_ID}/init`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: "early" }),
-        });
-        initStatus = res?.status ?? 0;
-        return { ok: true, value: { sessionId: "s1" } };
-      },
-      noopLogger,
-      createGit(),
-    );
-    app = createApp(deps);
+  test("the run is in the registry before its agent starts, so the agent's orchestrate init finds it", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    let savedAtLaunch: unknown;
+    const deps = await buildDeps(async (options) => {
+      savedAtLaunch = await deps.registry.findRun(String(options.env?.HARNESS_RUN_ID));
+      return { ok: true, value: { sessionId: "s1" } };
+    });
+    const app = createApp(deps);
 
     const res = await app.request("/runs", {
       method: "POST",
@@ -200,7 +134,7 @@ describe("POST /runs", () => {
     });
 
     expect(res.status).toBe(201);
-    expect(initStatus).toBe(201);
+    expect(savedAtLaunch).toMatchObject({ workflowPath, cwd, sessions: [], name: null });
   });
 
   test("SC11: a failing provider is 502 agent-failed and records no run", async () => {
@@ -289,252 +223,6 @@ describe("POST /runs logging", () => {
   });
 });
 
-const post = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
-  app.request(path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-// A started run in a fresh git repo; events() reads the log of the run once it is init'ed as fix-login.
-const startedRun = async () => {
-  const cwd = makeGitRepo();
-  const workflowPath = join(cwd, "ok.yaml");
-  writeFileSync(workflowPath, "name: ok\nnodes: []\n");
-  const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1" } }));
-  const app = createApp(deps);
-  const run = await startRun(app, { workflow: "ok", workflowPath, inputs: {}, cwd });
-  const eventLog = join(cwd, ".harness", "fix-login", "event.jsonl");
-  const events = () =>
-    readFileSync(eventLog, "utf8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
-  return { app, run, cwd, workflowPath, events };
-};
-
-describe("POST /runs/:id/init", () => {
-  test("SC19: writes workflow.yaml, one workflow.started event, and a state.json with lastEventSeq 1", async () => {
-    const cwd = makeGitRepo();
-    const workflowPath = join(cwd, "ok.yaml");
-    writeFileSync(workflowPath, "name: ok\nnodes: []\n");
-    const deps = await buildDeps(
-      () => Promise.resolve({ ok: true, value: { sessionId: "s1" } }),
-      noopLogger,
-      createGit(),
-    );
-    const app = createApp(deps);
-    const run = await startRun(app, { workflow: "ok", workflowPath, inputs: {}, cwd });
-
-    const res = await post(app, `/runs/${run.id}/init`, { name: "fix-login" });
-
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as {
-      dir: string;
-      state: { lastEventSeq: number; specName: string };
-    };
-    const dir = join(cwd, ".harness", "fix-login");
-    expect(body.dir).toBe(dir);
-    expect(readFileSync(join(dir, "workflow.yaml"), "utf8")).toBe(
-      readFileSync(workflowPath, "utf8"),
-    );
-
-    const eventLines = readFileSync(join(dir, "event.jsonl"), "utf8").trim().split("\n");
-    expect(eventLines).toHaveLength(1);
-    const event = JSON.parse(eventLines[0] as string) as {
-      type: string;
-      seq: number;
-      runId: string;
-      ts: string;
-    };
-    expect(event.type).toBe("workflow.started");
-    expect(event.runId).toBe(run.id);
-    expect(event.seq).toBe(1);
-
-    expect(body.state.lastEventSeq).toBe(1);
-    expect(body.state.specName).toBe("fix-login");
-  });
-
-  test("SC20: a second init is 409, a pre-existing run folder is 409, a bad name is 400, an unknown run is 404", async () => {
-    const { app, run, cwd, workflowPath } = await startedRun();
-    const init = (runId: string, name: string) => post(app, `/runs/${runId}/init`, { name });
-
-    const first = await init(run.id, "fix-login");
-    expect(first.status).toBe(201);
-
-    const second = await init(run.id, "fix-login-2");
-    expect(second.status).toBe(409);
-    expect(((await second.json()) as { error: { code: string } }).error.code).toBe("conflict");
-
-    const otherRun = await startRun(app, { workflow: "ok", workflowPath, inputs: {}, cwd });
-    mkdirSync(join(cwd, ".harness", "dupe"), { recursive: true });
-    const dupe = await init(otherRun.id, "dupe");
-    expect(dupe.status).toBe(409);
-    expect(((await dupe.json()) as { error: { code: string } }).error.code).toBe("conflict");
-
-    const badName = await init(otherRun.id, "Bad Name");
-    expect(badName.status).toBe(400);
-
-    const unknown = await init("r-missing", "fix-login");
-    expect(unknown.status).toBe(404);
-  });
-});
-
-describe("POST /runs/:id/emit", () => {
-  const initialized = async () => {
-    const context = await startedRun();
-    const init = await post(context.app, `/runs/${context.run.id}/init`, { name: "fix-login" });
-    expect(init.status).toBe(201);
-    return context;
-  };
-
-  test("SC17: an event posted to an initialized run is stored and returned", async () => {
-    const { app, run, events } = await initialized();
-
-    const tags = {
-      id: "note-1",
-      nodeId: "review",
-      nodeRunId: "review",
-      stage: "review",
-    };
-    const res = await post(app, `/runs/${run.id}/emit`, {
-      type: "custom.review.note",
-      payload: { files: 3 },
-      ...tags,
-    });
-
-    expect(res.status).toBe(200);
-    const { event } = (await res.json()) as { event: Record<string, unknown> };
-    expect(event).toMatchObject({
-      type: "custom.review.note",
-      source: "cli",
-      runId: run.id,
-      seq: 2,
-      payload: { files: 3 },
-      ...tags,
-    });
-    expect(events().at(-1)).toEqual(event);
-  });
-
-  test("SC18: emit to an unknown run is 404 not-found", async () => {
-    const { app } = await startedRun();
-
-    const res = await post(app, "/runs/r-missing/emit", { type: "custom.x.y", payload: {} });
-
-    expect(res.status).toBe(404);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("not-found");
-  });
-
-  test("SC19: emit to a run that was never initialized is 409 and writes nothing", async () => {
-    const { app, run, cwd } = await startedRun();
-
-    const res = await post(app, `/runs/${run.id}/emit`, { type: "custom.x.y", payload: {} });
-
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({
-      error: { code: "conflict", message: "run has no task: run harness init first" },
-    });
-    expect(existsSync(join(cwd, ".harness"))).toBe(false);
-  });
-
-  test("SC20: an event the emitter refuses is 400 and writes nothing", async () => {
-    const { app, run, events } = await initialized();
-
-    const res = await post(app, `/runs/${run.id}/emit`, {
-      type: "workflow.node.failed",
-      payload: { nodeType: "exec", attempts: 1 },
-      nodeId: "a",
-      nodeRunId: "a",
-    });
-
-    expect(res.status).toBe(400);
-    const { error } = (await res.json()) as { error: { code: string; message: string } };
-    expect(error.code).toBe("bad-request");
-    expect(error.message).toContain("workflow.node.failed");
-    expect(events().map((event) => event.type)).toEqual(["workflow.started"]);
-  });
-
-  test("SC25: a body with a runId is 400, since the run comes from the URL", async () => {
-    const { app, run, events } = await initialized();
-
-    const res = await post(app, `/runs/${run.id}/emit`, {
-      type: "custom.x.y",
-      payload: {},
-      runId: "r-other",
-    });
-
-    expect(res.status).toBe(400);
-    expect(events()).toHaveLength(1);
-  });
-
-  test("SC26: a repeated event id returns the event stored first and appends nothing", async () => {
-    const { app, run, events } = await initialized();
-    const emit = (files: number) =>
-      post(app, `/runs/${run.id}/emit`, { type: "custom.x.y", id: "once", payload: { files } });
-
-    const first = (await (await emit(1)).json()) as { event: unknown };
-    const second = await emit(2);
-
-    expect(second.status).toBe(200);
-    expect(((await second.json()) as { event: unknown }).event).toEqual(first.event);
-    expect(events()).toHaveLength(2);
-  });
-
-  test("SC27: emit to a run whose task folder was deleted is 409 and recreates nothing", async () => {
-    const { app, run, cwd } = await initialized();
-    rmSync(join(cwd, ".harness"), { recursive: true });
-
-    const res = await post(app, `/runs/${run.id}/emit`, { type: "custom.x.y", payload: {} });
-
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("conflict");
-    expect(existsSync(join(cwd, ".harness"))).toBe(false);
-  });
-
-  test("SC21: init writes workflow.started through the emitter with a fixed id, the run id, and the time", async () => {
-    const { run, events } = await initialized();
-
-    const [started, ...rest] = events();
-    expect(rest).toEqual([]);
-    expect(started).toMatchObject({ id: "workflow-started", seq: 1, runId: run.id });
-    expect(Math.abs(Date.now() - Date.parse(String(started?.ts)))).toBeLessThan(1000);
-  });
-});
-
-describe("POST /runs/:id/link-session", () => {
-  test("SC22: links a new agent session once and rejects an unknown agent without changing state", async () => {
-    const { workflowPath, cwd } = tempWorkspace();
-    const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1" } }));
-    const app = createApp(deps);
-    const run = await startRun(app, { workflow: "ok", workflowPath, inputs: {}, cwd });
-
-    const link = async (body: Record<string, unknown>) =>
-      app.request(`/runs/${run.id}/link-session`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-    const first = await link({ agent: "codex", sessionId: "s2" });
-    expect(first.status).toBe(200);
-    const firstBody = (await first.json()) as { run: { sessions: SessionRef[] } };
-    expect(firstBody.run.sessions).toContainEqual({ agent: "codex", sessionId: "s2" });
-
-    const second = await link({ agent: "codex", sessionId: "s2" });
-    const secondBody = (await second.json()) as { run: { sessions: SessionRef[] } };
-    expect(
-      secondBody.run.sessions.filter((s) => s.agent === "codex" && s.sessionId === "s2"),
-    ).toHaveLength(1);
-
-    const third = await link({ agent: "gpt", sessionId: "s3" });
-    expect(third.status).toBe(400);
-    expect(((await third.json()) as { error: { code: string } }).error.code).toBe("bad-request");
-    expect((await deps.registry.findRun(run.id))?.sessions.some((s) => s.sessionId === "s3")).toBe(
-      false,
-    );
-  });
-});
-
 describe("createHarnessClient", () => {
   const serveOn = (fetch: (request: Request) => Response | Promise<Response>) => {
     const home = mkdtempSync(join(tmpdir(), "harness-home-"));
@@ -556,10 +244,15 @@ describe("createHarnessClient", () => {
         { agent: "claude", sessionId: "s1" },
       ]);
 
-      const missing = await client.linkSession("r-nope", { agent: "codex", sessionId: "s2" });
-      expect(missing).toEqual({
+      const refused = await client.run({
+        workflow: "ok",
+        workflowPath: join(cwd, "missing.yaml"),
+        inputs: {},
+        cwd,
+      });
+      expect(refused).toEqual({
         ok: false,
-        error: { code: "not-found", message: "run r-nope not found" },
+        error: { code: "bad-request", message: "workflowPath and cwd must exist" },
       });
     } finally {
       await server.stop(true);

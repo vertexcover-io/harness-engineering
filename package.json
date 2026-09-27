@@ -15,6 +15,7 @@
     "test": "bun test ./packages",
     "lint": "biome check",
     "lint:fix": "biome check --write",
+    "orchestrate": "bun packages/core/src/orchestrate.ts",
     "release:version": "bun scripts/version.ts",
     "release:version:node": "node scripts/version.ts",
     "test:scripts": "node --test scripts/*.test.ts",

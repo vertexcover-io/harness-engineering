@@ -1,10 +1,37 @@
 import { randomUUID } from "node:crypto";
 import { rename, writeFile } from "node:fs/promises";
-import { readIfExists, withLock } from "@harness/core";
-import type { ILogger } from "@harness/sdk";
-import { noopLogger } from "@harness/sdk";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { AgentTypeSchema, type ILogger, noopLogger } from "@harness/sdk";
 import * as z from "zod";
-import { type SessionRef, type WorkflowRun, WorkflowRunSchema } from "./protocol.ts";
+import { JsonObjectSchema, NonEmptyStringSchema, SlugSchema } from "./contracts.ts";
+import { readIfExists, withLock } from "./files.ts";
+
+export const harnessHome = (env: NodeJS.ProcessEnv = process.env): string =>
+  env.HARNESS_HOME ?? join(homedir(), ".harness");
+
+export const registryPath = (home: string = harnessHome()): string => join(home, "registry.json");
+
+export const SessionRefSchema = z.strictObject({
+  agent: AgentTypeSchema,
+  // also the tmux session name
+  sessionId: NonEmptyStringSchema,
+});
+
+export const WorkflowRunSchema = z.strictObject({
+  id: NonEmptyStringSchema,
+  workflow: SlugSchema,
+  workflowPath: NonEmptyStringSchema,
+  inputs: JsonObjectSchema,
+  cwd: NonEmptyStringSchema,
+  // agent sessions of this run, first = the one start run launched
+  sessions: z.array(SessionRefSchema),
+  // Set by init; the run's folder is CWD/.harness/NAME.
+  name: SlugSchema.nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type WorkflowRun = z.infer<typeof WorkflowRunSchema>;
+export type SessionRef = z.infer<typeof SessionRefSchema>;
 
 export const RegistryFileSchema = z.strictObject({
   version: z.literal(1),
@@ -54,13 +81,19 @@ const linkSession =
     return linked ? registry : withRun(registry, { ...run, sessions: [...run.sessions, session] });
   };
 
+// A name is reused only after its run folder was deleted, so the newest run holds the folder.
+const namedNewestFirst = (registry: RegistryFile, name: string): readonly WorkflowRun[] =>
+  Object.values(registry.runs)
+    .filter((run) => run.name === name)
+    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+
 export type Registry = Readonly<{
   findRun: (runId: string) => Promise<WorkflowRun | undefined>;
+  findRunsByName: (name: string) => Promise<readonly WorkflowRun[]>;
   addRun: (run: WorkflowRun) => Promise<void>;
   removeRun: (runId: string) => Promise<void>;
   initRun: (runId: string, name: string) => Promise<void>;
-  // Resolves true when the session was new, false when it was already linked.
-  linkSession: (runId: string, session: SessionRef) => Promise<boolean>;
+  linkSession: (runId: string, session: SessionRef) => Promise<void>;
 }>;
 
 export const createRegistry = (path: string, parentLog: ILogger = noopLogger): Registry => {
@@ -88,6 +121,7 @@ export const createRegistry = (path: string, parentLog: ILogger = noopLogger): R
 
   return {
     findRun: async (runId) => (await read()).runs[runId],
+    findRunsByName: async (name) => namedNewestFirst(await read(), name),
     addRun: async (run) => {
       await update(addRun(run));
     },
@@ -97,6 +131,8 @@ export const createRegistry = (path: string, parentLog: ILogger = noopLogger): R
     initRun: async (runId, name) => {
       await update(initRun(runId, name));
     },
-    linkSession: (runId, session) => update(linkSession(runId, session)),
+    linkSession: async (runId, session) => {
+      await update(linkSession(runId, session));
+    },
   };
 };

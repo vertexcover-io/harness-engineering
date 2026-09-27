@@ -1,0 +1,163 @@
+import { existsSync } from "node:fs";
+import { copyFile, mkdir, rm } from "node:fs/promises";
+import { basename, join } from "node:path";
+import type { IGit, ILogger } from "@harness/sdk";
+import * as z from "zod";
+import corePackage from "../package.json";
+import { type GitState, type Result, SlugSchema, type State } from "./contracts.ts";
+import { jsonlEventStore } from "./event-store.ts";
+import { coreHandlers, emitRunEvent, type RunRef, runDirOf } from "./events.ts";
+import { type Registry, type SessionRef, SessionRefSchema, type WorkflowRun } from "./registry.ts";
+import { syncState } from "./state.ts";
+import { findRoot, toRepoId } from "./workspace.ts";
+
+export const readGit = async (cwd: string, git: IGit): Promise<GitState> => {
+  const [branch, sha, defaultBranch] = await Promise.all([
+    git.currentBranch(cwd),
+    git.headSha(cwd),
+    git.defaultBranch(cwd),
+  ]);
+  const branchName = branch.ok ? branch.value : "HEAD";
+  return {
+    branch: branchName,
+    startSha: sha.ok ? sha.value : "",
+    baseBranch: defaultBranch ?? branchName,
+  };
+};
+
+export const initialState = (run: WorkflowRun, name: string, git: GitState): State => {
+  const now = new Date().toISOString();
+  return {
+    schemaVersion: 1,
+    lastEventSeq: 0,
+    specName: name,
+    harnessVersion: String(corePackage.version),
+    workflow: { name: run.workflow, path: "workflow.yaml" },
+    input: run.inputs,
+    scope: "workflow",
+    options: {},
+    startedAt: now,
+    completedAt: null,
+    outcome: null,
+    currentFile: null,
+    workspace: {
+      path: run.cwd,
+      repositories: { [toRepoId(basename(run.cwd))]: { path: run.cwd, git } },
+    },
+    activeNodeRuns: [],
+    nodeRuns: {},
+  };
+};
+
+export type InitOptions = Readonly<{
+  registry: Registry;
+  runId: string;
+  name: string;
+  git: IGit;
+  log: ILogger;
+}>;
+
+const fillRunDir = async (run: WorkflowRun, name: string, options: InitOptions): Promise<State> => {
+  const dir = runDirOf(run.cwd, name);
+  await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
+  const appended = await emitRunEvent(
+    { id: run.id, cwd: run.cwd, name },
+    {
+      id: "workflow-started",
+      type: "workflow.started",
+      source: "orchestrate",
+      payload: { workflow: run.workflow, inputs: run.inputs },
+    },
+  );
+  if (!appended.ok) throw new Error(appended.error);
+  const state = await syncState({
+    runDir: dir,
+    store: jsonlEventStore(dir),
+    seed: initialState(run, name, await readGit(run.cwd, options.git)),
+    handlers: coreHandlers,
+  });
+  options.log.debug({ dir, lastEventSeq: state.lastEventSeq }, "run folder written");
+  return state;
+};
+
+const checkInit = async (options: InitOptions): Promise<Result<WorkflowRun>> => {
+  const { registry, runId, name, git } = options;
+  const parsed = SlugSchema.safeParse(name);
+  if (!parsed.success) {
+    return { ok: false, error: `invalid run name "${name}": ${z.prettifyError(parsed.error)}` };
+  }
+  const run = await registry.findRun(runId);
+  if (run === undefined) return { ok: false, error: `run ${runId} not found` };
+  if (run.name !== null) {
+    return { ok: false, error: `run ${runId} is already initialized as ${run.name}` };
+  }
+  if (existsSync(runDirOf(run.cwd, name))) {
+    return { ok: false, error: `.harness/${name} already exists` };
+  }
+  if ((await git.repoRoot(run.cwd)) === null) {
+    return { ok: false, error: `${run.cwd} is not inside a git repository` };
+  }
+  return { ok: true, value: run };
+};
+
+export const initializeRun = async (
+  options: InitOptions,
+): Promise<Result<{ dir: string; state: State }>> => {
+  const checked = await checkInit(options);
+  if (!checked.ok) return checked;
+  const run = checked.value;
+  const dir = runDirOf(run.cwd, options.name);
+  await mkdir(dir, { recursive: true });
+  try {
+    const state = await fillRunDir(run, options.name, options);
+    await options.registry.initRun(run.id, options.name);
+    options.log.info({ runId: run.id, name: options.name, dir }, "run initialized");
+    return { ok: true, value: { dir, state } };
+  } catch (error) {
+    // A half-built folder would make every retry answer "already exists".
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
+};
+
+type RunLookup = Readonly<{ registry: Registry; root: string; name: string }>;
+
+// Every action after init names its run by spec name; the folder must still exist, since
+// writing to it would recreate a run folder with no workflow.started.
+// harness run saves the folder it started in, which can be a linked worktree or a multi-layout
+// sub-repo, so a run belongs to the root its own folder resolves to.
+const belongsTo = async (run: WorkflowRun, root: string): Promise<boolean> => {
+  if (run.cwd === root) return true;
+  const runRoot = await findRoot(run.cwd);
+  return runRoot.ok && runRoot.value === root;
+};
+
+export const resolveRun = async ({ registry, root, name }: RunLookup): Promise<Result<RunRef>> => {
+  const named = await registry.findRunsByName(name);
+  const owned = await Promise.all(named.map((candidate) => belongsTo(candidate, root)));
+  const run = named.find((_, index) => owned[index]);
+  if (run === undefined) {
+    return {
+      ok: false,
+      error: `no run named "${name}" in ${root}; start one with orchestrate init`,
+    };
+  }
+  const dir = runDirOf(run.cwd, name);
+  if (!existsSync(dir)) return { ok: false, error: `${dir} no longer exists` };
+  return { ok: true, value: { id: run.id, cwd: run.cwd, name } };
+};
+
+export const linkRunSession = async (
+  options: RunLookup & Readonly<{ agent: string; sessionId: string }>,
+): Promise<Result<readonly SessionRef[]>> => {
+  const session = SessionRefSchema.safeParse({
+    agent: options.agent,
+    sessionId: options.sessionId,
+  });
+  if (!session.success) return { ok: false, error: z.prettifyError(session.error) };
+  const run = await resolveRun(options);
+  if (!run.ok) return run;
+  await options.registry.linkSession(run.value.id, session.data);
+  const linked = await options.registry.findRun(run.value.id);
+  return { ok: true, value: linked?.sessions ?? [session.data] };
+};

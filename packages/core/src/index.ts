@@ -47,15 +47,13 @@ export {
   type LogBase,
   resolveLevel,
 } from "./logging.ts";
+export {
+  createRegistry,
+  harnessHome,
+  type Registry,
+  registryPath,
+  type WorkflowRun,
+} from "./registry.ts";
 export { type LoadedStage, loadStage, type SchemaRegistry } from "./stage.ts";
 export { type EventHandler, type EventHandlers, projectEvents, syncState } from "./state.ts";
 export * from "./workflow/index.ts";
-export {
-  createWorktrees,
-  findRoot,
-  type OutputLine,
-  type RepoOutcome,
-  removeWorktrees,
-  type WorktreeOptions,
-  type WorktreeReport,
-} from "./worktree.ts";

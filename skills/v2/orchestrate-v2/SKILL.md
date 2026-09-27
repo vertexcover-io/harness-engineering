@@ -21,11 +21,12 @@ Derive a short kebab-case run name: from `inputs.prompt` when it is present, oth
 workflow's name (the `--workflow` file's basename without extension). Then run:
 
 ```
-harness init NAME
+bun run orchestrate init NAME
 ```
 
-`init` reads `HARNESS_RUN_ID` from this session's environment, so no `--run-id` flag is needed. On a
-non-zero exit, show the command's error output and stop — do not retry with a different name.
+`init` reads `HARNESS_RUN_ID` from this session's environment, so no `--run-id` flag is needed.
+Every later action on the run names it by `NAME` (`--run NAME`), not by its id. On a non-zero
+exit, show the command's error output and stop — do not retry with a different name.
 
 ## Step 2: report and stop
 
