@@ -3,10 +3,12 @@ import {
   type DoctorJson,
   type DoctorReport,
   type DoctorRow,
-  killRunning,
   runDoctor,
   verdict,
 } from "@harness/core";
+import { killRunning } from "@harness/sdk";
+import { runtimeChecks } from "@harness/server";
+import { cliLog, commandLog } from "./client.ts";
 
 const HEADERS = ["CHECK", "REQUIRED", "STATUS", "DETAIL", "FIX"] as const;
 // A version banner (curl prints its whole TLS stack) would push the FIX column off-screen.
@@ -82,7 +84,15 @@ export const doctorCommand = () =>
       };
       process.once("SIGINT", stop(130));
       process.once("SIGTERM", stop(143));
-      const report = await runDoctor({ cwd: process.cwd() });
+      const report = await runDoctor({
+        cwd: process.cwd(),
+        extraChecks: runtimeChecks(),
+        log: cliLog(),
+      });
+      commandLog("doctor").debug(
+        { verdict: verdict(report), failed: report.failed.length, warned: report.warned.length },
+        "doctor finished",
+      );
       console.log(json === true ? renderJson(report) : renderText(report));
       process.exitCode = exitCodeFor(report);
     });

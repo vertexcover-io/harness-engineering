@@ -7,6 +7,7 @@ import {
   type WorktreeOptions,
   type WorktreeReport,
 } from "@harness/core";
+import { cliLog, commandLog, fail } from "./client.ts";
 
 const splitList = (value: string): string[] =>
   value
@@ -16,12 +17,16 @@ const splitList = (value: string): string[] =>
 
 const report = (result: Result<WorktreeReport>): void => {
   if (!result.ok) {
-    process.stderr.write(`error: ${result.error}\n`);
-    process.exitCode = 1;
+    fail(result.error);
     return;
   }
   process.stdout.write(`${JSON.stringify(result.value, null, 2)}\n`);
-  if (result.value.repos.some((repo) => repo.status === "failed")) process.exitCode = 1;
+  const failed = result.value.repos.filter((repo) => repo.status === "failed");
+  commandLog("worktree").debug(
+    { branch: result.value.branch, repos: result.value.repos.length, failed: failed.length },
+    "worktree command finished",
+  );
+  if (failed.length > 0) process.exitCode = 1;
 };
 
 const run = async (
@@ -33,7 +38,8 @@ const run = async (
   if (!root.ok) return report(root);
   const onOutput: WorktreeOptions["onOutput"] = (line) =>
     process.stderr.write(`[${line.repo}] ${line.text}\n`);
-  report(await command({ ...flags, root: root.value, onOutput }));
+  const log = cliLog();
+  report(await command({ ...flags, root: root.value, onOutput, log }));
 };
 
 export const worktreeCommand = () => {
