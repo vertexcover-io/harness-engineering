@@ -13,9 +13,13 @@ export interface IGit {
   isValidBranchName(cwd: string, name: string): Promise<boolean>;
   branchExists(cwd: string, branch: string): Promise<boolean>;
   isIgnored(cwd: string, path: string): Promise<boolean>;
+  hasRemote(cwd: string, remote: string): Promise<boolean>;
+  remoteHasBranch(cwd: string, remote: string, branch: string): Promise<Result<boolean>>;
+  fetch(cwd: string, target: { remote: string; ref: string }): Promise<Result<void>>;
+  // With a base, creates the branch from it; without one, checks the existing branch out.
   addWorktree(
     cwd: string,
-    worktree: { path: string; branch: string; base: string },
+    worktree: { path: string; branch: string; base?: string },
   ): Promise<Result<void>>;
   listWorktrees(cwd: string): Promise<Result<readonly WorktreeEntry[]>>;
   removeWorktree(cwd: string, path: string, options?: { force?: boolean }): Promise<Result<void>>;
@@ -97,11 +101,27 @@ export const createGit = (exec: Exec = execWithTimeout(GIT_TIMEOUT_MS)): IGit =>
 
     isIgnored: async (cwd, path) => (await run(cwd, ["check-ignore", "-q", path])).code === 0,
 
+    hasRemote: async (cwd, remote) => (await run(cwd, ["remote", "get-url", remote])).code === 0,
+
+    // ls-remote --exit-code exits 2 when nothing matches; any other failure is a real error.
+    remoteHasBranch: async (cwd, remote, branch) => {
+      const args = ["ls-remote", "--exit-code", "--heads", remote, `refs/heads/${branch}`];
+      const { code, stderr } = await run(cwd, args);
+      if (code === 0 || code === 2) return { ok: true, value: code === 0 };
+      return { ok: false, error: stderr.trim() };
+    },
+
+    fetch: async (cwd, target) => {
+      // "--" ends the options, so a ref such as "--upload-pack=CMD" can never be read as one.
+      const { code, stderr } = await run(cwd, ["fetch", target.remote, "--", target.ref]);
+      return code === 0 ? { ok: true, value: undefined } : { ok: false, error: stderr.trim() };
+    },
+
     addWorktree: async (cwd, worktree) => {
-      const exists = await branchExists(cwd, worktree.branch);
-      const args = exists
-        ? ["worktree", "add", worktree.path, worktree.branch]
-        : ["worktree", "add", "-b", worktree.branch, worktree.path, worktree.base];
+      const args =
+        worktree.base === undefined
+          ? ["worktree", "add", worktree.path, worktree.branch]
+          : ["worktree", "add", "-b", worktree.branch, worktree.path, worktree.base];
       const { code, stderr } = await run(cwd, args);
       return code === 0 ? { ok: true, value: undefined } : { ok: false, error: stderr.trim() };
     },
