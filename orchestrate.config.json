@@ -24,6 +24,17 @@
         "test_all": "node --test \"skills/**/*.test.ts\" \"skills/**/*.test.mjs\" \"scripts/**/*.test.ts\" \"hooks/**/*.test.mjs\" \"extensions/**/*.test.mjs\"",
         "test_file": "node --test {FILE}"
       }
+    },
+    "v2": {
+      "path": ".",
+      "runner": "bun",
+      "commands": {
+        "bootstrap": "bun install",
+        "typecheck": "bun run typecheck",
+        "lint": "bun run lint",
+        "test_all": "bun test ./packages",
+        "test_file": "bun test {FILE}"
+      }
     }
   },
   "notifier": { "enabled": false, "provider": "slack" },

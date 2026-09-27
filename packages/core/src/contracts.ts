@@ -1,8 +1,10 @@
 import * as z from "zod";
 
-const TextSchema = z.string().min(1);
-const SlugSchema = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
-const SkillNameSchema = z.string().regex(/^(?:[a-z][a-z0-9-]*:)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+export const TextSchema = z.string().min(1);
+export const SlugSchema = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+export const SkillNameSchema = z
+  .string()
+  .regex(/^(?:[a-z][a-z0-9-]*:)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 const CommandNameSchema = z.string().regex(/^(?:[a-z][a-z0-9-]*:)?[a-z0-9][a-z0-9_-]*$/);
 const UniqueSlugsSchema = z
   .array(SlugSchema)
@@ -10,12 +12,13 @@ const UniqueSlugsSchema = z
 const TimeSchema = z.iso.datetime();
 export const JsonValueSchema = z.json();
 export const JsonObjectSchema = z.record(z.string(), JsonValueSchema);
+export const isNormalizedRelativePath = (value: string): boolean =>
+  !value.startsWith("/") &&
+  !/^[A-Za-z]:/.test(value) &&
+  !value.includes("\\") &&
+  value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 const TaskPathSchema = TextSchema.refine(
-  (value) =>
-    !value.startsWith("/") &&
-    !/^[A-Za-z]:/.test(value) &&
-    !value.includes("\\") &&
-    value.split("/").every((part) => part !== "" && part !== "." && part !== ".."),
+  isNormalizedRelativePath,
   "Expected a normalized path relative to the task folder",
 );
 const ArtifactPathSchema = TaskPathSchema.refine(
@@ -52,7 +55,6 @@ export const StageSchema = z.strictObject({
   tags: UniqueSlugsSchema.optional(),
   "allowed-tools": z.array(TextSchema),
   tier: TextSchema,
-  model: TextSchema.optional(),
   inputs: StagePortSchema,
   outputs: StagePortSchema,
   consumes: z.array(ArtifactDeclarationSchema).optional(),
@@ -266,6 +268,6 @@ export type WorkflowRef = z.infer<typeof WorkflowRefSchema>;
 export type State = z.infer<typeof StateSchema>;
 export type Event = z.infer<typeof EventSchema>;
 
-export type Result<T> =
+export type Result<T, E = string> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: string };
+  | { readonly ok: false; readonly error: E };

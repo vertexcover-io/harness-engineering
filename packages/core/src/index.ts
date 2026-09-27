@@ -1,3 +1,10 @@
+export {
+  type Config,
+  type ConfigError,
+  type ConfigInput,
+  ConfigSchema,
+  loadConfig,
+} from "./config.ts";
 export * from "./contracts.ts";
 export {
   DOCTOR_TIMEOUT_MS,

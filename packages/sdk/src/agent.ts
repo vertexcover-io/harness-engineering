@@ -1,6 +1,7 @@
-import type * as z from "zod";
+import * as z from "zod";
 
-export type Effort = "low" | "medium" | "high" | "max";
+export const EffortSchema = z.enum(["low", "medium", "high", "max"]);
+export type Effort = z.infer<typeof EffortSchema>;
 
 export type Session =
   | { readonly mode: "new" }

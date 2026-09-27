@@ -1,4 +1,11 @@
-export type { AgentProvider, AgentRequest, AgentResult, Effort, Session } from "./agent.ts";
+export {
+  type AgentProvider,
+  type AgentRequest,
+  type AgentResult,
+  type Effort,
+  EffortSchema,
+  type Session,
+} from "./agent.ts";
 export {
   type Check,
   type CheckContext,
