@@ -3,7 +3,7 @@ import { Command, Option } from "@commander-js/extra-typings";
 import { compileWorkflow, type JsonObject, runDoctor, verdict } from "@harness/core";
 import { AgentTypeSchema, createGit, spawnInteractive } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
-import { cliLog, commandLog, ensureServer, fail, harnessClient } from "./client.ts";
+import { apiErrorText, cliLog, commandLog, ensureServer, fail, harnessClient } from "./client.ts";
 
 const collectInput = (pair: string, acc: Record<string, string>): Record<string, string> => {
   const index = pair.indexOf("=");
@@ -11,8 +11,8 @@ const collectInput = (pair: string, acc: Record<string, string>): Record<string,
   return { ...acc, [pair.slice(0, index)]: pair.slice(index + 1) };
 };
 
-const NO_RUN_MESSAGE = "no run: pass --run-id or run inside a harness session";
-const resolveRunId = (run: string | undefined): string | null =>
+export const NO_RUN_MESSAGE = "no run: pass --run-id or run inside a harness session";
+export const resolveRunId = (run: string | undefined): string | null =>
   run ?? process.env.HARNESS_RUN_ID ?? null;
 
 export const runCommand = () =>
@@ -52,7 +52,7 @@ export const runCommand = () =>
         inputs: { prompt: opts.prompt, ...opts.input } satisfies JsonObject,
         cwd: repoRoot,
       });
-      if (!result.ok) return fail(`${result.error.code}: ${result.error.message}`);
+      if (!result.ok) return fail(apiErrorText(result.error));
       const { run } = result.value;
       const sessionId = run.sessions[0]?.sessionId;
       log.info({ runId: run.id, workflow: run.workflow, cwd: run.cwd, sessionId }, "run started");
@@ -82,7 +82,7 @@ export const initCommand = () =>
 
       await ensureServer();
       const result = await harnessClient().init(runId, { name });
-      if (!result.ok) return fail(`${result.error.code}: ${result.error.message}`);
+      if (!result.ok) return fail(apiErrorText(result.error));
       commandLog("init").info({ runId, name, dir: result.value.dir }, "run initialized");
 
       console.log(JSON.stringify({ runId, dir: result.value.dir }));
@@ -103,7 +103,7 @@ export const linkSessionCommand = () =>
 
       await ensureServer();
       const result = await harnessClient().linkSession(runId, { agent: opts.agent, sessionId });
-      if (!result.ok) return fail(`${result.error.code}: ${result.error.message}`);
+      if (!result.ok) return fail(apiErrorText(result.error));
       commandLog("link-session").info(
         { runId, agent: opts.agent, sessionId, sessions: result.value.run.sessions.length },
         "session linked",

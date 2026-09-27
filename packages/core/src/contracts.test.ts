@@ -118,7 +118,7 @@ describe("EventSchema", () => {
     ],
     ["an artifact event", { ...baseEvent, type: "artifact.registered" }],
     ["a hooks event", { ...baseEvent, type: "hooks.pre_tool.blocked" }],
-    ["a worktree event", { ...baseEvent, type: "worktree.created", repoId: "app" }],
+    ["a worktree event", { ...baseEvent, type: "worktree.created", payload: { repoId: "app" } }],
     ["a forge event", { ...baseEvent, type: "forge.pr.opened" }],
     ["a learning event", { ...baseEvent, type: "learning.captured" }],
     ["an agent event", { ...baseEvent, type: "agent.tokens" }],

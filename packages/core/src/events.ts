@@ -1,6 +1,8 @@
+import { join } from "node:path";
 import * as z from "zod";
 import {
   type Event,
+  EventSchema,
   JsonObjectSchema,
   type NodeRun,
   NonEmptyStringSchema,
@@ -8,7 +10,7 @@ import {
   SlugSchema,
   type State,
 } from "./contracts.ts";
-import type { EventDraft, IEventStore } from "./event-store.ts";
+import { type IEventStore, jsonlEventStore } from "./event-store.ts";
 import type { EventHandler, EventHandlers } from "./state.ts";
 
 export const ERROR_MESSAGE_LIMIT = 500;
@@ -46,7 +48,19 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.node.failed": NodeFailedEvent,
 };
 
-export type EmitInput = Omit<EventDraft, "id" | "ts" | "runId"> & { readonly id?: string };
+// An event before the emitter fills runId, ts and (when not given) id. Built from the shape,
+// since EventSchema's refinements rule out omit(); the store checks the whole event on append.
+const { id, type, source, nodeId, nodeRunId, stage, payload } = EventSchema.shape;
+export const EmitInputSchema = z.strictObject({
+  type,
+  payload,
+  source,
+  id: id.optional(),
+  nodeId,
+  nodeRunId,
+  stage,
+});
+export type EmitInput = z.input<typeof EmitInputSchema>;
 
 export interface IEventEmitter {
   emit(input: EmitInput): Promise<Result<Event>>;
@@ -62,23 +76,30 @@ const checkCatalog = (input: EmitInput): Result<EmitInput> => {
   return { ok: true, value: input };
 };
 
-export const storeEmitter = (
+export const emitEvent = async (
   store: IEventStore,
-  run: { readonly runId: string },
-): IEventEmitter => ({
-  emit: async (input) => {
-    const checked = checkCatalog(input);
-    if (!checked.ok) return checked;
-    const stored = await store.append({
-      ...input,
-      runId: run.runId,
-      id: input.id ?? crypto.randomUUID(),
-      ts: new Date().toISOString(),
-    });
-    // TODO: trigger event hooks here once hooks exist.
-    return stored;
-  },
-});
+  runId: string,
+  input: EmitInput,
+): Promise<Result<Event>> => {
+  const checked = checkCatalog(input);
+  if (!checked.ok) return checked;
+  const stored = await store.append({
+    ...input,
+    runId,
+    id: input.id ?? crypto.randomUUID(),
+    ts: new Date().toISOString(),
+  });
+  // TODO: trigger event hooks here once hooks exist.
+  return stored;
+};
+
+export const runDirOf = (cwd: string, name: string): string => join(cwd, ".harness", name);
+
+// Stores an event in a run's own folder, CWD/.harness/NAME/event.jsonl.
+export const emitRunEvent = (
+  run: Readonly<{ id: string; cwd: string; name: string }>,
+  input: EmitInput,
+): Promise<Result<Event>> => emitEvent(jsonlEventStore(runDirOf(run.cwd, run.name)), run.id, input);
 
 const findOrCreateRun = (state: State, nodeId: string, nodeRunId: string): NodeRun =>
   state.nodeRuns[nodeRunId] ?? {

@@ -2,6 +2,8 @@ export { type AppDeps, type AppType, createApp } from "./app.ts";
 export { createHarnessClient, type HarnessClient, type HarnessClientOptions } from "./client.ts";
 export {
   type ApiError,
+  type EmitBody,
+  EmitBodySchema,
   type ErrorBody,
   ErrorBodySchema,
   type ErrorCode,

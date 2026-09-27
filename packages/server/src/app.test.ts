@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureLogger } from "@harness/core";
@@ -289,6 +289,30 @@ describe("POST /runs logging", () => {
   });
 });
 
+const post = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+  app.request(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+// A started run in a fresh git repo; events() reads the log of the run once it is init'ed as fix-login.
+const startedRun = async () => {
+  const cwd = makeGitRepo();
+  const workflowPath = join(cwd, "ok.yaml");
+  writeFileSync(workflowPath, "name: ok\nnodes: []\n");
+  const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1" } }));
+  const app = createApp(deps);
+  const run = await startRun(app, { workflow: "ok", workflowPath, inputs: {}, cwd });
+  const eventLog = join(cwd, ".harness", "fix-login", "event.jsonl");
+  const events = () =>
+    readFileSync(eventLog, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  return { app, run, cwd, workflowPath, events };
+};
+
 describe("POST /runs/:id/init", () => {
   test("SC19: writes workflow.yaml, one workflow.started event, and a state.json with lastEventSeq 1", async () => {
     const cwd = makeGitRepo();
@@ -302,11 +326,7 @@ describe("POST /runs/:id/init", () => {
     const app = createApp(deps);
     const run = await startRun(app, { workflow: "ok", workflowPath, inputs: {}, cwd });
 
-    const res = await app.request(`/runs/${run.id}/init`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "fix-login" }),
-    });
+    const res = await post(app, `/runs/${run.id}/init`, { name: "fix-login" });
 
     expect(res.status).toBe(201);
     const body = (await res.json()) as {
@@ -336,19 +356,8 @@ describe("POST /runs/:id/init", () => {
   });
 
   test("SC20: a second init is 409, a pre-existing run folder is 409, a bad name is 400, an unknown run is 404", async () => {
-    const cwd = makeGitRepo();
-    const workflowPath = join(cwd, "ok.yaml");
-    writeFileSync(workflowPath, "name: ok\nnodes: []\n");
-    const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1" } }));
-    const app = createApp(deps);
-    const run = await startRun(app, { workflow: "ok", workflowPath, inputs: {}, cwd });
-
-    const init = async (runId: string, name: string) =>
-      app.request(`/runs/${runId}/init`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
+    const { app, run, cwd, workflowPath } = await startedRun();
+    const init = (runId: string, name: string) => post(app, `/runs/${runId}/init`, { name });
 
     const first = await init(run.id, "fix-login");
     expect(first.status).toBe(201);
@@ -368,6 +377,127 @@ describe("POST /runs/:id/init", () => {
 
     const unknown = await init("r-missing", "fix-login");
     expect(unknown.status).toBe(404);
+  });
+});
+
+describe("POST /runs/:id/emit", () => {
+  const initialized = async () => {
+    const context = await startedRun();
+    const init = await post(context.app, `/runs/${context.run.id}/init`, { name: "fix-login" });
+    expect(init.status).toBe(201);
+    return context;
+  };
+
+  test("SC17: an event posted to an initialized run is stored and returned", async () => {
+    const { app, run, events } = await initialized();
+
+    const tags = {
+      id: "note-1",
+      nodeId: "review",
+      nodeRunId: "review",
+      stage: "review",
+    };
+    const res = await post(app, `/runs/${run.id}/emit`, {
+      type: "custom.review.note",
+      payload: { files: 3 },
+      ...tags,
+    });
+
+    expect(res.status).toBe(200);
+    const { event } = (await res.json()) as { event: Record<string, unknown> };
+    expect(event).toMatchObject({
+      type: "custom.review.note",
+      source: "cli",
+      runId: run.id,
+      seq: 2,
+      payload: { files: 3 },
+      ...tags,
+    });
+    expect(events().at(-1)).toEqual(event);
+  });
+
+  test("SC18: emit to an unknown run is 404 not-found", async () => {
+    const { app } = await startedRun();
+
+    const res = await post(app, "/runs/r-missing/emit", { type: "custom.x.y", payload: {} });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("not-found");
+  });
+
+  test("SC19: emit to a run that was never initialized is 409 and writes nothing", async () => {
+    const { app, run, cwd } = await startedRun();
+
+    const res = await post(app, `/runs/${run.id}/emit`, { type: "custom.x.y", payload: {} });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: { code: "conflict", message: "run has no task: run harness init first" },
+    });
+    expect(existsSync(join(cwd, ".harness"))).toBe(false);
+  });
+
+  test("SC20: an event the emitter refuses is 400 and writes nothing", async () => {
+    const { app, run, events } = await initialized();
+
+    const res = await post(app, `/runs/${run.id}/emit`, {
+      type: "workflow.node.failed",
+      payload: { nodeType: "exec", attempts: 1 },
+      nodeId: "a",
+      nodeRunId: "a",
+    });
+
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: { code: string; message: string } };
+    expect(error.code).toBe("bad-request");
+    expect(error.message).toContain("workflow.node.failed");
+    expect(events().map((event) => event.type)).toEqual(["workflow.started"]);
+  });
+
+  test("SC25: a body with a runId is 400, since the run comes from the URL", async () => {
+    const { app, run, events } = await initialized();
+
+    const res = await post(app, `/runs/${run.id}/emit`, {
+      type: "custom.x.y",
+      payload: {},
+      runId: "r-other",
+    });
+
+    expect(res.status).toBe(400);
+    expect(events()).toHaveLength(1);
+  });
+
+  test("SC26: a repeated event id returns the event stored first and appends nothing", async () => {
+    const { app, run, events } = await initialized();
+    const emit = (files: number) =>
+      post(app, `/runs/${run.id}/emit`, { type: "custom.x.y", id: "once", payload: { files } });
+
+    const first = (await (await emit(1)).json()) as { event: unknown };
+    const second = await emit(2);
+
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as { event: unknown }).event).toEqual(first.event);
+    expect(events()).toHaveLength(2);
+  });
+
+  test("SC27: emit to a run whose task folder was deleted is 409 and recreates nothing", async () => {
+    const { app, run, cwd } = await initialized();
+    rmSync(join(cwd, ".harness"), { recursive: true });
+
+    const res = await post(app, `/runs/${run.id}/emit`, { type: "custom.x.y", payload: {} });
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("conflict");
+    expect(existsSync(join(cwd, ".harness"))).toBe(false);
+  });
+
+  test("SC21: init writes workflow.started through the emitter with a fixed id, the run id, and the time", async () => {
+    const { run, events } = await initialized();
+
+    const [started, ...rest] = events();
+    expect(rest).toEqual([]);
+    expect(started).toMatchObject({ id: "workflow-started", seq: 1, runId: run.id });
+    expect(Math.abs(Date.now() - Date.parse(String(started?.ts)))).toBeLessThan(1000);
   });
 });
 

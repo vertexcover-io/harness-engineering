@@ -20,6 +20,7 @@
 ## Style
 - Prefer small, focused functions
 - Use early returns over nested conditionals
+- No closure factories (partial application through a closure): don't write `makeX(a, b)` that returns `{ run(c) }` with `a` and `b` captured. Write one plain function that takes every argument: `runX(a, b, c)`
 
 ## Communication
 Ask clarifying questions before architectural changes

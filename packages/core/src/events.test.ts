@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type Event, type JsonValue, type State, StateSchema } from "./contracts.ts";
-import { memoryEventStore } from "./event-store.ts";
-import { coreHandlers, storeEmitter } from "./events.ts";
+import { jsonlEventStore, memoryEventStore } from "./event-store.ts";
+import { coreHandlers, emitEvent, emitRunEvent, runDirOf } from "./events.ts";
 import { projectEvents } from "./state.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-describe("storeEmitter", () => {
+describe("emitEvent", () => {
   test("workflow.started without a workflow name is refused and nothing is stored", async () => {
     const store = memoryEventStore();
-    const result = await storeEmitter(store, { runId: "r-1" }).emit({
+    const result = await emitEvent(store, "r-1", {
       type: "workflow.started",
       source: "test",
       payload: { inputs: {} },
@@ -18,10 +21,10 @@ describe("storeEmitter", () => {
     expect(await store.read()).toEqual([]);
   });
 
-  test("SC1: an event emitted with no id is stored as seq 1 with a UUID, the current time and the emitter's runId", async () => {
+  test("SC1: an event emitted with no id is stored as seq 1 with a UUID, the current time and the given runId", async () => {
     const store = memoryEventStore();
     const before = Date.now();
-    const result = await storeEmitter(store, { runId: "r-1" }).emit({
+    const result = await emitEvent(store, "r-1", {
       type: "custom.skill.note",
       source: "test",
       payload: { a: 1 },
@@ -36,10 +39,9 @@ describe("storeEmitter", () => {
 
   test("SC2: a second emit with the same caller id returns the first event and stores nothing new", async () => {
     const store = memoryEventStore();
-    const emitter = storeEmitter(store, { runId: "r-1" });
     const note = { id: "e1", type: "custom.skill.note", source: "test" };
-    const first = await emitter.emit({ ...note, payload: 1 });
-    const second = await emitter.emit({ ...note, payload: 2 });
+    const first = await emitEvent(store, "r-1", { ...note, payload: 1 });
+    const second = await emitEvent(store, "r-1", { ...note, payload: 2 });
     expect(second).toEqual(first);
     expect(first).toMatchObject({ ok: true, value: { seq: 1, payload: 1 } });
     expect(await store.read()).toHaveLength(1);
@@ -47,7 +49,7 @@ describe("storeEmitter", () => {
 
   test("SC3: workflow.node.failed without an error is refused, naming the type, and nothing is stored", async () => {
     const store = memoryEventStore();
-    const result = await storeEmitter(store, { runId: "r-1" }).emit({
+    const result = await emitEvent(store, "r-1", {
       type: "workflow.node.failed",
       source: "test",
       nodeId: "a",
@@ -61,7 +63,7 @@ describe("storeEmitter", () => {
 
   test("SC4: workflow.node.started with a valid payload but no node ids is refused and nothing is stored", async () => {
     const store = memoryEventStore();
-    const result = await storeEmitter(store, { runId: "r-1" }).emit({
+    const result = await emitEvent(store, "r-1", {
       type: "workflow.node.started",
       source: "test",
       payload: { nodeType: "exec" },
@@ -73,12 +75,30 @@ describe("storeEmitter", () => {
   });
 
   test("SC5: an event type outside the catalog is stored with any JSON payload", async () => {
-    const result = await storeEmitter(memoryEventStore(), { runId: "r-1" }).emit({
+    const result = await emitEvent(memoryEventStore(), "r-1", {
       type: "custom.skill.note",
       source: "test",
       payload: [1, "two", null],
     });
     expect(result).toMatchObject({ ok: true, value: { payload: [1, "two", null] } });
+  });
+});
+
+describe("emitRunEvent", () => {
+  test("SC31: stores the event in the run's .harness/NAME folder with the run's id", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "repo-"));
+    const run = { id: "r-1", cwd, name: "fix-login" };
+
+    const result = await emitRunEvent(run, {
+      type: "custom.skill.note",
+      source: "test",
+      payload: { a: 1 },
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value).toMatchObject({ seq: 1, runId: "r-1" });
+    expect(runDirOf(cwd, "fix-login")).toBe(join(cwd, ".harness", "fix-login"));
+    expect(await jsonlEventStore(runDirOf(cwd, "fix-login")).read()).toEqual([result.value]);
   });
 });
 

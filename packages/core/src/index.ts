@@ -28,11 +28,14 @@ export {
 export {
   coreHandlers,
   type EmitInput,
+  EmitInputSchema,
+  emitEvent,
+  emitRunEvent,
   type IEventEmitter,
   NodeEndedEvent,
   NodeFailedEvent,
   NodeStartedEvent,
-  storeEmitter,
+  runDirOf,
   WorkflowStartedEvent,
 } from "./events.ts";
 export { readIfExists, withLock } from "./files.ts";

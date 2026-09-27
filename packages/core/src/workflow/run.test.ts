@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Event, type JsonValue, type State, StateSchema } from "../contracts.ts";
 import { jsonlEventStore, memoryEventStore } from "../event-store.ts";
-import { coreHandlers, type IEventEmitter, storeEmitter } from "../events.ts";
+import { coreHandlers, emitEvent, type IEventEmitter } from "../events.ts";
 import { projectEvents, syncState } from "../state.ts";
 import { compileWorkflow } from "./compile.ts";
 import { type RunOptions, runWorkflow } from "./run.ts";
@@ -947,7 +947,7 @@ describe("node events", () => {
       root,
       eventsWorkflow,
       {},
-      { emitter: storeEmitter(store, { runId: "r-1" }) },
+      { emitter: { emit: (input) => emitEvent(store, "r-1", input) } },
     );
     const events = await store.read();
     for (const path of ["a", "l", "l[1].x", "l[2].x"])
@@ -967,7 +967,7 @@ describe("node events", () => {
       makeRoot(),
       'name: t\nnodes:\n  - id: b\n    type: exec\n    runtime: sh\n    script: echo hi\n    input: null\n    when: "{{ false }}"\n',
       {},
-      { emitter: storeEmitter(store, { runId: "r-1" }) },
+      { emitter: { emit: (input) => emitEvent(store, "r-1", input) } },
     );
     const events = await store.read();
     expect(events.map((e) => e.type)).toEqual(["workflow.node.skipped"]);
@@ -978,12 +978,12 @@ describe("node events", () => {
     `name: t\nnodes:\n  - id: a\n    type: exec\n    runtime: sh\n    script: echo a\n    input: null\n  - id: b\n    type: exec\n    runtime: sh\n    dependsOn: [a]\n    script: touch ${join(root, "B_RAN")}\n    input: null\n`;
 
   const failingEmitter = (failOn: number, fail: () => ReturnType<IEventEmitter["emit"]>) => {
-    const inner = storeEmitter(memoryEventStore(), { runId: "r-1" });
+    const store = memoryEventStore();
     let calls = 0;
     const emitter: IEventEmitter = {
       emit: (input) => {
         calls += 1;
-        return calls === failOn ? fail() : inner.emit(input);
+        return calls === failOn ? fail() : emitEvent(store, "r-1", input);
       },
     };
     return { emitter, calls: () => calls };
@@ -1022,7 +1022,12 @@ describe("node events", () => {
   test("SC14: a run's events in event.jsonl build a valid state.json with every node completed", async () => {
     const runDir = makeRoot();
     const store = jsonlEventStore(runDir);
-    await run(eventsRoot(), eventsWorkflow, {}, { emitter: storeEmitter(store, { runId: "r-1" }) });
+    await run(
+      eventsRoot(),
+      eventsWorkflow,
+      {},
+      { emitter: { emit: (input) => emitEvent(store, "r-1", input) } },
+    );
     const state = await syncState({ runDir, store, seed: stateSeed, handlers: coreHandlers });
     expect(
       StateSchema.safeParse(JSON.parse(readFileSync(join(runDir, "state.json"), "utf8"))).success,
@@ -1046,7 +1051,7 @@ describe("node events", () => {
       makeRoot(),
       "name: t\nnodes:\n  - id: a\n    type: exec\n    runtime: sh\n    script: exit 1\n    input: null\n  - id: b\n    type: exec\n    runtime: sh\n    dependsOn: [a]\n    script: echo b\n    input: null\n",
       {},
-      { emitter: storeEmitter(store, { runId: "r-1" }) },
+      { emitter: { emit: (input) => emitEvent(store, "r-1", input) } },
     );
     const events = await store.read();
     expect(typesFor(events, "b")).toEqual(["workflow.node.cancelled"]);
@@ -1066,7 +1071,7 @@ describe("node events", () => {
       root,
       "name: t\nnodes:\n  - id: a\n    type: exec\n    module: ./fns/boom.ts\n    functionName: boom\n    input: null\n",
       {},
-      { emitter: storeEmitter(store, { runId: "r-1" }) },
+      { emitter: { emit: (input) => emitEvent(store, "r-1", input) } },
     );
     const failed = (await store.read()).find((e) => e.type === "workflow.node.failed");
     expect(failed?.payload).toMatchObject({

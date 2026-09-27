@@ -1,3 +1,4 @@
+import type { EmitInput } from "@harness/core";
 import { type ILogger, noopLogger, type Result } from "@harness/sdk";
 import type { ClientResponse } from "hono/client";
 import { hc } from "hono/client";
@@ -87,6 +88,8 @@ export const createHarnessClient = ({
       unwrap(api.runs[":id"].init.$post({ param: { id: runId }, json: body })),
     linkSession: (runId: string, session: SessionRef) =>
       unwrap(api.runs[":id"]["link-session"].$post({ param: { id: runId }, json: session })),
+    emit: (runId: string, input: EmitInput) =>
+      unwrap(api.runs[":id"].emit.$post({ param: { id: runId }, json: input })),
   };
 };
 

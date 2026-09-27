@@ -150,6 +150,14 @@ const waitFor = (predicate: () => boolean, timeoutMs = 5000): void => {
   }
 };
 
+const startRun = (repo: string, env: NodeJS.ProcessEnv): string => {
+  const run = harness(repo, env, "run", "ok.yaml", "--prompt", "hi");
+  expect(run.code).toBe(0);
+  const [runId] = run.stdout.trim().split("\n");
+  if (runId === undefined) throw new Error("run did not print a run id");
+  return runId;
+};
+
 describe("harness run", () => {
   test(
     "SC12: starts a server, launches the fake agent, and server status shows a pid",
@@ -339,10 +347,7 @@ describe("harness init / link-session", () => {
       const repo = makeRepo();
       const { env } = makeEnv();
 
-      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "hi");
-      expect(run.code).toBe(0);
-      const [runId] = run.stdout.trim().split("\n");
-      if (runId === undefined) throw new Error("run did not print a run id");
+      const runId = startRun(repo, env);
 
       const init = harness(repo, { ...env, HARNESS_RUN_ID: runId }, "init", "fix-login");
       expect(init.code).toBe(0);
@@ -369,6 +374,146 @@ describe("harness init / link-session", () => {
       const link = harness(repo, envWithoutRunId, "link-session", "s", "--agent", "claude");
       expect(link.code).toBe(1);
       expect(link.stderr.trim()).toBe("no run: pass --run-id or run inside a harness session");
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("harness emit", () => {
+  const initRun = (repo: string, env: NodeJS.ProcessEnv): string => {
+    const runId = startRun(repo, env);
+    expect(harness(repo, { ...env, HARNESS_RUN_ID: runId }, "init", "fix-login").code).toBe(0);
+    return runId;
+  };
+
+  test(
+    "SC22: emit adds an event for the run in HARNESS_RUN_ID and prints it",
+    () => {
+      const repo = makeRepo();
+      const { env } = makeEnv();
+      const runId = initRun(repo, env);
+
+      const emit = harness(
+        repo,
+        { ...env, HARNESS_RUN_ID: runId },
+        "emit",
+        "custom.review.note",
+        "--source",
+        "review-skill",
+        "--payload",
+        '{"files":3}',
+        "--node-id",
+        "review",
+        "--node-run-id",
+        "review",
+        "--stage",
+        "review",
+        "--id",
+        "note-1",
+      );
+
+      expect(emit.code).toBe(0);
+      const printed = JSON.parse(emit.stdout.trim()) as Record<string, unknown>;
+      expect(printed).toMatchObject({
+        type: "custom.review.note",
+        source: "review-skill",
+        runId,
+        payload: { files: 3 },
+        nodeId: "review",
+        nodeRunId: "review",
+        stage: "review",
+        id: "note-1",
+      });
+      expect(readLines(join(repo, ".harness", "fix-login", "event.jsonl")).at(-1)).toEqual(printed);
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "SC28: emit to an unknown run exits 1 with the server's CODE: MESSAGE",
+    () => {
+      const repo = makeRepo();
+      const { env } = makeEnv();
+
+      const emit = harness(
+        repo,
+        env,
+        "emit",
+        "custom.x.y",
+        "--source",
+        "s",
+        "--run-id",
+        "r-missing",
+      );
+
+      expect(emit.code).toBe(1);
+      expect(emit.stderr.trim()).toMatch(/^not-found: /);
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "SC23: emit with no --run-id and no HARNESS_RUN_ID exits 1 before calling the server",
+    () => {
+      const repo = makeRepo();
+      const { env, home } = makeEnv();
+
+      const emit = harness(
+        repo,
+        { ...env, HARNESS_RUN_ID: undefined },
+        "emit",
+        "custom.x.y",
+        "--source",
+        "s",
+      );
+
+      expect(emit.code).toBe(1);
+      expect(emit.stderr.trim()).toBe("no run: pass --run-id or run inside a harness session");
+      expect(existsSync(join(home, "harness.sock"))).toBe(false);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "SC24: emit with a payload that is not JSON exits 1 before calling the server",
+    () => {
+      const repo = makeRepo();
+      const { env, home } = makeEnv();
+
+      const emit = harness(
+        repo,
+        env,
+        "emit",
+        "custom.x.y",
+        "--source",
+        "s",
+        "--payload",
+        "{oops",
+        "--run-id",
+        "r-1",
+      );
+
+      expect(emit.code).toBe(1);
+      expect(emit.stderr.trim()).toBe("--payload is not valid JSON");
+      expect(existsSync(join(home, "harness.sock"))).toBe(false);
+    },
+    TIMEOUT_MS,
+  );
+  test(
+    "SC30: emit without --source exits 1 before calling the server",
+    () => {
+      const repo = makeRepo();
+      const { env, home } = makeEnv();
+
+      const emit = harness(repo, env, "emit", "custom.x.y", "--run-id", "r-1");
+
+      expect(emit.code).toBe(1);
+      expect(emit.stderr).toContain("--source");
+      expect(existsSync(join(home, "harness.sock"))).toBe(false);
     },
     TIMEOUT_MS,
   );

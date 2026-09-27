@@ -1,6 +1,12 @@
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { JsonObjectSchema, NonEmptyStringSchema, SlugSchema } from "@harness/core";
+import {
+  EmitInputSchema,
+  EventSchema,
+  JsonObjectSchema,
+  NonEmptyStringSchema,
+  SlugSchema,
+} from "@harness/core";
 import { AgentTypeSchema } from "@harness/sdk";
 import * as z from "zod";
 
@@ -57,5 +63,11 @@ export type StartRunBody = z.infer<typeof StartRunBodySchema>;
 
 export const InitBodySchema = z.strictObject({ name: SlugSchema });
 export type InitBody = z.infer<typeof InitBodySchema>;
+
+// The run comes from the URL; a caller that sends no source is the CLI.
+export const EmitBodySchema = EmitInputSchema.extend({
+  source: EventSchema.shape.source.default("cli"),
+});
+export type EmitBody = z.infer<typeof EmitBodySchema>;
 
 export type ApiError = ErrorBody["error"];

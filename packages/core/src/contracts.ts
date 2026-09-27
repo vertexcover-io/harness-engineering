@@ -222,7 +222,6 @@ export const EventSchema = z
     nodeId: NonEmptyStringSchema.optional(),
     nodeRunId: NonEmptyStringSchema.optional(),
     stage: SlugSchema.optional(),
-    repoId: SlugSchema.optional(),
     payload: z.json(),
   })
   .superRefine((event, context) => {

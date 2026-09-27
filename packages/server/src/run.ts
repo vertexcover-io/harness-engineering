@@ -3,13 +3,15 @@ import { existsSync } from "node:fs";
 import { copyFile as copyFileFs, mkdir, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { GitState, Result, State } from "@harness/core";
-import { coreHandlers, jsonlEventStore, storeEmitter, syncState } from "@harness/core";
+import { coreHandlers, emitRunEvent, jsonlEventStore, runDirOf, syncState } from "@harness/core";
 import type { IAgentProvider, IGit, ILogger, ITerminal } from "@harness/sdk";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import serverPackage from "../package.json";
 import { errorResponse, jsonBody, type Vars } from "./api.ts";
 import {
+  type EmitBody,
+  EmitBodySchema,
   type InitBody,
   InitBodySchema,
   type SessionRef,
@@ -78,13 +80,15 @@ const fillRunDir = async (
 ): Promise<State> => {
   await copyFileFs(run.workflowPath, join(dir, "workflow.yaml"));
 
-  const store = jsonlEventStore(dir);
-  const appended = await storeEmitter(store, { runId: run.id }).emit({
-    id: "workflow-started",
-    type: "workflow.started",
-    source: "harness-server",
-    payload: { workflow: run.workflow, inputs: run.inputs },
-  });
+  const appended = await emitRunEvent(
+    { id: run.id, cwd: run.cwd, name },
+    {
+      id: "workflow-started",
+      type: "workflow.started",
+      source: "harness-server",
+      payload: { workflow: run.workflow, inputs: run.inputs },
+    },
+  );
   if (!appended.ok) {
     deps.log.error(
       { dir, err: appended.error },
@@ -100,7 +104,7 @@ const fillRunDir = async (
   const git = await readGit(run.cwd, deps.git);
   const state = await syncState({
     runDir: dir,
-    store,
+    store: jsonlEventStore(dir),
     seed: initialState(run, name, git),
     handlers: coreHandlers,
   });
@@ -114,7 +118,7 @@ export const initializeRun = async (
   name: string,
   deps: InitDeps,
 ): Promise<Result<{ dir: string; state: State }, InitError>> => {
-  const dir = join(run.cwd, ".harness", name);
+  const dir = runDirOf(run.cwd, name);
   if (existsSync(dir)) return { ok: false, error: "dir-exists" };
   if ((await deps.git.repoRoot(run.cwd)) === null) return { ok: false, error: "not-a-repo" };
 
@@ -236,6 +240,32 @@ const linkSession = async (
   return c.json({ run: updated }, 200);
 };
 
+const postEvent = async (
+  c: Context<{ Variables: Vars }>,
+  deps: RunDeps,
+  runId: string,
+  body: EmitBody,
+) => {
+  const log = c.get("log").child({ component: "runs", runId });
+
+  const run = await deps.registry.findRun(runId);
+  if (run === undefined) return errorResponse(c, 404, "not-found", `run ${runId} not found`);
+  if (run.name === null) {
+    return errorResponse(c, 409, "conflict", "run has no task: run harness init first");
+  }
+
+  const dir = runDirOf(run.cwd, run.name);
+  // Appending would recreate the folder and start a log with no workflow.started.
+  if (!existsSync(dir)) return errorResponse(c, 409, "conflict", `${dir} no longer exists`);
+  const result = await emitRunEvent({ id: run.id, cwd: run.cwd, name: run.name }, body);
+  if (!result.ok) {
+    log.warn({ type: body.type, err: result.error }, "event refused");
+    return errorResponse(c, 400, "bad-request", result.error);
+  }
+  log.info({ type: result.value.type, seq: result.value.seq }, "event stored");
+  return c.json({ event: result.value }, 200);
+};
+
 // Mounted at /runs by app.ts. Chained, so each route's input and output types reach AppType.
 export const runRoutes = (deps: RunDeps) =>
   new Hono<{ Variables: Vars }>()
@@ -245,4 +275,7 @@ export const runRoutes = (deps: RunDeps) =>
     )
     .post("/:id/link-session", jsonBody(SessionRefSchema), (c) =>
       linkSession(c, deps, c.req.param("id"), c.req.valid("json")),
+    )
+    .post("/:id/emit", jsonBody(EmitBodySchema), (c) =>
+      postEvent(c, deps, c.req.param("id"), c.req.valid("json")),
     );
