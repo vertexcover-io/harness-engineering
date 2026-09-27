@@ -5,7 +5,6 @@ export const SlugSchema = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 export const SkillNameSchema = z
   .string()
   .regex(/^(?:[a-z][a-z0-9-]*:)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
-const CommandNameSchema = z.string().regex(/^(?:[a-z][a-z0-9-]*:)?[a-z0-9][a-z0-9_-]*$/);
 const UniqueSlugsSchema = z
   .array(SlugSchema)
   .refine((values) => new Set(values).size === values.length, "Names must be unique");
@@ -35,20 +34,22 @@ export const ArtifactDeclarationSchema = z.strictObject({
   optional: z.boolean().default(false),
 });
 
-export const StageRunSchema = z.union([
-  z.strictObject({ skill: SkillNameSchema }),
-  z.strictObject({ command: CommandNameSchema }),
-]);
-
 export const StagePortSchema = z.strictObject({
   description: NonEmptyStringSchema,
   schema: SchemaKeySchema,
 });
 
+const ReferenceSchema = z.strictObject({
+  path: NonEmptyStringSchema.refine(
+    isNormalizedRelativePath,
+    "Expected a normalized path relative to the skill folder",
+  ),
+  description: NonEmptyStringSchema,
+});
+
 export const StageSchema = z.strictObject({
   name: SlugSchema,
   description: NonEmptyStringSchema,
-  run: StageRunSchema,
   mode: z.enum(["inline", "subagent"]),
   tags: UniqueSlugsSchema.optional(),
   "allowed-tools": z.array(NonEmptyStringSchema),
@@ -58,7 +59,8 @@ export const StageSchema = z.strictObject({
   consumes: z.array(ArtifactDeclarationSchema).optional(),
   produces: z.array(ArtifactDeclarationSchema).optional(),
   protocols: UniqueSlugsSchema,
-  scopes: UniqueSlugsSchema.refine((values) => values.length > 0, "At least one scope is required"),
+  scopes: UniqueSlugsSchema,
+  references: z.record(SlugSchema, ReferenceSchema).default({}),
 });
 
 export const TokenUsageSchema = z.strictObject({
@@ -202,7 +204,7 @@ const EventTypeSchema = z
   .string()
   .refine(
     (value) =>
-      /^(workflow|artifact|hooks|worktree|forge|learning|agent)(\.[a-z][a-z0-9_-]*)+$/.test(
+      /^(workflow|artifact|hooks|workspace|forge|learning|agent)(\.[a-z][a-z0-9_-]*)+$/.test(
         value,
       ) ||
       /^stage\.[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(value) ||
@@ -249,7 +251,6 @@ export type JsonValue = z.infer<z.ZodJSONSchema>;
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
 export type ArtifactDeclaration = z.infer<typeof ArtifactDeclarationSchema>;
-export type StageRun = z.infer<typeof StageRunSchema>;
 export type StagePort = z.infer<typeof StagePortSchema>;
 export type Stage = z.infer<typeof StageSchema>;
 

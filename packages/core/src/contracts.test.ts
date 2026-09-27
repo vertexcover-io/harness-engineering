@@ -4,7 +4,6 @@ import { EventSchema, StageSchema, StateSchema } from "./contracts.ts";
 const validStage = {
   name: "planning",
   description: "Turn a selected task into an implementation plan.",
-  run: { skill: "planning" },
   mode: "subagent",
   tags: ["planning", "design"],
   "allowed-tools": ["Read", "Write"],
@@ -118,7 +117,8 @@ describe("EventSchema", () => {
     ],
     ["an artifact event", { ...baseEvent, type: "artifact.registered" }],
     ["a hooks event", { ...baseEvent, type: "hooks.pre_tool.blocked" }],
-    ["a worktree event", { ...baseEvent, type: "worktree.created", payload: { repoId: "app" } }],
+    ["WS4 — a workspace event", { ...baseEvent, type: "workspace.created" }],
+    ["a workspace repository event", { ...baseEvent, type: "workspace.repository.add-failed" }],
     ["a forge event", { ...baseEvent, type: "forge.pr.opened" }],
     ["a learning event", { ...baseEvent, type: "learning.captured" }],
     ["an agent event", { ...baseEvent, type: "agent.tokens" }],

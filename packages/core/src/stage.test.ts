@@ -1,19 +1,20 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import * as z from "zod";
-import { loadStage } from "./stage.ts";
+import { type ConfigInput, ConfigSchema } from "./config.ts";
+import { loadStage, resolveExtension, resolveReference } from "./stage.ts";
+import { CreateWorkspaceInputSchema, CreateWorkspaceOutputSchema } from "./workspace.ts";
 
 const registry = {
   "planning.input.v1": z.object({ task: z.string() }),
   "planning.output.v1": z.object({ summary: z.string() }),
 };
 
-const validYaml = `name: planning
+const validFrontmatter = `name: planning
 description: Turn a selected task into an implementation plan.
-run:
-  skill: planning
 mode: subagent
 tags: [planning, design]
 allowed-tools: [Read, Write]
@@ -31,6 +32,10 @@ produces:
   - artifact: plan
 protocols: [artifact-registration]
 scopes: [feature]
+references:
+  rubric:
+    path: references/rubric.md
+    description: How to grade a plan.
 `;
 
 let dir = "";
@@ -38,97 +43,184 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "stage-"));
 });
 
-const writeStage = async (fileName: string, yaml: string): Promise<string> => {
-  const path = join(dir, fileName);
-  await writeFile(path, yaml);
-  return path;
+const writeFiles = async (base: string, files: Readonly<Record<string, string>>) => {
+  for (const [path, text] of Object.entries(files)) {
+    await mkdir(dirname(join(base, path)), { recursive: true });
+    await writeFile(join(base, path), text);
+  }
+};
+
+const writeSkill = async (
+  folder: string,
+  frontmatter: string,
+  files: Readonly<Record<string, string>> = { "references/rubric.md": "Grade it.\n" },
+): Promise<string> => {
+  const skillDir = join(dir, folder);
+  await writeFiles(skillDir, { "SKILL.md": `---\n${frontmatter}---\n# Body\n`, ...files });
+  return skillDir;
 };
 
 describe("loadStage", () => {
-  test("a valid stage loads with its input and output schemas resolved from the registry", async () => {
-    const result = await loadStage(await writeStage("planning.yaml", validYaml), registry);
+  test("WS26 — a skill folder whose SKILL.md names it loads with its schemas resolved", async () => {
+    const result = await loadStage(await writeSkill("planning", validFrontmatter), registry);
     if (!result.ok) throw new Error(result.error);
     expect(result.value.stage.name).toBe("planning");
+    expect(result.value.stage.references).toEqual({
+      rubric: { path: "references/rubric.md", description: "How to grade a plan." },
+    });
     expect(result.value.stage.produces).toEqual([{ artifact: "plan", optional: false }]);
     expect(result.value.inputSchema).toBe(registry["planning.input.v1"]);
     expect(result.value.outputSchema).toBe(registry["planning.output.v1"]);
   });
 
-  test.each([
-    ["a namespaced skill", "  skill: harness:code-review"],
-    ["a snake_case command", "  command: test_all"],
-    ["a namespaced command", "  command: npm:test_all"],
-  ])("accepts %s as the run target", async (_label, run) => {
-    const yaml = validYaml.replace("  skill: planning", run);
-    const result = await loadStage(await writeStage("planning.yaml", yaml), registry);
+  test("WS27 — a folder named planning holding name: plan is rejected, naming both", async () => {
+    const frontmatter = validFrontmatter.replace("name: planning", "name: plan");
+    const result = await loadStage(await writeSkill("planning", frontmatter), registry);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain('"plan"');
+    expect(result.error).toContain("planning");
+  });
+
+  test("WS27 — a listed reference whose file is missing is rejected, naming the path", async () => {
+    const result = await loadStage(await writeSkill("planning", validFrontmatter, {}), registry);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain("references/rubric.md");
+  });
+
+  test("WS28 — scopes: [] loads", async () => {
+    const frontmatter = validFrontmatter.replace("scopes: [feature]", "scopes: []");
+    const result = await loadStage(await writeSkill("planning", frontmatter), registry);
     expect(result.ok).toBe(true);
   });
 
   test.each([
-    ["a skill with a space", "  skill: Bad Name"],
-    ["a skill with a double colon", "  skill: a::b"],
-    ["a skill with an underscore", "  skill: code_review"],
-    ["a command with a space", "  command: Bad Name"],
-    ["a command with a double colon", "  command: a::b"],
-  ])("rejects %s as the run target", async (_label, run) => {
-    const yaml = validYaml.replace("  skill: planning", run);
-    const result = await loadStage(await writeStage("planning.yaml", yaml), registry);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/run/);
-  });
-
-  test.each([
-    ["an unknown field", validYaml.replace("tier:", "extra: 1\ntier:"), /extra/],
-    ["a bad mode", validYaml.replace("mode: subagent", "mode: parallel"), /mode/],
-    ["duplicate tags", validYaml.replace("[planning, design]", "[design, design]"), /unique/],
+    [
+      "WS28 — a run key",
+      validFrontmatter.replace("mode:", "run:\n  skill: planning\nmode:"),
+      /run/,
+    ],
+    ["an unknown field", validFrontmatter.replace("tier:", "extra: 1\ntier:"), /extra/],
+    ["a bad mode", validFrontmatter.replace("mode: subagent", "mode: parallel"), /mode/],
+    [
+      "duplicate tags",
+      validFrontmatter.replace("[planning, design]", "[design, design]"),
+      /unique/,
+    ],
     [
       "an artifact entry missing its name",
-      validYaml.replace("- artifact: plan", "- optional: true"),
+      validFrontmatter.replace("- artifact: plan", "- optional: true"),
       /produces/,
     ],
     [
-      "both skill and command",
-      validYaml.replace("  skill: planning", "  skill: planning\n  command: plan"),
-      /run/,
+      "a reference path leaving the skill folder",
+      validFrontmatter.replace("path: references/rubric.md", "path: ../rubric.md"),
+      /references/,
     ],
     [
       "an unknown input schema key",
-      validYaml.replace("planning.input.v1", "planning.input.v9"),
+      validFrontmatter.replace("planning.input.v1", "planning.input.v9"),
       /planning\.input\.v9/,
     ],
     [
       "an unknown output schema key",
-      validYaml.replace("planning.output.v1", "planning.output.v2"),
+      validFrontmatter.replace("planning.output.v1", "planning.output.v2"),
       /planning\.output\.v2/,
     ],
     [
       "a model, since a stage asks for a model only through its tier",
-      validYaml.replace("tier: balanced", "tier: balanced\nmodel: opus"),
+      validFrontmatter.replace("tier: balanced", "tier: balanced\nmodel: opus"),
       /model/,
     ],
-    ["malformed YAML", "name: [unclosed", /YAML/i],
-  ])("rejects %s", async (_label, yaml, message) => {
-    const result = await loadStage(await writeStage("planning.yaml", yaml), registry);
+    ["malformed YAML", "name: [unclosed\n", /YAML/i],
+  ])("rejects %s", async (_label, frontmatter, message) => {
+    const result = await loadStage(await writeSkill("planning", frontmatter), registry);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(message);
   });
 
-  test("rejects a stage whose name differs from its filename", async () => {
-    const result = await loadStage(await writeStage("plan.yaml", validYaml), registry);
-    expect(result).toEqual({
+  test("a missing skill folder returns an error naming the path instead of throwing", async () => {
+    const skillDir = join(dir, "missing");
+    expect(await loadStage(skillDir, registry)).toEqual({
       ok: false,
-      error: expect.stringMatching(/planning.*plan\.yaml|plan\.yaml.*planning/),
+      error: expect.stringContaining(join(skillDir, "SKILL.md")),
+    });
+  });
+});
+
+const demoFrontmatter = validFrontmatter
+  .replace("name: planning", "name: demo")
+  .replace(
+    /references:\n[\s\S]*$/,
+    "references:\n  notes:\n    path: notes.md\n    description: Notes.\n",
+  );
+
+const setupResolve = async (extensions: ConfigInput["extensions"]) => {
+  const skillsDir = join(dir, "skills");
+  const root = join(dir, "repo");
+  await writeFiles(join(skillsDir, "demo"), {
+    "SKILL.md": `---\n${demoFrontmatter}---\n`,
+    "notes.md": "base text\n",
+  });
+  await writeFiles(root, { "ext/notes.md": "extension text\n", "ext/demo.md": "skill rules\n" });
+  const config = ConfigSchema.parse({ version: 2, extensions });
+  return { skillsDir, root, config, skill: "demo" };
+};
+
+describe("resolveReference", () => {
+  test.each([
+    ["no extension", undefined, "base text\n"],
+    ["replace", { replace: "ext/notes.md" }, "extension text\n"],
+    ["extend", { extend: "ext/notes.md" }, "base text\n\nextension text\n"],
+  ])("WS29 — with %s", async (_label, notes, expected) => {
+    const options = await setupResolve(notes ? { demo: { references: { notes } } } : {});
+    expect(await resolveReference({ ...options, ref: "notes" })).toEqual({
+      ok: true,
+      value: expected,
     });
   });
 
   test.each([
-    ["a missing file", () => join(dir, "missing.yaml")],
-    ["a directory", () => dir],
-  ])("returns an error naming the path for %s instead of throwing", async (_label, pathFor) => {
-    const path = pathFor();
-    expect(await loadStage(path, registry)).toEqual({
-      ok: false,
-      error: expect.stringContaining(`${path}: `),
+    ["an unlisted ref", {}, "ghost", 'unknown reference "ghost"; demo has: notes'],
+    [
+      "an extension naming an unlisted ref",
+      { demo: { references: { ghost: { extend: "ext/notes.md" } } } },
+      "notes",
+      "extensions.demo.references.ghost",
+    ],
+    [
+      "an extension path that does not exist",
+      { demo: { references: { notes: { replace: "ext/missing.md" } } } },
+      "notes",
+      "ext/missing.md",
+    ],
+  ])("WS30 — %s is an error", async (_label, extensions, ref, message) => {
+    const options = await setupResolve(extensions);
+    const result = await resolveReference({ ...options, ref });
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain(message);
+  });
+});
+
+describe("resolveExtension", () => {
+  test.each([
+    ["extensions.demo.skill set", { demo: { skill: "ext/demo.md" } }, "skill rules\n"],
+    ["no skill extension", {}, ""],
+  ])("WS31 — with %s", async (_label, extensions, expected) => {
+    const options = await setupResolve(extensions);
+    expect(await resolveExtension(options)).toEqual({ ok: true, value: expected });
+  });
+});
+
+describe("the real create-workspace skill", () => {
+  test("WS34 — loads through loadStage with its own schemas, listing select-repos whose file exists", async () => {
+    const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "create-workspace");
+    const result = await loadStage(skillDir, {
+      "create-workspace.input.v1": CreateWorkspaceInputSchema,
+      "create-workspace.output.v1": CreateWorkspaceOutputSchema,
     });
+    if (!result.ok) throw new Error(result.error);
+    const selectRepos = result.value.stage.references["select-repos"];
+    expect(selectRepos?.path).toBe("references/select-repos.md");
+    expect(existsSync(join(skillDir, selectRepos?.path ?? ""))).toBe(true);
   });
 });
