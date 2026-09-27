@@ -148,12 +148,32 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
 
   const id = `r-${randomBytes(4).toString("hex")}`;
   const runLog = log.child({ runId: id });
-  const launched = await deps.provider.launch({
+  // Saved before the agent starts: its first step is `harness init`, which must find the run.
+  const pending: WorkflowRun = {
+    id,
+    workflow,
+    workflowPath,
+    inputs,
     cwd,
-    prompt: `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}`,
-    env: { HARNESS_RUN_ID: id, HARNESS_HOME: deps.home },
-  });
+    sessions: [],
+    name: null,
+    createdAt: new Date().toISOString(),
+  };
+  await deps.registry.addRun(pending);
+
+  // A run whose agent never started is removed, so a failed start records nothing.
+  const launched = await deps.provider
+    .launch({
+      cwd,
+      prompt: `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}`,
+      env: { HARNESS_RUN_ID: id, HARNESS_HOME: deps.home },
+    })
+    .catch(async (error: unknown) => {
+      await deps.registry.removeRun(id);
+      throw error;
+    });
   if (!launched.ok) {
+    await deps.registry.removeRun(id);
     runLog.error(
       { err: String(launched.error) },
       "run not started: the agent session failed to launch",
@@ -162,17 +182,9 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
   }
 
   const { sessionId } = launched.value;
-  const run: WorkflowRun = {
-    id,
-    workflow,
-    workflowPath,
-    inputs,
-    cwd,
-    sessions: [{ agent: deps.provider.type, sessionId }],
-    name: null,
-    createdAt: new Date().toISOString(),
-  };
-  await deps.registry.addRun(run);
+  const session = { agent: deps.provider.type, sessionId };
+  await deps.registry.linkSession(id, session);
+  const run = (await deps.registry.findRun(id)) ?? { ...pending, sessions: [session] };
   runLog.info({ workflow, cwd, agent: deps.provider.type, sessionId }, "run started");
   return c.json({ run, attach: [...deps.terminal.attachCommand(sessionId)] }, 201);
 };

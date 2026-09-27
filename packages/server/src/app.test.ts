@@ -172,6 +172,37 @@ describe("POST /runs", () => {
     expect(await deps.registry.findRun(json.run.id)).toBeDefined();
   });
 
+  test("init called by the agent while it is still starting finds its run", async () => {
+    const cwd = makeGitRepo();
+    const workflowPath = join(cwd, "ok.yaml");
+    writeFileSync(workflowPath, "name: ok\nnodes: []\n");
+    let initStatus = 0;
+    let app: ReturnType<typeof createApp> | undefined;
+    const deps = await buildDeps(
+      async (options) => {
+        const res = await app?.request(`/runs/${options.env?.HARNESS_RUN_ID}/init`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: "early" }),
+        });
+        initStatus = res?.status ?? 0;
+        return { ok: true, value: { sessionId: "s1" } };
+      },
+      noopLogger,
+      createGit(),
+    );
+    app = createApp(deps);
+
+    const res = await app.request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(initStatus).toBe(201);
+  });
+
   test("SC11: a failing provider is 502 agent-failed and records no run", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     const deps = await buildDeps(() => Promise.resolve({ ok: false, error: "boom" }));
@@ -186,7 +217,10 @@ describe("POST /runs", () => {
     expect(res.status).toBe(502);
     const json = (await res.json()) as { error: { code: string } };
     expect(json.error.code).toBe("agent-failed");
-    expect(existsSync(deps.registryPath)).toBe(false);
+    const saved = existsSync(deps.registryPath)
+      ? JSON.parse(readFileSync(deps.registryPath, "utf8")).runs
+      : {};
+    expect(saved).toEqual({});
   });
 
   test("a handler that throws answers 500 with an internal error body and logs it", async () => {
@@ -206,6 +240,7 @@ describe("POST /runs", () => {
     expect(at("error").some((line) => line.msg === "request failed with an unexpected error")).toBe(
       true,
     );
+    expect(JSON.parse(readFileSync(deps.registryPath, "utf8")).runs).toEqual({});
   });
 });
 
