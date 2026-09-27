@@ -96,7 +96,7 @@
         "Findings are grouped under per-axis '###' headings rather than merged into one ranked list",
         "Every blocking defect carries a file:line and a reason it matters",
         "Judgement-call findings are recorded and marked as non-blocking",
-        "All eight reviewer personas are dispatched as eight separate sub-agents in one message",
+        "All eight standard reviewer personas are dispatched as separate sub-agents in one message",
         "Empty axes are presented as empty rather than dropped from the report",
         "Cleanup findings appear under their own per-angle '###' headings (Reuse, Simplification, Efficiency, Altitude)",
         "Cleanup findings are recorded as non-blocking judgement calls and do not by themselves drive the verdict",
@@ -118,12 +118,12 @@
       "id": 5,
       "name": "multi-package-single-fanout",
       "prompt": "Review the change at skills/code-review/evals/files/eval5_multipkg.diff. It spans packages/api and packages/auth.",
-      "expected_output": "One review covering both packages, produced by exactly eight sub-agents. Findings include the exp unit mismatch across the package boundary (packages/api writes milliseconds, packages/auth compares against seconds, so tokens never expire), the TOKEN_SECRET fallback to a hardcoded 'dev-secret', JSON.parse running before signature verification, and the unchecked destructure of raw.split('.'). Verdict is REQUEST CHANGES.",
+      "expected_output": "One review covering both packages, produced by the eight standard sub-agents. Findings include the exp unit mismatch across the package boundary (packages/api writes milliseconds, packages/auth compares against seconds, so tokens never expire), the TOKEN_SECRET fallback to a hardcoded 'dev-secret', JSON.parse running before signature verification, and the unchecked destructure of raw.split('.'). Verdict is REQUEST CHANGES.",
       "files": [
         "skills/code-review/evals/files/eval5_multipkg.diff"
       ],
       "expectations": [
-        "Exactly eight sub-agents are dispatched for the whole diff, not eight per package",
+        "Exactly eight standard sub-agents are dispatched for the whole diff, not eight per package; Design is absent because this input has no design/spec.md",
         "Each sub-agent receives the full diff covering both packages/api and packages/auth",
         "Review identifies the exp unit mismatch between packages/api/src/session.ts and packages/auth/src/token.ts, which stops tokens expiring",
         "The unit-mismatch finding cites a file:line in both packages, showing the agent read across the boundary",

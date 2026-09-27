@@ -44,9 +44,10 @@ Resolve the behavior to implement and the existing tests that exercise it before
 
 A `phases/phase-N.md` is already decomposed; take it as given rather than re-deriving the feature:
 
-- `## Implementation` — the build steps, in order. When a step has `spec:` lines, read
-  `skills/_shared/design-spec.md` first: each line points to a heading in `design/spec.md`, and
-  that heading holds the properties and values the step must use.
+- `## Implementation` — the build steps, in order. When a step refers to `design/spec.md`, read
+  the referenced sections and implement their requirements exactly. Resolve indirect values,
+  such as theme tokens or CSS variables, before comparing them with the spec. If the spec cannot
+  be followed, return `BLOCKED` with the conflict.
 - `## Test Scenarios` — `### Unit`, `### API`, `### E2E`, each scenario numbered `SC<n>`. One test
   per scenario, at the altitude it sits under. Carry the id in the test title (`SC12: …`) so a
   reviewer and the quality gate can trace counts back to scenarios without a second file.
@@ -70,6 +71,9 @@ Run affected tests and typecheck while iterating. Once the assignment is impleme
 configured full tests, typecheck, and lint. If later fixes change code, rerun the affected checks.
 Record command results and distinguish existing baseline failures from regressions.
 Documentation-only changes need artifact validation, not invented production-code tests.
+
+When the phase refers to `design/spec.md`, compare the completed implementation with every
+referenced requirement and fix any mismatch before running the final checks.
 
 ### The E2E leg in a pipeline
 

@@ -103,14 +103,14 @@ The order inside the eval is load-bearing: **observe → arm the timeout → cli
 after the click is the race you came here to close. When it resolves `{appeared: false}`, record the element
 `NOT VERIFIED` with the `ms` lifetime you measured.
 
-## The capture loop — act, assert, capture to staging, promote
+## The capture loop — act, assert, capture to staging
 
 **Film the whole life of the scenario, not a checklist of its steps.** Every step earns at least one frame, many earn
-more — a scenario with more *promoted* frames than steps is doing it right.
+more.
 
-**Capture to staging, promote only what you verified.** Shoot into `.harness/<SPEC_NAME>/verify-staging/` — scratch,
-a sibling of `verification/` and never part of it — and move a frame into `screenshots/` only once it earns its
-place. Re-takes, dead ends, and missed clicks stay in staging and are discarded at cleanup.
+**Capture every screenshot to staging.** Save it under
+`.harness/<SPEC_NAME>/verify-staging/`, beside the `verification/` directory. This directory holds
+the raw captures from the browser walk, including re-takes, dead ends and missed clicks.
 
 **Re-driving a scenario an earlier round filmed? Delete its old evidence first, then capture.**
 
@@ -144,16 +144,7 @@ EOF
 
 **Write the screenshot path absolute** — the heredoc is quoted and your shell's cwd resets between calls.
 
-Then **`Read` the staged PNG and confirm it shows what you think** — the round-trip you never skip. Once the assert
-passed and your eyes confirmed the frame, **promote it**: `mv` it into `verification/screenshots/` under its
-`NN_<slug>__SS_<step>.png` name, and record the assert's deciding value (the returned `{n: …}`, the measured rect,
-the quoted string) for the scenario's `reason`.
-
-You need both checks. **The assert answers whether the state took hold** — a click that silently no-ops looks
-identical to one that worked until you ask the DOM. **The Read answers whether the frame shows it.** When they
-disagree, re-drive rather than promote: the frame usually lags the render (`wait` on the condition and re-shoot),
-but check the assert against *The rules* above too, where its ways of lying are listed. Settle it by asking the page
-a second way.
+Record the assert's deciding value for the scenario's `reason`.
 
 **A file the scenario downloads is evidence — keep it** beside the report as `verification/NN_<slug>.<ext>`, the
 same prefix as its video, and list it in the scenario's `artifacts[]`.

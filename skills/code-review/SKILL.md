@@ -2,8 +2,9 @@
 name: code-review
 description: >
   Deep code review that hunts for subtle bugs and for code that works but should have been
-  written differently. Runs eight reviewer personas in parallel, aggregates their findings
-  into a report, then applies the fixes and records them in it. Use when the user says
+  written differently. Runs eight reviewer personas in parallel, plus a Design persona when
+  design/spec.md exists, aggregates their findings into a report, then applies the fixes and
+  records them in it. Use when the user says
   "/code-review", "review my code", "review this change", or "review this against the plan".
 ---
 
@@ -93,7 +94,7 @@ once matches shallowly across all of them.
 |---|---|---|
 | Defects | `references/persona-defects.md` | — |
 | Spec | `references/persona-spec.md` | the full text of the `--plan` file, when there is one |
-| Design | `references/persona-design.md` | the paths to `design/spec.md` and the `--plan` file |
+| Design | `references/persona-design.md` | `design/spec.md`, the plan file, and the diff command |
 | Security | `references/persona-security.md` | — |
 | Testing | `references/persona-testing.md` | — |
 | Reuse | `references/persona-reuse.md` | — |
@@ -101,10 +102,10 @@ once matches shallowly across all of them.
 | Efficiency | `references/persona-efficiency.md` | — |
 | Altitude | `references/persona-altitude.md` | — |
 
-**Every axis runs on every review**, with one exception: Design runs only when `design/spec.md`
-exists beside the `--plan` file (`skills/_shared/design-spec.md`). There is no other gate and no
-team selection: an axis with nothing to report returns nothing, and that emptiness is a result
-you present.
+The eight existing axes run on every review. Dispatch Design as a ninth axis only when
+`design/spec.md` exists beside the supplied plan. There is no other gate and no team selection:
+an axis with nothing to report returns nothing, and that emptiness is a result you present.
+When Design does not run, omit its heading from the report.
 
 Every prompt names that agent's persona file by path and tells it to read the file first, before
 anything else. Give each agent its own file and no other, so the only axis it can report under

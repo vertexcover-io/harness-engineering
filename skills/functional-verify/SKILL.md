@@ -268,10 +268,6 @@ CLI and filming what it did. The craft — batching, the `eval` laws, the captur
   own scenario.
 - **Name and number every scenario** as in *Output Layout* before you capture anything — or keep the `NN_<slug>`
   the ledger already gave it, where Step 0 found one.
-- **Assign every design frame to a scenario.** Open plan.md's `## Design References`. No section, or no rows,
-  means every scenario's `visualMatch` has `baseline: null`. Otherwise each row names a screen and an image
-  path: give each row to the scenario that drives that screen, and write the pairs down before the first
-  walk. A row no scenario drives is a finding on the round, with the screen named.
 - **Open the stack's UI URL and hold one session** for every scenario in the run.
 
 **Each scenario, in this order**
@@ -287,10 +283,16 @@ CLI and filming what it did. The craft — batching, the `eval` laws, the captur
    batch you already run, never a batch of its own.
 3. **Confirm every frame.** A frame is evidence only once its assert passed **and** your own eyes confirmed it shows
    what you think — read it at the moment you shoot, since frames lag renders.
-4. **Compare the frames to the design.** `references/visual-verification.md` is the one pass that does it, and
-   the scenario's `visualMatch` is what it produces. It drives nothing: the frames are shot and the session is
-   still open.
-5. **Write it up and append its ledger line**, in Step 0's shape, whatever the verdict — one line per scenario per
+4. **Compare the staged frames to the design before promotion.** Once `agent-browser` has finished the scenario,
+   open the complete `## Design References` section in `plan.md`. For each staged frame, choose the corresponding
+   image under `design/` by matching its screen, state and viewport. Use the image and the description to select
+   the reference, but compare the two images themselves. A row no scenario drives is a finding on the round.
+   `references/visual-verification.md` owns the comparison and produces `visualMatch`.
+5. **Promote after the comparison.** Move the accepted staged frames into
+   `verification/screenshots/` only after `visualMatch` is complete. A visual mismatch still promotes the frame
+   as failure evidence, marks the scenario `FAILURE`, and records the reference path, promoted screenshot path,
+   and the visual differences. Text differences alone do not fail the comparison.
+6. **Write it up and append its ledger line**, in Step 0's shape, whatever the verdict — one line per scenario per
    round, appended and never edited.
 
 **A phone replay is a scenario.** Every flow on the surface the change landed on is driven again on a phone, as its
@@ -302,8 +304,9 @@ phone at all is a project fact like any other.
 - every behaviour the docs claim is reached by some flow, driven this round or carried from the ledger;
 - every UI scenario names the path it opened on;
 - every UI scenario's `NN_<slug>` frames in `screenshots/` tell its whole story;
+- every failed visual comparison names both files compared;
 - every UI scenario carries a `visualMatch` — a derived fidelity, or the named absence of a baseline — with each of
-  the six questions evidenced or called clean;
+  the visual checks evidenced or called clean;
 - every flow on the surface the change landed on has a phone replay driven to its closing assert, whatever it
   returned.
 
