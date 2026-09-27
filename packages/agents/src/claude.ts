@@ -97,6 +97,11 @@ const parseResult = <T>(
       };
 };
 
+// stdout/stderr can hold Claude's answer text, code, or secrets from the repo, so error
+// messages carry only their size and a small prefix, never the full text.
+const summarize = (text: string): string =>
+  `(${Buffer.byteLength(text)} bytes): ${text.length > 200 ? `${text.slice(0, 200)}…` : text}`;
+
 // Turns `claude -p --output-format json` stdout and its exit code into an AgentResult.
 export const interpretOutput = <T>(
   { code, stdout, stderr }: Readonly<{ code: number; stdout: string; stderr: string }>,
@@ -104,10 +109,16 @@ export const interpretOutput = <T>(
 ): AgentResult<T> => {
   const json = parseJson(stdout);
   if (!json.ok && code !== 0) {
-    return { ok: false, error: new Error(`claude exited with code ${code}: ${stderr.trim()}`) };
+    return {
+      ok: false,
+      error: new Error(`claude exited with code ${code} ${summarize(stderr.trim())}`),
+    };
   }
   if (!json.ok) {
-    return { ok: false, error: new Error(`claude produced invalid JSON output: ${stdout}`) };
+    return {
+      ok: false,
+      error: new Error(`claude produced invalid JSON output ${summarize(stdout)}`),
+    };
   }
   const parsed = ClaudeCliOutputSchema.safeParse(json.value);
   if (!parsed.success) {

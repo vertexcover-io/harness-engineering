@@ -206,6 +206,26 @@ describe("interpretOutput", () => {
       sessionId: "s",
     });
   });
+
+  test("long non-JSON stdout is capped, never logging what follows the first 200 chars", () => {
+    const stdout = `${"x".repeat(5000)}SECRET_TAIL`;
+    const result = interpretOutput({ code: 0, stdout, stderr: "" });
+
+    expect(result.ok).toBe(false);
+    const message = result.ok ? "" : String(result.error);
+    expect(message).not.toContain("SECRET_TAIL");
+    expect(message).toContain(`${stdout.length}`);
+  });
+
+  test("a non-zero exit with long stderr is capped, never logging what follows the first 200 chars", () => {
+    const stderr = `${"x".repeat(5000)}SECRET_TAIL`;
+    const result = interpretOutput({ code: 1, stdout: "oops", stderr });
+
+    expect(result.ok).toBe(false);
+    const message = result.ok ? "" : String(result.error);
+    expect(message).not.toContain("SECRET_TAIL");
+    expect(message).toContain(`${stderr.length}`);
+  });
 });
 
 // Writes a temporary executable that prints fixed stdout and exits with a fixed code,
