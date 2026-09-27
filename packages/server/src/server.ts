@@ -2,14 +2,19 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { claudeProvider } from "@harness/agents";
-import { createLogger, resolveLevel } from "@harness/core";
+import {
+  createLogger,
+  createRegistry,
+  harnessHome,
+  registryPath,
+  resolveLevel,
+} from "@harness/core";
 import type { Check, IAgentProvider, ILogger, ITerminal } from "@harness/sdk";
-import { createGit, noopLogger } from "@harness/sdk";
+import { noopLogger } from "@harness/sdk";
 import prettyFactory from "pino-pretty";
 import serverPackage from "../package.json";
 import { createApp } from "./app.ts";
-import { harnessHome, pidPath, registryPath, socketPath } from "./protocol.ts";
-import { createRegistry } from "./registry.ts";
+import { pidPath, socketPath } from "./protocol.ts";
 import { tmuxTerminal } from "./tmux.ts";
 
 export type Runtime = Readonly<{ terminal: ITerminal; provider: IAgentProvider }>;
@@ -60,14 +65,12 @@ export const startServer = async ({ home }: { home: string }): Promise<void> => 
   }
 
   const { terminal, provider } = defaultRuntime(log);
-  const git = createGit();
   const registry = createRegistry(registryPath(home), log);
   const version = String(serverPackage.version);
   const app = createApp({
     registry,
     provider,
     terminal,
-    git,
     log,
     home,
     pid: process.pid,

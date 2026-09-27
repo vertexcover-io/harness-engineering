@@ -3,10 +3,9 @@ import { chmodSync, existsSync, mkdtempSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { WorkflowRun } from "./protocol.ts";
-import { createRegistry, RegistryFileSchema } from "./registry.ts";
+import { createRegistry, RegistryFileSchema, type WorkflowRun } from "./registry.ts";
 
-const run = (id: string): WorkflowRun => ({
+const run = (id: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id,
   workflow: "demo",
   workflowPath: "/abs/workflow.yaml",
@@ -15,6 +14,7 @@ const run = (id: string): WorkflowRun => ({
   sessions: [],
   name: null,
   createdAt: new Date().toISOString(),
+  ...overrides,
 });
 
 const tempRegistryPath = (): string =>
@@ -68,13 +68,26 @@ describe("createRegistry", () => {
     expect(existsSync(path)).toBe(false);
   });
 
-  test("linkSession says whether the session was new", async () => {
+  test("linkSession adds a session once, however often it is linked", async () => {
     const registry = createRegistry(tempRegistryPath());
     await registry.addRun(run("r-1"));
     const session = { agent: "codex", sessionId: "s1" } as const;
 
-    expect(await registry.linkSession("r-1", session)).toBe(true);
-    expect(await registry.linkSession("r-1", session)).toBe(false);
+    await registry.linkSession("r-1", session);
+    await registry.linkSession("r-1", session);
     expect((await registry.findRun("r-1"))?.sessions).toEqual([session]);
+  });
+
+  test("findRunsByName lists every run with that name, newest first", async () => {
+    const registry = createRegistry(tempRegistryPath());
+    await registry.addRun(run("r-old", { name: "fix", createdAt: "2026-09-01T00:00:00.000Z" }));
+    await registry.addRun(run("r-new", { name: "fix", createdAt: "2026-09-02T00:00:00.000Z" }));
+    await registry.addRun(run("r-unnamed"));
+
+    expect((await registry.findRunsByName("fix")).map((found) => found.id)).toEqual([
+      "r-new",
+      "r-old",
+    ]);
+    expect(await registry.findRunsByName("missing")).toEqual([]);
   });
 });

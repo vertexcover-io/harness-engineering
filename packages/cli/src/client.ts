@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { createLogger, resolveLevel, withLock } from "@harness/core";
+import { createLogger, harnessHome, resolveLevel, withLock } from "@harness/core";
 import { type ILogger, spawnDetached } from "@harness/sdk";
-import { type ApiError, harnessHome, logPath, socketPath } from "@harness/server";
+import { type ApiError, logPath, socketPath } from "@harness/server";
 import { createHarnessClient, type HarnessClient } from "@harness/server/client";
 
 const HEALTH_TIMEOUT_MS = 5_000;
@@ -47,7 +47,7 @@ export const fail = (problem: string | Error): void => {
   process.exitCode = 1;
 };
 
-// How a server error reads on the terminal and in emitEvent's results.
+// How a server error reads on the terminal.
 export const apiErrorText = (error: ApiError): string => `${error.code}: ${error.message}`;
 
 export const harnessClient = (home: string = harnessHome()): HarnessClient =>

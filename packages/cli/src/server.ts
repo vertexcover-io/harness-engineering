@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Command } from "@commander-js/extra-typings";
-import { harnessHome, socketPath, startServer } from "@harness/server";
+import { harnessHome } from "@harness/core";
+import { socketPath, startServer } from "@harness/server";
 import { commandLog, fail, harnessClient } from "./client.ts";
 
 const STOP_TIMEOUT_MS = 5_000;
