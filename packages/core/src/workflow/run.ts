@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { z } from "zod";
 import type { JsonValue } from "../contracts.ts";
-import { type EmitInput, ERROR_MESSAGE_LIMIT, type IEventEmitter } from "../events.ts";
+import { type EmitInput, eventError, type IEventEmitter, stackOf } from "../events.ts";
 import { walkNodes } from "./compile.ts";
 import {
   evaluateBoolean,
@@ -149,10 +149,6 @@ const preflightFunctions = async (
   );
   return new Map(loaded);
 };
-
-// The stack of the error a node actually threw, not of the NodeFailure wrapping it.
-const stackOf = (failure: NodeFailure): string | undefined =>
-  failure.cause instanceof Error ? failure.cause.stack : failure.stack;
 
 const toFailure = (error: unknown): NodeFailure =>
   error instanceof NodeFailure
@@ -466,13 +462,7 @@ const nodeEnded = (ctx: RunContext, nodeId: string, record: NodeRecord): Promise
       attempts: record.attempts,
       ...(record.error === undefined
         ? {}
-        : {
-            error: {
-              kind: record.error.kind,
-              message: record.error.message.slice(0, ERROR_MESSAGE_LIMIT),
-              ...(record.error.stack === undefined ? {} : { stack: record.error.stack }),
-            },
-          }),
+        : { error: eventError(record.error.kind, record.error.message, record.error.stack) }),
     },
   });
 

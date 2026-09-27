@@ -16,7 +16,7 @@ const CONFIG_FILES = [
   "orchestrate.config.json",
 ] as const;
 
-const NameSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/, "Expected a camelCase name");
+export const NameSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/, "Expected a camelCase name");
 const EnvNameSchema = z.string().regex(/^[A-Z_][A-Z0-9_]*$/, "Expected an UPPER_SNAKE name");
 
 // "." is the repository root itself, the path of a single-package repository.
@@ -50,6 +50,7 @@ const PackageSchema = z.strictObject({
   runner: NonEmptyStringSchema.optional(),
   timeoutSeconds: z.int().positive().default(300),
   commands: CommandsSchema.default({}),
+  description: NonEmptyStringSchema.optional(),
 });
 
 const EnvironmentsSchema = z
@@ -62,12 +63,25 @@ const EnvironmentsSchema = z
     message: "Must name one of the entries",
   });
 
-// setup and teardown run in every repo's worktree; a package's commands.worktreeSetup/worktreeTeardown override them in multi layout.
-const WorktreeSchema = z.strictObject({
-  layout: z.enum(["mono", "multi"]).default("mono"),
+// setup and teardown run in every repo's worktree; a package's commands.workspaceSetup/workspaceTeardown override them in multi layout.
+export const LayoutSchema = z.enum(["mono", "multi"]);
+
+const WorkspaceConfigSchema = z.strictObject({
+  layout: LayoutSchema.default("mono"),
   path: NonEmptyStringSchema.optional(),
   setup: NonEmptyStringSchema.optional(),
   teardown: NonEmptyStringSchema.optional(),
+});
+
+// replace uses the project's file instead of the skill's; extend appends it after the skill's.
+const ReferenceExtensionSchema = z.union([
+  z.strictObject({ replace: RepoPathSchema }),
+  z.strictObject({ extend: RepoPathSchema }),
+]);
+
+const ExtensionSchema = z.strictObject({
+  skill: RepoPathSchema.optional(),
+  references: recordOf(SlugSchema, ReferenceExtensionSchema).default({}),
 });
 
 export const ConfigSchema = z.strictObject({
@@ -76,9 +90,9 @@ export const ConfigSchema = z.strictObject({
   tiers: recordOf(NameSchema, TierSchema).default({}),
   packages: recordOf(NameSchema, PackageSchema).default({}),
   environments: EnvironmentsSchema.optional(),
-  extensions: recordOf(SkillNameSchema, RepoPathSchema).default({}),
+  extensions: recordOf(SkillNameSchema, ExtensionSchema).default({}),
   env: recordOf(EnvNameSchema, z.string()).default({}),
-  worktree: WorktreeSchema.optional(),
+  workspace: WorkspaceConfigSchema.prefault({}),
 });
 
 export type ConfigInput = z.input<typeof ConfigSchema>;
@@ -157,4 +171,14 @@ export const loadConfig = async (repoRoot: string): Promise<Result<Config, Confi
   const parsed = ConfigSchema.safeParse(versioned.value);
   if (!parsed.success) return invalid(`${file.path}: ${z.prettifyError(parsed.error)}`);
   return { ok: true, value: parsed.data };
+};
+
+// A repo with no config file still gets plain worktrees; any other config problem stops the command.
+export const loadConfigOrDefault = async (root: string): Promise<Result<Config>> => {
+  const loaded = await loadConfig(root);
+  if (loaded.ok) return loaded;
+  if (loaded.error.code === "CONFIG_MISSING") {
+    return { ok: true, value: ConfigSchema.parse({ version: 2 }) };
+  }
+  return { ok: false, error: loaded.error.message };
 };

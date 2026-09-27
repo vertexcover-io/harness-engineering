@@ -40,7 +40,8 @@ environments:
       stackDown: scripts/stack.sh down {BRANCH}
 
 extensions:
-  planning: harness/planning.md
+  planning:
+    skill: harness/planning.md
 
 env:
   SLACK_CHANNEL_ID: C09XXXXXXXX
@@ -69,7 +70,7 @@ const errorOf = (value: unknown): string => {
 };
 
 describe("ConfigSchema", () => {
-  test("SC1 — a file holding only version 2 loads with every map empty", () => {
+  test("SC1 — a file holding only version 2 loads with every map empty and a mono workspace", () => {
     const config = ConfigSchema.parse({ version: 2 });
     expect(config).toEqual({
       version: 2,
@@ -77,6 +78,7 @@ describe("ConfigSchema", () => {
       packages: {},
       extensions: {},
       env: {},
+      workspace: { layout: "mono" },
     });
   });
 
@@ -100,7 +102,9 @@ describe("ConfigSchema", () => {
       "stackStatus",
       "stackDown",
     ]);
-    expect(config.extensions).toEqual({ planning: "harness/planning.md" });
+    expect(config.extensions).toEqual({
+      planning: { skill: "harness/planning.md", references: {} },
+    });
   });
 
   test.each([
@@ -118,7 +122,7 @@ describe("ConfigSchema", () => {
       "stack_up",
     ],
     ["env var", { env: { slackChannel: "C1" } }, "slackChannel"],
-    ["extension skill", { extensions: { Planning: "a.md" } }, "Planning"],
+    ["extension skill", { extensions: { Planning: { skill: "a.md" } } }, "Planning"],
   ])("SC7 — a %s key in the wrong format is rejected by name", (_label, fields, key) => {
     const message = errorOf({ version: 2, ...fields });
     expect(message).toContain(`Invalid key "${key}"`);
@@ -132,6 +136,26 @@ describe("ConfigSchema", () => {
     ["an env value that is a number", { env: { SLACK_CHANNEL_ID: 42 } }],
   ])("SC20 — %s is rejected", (_label, fields) => {
     expect(ConfigSchema.safeParse({ version: 2, ...fields }).success).toBe(false);
+  });
+
+  test("WS5 — a package description is kept", () => {
+    const config = ConfigSchema.parse({
+      version: 2,
+      packages: { api: { path: "api", description: "HTTP API" } },
+    });
+    expect(config.packages.api?.description).toBe("HTTP API");
+  });
+
+  test.each([
+    [
+      "WS6 — a reference extension with both replace and extend",
+      {
+        "create-workspace": { references: { "select-repos": { replace: "a.md", extend: "b.md" } } },
+      },
+    ],
+    ["WS7 — an extension as a bare string, the v1 shape", { "create-workspace": "a.md" }],
+  ])("%s is rejected", (_label, extensions) => {
+    expect(ConfigSchema.safeParse({ version: 2, extensions }).success).toBe(false);
   });
 
   test("SC21 — a null command loads as a command the project does not have", () => {
@@ -189,7 +213,11 @@ describe("ConfigSchema", () => {
     ["a path with a dot segment", { packages: { api: { path: "./api" } } }],
     ["a path with a backslash", { packages: { api: { path: "a\\b" } } }],
     ["a path with an empty segment", { packages: { api: { path: "a//b" } } }],
-    ["an extension outside the repository", { extensions: { planning: "../x.md" } }],
+    ["an extension outside the repository", { extensions: { planning: { skill: "../x.md" } } }],
+    [
+      "a reference extension outside the repository",
+      { extensions: { planning: { references: { notes: { extend: "../x.md" } } } } },
+    ],
   ])("SC11 — %s is rejected", (_label, fields) => {
     expect(errorOf({ version: 2, ...fields })).toContain(
       "Expected a path relative to the repository root",

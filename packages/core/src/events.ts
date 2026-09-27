@@ -1,5 +1,6 @@
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import * as z from "zod";
+import { LayoutSchema } from "./config.ts";
 import {
   type Event,
   EventSchema,
@@ -14,11 +15,22 @@ import { type IEventStore, jsonlEventStore } from "./event-store.ts";
 import type { EventHandler, EventHandlers } from "./state.ts";
 
 export const ERROR_MESSAGE_LIMIT = 500;
-const ErrorSchema = z.strictObject({
+export const ErrorSchema = z.strictObject({
   kind: z.string(),
   message: z.string().max(ERROR_MESSAGE_LIMIT),
   stack: z.string().optional(),
 });
+
+// The thrown error's own stack says where it broke; a wrapper's stack only says who caught it.
+export const stackOf = (error: Error): string | undefined =>
+  error.cause instanceof Error ? error.cause.stack : error.stack;
+
+// Built without an undefined stack key, so the error stays a JSON value an event payload can carry.
+export const eventError = (kind: string, message: string, stack: string | undefined) => {
+  const error = { kind, message: message.slice(0, ERROR_MESSAGE_LIMIT) };
+  return stack === undefined ? error : { ...error, stack };
+};
+export type EventError = ReturnType<typeof eventError>;
 const nodeType = z.string().min(1);
 const attempts = z.int().nonnegative();
 
@@ -39,6 +51,86 @@ export const WorkflowStartedEvent = z.object({
   payload: z.strictObject({ workflow: SlugSchema, inputs: JsonObjectSchema }),
 });
 
+const workspaceEvent = <P extends z.ZodType>(payload: P) => z.object({ payload });
+
+const AbsolutePathSchema = NonEmptyStringSchema.refine(isAbsolute, "Expected an absolute path");
+const ShaSchema = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/, "Expected a full commit SHA");
+
+const WorkspaceRepositorySchema = z.strictObject({
+  name: NonEmptyStringSchema,
+  worktreeDir: AbsolutePathSchema,
+  checkoutDir: AbsolutePathSchema,
+  baseBranch: NonEmptyStringSchema,
+  startSha: ShaSchema,
+});
+
+const located = { workspaceDir: AbsolutePathSchema, branch: NonEmptyStringSchema };
+
+const nonEmpty = (record: Readonly<Record<string, unknown>>): boolean =>
+  Object.keys(record).length > 0;
+
+const WorkspaceCreatedPayload = z
+  .strictObject({
+    ...located,
+    layout: LayoutSchema,
+    repositories: z
+      .record(SlugSchema, WorkspaceRepositorySchema)
+      .refine(nonEmpty, "At least one repository is required"),
+  })
+  .refine(
+    (payload) => payload.layout === "multi" || Object.keys(payload.repositories).length === 1,
+    {
+      path: ["repositories"],
+      message: "Mono has one repository",
+    },
+  );
+
+const RepositoryAddedPayload = z.strictObject({
+  ...located,
+  repoId: SlugSchema,
+  repository: WorkspaceRepositorySchema,
+});
+
+const RepositoryAddFailedPayload = z.strictObject({
+  ...located,
+  repoId: SlugSchema,
+  name: NonEmptyStringSchema,
+  worktreeDir: AbsolutePathSchema,
+  checkoutDir: AbsolutePathSchema,
+  error: ErrorSchema,
+});
+
+const RepositoryRemovedPayload = z.strictObject({
+  ...located,
+  repoId: SlugSchema,
+  name: NonEmptyStringSchema,
+  worktreeDir: AbsolutePathSchema,
+});
+
+const RepositoryRemoveFailedPayload = RepositoryRemovedPayload.extend({
+  error: ErrorSchema,
+});
+
+const WorkspaceRemovedPayload = z.strictObject({
+  ...located,
+  repositories: z.array(SlugSchema).min(1),
+});
+
+// A check that fails before any repo is touched records no event, so every error names its repo.
+const WorkspaceFailedPayload = z.strictObject({
+  ...located,
+  errors: z.array(ErrorSchema.extend({ repoId: SlugSchema })).min(1),
+});
+
+export const WorkspaceCreatedEvent = workspaceEvent(WorkspaceCreatedPayload);
+export const WorkspaceCreateFailedEvent = workspaceEvent(WorkspaceFailedPayload);
+export const WorkspaceRepositoryAddedEvent = workspaceEvent(RepositoryAddedPayload);
+export const WorkspaceRepositoryAddFailedEvent = workspaceEvent(RepositoryAddFailedPayload);
+export const WorkspaceRepositoryRemovedEvent = workspaceEvent(RepositoryRemovedPayload);
+export const WorkspaceRepositoryRemoveFailedEvent = workspaceEvent(RepositoryRemoveFailedPayload);
+export const WorkspaceRemovedEvent = workspaceEvent(WorkspaceRemovedPayload);
+export const WorkspaceRemoveFailedEvent = workspaceEvent(WorkspaceFailedPayload);
+
 const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.started": WorkflowStartedEvent,
   "workflow.node.started": NodeStartedEvent,
@@ -46,6 +138,14 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.node.skipped": NodeEndedEvent,
   "workflow.node.cancelled": NodeEndedEvent,
   "workflow.node.failed": NodeFailedEvent,
+  "workspace.created": WorkspaceCreatedEvent,
+  "workspace.create-failed": WorkspaceCreateFailedEvent,
+  "workspace.repository.added": WorkspaceRepositoryAddedEvent,
+  "workspace.repository.add-failed": WorkspaceRepositoryAddFailedEvent,
+  "workspace.repository.removed": WorkspaceRepositoryRemovedEvent,
+  "workspace.repository.remove-failed": WorkspaceRepositoryRemoveFailedEvent,
+  "workspace.removed": WorkspaceRemovedEvent,
+  "workspace.remove-failed": WorkspaceRemoveFailedEvent,
 };
 
 // An event before the emitter fills runId, ts and (when not given) id. Built from the shape,
@@ -83,23 +183,24 @@ export const emitEvent = async (
 ): Promise<Result<Event>> => {
   const checked = checkCatalog(input);
   if (!checked.ok) return checked;
-  const stored = await store.append({
-    ...input,
-    runId,
-    id: input.id ?? crypto.randomUUID(),
-    ts: new Date().toISOString(),
-  });
+  // A corrupt log or a failed write throws inside the store; callers get it as a failed Result.
+  const stored = await store
+    .append({ ...input, runId, id: input.id ?? crypto.randomUUID(), ts: new Date().toISOString() })
+    .catch((error: unknown) => ({
+      ok: false as const,
+      error: `event not stored: ${error instanceof Error ? error.message : String(error)}`,
+    }));
   // TODO: trigger event hooks here once hooks exist.
   return stored;
 };
 
 export const runDirOf = (cwd: string, name: string): string => join(cwd, ".harness", name);
 
+export type RunRef = Readonly<{ id: string; cwd: string; name: string }>;
+
 // Stores an event in a run's own folder, CWD/.harness/NAME/event.jsonl.
-export const emitRunEvent = (
-  run: Readonly<{ id: string; cwd: string; name: string }>,
-  input: EmitInput,
-): Promise<Result<Event>> => emitEvent(jsonlEventStore(runDirOf(run.cwd, run.name)), run.id, input);
+export const emitRunEvent = (run: RunRef, input: EmitInput): Promise<Result<Event>> =>
+  emitEvent(jsonlEventStore(runDirOf(run.cwd, run.name)), run.id, input);
 
 const findOrCreateRun = (state: State, nodeId: string, nodeRunId: string): NodeRun =>
   state.nodeRuns[nodeRunId] ?? {
@@ -146,6 +247,46 @@ const onEnded =
     return saveRun(state, { ...run, status, completedAt: event.ts, result });
   };
 
+type WorkspaceRepository = z.infer<typeof WorkspaceRepositorySchema>;
+
+// state.json keeps its own `path` names; only payloads use the worktreeDir naming.
+const toRepositoryState = (repo: WorkspaceRepository, branch: string) => ({
+  path: repo.worktreeDir,
+  git: { branch, baseBranch: repo.baseBranch, startSha: repo.startSha },
+});
+
+const onWorkspaceCreated: EventHandler = (state, event) => {
+  const parsed = WorkspaceCreatedEvent.safeParse(event);
+  if (!parsed.success) return state;
+  const { workspaceDir, branch, repositories } = parsed.data.payload;
+  const entries = Object.entries(repositories).map(
+    ([key, repo]) => [key, toRepositoryState(repo, branch)] as const,
+  );
+  return { ...state, workspace: { path: workspaceDir, repositories: Object.fromEntries(entries) } };
+};
+
+const onRepositoryAdded: EventHandler = (state, event) => {
+  const parsed = WorkspaceRepositoryAddedEvent.safeParse(event);
+  if (!parsed.success) return state;
+  const { payload } = parsed.data;
+  const repositories = {
+    ...state.workspace.repositories,
+    [payload.repoId]: toRepositoryState(payload.repository, payload.branch),
+  };
+  return { ...state, workspace: { ...state.workspace, repositories } };
+};
+
+const onRepositoryRemoved: EventHandler = (state, event) => {
+  const parsed = WorkspaceRepositoryRemovedEvent.safeParse(event);
+  if (!parsed.success) return state;
+  const repositories = Object.fromEntries(
+    Object.entries(state.workspace.repositories).filter(
+      ([key]) => key !== parsed.data.payload.repoId,
+    ),
+  );
+  return { ...state, workspace: { ...state.workspace, repositories } };
+};
+
 export const coreHandlers: EventHandlers = {
   "workflow.started": (state, event) => ({ ...state, startedAt: event.ts }),
   "workflow.node.started": onStarted,
@@ -153,4 +294,7 @@ export const coreHandlers: EventHandlers = {
   "workflow.node.failed": onEnded("failed"),
   "workflow.node.skipped": onEnded("skipped"),
   "workflow.node.cancelled": onEnded("cancelled"),
+  "workspace.created": onWorkspaceCreated,
+  "workspace.repository.added": onRepositoryAdded,
+  "workspace.repository.removed": onRepositoryRemoved,
 };
