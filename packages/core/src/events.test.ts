@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Event, type JsonValue, type State, StateSchema } from "./contracts.ts";
 import { jsonlEventStore, memoryEventStore } from "./event-store.ts";
-import { coreHandlers, emitEvent, emitRunEvent, runDirOf } from "./events.ts";
+import {
+  coreHandlers,
+  emitEvent,
+  emitRunEvent,
+  runDirOf,
+  WorkspaceCreatedEvent,
+} from "./events.ts";
 import { projectEvents } from "./state.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -217,5 +223,162 @@ describe("coreHandlers", () => {
     ]);
     expect(state.nodeRuns["loop[1].x"]?.index).toBe(1);
     expect(state.nodeRuns["loop[2].x"]?.index).toBe(2);
+  });
+});
+
+const SHA = "3f2c9ab41d0e8c7b6a5f4e3d2c1b0a9f8e7d6c5b";
+
+const repository = (worktreeDir: string, overrides: Record<string, string> = {}) => ({
+  name: "api",
+  worktreeDir,
+  checkoutDir: "/meta/api",
+  baseBranch: "main",
+  startSha: SHA,
+  ...overrides,
+});
+
+const createdPayload = (
+  layout: "mono" | "multi",
+  repositories: Record<string, ReturnType<typeof repository>>,
+) => ({ layout, branch: "feat-x", workspaceDir: "/meta/.workspaces/feat-x", repositories });
+
+describe("workspace event schemas", () => {
+  const issuePaths = (payload: unknown): string[] => {
+    const parsed = WorkspaceCreatedEvent.safeParse({ payload });
+    return parsed.success ? [] : parsed.error.issues.map((issue) => issue.path.join("."));
+  };
+
+  test("WS40 — a mono workspace.created with two repositories fails", () => {
+    const dir = "/meta/.workspaces/feat-x";
+    const payload = createdPayload("mono", { api: repository(dir), web: repository(dir) });
+    expect(issuePaths(payload)).toContain("payload.repositories");
+  });
+
+  test("WS40 — a short startSha fails, naming startSha", () => {
+    const payload = createdPayload("multi", {
+      api: repository("/meta/.workspaces/feat-x/api", { startSha: "3f2c9ab" }),
+    });
+    expect(issuePaths(payload)).toEqual(["payload.repositories.api.startSha"]);
+  });
+
+  test("WS24 — emitEvent refuses a bad workspace.created payload and a repository.added with no repoId, appending nothing", async () => {
+    const store = memoryEventStore();
+    const badCreated = await emitEvent(store, "r-1", {
+      type: "workspace.created",
+      source: "orchestrate",
+      payload: createdPayload("multi", {
+        api: repository("/meta/.workspaces/feat-x/api", { startSha: "abc" }),
+      }),
+    });
+    const noRepoId = await emitEvent(store, "r-1", {
+      type: "workspace.repository.added",
+      source: "orchestrate",
+      payload: {
+        workspaceDir: "/meta/.workspaces/feat-x",
+        branch: "feat-x",
+        repository: repository("/meta/.workspaces/feat-x/api"),
+      },
+    });
+    expect(badCreated.ok ? "" : badCreated.error).toContain("startSha");
+    expect(noRepoId.ok ? "" : noRepoId.error).toContain("repoId");
+    expect(await store.read()).toEqual([]);
+  });
+
+  test.each(["workspace.create-failed", "workspace.remove-failed"])(
+    "%s with an error that names no repoId is refused, since only a repo's failure is recorded",
+    async (type) => {
+      const store = memoryEventStore();
+      const result = await emitEvent(store, "r-1", {
+        type,
+        source: "orchestrate",
+        payload: {
+          workspaceDir: "/meta/.workspaces/feat-x",
+          branch: "feat-x",
+          errors: [{ kind: "setup", message: "broke" }],
+        },
+      });
+      expect(result.ok ? "" : result.error).toContain("repoId");
+      expect(await store.read()).toEqual([]);
+    },
+  );
+});
+
+const SHA_B = "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d";
+const WS_DIR = "/meta/.workspaces/feat-x";
+
+const workspaceEvent = (seq: number, type: string, payload: JsonValue): Event => ({
+  schemaVersion: 1,
+  seq,
+  id: `ws-${seq}`,
+  ts: `2026-09-26T11:00:0${seq}Z`,
+  type,
+  source: "orchestrate",
+  runId: "r-1",
+  payload,
+});
+
+const workspaceHistory: readonly Event[] = [
+  workspaceEvent(
+    1,
+    "workspace.created",
+    createdPayload("multi", {
+      api: repository(`${WS_DIR}/api`),
+      web: repository(`${WS_DIR}/web`, { name: "web", checkoutDir: "/meta/web" }),
+    }),
+  ),
+  workspaceEvent(2, "workspace.repository.removed", {
+    workspaceDir: WS_DIR,
+    branch: "feat-x",
+    repoId: "web",
+    name: "web",
+    worktreeDir: `${WS_DIR}/web`,
+  }),
+  workspaceEvent(3, "workspace.repository.added", {
+    workspaceDir: WS_DIR,
+    branch: "feat-x",
+    repoId: "docs",
+    repository: repository(`${WS_DIR}/docs`, {
+      name: "docs",
+      checkoutDir: "/meta/docs",
+      startSha: SHA_B,
+    }),
+  }),
+];
+
+describe("workspace reducers", () => {
+  test("WS41 — created, then web removed, then docs added: the workspace points at workspaceDir and holds exactly api and docs", () => {
+    const state = project(workspaceHistory);
+    expect(state.workspace).toEqual({
+      path: WS_DIR,
+      repositories: {
+        api: {
+          path: `${WS_DIR}/api`,
+          git: { branch: "feat-x", baseBranch: "main", startSha: SHA },
+        },
+        docs: {
+          path: `${WS_DIR}/docs`,
+          git: { branch: "feat-x", baseBranch: "main", startSha: SHA_B },
+        },
+      },
+    });
+  });
+
+  test("WS42 — workspace.removed and workspace.create-failed leave state.workspace unchanged", () => {
+    const before = project(workspaceHistory).workspace;
+    const after = project([
+      ...workspaceHistory,
+      workspaceEvent(4, "workspace.removed", {
+        workspaceDir: WS_DIR,
+        branch: "feat-x",
+        repositories: ["api", "docs"],
+      }),
+      workspaceEvent(5, "workspace.create-failed", {
+        workspaceDir: WS_DIR,
+        branch: "feat-x",
+        errors: [{ repoId: "api", kind: "setup", message: "setup failed with exit code 1" }],
+      }),
+    ]);
+    expect(after.workspace).toEqual(before);
+    expect(after.lastEventSeq).toBe(5);
   });
 });
