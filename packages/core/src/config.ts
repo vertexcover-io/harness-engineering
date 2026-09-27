@@ -62,6 +62,14 @@ const EnvironmentsSchema = z
     message: "Must name one of the entries",
   });
 
+// setup and teardown run in every repo's worktree; a package's commands.worktreeSetup/worktreeTeardown override them in multi layout.
+const WorktreeSchema = z.strictObject({
+  layout: z.enum(["mono", "multi"]).default("mono"),
+  path: TextSchema.optional(),
+  setup: TextSchema.optional(),
+  teardown: TextSchema.optional(),
+});
+
 export const ConfigSchema = z.strictObject({
   version: z.literal(2),
   doctor: TextSchema.optional(),
@@ -70,6 +78,7 @@ export const ConfigSchema = z.strictObject({
   environments: EnvironmentsSchema.optional(),
   extensions: recordOf(SkillNameSchema, RepoPathSchema).default({}),
   env: recordOf(EnvNameSchema, z.string()).default({}),
+  worktree: WorktreeSchema.optional(),
 });
 
 export type ConfigInput = z.input<typeof ConfigSchema>;
