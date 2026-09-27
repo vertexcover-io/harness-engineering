@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { rmdir } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { createGit, type ILogger, noopLogger, type SpawnEnv, spawn } from "@harness/sdk";
 import { type Config, ConfigSchema, loadConfig } from "./config.ts";
 import type { Result } from "./contracts.ts";
 
@@ -18,6 +18,7 @@ export type WorktreeOptions = Readonly<{
   base?: string | undefined;
   force?: boolean | undefined;
   onOutput?: ((line: OutputLine) => void) | undefined;
+  log?: ILogger | undefined;
 }>;
 
 export type RepoOutcome = Readonly<{
@@ -52,46 +53,18 @@ const DEFAULT_PATHS: Readonly<Record<Layout, string>> = {
   multi: ".workspaces/{{ branch }}",
 };
 
-const lineSplitter = (emit: (text: string) => void) => {
-  let pending = "";
-  return {
-    push: (chunk: string): void => {
-      const lines = (pending + chunk).split("\n");
-      pending = lines.pop() ?? "";
-      lines.forEach(emit);
-    },
-    flush: (): void => {
-      if (pending !== "") emit(pending);
-    },
-  };
-};
-
 const exec = (
   command: string,
   args: readonly string[],
-  options: Readonly<{ cwd: string; env?: NodeJS.ProcessEnv; onLine?: (text: string) => void }>,
+  options: Readonly<{ cwd: string; env?: SpawnEnv; onLine?: (text: string) => void }>,
 ): Promise<Run> =>
-  new Promise((done) => {
-    const child = spawn(command, args, { cwd: options.cwd, env: options.env ?? process.env });
-    const output = { stdout: "", stderr: "" };
-    const { onLine } = options;
-    const splitters = onLine && { stdout: lineSplitter(onLine), stderr: lineSplitter(onLine) };
-    const collect = (stream: "stdout" | "stderr") => (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      if (splitters) splitters[stream].push(text);
-      else output[stream] += text;
-    };
-    child.stdout.on("data", collect("stdout"));
-    child.stderr.on("data", collect("stderr"));
-    child.on("error", (error) => done({ code: 127, stdout: "", stderr: error.message }));
-    child.on("close", (code) => {
-      splitters?.stdout.flush();
-      splitters?.stderr.flush();
-      done({ code: code ?? 1, ...output });
-    });
+  spawn(command, args, {
+    cwd: options.cwd,
+    ...(options.env === undefined ? {} : { env: options.env }),
+    ...(options.onLine === undefined ? {} : { onStdout: options.onLine, onStderr: options.onLine }),
   });
 
-const git = (cwd: string, ...args: string[]): Promise<Run> => exec("git", args, { cwd });
+const git = createGit();
 
 // A repo with no config file still gets plain worktrees; any other config problem stops the command.
 const readConfig = async (root: string): Promise<Result<Config>> => {
@@ -126,11 +99,11 @@ const metaRepoOf = async (repo: string, dir: string): Promise<string | undefined
 
 // The common git dir is shared by every worktree, so its parent is the main checkout wherever cwd is.
 export const findRoot = async (cwd: string): Promise<Result<string>> => {
-  const common = await git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir");
-  if (common.code !== 0) {
+  const commonDir = await git.commonDir(cwd);
+  if (commonDir === null) {
     return { ok: false, error: "not inside a git repo; run from one or pass --root" };
   }
-  const main = dirname(common.stdout.trim());
+  const main = dirname(commonDir);
   return { ok: true, value: (await metaRepoOf(main, main)) ?? main };
 };
 
@@ -200,8 +173,9 @@ const planMulti = (
 };
 
 const planWorktrees = async (options: WorktreeOptions, command: Command): Promise<Result<Plan>> => {
-  const ref = await git(options.root, "check-ref-format", "--branch", options.branch);
-  if (ref.code !== 0) return { ok: false, error: `invalid branch name "${options.branch}"` };
+  if (!(await git.isValidBranchName(options.root, options.branch))) {
+    return { ok: false, error: `invalid branch name "${options.branch}"` };
+  }
   const config = await readConfig(options.root);
   if (!config.ok) return config;
   const { layout, path } = worktreeOf(config.value);
@@ -215,8 +189,8 @@ const planWorktrees = async (options: WorktreeOptions, command: Command): Promis
 
 const isRepoRoot = async (dir: string): Promise<boolean> => {
   if (!existsSync(dir)) return false;
-  const top = await git(dir, "rev-parse", "--show-toplevel");
-  return top.code === 0 && realpathSync(top.stdout.trim()) === realpathSync(dir);
+  const top = await git.repoRoot(dir);
+  return top !== null && realpathSync(top) === realpathSync(dir);
 };
 
 const isInside = (path: string, dir: string): boolean => {
@@ -226,8 +200,7 @@ const isInside = (path: string, dir: string): boolean => {
 
 const checkIgnored = async (path: string, owner: string): Promise<string | undefined> => {
   if (!isInside(path, owner)) return undefined;
-  const ignored = await git(owner, "check-ignore", "-q", relative(owner, path));
-  if (ignored.code === 0) return undefined;
+  if (await git.isIgnored(owner, relative(owner, path))) return undefined;
   return `${path} is inside ${owner} but not ignored by git; add it to .gitignore`;
 };
 
@@ -259,7 +232,6 @@ const runHook = async (
   const command = repo[hook];
   if (command === undefined) return undefined;
   const env = {
-    ...process.env,
     WORKTREE_PATH: repo.path,
     PRIMARY_WORKTREE_PATH: repo.source,
     BRANCH_NAME: plan.branch,
@@ -283,46 +255,50 @@ const failed = (
   error: string,
 ): RepoOutcome => ({ name: repo.name, path: repo.path, status: "failed", failedAt, error });
 
-const addWorktree = async (repo: RepoPlan, branch: string, base: string): Promise<Run> => {
-  const exists = await git(repo.source, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
-  return exists.code === 0
-    ? git(repo.source, "worktree", "add", repo.path, branch)
-    : git(repo.source, "worktree", "add", "-b", branch, repo.path, base);
-};
-
-const createOne = async (repo: RepoPlan, plan: Plan, options: WorktreeOptions) => {
-  const added = await addWorktree(repo, plan.branch, options.base ?? "HEAD");
-  if (added.code !== 0) return failed(repo, "add", added.stderr.trim());
+const createOne = async (
+  repo: RepoPlan,
+  plan: Plan,
+  options: WorktreeOptions,
+  log: ILogger,
+): Promise<RepoOutcome> => {
+  const added = await git.addWorktree(repo.source, {
+    path: repo.path,
+    branch: plan.branch,
+    base: options.base ?? "HEAD",
+  });
+  if (!added.ok) {
+    log.error({ repo: repo.name, err: added.error }, "git worktree add failed");
+    return failed(repo, "add", added.error);
+  }
+  log.debug({ repo: repo.name, path: repo.path }, "worktree added");
   const setup = await runHook("setup", repo, plan, options.onOutput);
-  return setup === undefined ? done(repo, "ready") : failed(repo, "setup", setup);
+  if (setup !== undefined) {
+    log.error({ repo: repo.name, err: setup }, "worktree added, but its setup command failed");
+    return failed(repo, "setup", setup);
+  }
+  log.info({ repo: repo.name, path: repo.path }, "worktree ready");
+  return done(repo, "ready");
 };
 
 export const createWorktrees = async (
   options: WorktreeOptions,
 ): Promise<Result<WorktreeReport>> => {
+  const log = (options.log ?? noopLogger).child({ component: "worktree", branch: options.branch });
   const planned = await planWorktrees(options, "create");
   if (!planned.ok) return planned;
   const plan = planned.value;
   const problem = await checkCreate(plan, options.root);
   if (problem !== undefined) return { ok: false, error: problem };
-  const repos = await Promise.all(plan.repos.map((repo) => createOne(repo, plan, options)));
+  const repos = await Promise.all(plan.repos.map((repo) => createOne(repo, plan, options, log)));
   return { ok: true, value: { ...plan, repos } };
 };
 
 // Branch names map to paths lossily (feat/a and feat-a share one), so trust git's own record.
 const linkedBranches = async (source: string): Promise<ReadonlyMap<string, string>> => {
-  const list = await git(source, "worktree", "list", "--porcelain");
-  const [, ...linked] = list.stdout.trim().split("\n\n");
-  return new Map(
-    linked.map((block) => {
-      const field = (key: string) =>
-        block
-          .split("\n")
-          .find((line) => line.startsWith(`${key} `))
-          ?.slice(key.length + 1) ?? "";
-      return [field("worktree"), field("branch").replace(/^refs\/heads\//, "")] as const;
-    }),
-  );
+  const list = await git.listWorktrees(source);
+  if (!list.ok) return new Map();
+  const [, ...linked] = list.value;
+  return new Map(linked.map((entry) => [entry.path, entry.branch ?? ""] as const));
 };
 
 const checkRemovable = async (repo: RepoPlan, branch: string): Promise<string | undefined> => {
@@ -333,19 +309,31 @@ const checkRemovable = async (repo: RepoPlan, branch: string): Promise<string | 
   return undefined;
 };
 
-const removeOne = async (repo: RepoPlan, plan: Plan, options: WorktreeOptions) => {
+const removeOne = async (
+  repo: RepoPlan,
+  plan: Plan,
+  options: WorktreeOptions,
+  log: ILogger,
+): Promise<RepoOutcome> => {
   const problem = await checkRemovable(repo, plan.branch);
   if (problem !== undefined) return failed(repo, "remove", problem);
   const torn = await runHook("teardown", repo, plan, options.onOutput);
-  if (torn !== undefined) return failed(repo, "teardown", torn);
-  const force = options.force === true ? ["--force"] : [];
-  const removed = await git(repo.source, "worktree", "remove", ...force, repo.path);
-  return removed.code === 0 ? done(repo, "removed") : failed(repo, "remove", removed.stderr.trim());
+  if (torn !== undefined) {
+    log.error({ repo: repo.name, err: torn }, "teardown command failed; worktree left in place");
+    return failed(repo, "teardown", torn);
+  }
+  const removed = await git.removeWorktree(repo.source, repo.path, {
+    force: options.force === true,
+  });
+  if (removed.ok) log.info({ repo: repo.name, path: repo.path }, "worktree removed");
+  else log.error({ repo: repo.name, err: removed.error }, "git worktree remove failed");
+  return removed.ok ? done(repo, "removed") : failed(repo, "remove", removed.error);
 };
 
 export const removeWorktrees = async (
   options: WorktreeOptions,
 ): Promise<Result<WorktreeReport>> => {
+  const log = (options.log ?? noopLogger).child({ component: "worktree", branch: options.branch });
   const planned = await planWorktrees(options, "remove");
   if (!planned.ok) return planned;
   const plan = planned.value;
@@ -354,7 +342,7 @@ export const removeWorktrees = async (
   if (targets.length === 0) {
     return { ok: false, error: `no worktree for branch "${plan.branch}" at ${plan.workspace}` };
   }
-  const repos = await Promise.all(targets.map((repo) => removeOne(repo, plan, options)));
+  const repos = await Promise.all(targets.map((repo) => removeOne(repo, plan, options, log)));
   // rmdir only succeeds on an empty folder, so a workspace with repos left in it stays.
   if (plan.layout === "multi") await rmdir(plan.workspace).catch(() => undefined);
   return { ok: true, value: { ...plan, repos } };
