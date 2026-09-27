@@ -1,0 +1,17 @@
+version: 2
+packages:
+  harness:
+    path: .
+    runner: node-test
+    commands:
+      testAll: node --test "skills/**/*.test.ts" "skills/**/*.test.mjs" "scripts/**/*.test.ts" "hooks/**/*.test.mjs" "extensions/**/*.test.mjs"
+      testFile: node --test {FILE}
+  v2:
+    path: .
+    runner: bun
+    commands:
+      bootstrap: bun install
+      typecheck: bun run typecheck
+      lint: bun run lint
+      testAll: bun test ./packages
+      testFile: bun test {FILE}

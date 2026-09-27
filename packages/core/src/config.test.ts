@@ -236,6 +236,22 @@ describe("loadConfig", () => {
     expect(result.error.message).toContain("orchestrate.config.json");
   });
 
+  test("SC22 — a v1 orchestrate.config.json beside a v2 orchestrate.config.yaml loads the YAML", async () => {
+    await writeConfig("orchestrate.config.yaml", "version: 2\nenv:\n  FROM: yaml\n");
+    await writeConfig("orchestrate.config.json", '{"stages": {"coder": {}}}');
+    const result = await loadConfig(root);
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.env).toEqual({ FROM: "yaml" });
+  });
+
+  test("SC23 — two config files where neither declares version 2 fail with CONFIG_AMBIGUOUS", async () => {
+    await writeConfig("orchestrate.config.yaml", "stages: {}\n");
+    await writeConfig("orchestrate.config.json", '{"stages": {}}');
+    const result = await loadConfig(root);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error.code).toBe("CONFIG_AMBIGUOUS");
+  });
+
   test.each([
     ["unparsable text", "orchestrate.config.yaml", "version: [2\n", "invalid YAML"],
     [

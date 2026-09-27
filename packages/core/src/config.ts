@@ -119,10 +119,18 @@ const checkVersion = (value: unknown, path: string): Result<unknown, ConfigError
   );
 };
 
+const declaresVersion2 = (file: ConfigFile): boolean => {
+  const yaml = parseYaml(file.text, file.path);
+  return yaml.ok && checkVersion(yaml.value, file.path).ok;
+};
+
+// A v1 file can sit beside the v2 one while a repo migrates, so only v2 files compete.
+const contenders = (files: readonly ConfigFile[]): readonly ConfigFile[] =>
+  files.length > 1 ? files.filter(declaresVersion2) : files;
+
 export const loadConfig = async (repoRoot: string): Promise<Result<Config, ConfigError>> => {
   const files = await findConfigFiles(repoRoot);
-  const [file] = files;
-  if (file === undefined) {
+  if (files.length === 0) {
     return {
       ok: false,
       error: {
@@ -131,7 +139,9 @@ export const loadConfig = async (repoRoot: string): Promise<Result<Config, Confi
       },
     };
   }
-  if (files.length > 1) {
+  const candidates = contenders(files);
+  const [file] = candidates;
+  if (file === undefined || candidates.length > 1) {
     return {
       ok: false,
       error: {
