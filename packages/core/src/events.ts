@@ -1,9 +1,11 @@
 import * as z from "zod";
 import {
   type Event,
+  JsonObjectSchema,
   type NodeRun,
   NonEmptyStringSchema,
   type Result,
+  SlugSchema,
   type State,
 } from "./contracts.ts";
 import type { EventDraft, IEventStore } from "./event-store.ts";
@@ -31,7 +33,12 @@ export const NodeFailedEvent = nodeEvent(
   z.strictObject({ nodeType, attempts, error: ErrorSchema }),
 );
 
+export const WorkflowStartedEvent = z.object({
+  payload: z.strictObject({ workflow: SlugSchema, inputs: JsonObjectSchema }),
+});
+
 const catalog: Readonly<Record<string, z.ZodType>> = {
+  "workflow.started": WorkflowStartedEvent,
   "workflow.node.started": NodeStartedEvent,
   "workflow.node.completed": NodeEndedEvent,
   "workflow.node.skipped": NodeEndedEvent,
@@ -119,6 +126,7 @@ const onEnded =
   };
 
 export const coreHandlers: EventHandlers = {
+  "workflow.started": (state, event) => ({ ...state, startedAt: event.ts }),
   "workflow.node.started": onStarted,
   "workflow.node.completed": onEnded("completed"),
   "workflow.node.failed": onEnded("failed"),

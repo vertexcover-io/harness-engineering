@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { copyFile as copyFileFs, mkdir, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { GitState, Result, State } from "@harness/core";
-import { jsonlEventLog, syncState } from "@harness/core";
+import { coreHandlers, jsonlEventStore, storeEmitter, syncState } from "@harness/core";
 import type { IAgentProvider, IGit, ILogger, ITerminal } from "@harness/sdk";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -78,13 +78,12 @@ const fillRunDir = async (
 ): Promise<State> => {
   await copyFileFs(run.workflowPath, join(dir, "workflow.yaml"));
 
-  const eventLog = jsonlEventLog(dir);
-  const appended = await eventLog.append({
+  const store = jsonlEventStore(dir);
+  const appended = await storeEmitter(store, { runId: run.id }).emit({
     id: "workflow-started",
     type: "workflow.started",
     source: "harness-server",
-    ts: new Date().toISOString(),
-    payload: { runId: run.id, workflow: run.workflow, inputs: run.inputs },
+    payload: { workflow: run.workflow, inputs: run.inputs },
   });
   if (!appended.ok) {
     deps.log.error(
@@ -101,9 +100,9 @@ const fillRunDir = async (
   const git = await readGit(run.cwd, deps.git);
   const state = await syncState({
     runDir: dir,
-    eventLog,
+    store,
     seed: initialState(run, name, git),
-    handlers: { "workflow.started": (state, event) => ({ ...state, startedAt: event.ts }) },
+    handlers: coreHandlers,
   });
   deps.log.debug({ lastEventSeq: state.lastEventSeq }, "state.json written from the event log");
 
