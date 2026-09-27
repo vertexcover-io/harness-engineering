@@ -37,6 +37,16 @@ export const parseYaml = (text: string, path: string): Result<unknown> => {
   }
 };
 
+export const parseFrontmatter = (text: string, path: string): Result<unknown> => {
+  const lines = text.split("\n");
+  if (lines[0]?.trimEnd() !== "---") {
+    return { ok: false, error: `${path}: no frontmatter; expected a first line of ---` };
+  }
+  const end = lines.findIndex((line, index) => index > 0 && line.trimEnd() === "---");
+  if (end === -1) return { ok: false, error: `${path}: frontmatter is not closed with ---` };
+  return parseYaml(lines.slice(1, end).join("\n"), path);
+};
+
 const isProcessAlive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
