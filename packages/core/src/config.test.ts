@@ -89,10 +89,10 @@ describe("ConfigSchema", () => {
       path: ".",
       timeoutSeconds: 300,
       commands: {
-        typecheck: "bun run typecheck",
-        lint: "bun run lint",
-        testAll: "bun test ./packages",
-        testFile: "bun test {FILE}",
+        typecheck: { command: "bun run typecheck" },
+        lint: { command: "bun run lint" },
+        testAll: { command: "bun test ./packages" },
+        testFile: { command: "bun test {FILE}" },
       },
     });
     expect(config.packages.api?.timeoutSeconds).toBe(600);
@@ -252,6 +252,59 @@ describe("loadConfig", () => {
     if (result.ok) throw new Error("expected a failure");
     expect(result.error.code).toBe("CONFIG_MISSING");
     expect(result.error.message).toContain("setup-harness");
+  });
+
+  test("BL10: a top-level baseline command loads, and a number there fails with CONFIG_INVALID", async () => {
+    const config = await load(
+      "orchestrate.config.json",
+      '{"version": 2, "baseline": "bun run baseline"}',
+    );
+    expect(config.baseline).toEqual({ command: "bun run baseline" });
+    await writeConfig("orchestrate.config.json", '{"version": 2, "baseline": 5}');
+    const result = await loadConfig(root);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error.code).toBe("CONFIG_INVALID");
+    expect(result.error.message).toContain("baseline");
+  });
+
+  test("CMD1: a command is a string or { command, cwd, timeoutSeconds }, and both load as the object", async () => {
+    const config = await load(
+      "orchestrate.config.yaml",
+      [
+        "version: 2",
+        "baseline: { command: bun run baseline, cwd: tools, timeoutSeconds: 60 }",
+        "packages:",
+        "  core:",
+        "    path: packages/core",
+        "    commands:",
+        "      typecheck: bun run typecheck",
+        "      testAll: null",
+        "      baseline: { command: bun test, cwd: packages/core }",
+      ].join("\n"),
+    );
+    expect(config.baseline).toEqual({
+      command: "bun run baseline",
+      cwd: "tools",
+      timeoutSeconds: 60,
+    });
+    expect(config.packages.core?.commands).toEqual({
+      typecheck: { command: "bun run typecheck" },
+      testAll: null,
+      baseline: { command: "bun test", cwd: "packages/core" },
+    });
+  });
+
+  test.each([
+    ["an absolute cwd", '{ "command": "x", "cwd": "/tmp" }'],
+    ["a cwd that leaves the repo", '{ "command": "x", "cwd": "../other" }'],
+    ["a zero timeout", '{ "command": "x", "timeoutSeconds": 0 }'],
+    ["an unknown key", '{ "command": "x", "timeout": 5 }'],
+    ["no command", '{ "cwd": "tools" }'],
+  ])("CMD2: a command object with %s fails with CONFIG_INVALID", async (_, command) => {
+    await writeConfig("orchestrate.config.json", `{"version": 2, "baseline": ${command}}`);
+    const result = await loadConfig(root);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error.code).toBe("CONFIG_INVALID");
   });
 
   test("SC15 — two config files fail with CONFIG_AMBIGUOUS naming both", async () => {

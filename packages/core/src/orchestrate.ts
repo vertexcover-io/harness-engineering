@@ -1,23 +1,23 @@
 #!/usr/bin/env bun
 import { join, resolve } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
-import { AgentTypeSchema, createGit } from "@harness/sdk";
+import { AgentTypeSchema, createGit, stopRunningOnSignal } from "@harness/sdk";
 import { loadConfigOrDefault } from "./config.ts";
 import type { JsonValue, Result } from "./contracts.ts";
 import type { RunRef } from "./events.ts";
 import { createLogger, resolveLevel } from "./logging.ts";
 import { createRegistry, registryPath } from "./registry.ts";
-import { initializeRun, linkRunSession, resolveRun } from "./runs.ts";
+import { findRoot, initializeRun, linkRunSession, resolveRun } from "./runs.ts";
 import { resolveExtension, resolveReference } from "./stage.ts";
-import { emitRunEvent } from "./state.ts";
+import { captureBaseline } from "./stages/baseline.ts";
 import {
   addRepositories,
   createWorkspace,
-  findRoot,
   removeWorkspace,
   type WorkspaceOptions,
   workspaceInfo,
-} from "./workspace.ts";
+} from "./stages/workspace.ts";
+import { emitRunEvent } from "./state.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
 const RUN_HELP = "spec name of the run, as given to init";
@@ -138,6 +138,47 @@ const emitCommand = () =>
       printResult(await emitRunEvent(run.value, input));
     });
 
+const baselineCommand = () =>
+  new Command("baseline")
+    .description(
+      "Run the config's baseline scripts and record their output as the node run's baseline artifact",
+    )
+    .requiredOption("--run <name>", RUN_HELP)
+    .requiredOption("--node-id <id>", "node the baseline belongs to")
+    .requiredOption("--node-run-id <id>", "node run the baseline belongs to")
+    .option(
+      "--dir <path>",
+      "folder the scripts run in (default: the run's workspace.path in state.json)",
+      (value: string) => resolve(value),
+    )
+    .option("--packages <names>", "comma-separated packages to run (default: all)", splitList)
+    .option("--root <dir>", ROOT_HELP)
+    .action(async (opts) => {
+      const root = await rootOf(opts.root);
+      if (!root.ok) return fail(root.error);
+      const run = await resolveRun({ registry: registry(), root: root.value, name: opts.run });
+      if (!run.ok) return fail(run.error);
+      const result = await captureBaseline({
+        root: root.value,
+        run: run.value,
+        nodeId: opts.nodeId,
+        nodeRunId: opts.nodeRunId,
+        dir: opts.dir,
+        packages: opts.packages ?? [],
+        log,
+      });
+      if (!result.ok) return fail(result.error.message);
+      if (result.value === null) return printJson({ path: null, workspace: null, packages: {} });
+      // The scripts' output is in baseline.json; a skill reading stdout needs only the exit codes.
+      const { path, baseline } = result.value;
+      const exitCodes = Object.entries(baseline.packages).map(([name, { exitCode }]) => [
+        name,
+        exitCode,
+      ]);
+      const workspace = baseline.workspace?.exitCode ?? null;
+      printJson({ path, workspace, packages: Object.fromEntries(exitCodes) });
+    });
+
 type WorkspaceFlags = Omit<WorkspaceOptions, "run" | "root" | "onOutput" | "log"> &
   Readonly<{ run?: string; root?: string }>;
 
@@ -242,12 +283,15 @@ const skillCommand = () => {
   return skill;
 };
 
+stopRunningOnSignal();
+
 await new Command()
   .name("orchestrate")
   .description("Actions a skill takes on a harness run; each one calls core directly")
   .addCommand(initCommand())
   .addCommand(linkSessionCommand())
   .addCommand(emitCommand())
+  .addCommand(baselineCommand())
   .addCommand(workspaceCommand())
   .addCommand(skillCommand())
   .parseAsync(process.argv)

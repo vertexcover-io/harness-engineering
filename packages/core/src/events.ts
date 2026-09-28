@@ -2,6 +2,7 @@ import { isAbsolute, join } from "node:path";
 import * as z from "zod";
 import { LayoutSchema } from "./config.ts";
 import {
+  ArtifactRefSchema,
   type Event,
   EventSchema,
   JsonObjectSchema,
@@ -46,6 +47,8 @@ export const NodeEndedEvent = nodeEvent(
 export const NodeFailedEvent = nodeEvent(
   z.strictObject({ nodeType, attempts, error: ErrorSchema }),
 );
+
+export const ArtifactCreatedEvent = nodeEvent(z.strictObject({ artifact: ArtifactRefSchema }));
 
 export const WorkflowStartedEvent = z.object({
   payload: z.strictObject({ workflow: SlugSchema, inputs: JsonObjectSchema }),
@@ -138,6 +141,7 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.node.skipped": NodeEndedEvent,
   "workflow.node.cancelled": NodeEndedEvent,
   "workflow.node.failed": NodeFailedEvent,
+  "artifact.created": ArtifactCreatedEvent,
   "workspace.created": WorkspaceCreatedEvent,
   "workspace.create-failed": WorkspaceCreateFailedEvent,
   "workspace.repository.added": WorkspaceRepositoryAddedEvent,
@@ -243,6 +247,16 @@ const onEnded =
     return saveRun(state, { ...run, status, completedAt: event.ts, result });
   };
 
+const onArtifactCreated: EventHandler = (state, event) => {
+  const parsed = ArtifactCreatedEvent.safeParse(event);
+  if (!parsed.success) return state;
+  const { nodeRunId, payload } = parsed.data;
+  const run = state.nodeRuns[nodeRunId];
+  if (run === undefined) return state;
+  const others = run.artifacts.filter((artifact) => artifact.name !== payload.artifact.name);
+  return saveRun(state, { ...run, artifacts: [...others, payload.artifact] });
+};
+
 type WorkspaceRepository = z.infer<typeof WorkspaceRepositorySchema>;
 
 // state.json keeps its own `path` names; only payloads use the worktreeDir naming.
@@ -296,6 +310,7 @@ export const coreHandlers: EventHandlers = {
   "workflow.node.failed": onEnded("failed"),
   "workflow.node.skipped": onEnded("skipped"),
   "workflow.node.cancelled": onEnded("cancelled"),
+  "artifact.created": onArtifactCreated,
   "workspace.created": onWorkspaceCreated,
   "workspace.repository.added": onRepositoryAdded,
   "workspace.repository.removed": onRepositoryRemoved,

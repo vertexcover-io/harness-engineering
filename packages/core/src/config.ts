@@ -36,8 +36,21 @@ const recordOf = <T extends z.ZodType>(key: z.ZodType<string>, value: T) =>
         : undefined,
   });
 
+// A command is a string, or an object that also sets the folder it runs in (relative to the
+// workspace folder) and how long it may run. Both load as the object.
+const CommandSchema = z
+  .union([
+    NonEmptyStringSchema,
+    z.strictObject({
+      command: NonEmptyStringSchema,
+      cwd: RepoPathSchema.optional(),
+      timeoutSeconds: z.int().positive().optional(),
+    }),
+  ])
+  .transform((value) => (typeof value === "string" ? { command: value } : value));
+
 // null means the project has no such command (NOT_APPLICABLE); callers never fall back to another key.
-const CommandsSchema = recordOf(NameSchema, NonEmptyStringSchema.nullable());
+const CommandsSchema = recordOf(NameSchema, CommandSchema.nullable());
 
 const TierSchema = z.strictObject({
   agent: SlugSchema,
@@ -86,9 +99,11 @@ const ExtensionSchema = z.strictObject({
   references: recordOf(SlugSchema, ReferenceExtensionSchema).default({}),
 });
 
+// The top-level baseline runs once for the workspace; a package's commands.baseline runs for that package.
 export const ConfigSchema = z.strictObject({
   version: z.literal(2),
   doctor: NonEmptyStringSchema.optional(),
+  baseline: CommandSchema.optional(),
   tiers: recordOf(NameSchema, TierSchema).default({}),
   packages: recordOf(NameSchema, PackageSchema).default({}),
   environments: EnvironmentsSchema.optional(),
@@ -99,6 +114,9 @@ export const ConfigSchema = z.strictObject({
 
 export type ConfigInput = z.input<typeof ConfigSchema>;
 export type Config = z.output<typeof ConfigSchema>;
+
+export const unknownPackage = (config: Config, names: readonly string[]): string | undefined =>
+  names.find((name) => !Object.hasOwn(config.packages, name));
 
 type ConfigFile = { readonly path: string; readonly text: string };
 

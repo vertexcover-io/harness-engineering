@@ -24,7 +24,7 @@ export type ScriptRequest = Readonly<{
   signal: AbortSignal;
 }>;
 
-const MAX_OUTPUT_BYTES = 1_048_576;
+export const MAX_OUTPUT_BYTES = 1_048_576;
 
 const aborted = (): NodeFailure => new NodeFailure("aborted", "run aborted");
 

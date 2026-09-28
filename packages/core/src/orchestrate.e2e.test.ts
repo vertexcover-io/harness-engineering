@@ -460,6 +460,87 @@ describe("orchestrate workspace", () => {
   });
 });
 
+const BASELINE_NODE = ["--node-id", "baseline", "--node-run-id", "baseline"];
+const BASELINE_ARGS = ["baseline", "--run", "feat-x", ...BASELINE_NODE];
+
+const baselineRun = (baseline: string | undefined): { repo: string; home: string } => {
+  const repo = tempRepo();
+  const home = tempDir();
+  writeRegistry(home, [savedRun(repo)]);
+  writeFileSync(join(repo, "orchestrate.config.json"), JSON.stringify({ version: 2, baseline }));
+  expect(orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"]).code).toBe(0);
+  const started = ["emit", "workflow.node.started", "--run", "feat-x", "--source", "engine"];
+  const payload = ["--payload", '{"nodeType":"exec"}'];
+  expect(orchestrate(repo, home, [...started, ...payload, ...BASELINE_NODE]).code).toBe(0);
+  return { repo, home };
+};
+
+const isAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const waitFor = async (condition: () => boolean, timeoutMs = 10_000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("timed out waiting");
+    await Bun.sleep(50);
+  }
+};
+
+describe("orchestrate baseline", () => {
+  test("BL12: baseline runs the configured script, writes artifacts/baseline.json and lists it on the node run", () => {
+    const { repo, home } = baselineRun(`echo '{"tests":3}'`);
+
+    const run = orchestrate(repo, home, BASELINE_ARGS);
+
+    expect(run.code).toBe(0);
+    const path = join(runDirOf(repo, "feat-x"), "artifacts", "baseline.json");
+    const baseline = {
+      workspace: { command: `echo '{"tests":3}'`, exitCode: 0, output: { tests: 3 } },
+      packages: {},
+    };
+    expect(JSON.parse(run.stdout)).toEqual({ path, workspace: 0, packages: {} });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(baseline);
+    const state = JSON.parse(readFileSync(join(runDirOf(repo, "feat-x"), "state.json"), "utf8"));
+    expect(state.nodeRuns.baseline.artifacts).toEqual([
+      { name: "baseline", path: "artifacts/baseline.json" },
+    ]);
+  });
+
+  test("BL12: with no baseline script configured, it prints a null path and no exit codes", () => {
+    const { repo, home } = baselineRun(undefined);
+
+    const run = orchestrate(repo, home, BASELINE_ARGS);
+
+    expect(run.code).toBe(0);
+    expect(JSON.parse(run.stdout)).toEqual({ path: null, workspace: null, packages: {} });
+  });
+
+  test("BL15: SIGTERM kills the running baseline script, exits 143 and writes nothing", async () => {
+    const { repo, home } = baselineRun("echo $$ > pid; sleep 30");
+    const pidFile = join(repo, "pid");
+    const child = Bun.spawn(["bun", SCRIPT, ...BASELINE_ARGS], {
+      cwd: repo,
+      env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home },
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await waitFor(() => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "");
+    const pid = Number(readFileSync(pidFile, "utf8").trim());
+
+    child.kill("SIGTERM");
+
+    expect(await child.exited).toBe(143);
+    await waitFor(() => !isAlive(pid), 2000);
+    expect(existsSync(join(runDirOf(repo, "feat-x"), "artifacts", "baseline.json"))).toBe(false);
+  });
+});
+
 const DEMO_SKILL = `---
 name: demo
 description: A demo skill.

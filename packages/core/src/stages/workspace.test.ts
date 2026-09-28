@@ -10,11 +10,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jsonlEventStore } from "./event-store.ts";
-import { ERROR_MESSAGE_LIMIT, type RunRef, runDirOf } from "./events.ts";
+import { jsonlEventStore } from "../event-store.ts";
+import { ERROR_MESSAGE_LIMIT, type RunRef, runDirOf } from "../events.ts";
+import { loadStage } from "../stage.ts";
 import {
   addRepositories,
   CreateWorkspaceInputSchema,
+  CreateWorkspaceOutputSchema,
   createWorkspace,
   type OutputLine,
   type RepoOutcome,
@@ -896,5 +898,19 @@ describe("remove events", () => {
     const result = await removeWorkspace({ run, root, branch: "b" });
     expect(result.ok).toBe(false);
     expect(await eventsOf(run)).toEqual([]);
+  });
+});
+
+describe("the real create-workspace skill", () => {
+  test("WS34 — loads through loadStage with its own schemas, listing select-repos whose file exists", async () => {
+    const skillDir = join(import.meta.dir, "..", "..", "..", "..", "skills", "create-workspace");
+    const result = await loadStage(skillDir, {
+      "create-workspace.input.v1": CreateWorkspaceInputSchema,
+      "create-workspace.output.v1": CreateWorkspaceOutputSchema,
+    });
+    if (!result.ok) throw new Error(result.error);
+    const selectRepos = result.value.stage.references["select-repos"];
+    expect(selectRepos?.path).toBe("references/select-repos.md");
+    expect(existsSync(join(skillDir, selectRepos?.path ?? ""))).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ dot-not-commit
 .DS_Store
 .worktrees/
 docs/*
+!docs/learnings/
 orchestrate-workspace
 code-review-workspace
 dev-docs
