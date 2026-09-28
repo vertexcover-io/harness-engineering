@@ -5,7 +5,8 @@ import { createGit, type ILogger, noopLogger, spawn } from "@harness/sdk";
 import * as z from "zod";
 import { type Config, LayoutSchema, loadConfigOrDefault, NameSchema } from "./config.ts";
 import { type JsonValue, NonEmptyStringSchema, type Result, SlugSchema } from "./contracts.ts";
-import { type EventError, emitRunEvent, eventError, type RunRef, stackOf } from "./events.ts";
+import { type EventError, eventError, type RunRef, stackOf } from "./events.ts";
+import { emitRunEvent, toRepoId } from "./state.ts";
 
 type Layout = Config["workspace"]["layout"];
 type Package = Config["packages"][string];
@@ -619,14 +620,4 @@ export const workspaceInfo = async (root: string): Promise<Result<WorkspaceInfo>
     ...(pkg.description === undefined ? {} : { description: pkg.description }),
   }));
   return { ok: true, value: { layout: config.value.workspace.layout, packages } };
-};
-
-// Repository keys in state.json are slugs, but package names are camelCase and mono repos use their folder name.
-export const toRepoId = (name: string): string => {
-  const slug = name
-    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug === "" ? "repo" : slug;
 };

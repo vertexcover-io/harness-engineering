@@ -4,11 +4,12 @@ import { Command, Option } from "@commander-js/extra-typings";
 import { AgentTypeSchema, createGit } from "@harness/sdk";
 import { loadConfigOrDefault } from "./config.ts";
 import type { JsonValue, Result } from "./contracts.ts";
-import { emitRunEvent, type RunRef } from "./events.ts";
+import type { RunRef } from "./events.ts";
 import { createLogger, resolveLevel } from "./logging.ts";
 import { createRegistry, registryPath } from "./registry.ts";
 import { initializeRun, linkRunSession, resolveRun } from "./runs.ts";
 import { resolveExtension, resolveReference } from "./stage.ts";
+import { emitRunEvent } from "./state.ts";
 import {
   addRepositories,
   createWorkspace,

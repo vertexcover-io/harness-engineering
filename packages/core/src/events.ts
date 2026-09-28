@@ -11,7 +11,7 @@ import {
   SlugSchema,
   type State,
 } from "./contracts.ts";
-import { type IEventStore, jsonlEventStore } from "./event-store.ts";
+import type { IEventStore } from "./event-store.ts";
 import type { EventHandler, EventHandlers } from "./state.ts";
 
 export const ERROR_MESSAGE_LIMIT = 500;
@@ -198,10 +198,6 @@ export const runDirOf = (cwd: string, name: string): string => join(cwd, ".harne
 
 export type RunRef = Readonly<{ id: string; cwd: string; name: string }>;
 
-// Stores an event in a run's own folder, CWD/.harness/NAME/event.jsonl.
-export const emitRunEvent = (run: RunRef, input: EmitInput): Promise<Result<Event>> =>
-  emitEvent(jsonlEventStore(runDirOf(run.cwd, run.name)), run.id, input);
-
 const findOrCreateRun = (state: State, nodeId: string, nodeRunId: string): NodeRun =>
   state.nodeRuns[nodeRunId] ?? {
     nodeRunId,
@@ -287,8 +283,14 @@ const onRepositoryRemoved: EventHandler = (state, event) => {
   return { ...state, workspace: { ...state.workspace, repositories } };
 };
 
+const onWorkflowStarted: EventHandler = (state, event) => {
+  const parsed = WorkflowStartedEvent.safeParse(event);
+  if (!parsed.success) return { ...state, startedAt: event.ts };
+  return { ...state, startedAt: event.ts, input: parsed.data.payload.inputs };
+};
+
 export const coreHandlers: EventHandlers = {
-  "workflow.started": (state, event) => ({ ...state, startedAt: event.ts }),
+  "workflow.started": onWorkflowStarted,
   "workflow.node.started": onStarted,
   "workflow.node.completed": onEnded("completed"),
   "workflow.node.failed": onEnded("failed"),

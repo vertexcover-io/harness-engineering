@@ -19,7 +19,6 @@ import {
   type OutputLine,
   type RepoOutcome,
   removeWorkspace,
-  toRepoId,
 } from "./workspace.ts";
 
 const git = (cwd: string, ...args: string[]): string =>
@@ -499,15 +498,6 @@ describe("fetching the base branch", () => {
     expect(git(join(remote.clone, ".worktrees/feat-x"), "rev-parse", "HEAD")).toBe(own);
     expect(git(remote.clone, "rev-parse", "origin/main")).toBe(trackedMain);
   });
-});
-
-test.each([
-  ["apiServer", "api-server"],
-  ["api", "api"],
-  ["My_Repo.v2", "my-repo-v2"],
-  ["harness-engineering", "harness-engineering"],
-])("WS16 — toRepoId(%s) is %s", (name, id) => {
-  expect(toRepoId(name)).toBe(id);
 });
 
 describe("CreateWorkspaceInputSchema", () => {

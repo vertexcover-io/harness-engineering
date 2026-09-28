@@ -1,17 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Event, type JsonValue, type State, StateSchema } from "./contracts.ts";
 import { jsonlEventStore, memoryEventStore } from "./event-store.ts";
-import {
-  coreHandlers,
-  emitEvent,
-  emitRunEvent,
-  runDirOf,
-  WorkspaceCreatedEvent,
-} from "./events.ts";
-import { projectEvents } from "./state.ts";
+import { coreHandlers, emitEvent, runDirOf, WorkspaceCreatedEvent } from "./events.ts";
+import { emitRunEvent, projectEvents } from "./state.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -105,6 +100,40 @@ describe("emitRunEvent", () => {
     expect(result.value).toMatchObject({ seq: 1, runId: "r-1" });
     expect(runDirOf(cwd, "fix-login")).toBe(join(cwd, ".harness", "fix-login"));
     expect(await jsonlEventStore(runDirOf(cwd, "fix-login")).read()).toEqual([result.value]);
+  });
+
+  test("brings the run's state.json up to date, so a workspace event moves state.workspace", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "repo-"));
+    const run = { id: "r-1", cwd, name: "fix-login" };
+    const dir = runDirOf(cwd, "fix-login");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "state.json"), JSON.stringify(seed));
+
+    const result = await emitRunEvent(run, {
+      type: "workspace.created",
+      source: "test",
+      payload: createdPayload("multi", { api: repository(`${WS_DIR}/api`) }),
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    const state = StateSchema.parse(JSON.parse(await readFile(join(dir, "state.json"), "utf8")));
+    expect(state.lastEventSeq).toBe(1);
+    expect(state.workspace.path).toBe(WS_DIR);
+    expect(Object.keys(state.workspace.repositories)).toEqual(["api"]);
+  });
+
+  test("leaves a run folder with no state.json yet without one", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "repo-"));
+    const run = { id: "r-1", cwd, name: "fix-login" };
+
+    const result = await emitRunEvent(run, {
+      type: "custom.skill.note",
+      source: "test",
+      payload: {},
+    });
+
+    expect(result.ok).toBe(true);
+    expect(existsSync(join(runDirOf(cwd, "fix-login"), "state.json"))).toBe(false);
   });
 });
 

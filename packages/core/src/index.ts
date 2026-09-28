@@ -30,7 +30,6 @@ export {
   type EmitInput,
   EmitInputSchema,
   emitEvent,
-  emitRunEvent,
   type IEventEmitter,
   NodeEndedEvent,
   NodeFailedEvent,
@@ -55,5 +54,12 @@ export {
   type WorkflowRun,
 } from "./registry.ts";
 export { type LoadedStage, loadStage, type SchemaRegistry } from "./stage.ts";
-export { type EventHandler, type EventHandlers, projectEvents, syncState } from "./state.ts";
+export {
+  createState,
+  type EventHandler,
+  type EventHandlers,
+  emitRunEvent,
+  projectEvents,
+  syncState,
+} from "./state.ts";
 export * from "./workflow/index.ts";
