@@ -31,4 +31,10 @@ describe("source boundaries", () => {
       filesContaining("packages/agents/src/**/*.ts", 'from "pino', { excludeTests: true }),
     ).toEqual([]);
   });
+
+  test("sdk never imports core, so it installs as a library on its own", () => {
+    // Built from parts so this file's own needle text can't match itself.
+    const coreImport = `from "${["@harness", "core"].join("/")}"`;
+    expect(filesContaining("packages/sdk/**/*.ts", coreImport)).toEqual([]);
+  });
 });

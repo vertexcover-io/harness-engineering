@@ -2,10 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type Event, type JsonValue, type State, StateSchema } from "../contracts.ts";
-import { jsonlEventStore, memoryEventStore } from "../event-store.ts";
-import { coreHandlers, emitEvent, type IEventEmitter } from "../events.ts";
-import { projectEvents, syncState } from "../state.ts";
+import {
+  builtInHandlers,
+  type Event,
+  emitEvent,
+  type IEventEmitter,
+  type JsonValue,
+  jsonlEventStore,
+  memoryEventStore,
+  projectEvents,
+  type State,
+  StateSchema,
+  syncState,
+} from "@harness/sdk";
 import { compileWorkflow } from "./compile.ts";
 import { type RunOptions, runWorkflow } from "./run.ts";
 import { type AgentAdapter, type AgentRequest, type RunResult, WorkflowError } from "./types.ts";
@@ -1057,7 +1066,7 @@ describe("node events", () => {
     );
     const events = await store.read();
     expect(typesFor(events, "b")).toEqual(["workflow.node.cancelled"]);
-    const state = projectEvents({ state: stateSeed, events, handlers: coreHandlers });
+    const state = projectEvents({ state: stateSeed, events, handlers: builtInHandlers });
     expect(state.nodeRuns.b?.status).toBe("cancelled");
   });
 

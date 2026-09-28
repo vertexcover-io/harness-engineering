@@ -1,6 +1,6 @@
 import * as z from "zod";
 import type { Check } from "./check.ts";
-import type { Result } from "./result.ts";
+import type { Result } from "./contracts.ts";
 
 export const EffortSchema = z.enum(["low", "medium", "high", "max"]);
 export type Effort = z.infer<typeof EffortSchema>;

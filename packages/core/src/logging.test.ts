@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createLogger, resolveLevel } from "./logging.ts";
+import type { ILogger } from "@harness/sdk";
+import { captureLogger, createLogger, resolveLevel } from "./logging.ts";
 
 describe("resolveLevel", () => {
   test.each([
@@ -37,5 +38,16 @@ describe("createLogger", () => {
     expect(line).toMatchObject({ service: "t", token: "[Redacted]", password: "[Redacted]" });
     expect(line.pid).toBeNumber();
     expect(line.hostname).toBeString();
+  });
+});
+
+describe("ILogger", () => {
+  test("SC39: a pino logger built by createLogger satisfies ILogger; child bindings and fields both reach the line", () => {
+    const { log, lines } = captureLogger();
+    const typed: ILogger = log;
+
+    typed.child({ component: "x" }).info({ a: 1 }, "hi");
+
+    expect(lines).toEqual([expect.objectContaining({ component: "x", a: 1, msg: "hi" })]);
   });
 });

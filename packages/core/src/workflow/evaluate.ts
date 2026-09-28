@@ -1,4 +1,4 @@
-import type { JsonValue } from "../contracts.ts";
+import type { JsonValue } from "@harness/sdk";
 import { NodeFailure, type NodeRecord } from "./types.ts";
 
 export type NodeView = Readonly<Pick<NodeRecord, "status" | "input" | "output">>;

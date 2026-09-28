@@ -2,15 +2,9 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { claudeProvider } from "@harness/agents";
-import {
-  createLogger,
-  createRegistry,
-  harnessHome,
-  registryPath,
-  resolveLevel,
-} from "@harness/core";
+import { createLogger, resolveLevel } from "@harness/core";
 import type { Check, IAgentProvider, ILogger, ITerminal } from "@harness/sdk";
-import { noopLogger } from "@harness/sdk";
+import { createRegistry, harnessHome, noopLogger, registryPath } from "@harness/sdk";
 import prettyFactory from "pino-pretty";
 import serverPackage from "../package.json";
 import { createApp } from "./app.ts";

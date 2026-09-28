@@ -11,10 +11,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGit, noopLogger } from "@harness/sdk";
-import { jsonlEventStore } from "./event-store.ts";
-import { createRegistry, type WorkflowRun } from "./registry.ts";
-import { findRoot, initializeRun, linkRunSession, resolveRun } from "./runs.ts";
+import {
+  createGit,
+  createRegistry,
+  findRoot,
+  jsonlEventStore,
+  noopLogger,
+  resolveRun,
+  type WorkflowRun,
+} from "@harness/sdk";
+import { initializeRun, linkRunSession } from "./runs.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id: "r-1",

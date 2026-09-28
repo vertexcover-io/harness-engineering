@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import type { JsonValue } from "@harness/sdk";
 import { parseDocument } from "yaml";
-import type { JsonValue } from "../contracts.ts";
 import { expressionPaths, isWholeExpression } from "./evaluate.ts";
 import {
   type LoopNode,

@@ -1,8 +1,6 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { createGit } from "@harness/sdk";
 import * as z from "zod";
-import corePackage from "../package.json";
 import {
   type Event,
   type GitState,
@@ -12,8 +10,9 @@ import {
   StateSchema,
 } from "./contracts.ts";
 import { type IEventStore, jsonlEventStore } from "./event-store.ts";
-import { coreHandlers, type EmitInput, emitEvent, type RunRef, runDirOf } from "./events.ts";
+import { builtInHandlers, type EmitInput, emitEvent, type RunRef, runDirOf } from "./events.ts";
 import { parseYaml, readIfExists, readText, withLock } from "./files.ts";
+import { createGit } from "./git.ts";
 
 export type EventHandler = (state: State, event: Event) => State;
 export type EventHandlers = Readonly<Record<string, EventHandler>>;
@@ -93,13 +92,13 @@ const workflowNameOf = async (runDir: string): Promise<string> => {
 
 // Writes a run's first state.json from the run folder alone: a run folder is CWD/.harness/NAME,
 // holding the workflow.yaml init copied in. Events then fill in the rest (inputs, startedAt).
-export const createState = async (runDir: string): Promise<State> => {
+export const createState = async (runDir: string, harnessVersion: string): Promise<State> => {
   const cwd = dirname(dirname(runDir));
   const state: State = {
     schemaVersion: 1,
     lastEventSeq: 0,
     specName: basename(runDir),
-    harnessVersion: String(corePackage.version),
+    harnessVersion,
     workflow: { name: await workflowNameOf(runDir), path: "workflow.yaml" },
     input: {},
     scope: "workflow",
@@ -119,7 +118,7 @@ export const createState = async (runDir: string): Promise<State> => {
   return state;
 };
 
-// Applies the log's new events to state.json with the core reducers, under the state lock. A
+// Applies the log's new events to state.json with the built-in handlers, under the state lock. A
 // folder with no state.json yet is left alone and gives null: only createState writes the first.
 export const syncState = (
   runDir: string,
@@ -129,7 +128,7 @@ export const syncState = (
     const current = await readState(runDir);
     if (current === null) return null;
     const events = await store.read();
-    const next = projectEvents({ state: current, events, handlers: coreHandlers });
+    const next = projectEvents({ state: current, events, handlers: builtInHandlers });
     await writeStateAtomically(runDir, next);
     return next;
   });

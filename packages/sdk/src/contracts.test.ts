@@ -1,27 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { EventSchema, StageSchema, StateSchema } from "./contracts.ts";
-
-const validStage = {
-  name: "planning",
-  description: "Turn a selected task into an implementation plan.",
-  mode: "subagent",
-  tags: ["planning", "design"],
-  "allowed-tools": ["Read", "Write"],
-  tier: "balanced",
-  inputs: { description: "Task context.", schema: "planning.input.v1" },
-  outputs: { description: "Planning result.", schema: "planning.output.v1" },
-  consumes: [{ artifact: "design", optional: true }],
-  produces: [{ artifact: "plan" }],
-  protocols: ["artifact-registration"],
-  scopes: ["feature"],
-};
-
-describe("StageSchema", () => {
-  test("a full stage parses and produce entries default optional to false", () => {
-    const stage = StageSchema.parse(validStage);
-    expect(stage.produces).toEqual([{ artifact: "plan", optional: false }]);
-  });
-});
+import { EventSchema, StateSchema } from "./contracts.ts";
 
 const agentRun = {
   nodeRunId: "plan-1",

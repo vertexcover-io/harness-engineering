@@ -1,5 +1,5 @@
 import { isAbsolute, join } from "node:path";
-import { harnessHome, JsonObjectSchema, SlugSchema } from "@harness/core";
+import { harnessHome, JsonObjectSchema, SlugSchema } from "@harness/sdk";
 import * as z from "zod";
 
 export const socketPath = (home: string = harnessHome()): string => join(home, "harness.sock");

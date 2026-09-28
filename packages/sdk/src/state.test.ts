@@ -203,7 +203,7 @@ describe("createState", () => {
     await mkdir(runDir, { recursive: true });
     await writeFile(join(runDir, "workflow.yaml"), "name: demo\nnodes: []\n");
 
-    const state = await createState(runDir);
+    const state = await createState(runDir, "1.0.0");
 
     expect(StateSchema.safeParse(state).success).toBe(true);
     expect(state).toMatchObject({

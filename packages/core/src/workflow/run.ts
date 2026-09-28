@@ -1,7 +1,12 @@
 import { resolve } from "node:path";
+import {
+  type EmitInput,
+  eventError,
+  type IEventEmitter,
+  type JsonValue,
+  stackOf,
+} from "@harness/sdk";
 import { z } from "zod";
-import type { JsonValue } from "../contracts.ts";
-import { type EmitInput, eventError, type IEventEmitter, stackOf } from "../events.ts";
 import { walkNodes } from "./compile.ts";
 import {
   evaluateBoolean,

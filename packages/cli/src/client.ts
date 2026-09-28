@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { createLogger, harnessHome, resolveLevel, withLock } from "@harness/core";
-import { type ILogger, spawnDetached } from "@harness/sdk";
+import { createLogger, resolveLevel } from "@harness/core";
+import { harnessHome, type ILogger, spawnDetached, withLock } from "@harness/sdk";
 import { type ApiError, logPath, socketPath } from "@harness/server";
 import { createHarnessClient, type HarnessClient } from "@harness/server/client";
 
