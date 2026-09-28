@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import * as z from "zod";
 
 export const NonEmptyStringSchema = z.string().min(1);
@@ -6,6 +7,10 @@ export const SkillNameSchema = z
   .string()
   .regex(/^(?:[a-z][a-z0-9-]*:)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 export const JsonObjectSchema = z.record(z.string(), z.json());
+export const AbsolutePathSchema = NonEmptyStringSchema.refine(
+  isAbsolute,
+  "Expected an absolute path",
+);
 export const isNormalizedRelativePath = (value: string): boolean =>
   !value.startsWith("/") &&
   !/^[A-Za-z]:/.test(value) &&
@@ -106,6 +111,25 @@ export const WorkflowRefSchema = z.strictObject({
   path: z.literal("workflow.yaml"),
 });
 
+export const EventTypeSchema = z
+  .string()
+  .refine(
+    (value) =>
+      /^(workflow|artifact|hooks|workspace|forge|learning|agent)(\.[a-z][a-z0-9_-]*)+$/.test(
+        value,
+      ) ||
+      /^stage\.[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(value) ||
+      /^custom\.[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(value),
+    "Unknown event namespace or invalid event name",
+  );
+
+// Frozen from the config at init, so later config edits never change which handlers a run uses.
+export const EventHandlerRefSchema = z.strictObject({
+  module: AbsolutePathSchema,
+  handler: NonEmptyStringSchema,
+});
+export const EventHandlerRefsSchema = z.record(EventTypeSchema, z.array(EventHandlerRefSchema));
+
 export const StateSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -125,6 +149,8 @@ export const StateSchema = z
     notification: NotificationSchema.optional(),
     activeNodeRuns: z.array(NonEmptyStringSchema),
     nodeRuns: z.record(NonEmptyStringSchema, NodeRunSchema),
+    custom: JsonObjectSchema.default({}),
+    eventHandlers: EventHandlerRefsSchema.default({}),
   })
   .superRefine((state, context) => {
     const active = new Set(state.activeNodeRuns);
@@ -161,18 +187,6 @@ export const StateSchema = z
       }
     }
   });
-
-const EventTypeSchema = z
-  .string()
-  .refine(
-    (value) =>
-      /^(workflow|artifact|hooks|workspace|forge|learning|agent)(\.[a-z][a-z0-9_-]*)+$/.test(
-        value,
-      ) ||
-      /^stage\.[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(value) ||
-      /^custom\.[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(value),
-    "Unknown event namespace or invalid event name",
-  );
 
 export const EventSchema = z
   .strictObject({
@@ -223,6 +237,8 @@ export type Workspace = z.infer<typeof WorkspaceSchema>;
 export type Ticket = z.infer<typeof TicketSchema>;
 export type Notification = z.infer<typeof NotificationSchema>;
 export type WorkflowRef = z.infer<typeof WorkflowRefSchema>;
+export type EventHandlerRef = z.infer<typeof EventHandlerRefSchema>;
+export type EventHandlerRefs = z.infer<typeof EventHandlerRefsSchema>;
 export type State = z.infer<typeof StateSchema>;
 export type Event = z.infer<typeof EventSchema>;
 

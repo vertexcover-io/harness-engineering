@@ -11,11 +11,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ERROR_MESSAGE_LIMIT, jsonlEventStore, type RunRef, runDirOf } from "@harness/sdk";
-import { loadStage } from "../stage.ts";
 import {
   addRepositories,
   CreateWorkspaceInputSchema,
-  CreateWorkspaceOutputSchema,
   createWorkspace,
   type OutputLine,
   type RepoOutcome,
@@ -806,7 +804,7 @@ describe("addRepositories", () => {
     const run = newRun();
     const result = await addRepositories({ run, root, branch: "b", repos: ["serana", "courier"] });
     expect(result.ok ? "" : result.error).toContain("no workspace");
-    expect(result.ok ? "" : result.error).toContain("orchestrate workspace create");
+    expect(result.ok ? "" : result.error).toContain("create it with workspace.ts create");
     expect(await eventsOf(run)).toEqual([]);
     expect(git(join(root, "serana"), "branch", "--list", "b")).toBe("");
   });
@@ -897,19 +895,5 @@ describe("remove events", () => {
     const result = await removeWorkspace({ run, root, branch: "b" });
     expect(result.ok).toBe(false);
     expect(await eventsOf(run)).toEqual([]);
-  });
-});
-
-describe("the real create-workspace skill", () => {
-  test("WS34 — loads through loadStage with its own schemas, listing select-repos whose file exists", async () => {
-    const skillDir = join(import.meta.dir, "..", "..", "..", "..", "skills", "create-workspace");
-    const result = await loadStage(skillDir, {
-      "create-workspace.input.v1": CreateWorkspaceInputSchema,
-      "create-workspace.output.v1": CreateWorkspaceOutputSchema,
-    });
-    if (!result.ok) throw new Error(result.error);
-    const selectRepos = result.value.stage.references["select-repos"];
-    expect(selectRepos?.path).toBe("references/select-repos.md");
-    expect(existsSync(join(skillDir, selectRepos?.path ?? ""))).toBe(true);
   });
 });

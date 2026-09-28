@@ -158,6 +158,8 @@ const seed: State = {
   },
   activeNodeRuns: [],
   nodeRuns: {},
+  custom: {},
+  eventHandlers: {},
 };
 
 const nodeEvent = (

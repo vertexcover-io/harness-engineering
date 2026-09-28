@@ -32,7 +32,7 @@ const setup = async (config: object, { state = true } = {}): Promise<Setup> => {
   git("init", "-q", "-b", "main");
   git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
   writeFileSync(join(runDir, "workflow.yaml"), "name: task\nnodes: []\n");
-  await createState(runDir, "1.0.0");
+  await createState({ runDir, harnessVersion: "1.0.0", eventHandlers: {} });
   await emitRunEvent(run, {
     type: "workflow.node.started",
     source: "test",

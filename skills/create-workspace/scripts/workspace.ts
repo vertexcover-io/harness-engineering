@@ -1,24 +1,33 @@
+#!/usr/bin/env bun
 import { existsSync, realpathSync } from "node:fs";
 import { rmdir } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import {
   type Config,
   createGit,
+  createRegistry,
   type EventError,
   emitRunEvent,
   eventError,
   type ILogger,
   type JsonValue,
+  jsonLogger,
   LayoutSchema,
+  LogLevelSchema,
   loadConfigOrDefault,
   NameSchema,
   NonEmptyStringSchema,
   noopLogger,
   type Result,
   type RunRef,
+  registryPath,
+  resolveRoot,
+  resolveRun,
   SlugSchema,
   spawn,
   stackOf,
+  stopRunningOnSignal,
   toRepoId,
   unknownPackage,
 } from "@harness/sdk";
@@ -242,9 +251,7 @@ const precheckAdd = async (
     return refused("workspace add needs workspace.layout multi; a mono workspace is its one repo");
   }
   if (!existsSync(location.workspaceDir)) {
-    return refused(
-      `no workspace at ${location.workspaceDir}; create it with orchestrate workspace create`,
-    );
+    return refused(`no workspace at ${location.workspaceDir}; create it with workspace.ts create`);
   }
   const planned = planMulti(location, options, "add");
   if (!planned.ok) return planned;
@@ -627,3 +634,154 @@ export const workspaceInfo = async (root: string): Promise<Result<WorkspaceInfo>
   }));
   return { ok: true, value: { layout: config.value.workspace.layout, packages } };
 };
+
+// stdout carries only the report, so failures are logged to stderr, at warn unless LOG_LEVEL says otherwise.
+const log = jsonLogger({ level: LogLevelSchema.catch("warn").parse(process.env.LOG_LEVEL) });
+
+const USAGE = `usage: workspace.ts COMMAND [flags]
+
+Create, inspect, add to and remove the run's workspace: a git worktree per repo, with the
+project's setup and teardown.
+
+  info                  print the layout and the packages a workspace can hold
+  create BRANCH         create the workspace, creating BRANCH or checking it out
+  add BRANCH --repos    put more repos into a multi-layout workspace that already exists
+  remove BRANCH         remove BRANCH's worktrees
+
+  --run NAME        spec name of the run whose event log records this change (default: none)
+  --repos A,B       multi layout: comma-separated packages to branch (remove default: all)
+  --base BRANCH     branch a new branch starts from, fetched from origin first
+                    (default: origin's default branch)
+  --force           remove: remove worktrees with uncommitted or untracked files
+  --root DIR        repo holding orchestrate.config.json and the run (default: main checkout)
+`;
+
+const FLAGS = {
+  run: { type: "string" },
+  repos: { type: "string" },
+  base: { type: "string" },
+  force: { type: "boolean" },
+  root: { type: "string" },
+} as const;
+
+const CommandSchema = z.enum(["info", "create", "add", "remove"]);
+
+const COMMAND_FLAGS: Readonly<Record<z.infer<typeof CommandSchema>, readonly string[]>> = {
+  info: ["root"],
+  create: ["run", "repos", "base", "root"],
+  add: ["run", "repos", "base", "root"],
+  remove: ["run", "repos", "force", "root"],
+};
+
+const CHANGES = { create: createWorkspace, add: addRepositories, remove: removeWorkspace };
+
+const parseFlags = (argv: readonly string[]) =>
+  parseArgs({ args: [...argv], options: FLAGS, allowPositionals: true });
+
+type ParsedFlags = ReturnType<typeof parseFlags>;
+type Flags = ParsedFlags["values"];
+
+type CommandLine =
+  | Readonly<{ command: "info"; flags: Flags }>
+  | Readonly<{ command: keyof typeof CHANGES; branch: string; flags: Flags }>;
+
+const usageError = (error: string): Result<never> => ({ ok: false, error: `${error}\n\n${USAGE}` });
+
+// parseArgs throws on an unknown or valueless flag; that is a usage error, not a crash.
+const tryParseFlags = (argv: readonly string[]): Result<ParsedFlags> => {
+  try {
+    return { ok: true, value: parseFlags(argv) };
+  } catch (error: unknown) {
+    if (error instanceof TypeError) return usageError(error.message);
+    throw error;
+  }
+};
+
+const parseCommandLine = (argv: readonly string[]): Result<CommandLine> => {
+  const parsed = tryParseFlags(argv);
+  if (!parsed.ok) return parsed;
+  const { values: flags, positionals } = parsed.value;
+  const [name, branch, ...extra] = positionals;
+  const command = CommandSchema.safeParse(name);
+  if (!command.success) return usageError(`unknown command "${name ?? ""}"`);
+  const unknown = Object.keys(flags).find((flag) => !COMMAND_FLAGS[command.data].includes(flag));
+  if (unknown !== undefined) return usageError(`${command.data} does not take --${unknown}`);
+  if (command.data === "info") {
+    return branch === undefined
+      ? { ok: true, value: { command: "info", flags } }
+      : usageError("info takes no arguments");
+  }
+  if (branch === undefined) return usageError(`${command.data} needs a branch`);
+  if (extra.length > 0) return usageError(`${command.data} takes one branch`);
+  if (command.data === "add" && flags.repos === undefined) return usageError("add needs --repos");
+  return { ok: true, value: { command: command.data, branch, flags } };
+};
+
+const fail = (error: string): void => {
+  console.error(error);
+  process.exitCode = 1;
+};
+
+// stdout carries only the report, so skills can parse it.
+const printJson = (value: unknown): void => {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+};
+
+const splitList = (value: string): string[] =>
+  value
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+
+const runOf = async (
+  root: string,
+  name: string | undefined,
+): Promise<Result<RunRef | undefined>> =>
+  name === undefined
+    ? { ok: true, value: undefined }
+    : resolveRun({ registry: createRegistry(registryPath(), log), root, name });
+
+const changeWorkspace = async (
+  change: typeof createWorkspace,
+  root: string,
+  branch: string,
+  flags: Flags,
+): Promise<void> => {
+  const run = await runOf(root, flags.run);
+  if (!run.ok) return fail(run.error);
+  const onOutput = (line: OutputLine): void => {
+    process.stderr.write(`[${line.repo}] ${line.text}\n`);
+  };
+  const repos = flags.repos === undefined ? undefined : splitList(flags.repos);
+  const { base, force } = flags;
+  const result = await change({ root, run: run.value, branch, repos, base, force, onOutput, log });
+  if (!result.ok) return fail(result.error);
+  const { eventError: unrecorded, ...report } = result.value;
+  printJson(report);
+  if (report.repos.some((repo) => repo.status === "failed")) process.exitCode = 1;
+  if (unrecorded !== undefined) {
+    fail(`the workspace changed, but its event was not recorded: ${unrecorded}`);
+  }
+};
+
+const main = async (argv: readonly string[]): Promise<void> => {
+  if (argv.includes("--help") || argv.includes("-h")) return void process.stdout.write(USAGE);
+  const line = parseCommandLine(argv);
+  if (!line.ok) return fail(line.error);
+  const root = await resolveRoot(line.value.flags.root);
+  if (!root.ok) return fail(root.error);
+  if (line.value.command === "info") {
+    const info = await workspaceInfo(root.value);
+    return info.ok ? printJson(info.value) : fail(info.error);
+  }
+  const { command, branch, flags } = line.value;
+  await changeWorkspace(CHANGES[command], root.value, branch, flags);
+};
+
+if (import.meta.main) {
+  stopRunningOnSignal();
+  await main(process.argv.slice(2)).catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

@@ -14,10 +14,12 @@ import { join } from "node:path";
 import {
   createGit,
   createRegistry,
+  emitRunEvent,
   findRoot,
   jsonlEventStore,
   noopLogger,
   resolveRun,
+  StateSchema,
   type WorkflowRun,
 } from "@harness/sdk";
 import { initializeRun, linkRunSession } from "./runs.ts";
@@ -117,6 +119,60 @@ describe("initializeRun", () => {
       ok: false,
       error: "run r-missing not found",
     });
+  });
+
+  test("SC20: a run whose repo has an invalid config is refused, leaving no run folder and no name", async () => {
+    const { cwd, init, registry, run } = await savedRun();
+    writeFileSync(join(cwd, "orchestrate.config.json"), JSON.stringify({ packages: {} }));
+
+    const result = await init("fix-login");
+
+    expect(result.ok ? "" : result.error).toContain('expected "version: 2"');
+    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+    expect((await registry.findRun(run.id))?.name).toBeNull();
+  });
+
+  test("EH10 — init freezes the config's event handlers with absolute modules, so a later config edit changes nothing", async () => {
+    const cwd = makeRepo();
+    mkdirSync(join(cwd, "scripts"));
+    writeFileSync(
+      join(cwd, "scripts", "review-state.ts"),
+      [
+        "export const onReviewNote = (state, event) => ({ ...state, custom: { note: event.payload } });",
+        "export const onOther = (state) => ({ ...state, custom: { other: true } });",
+      ].join("\n"),
+    );
+    const config = (handler: string) =>
+      writeFileSync(
+        join(cwd, "orchestrate.config.json"),
+        JSON.stringify({
+          version: 2,
+          eventHandlers: {
+            "custom.review.note": [{ module: "scripts/review-state.ts", handler }],
+          },
+        }),
+      );
+    config("onReviewNote");
+    const { init, run } = await savedRun({ cwd });
+
+    const result = await init("fix-login");
+    if (!result.ok) throw new Error(result.error);
+    config("onOther");
+    const emitted = await emitRunEvent(
+      { id: run.id, cwd, name: "fix-login" },
+      { type: "custom.review.note", source: "test", payload: "looks good" },
+    );
+
+    expect(result.value.state.eventHandlers).toEqual({
+      "custom.review.note": [
+        { module: join(cwd, "scripts", "review-state.ts"), handler: "onReviewNote" },
+      ],
+    });
+    expect(emitted.ok).toBe(true);
+    const state = StateSchema.parse(
+      JSON.parse(readFileSync(join(cwd, ".harness", "fix-login", "state.json"), "utf8")),
+    );
+    expect(state.custom).toEqual({ note: "looks good" });
   });
 
   test("a step that fails after the folder is made removes the folder, so a retry can succeed", async () => {

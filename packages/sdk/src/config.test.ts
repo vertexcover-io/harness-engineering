@@ -79,7 +79,37 @@ describe("ConfigSchema", () => {
       extensions: {},
       env: {},
       workspace: { layout: "mono" },
+      eventHandlers: {},
     });
+  });
+
+  test("EH1 — eventHandlers lists module and handler per event type, custom.* included", () => {
+    const eventHandlers = {
+      "workspace.created": [{ module: "scripts/review-state.ts", handler: "onWorkspaceCreated" }],
+      "custom.review.note": [{ module: "scripts/review-state.ts", handler: "onReviewNote" }],
+    };
+    expect(ConfigSchema.parse({ version: 2, eventHandlers }).eventHandlers).toEqual(eventHandlers);
+  });
+
+  test.each([
+    [
+      "an unknown event namespace",
+      { "review.note": [{ module: "a.ts", handler: "f" }] },
+      "review.note",
+    ],
+    [
+      "a custom event with no name after its scope",
+      { "custom.review": [{ module: "a.ts", handler: "f" }] },
+      "custom.review",
+    ],
+    ["a missing handler", { "custom.review.note": [{ module: "a.ts" }] }, "handler"],
+    [
+      "a module outside the repository",
+      { "custom.review.note": [{ module: "../a.ts", handler: "f" }] },
+      "relative to the repository root",
+    ],
+  ])("EH2 — eventHandlers with %s is rejected", (_label, eventHandlers, detail) => {
+    expect(errorOf({ version: 2, eventHandlers })).toContain(detail);
   });
 
   test("SC2 — a full example loads with defaults filled", async () => {

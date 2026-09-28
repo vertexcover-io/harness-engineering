@@ -53,7 +53,7 @@ const makeRepo = (): string => {
   const git = (...args: string[]) => execFileSync("git", args, { cwd: dir });
   git("init", "-q", "-b", "main");
   writeFileSync(join(dir, ".gitignore"), ".harness/\n");
-  writeFileSync(join(dir, "orchestrate.config.json"), "{}\n");
+  writeFileSync(join(dir, "orchestrate.config.json"), '{ "version": 2 }\n');
   writeFileSync(join(dir, "ok.yaml"), OK_WORKFLOW);
   writeFileSync(join(dir, "bad.yaml"), CYCLE_WORKFLOW);
   git("add", ".");

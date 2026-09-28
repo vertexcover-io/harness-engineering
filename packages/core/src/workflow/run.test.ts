@@ -1115,4 +1115,6 @@ const stateSeed: State = {
   },
   activeNodeRuns: [],
   nodeRuns: {},
+  custom: {},
+  eventHandlers: {},
 };
