@@ -32,6 +32,8 @@ Return files created/modified, test counts, and completed or blocked with the re
 
 Set each phase node running before dispatch. After each return, read and parse that phase's
 runner report yourself; record executed/failed counts, or the phase's skip note.
+**Confirm the coder's changes are committed** and pushed to its assigned remote branch before marking
+the phase or resumed checkout complete.
 A worker error or `BLOCKED` stops further dispatch; report the phase or checkout, error,
 and next action. Missing completion status, absent/invalid required evidence, a failed E2E
 report, or zero executed tests stops the stage as `STAGE_CONTRACT_FAILED`.

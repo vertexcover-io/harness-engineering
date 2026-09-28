@@ -49,8 +49,9 @@ skipping" and stop.
 - **The designs** plan.md's `## Design References` names — what each screen was supposed to look like. Those
   images are the **baseline** for the screens they draw; `references/visual-verification.md` owns what a
   baseline is authoritative about and what it is not.
-- **`orchestrate.config.json`'s `environments` block and the run's `ENVIRONMENT`** — how the stack starts, seeds
-  and authenticates. Step 1 works its keys.
+- **`orchestrate.config.json`'s `environments` block** — how the stack starts, seeds and authenticates.
+  Use `environments.default` unless the user explicitly chose otherwise for functional verification.
+  Step 1 works its keys.
 - **The project's stack skill** — the app facts verification turns on that no key carries (self-lying surfaces,
   toast duration, where a triggered email lands, what the stack shares). This lives in the **project's own skills**
   and `CLAUDE.md`. This skill mandates no dedicated file for it — only that Step 1's two unknowns come back
@@ -217,7 +218,7 @@ differs between those commits and now:
 
 ## Step 1 — Get a Stack
 
-**Bring up what the run's `ENVIRONMENT` names.** Where `orchestrate.config.json` carries an `environments` block, run
+**Bring up the environment selected under Inputs.** Where `orchestrate.config.json` carries an `environments` block, run
 that entry's steps — `skills/orchestrate/references/config.md` owns how each key resolves. With no block, bring-up
 belongs to the project's stack skill (among its own skills, or one `CLAUDE.md` names), else to the codebase. Follow
 that skill for procedure, never for proof. A later round usually arrives to a stack the attempt before it left running
