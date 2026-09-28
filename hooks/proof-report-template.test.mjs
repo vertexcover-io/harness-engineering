@@ -75,8 +75,8 @@ test("the scaffold demonstrates every documented visualMatch field", () => {
   ]);
 });
 
-// The whole point of the tier rule: a spacing delta against a hand-drawn
-// baseline is noise, and a scaffold showing a third severity invites it back.
+// Visual mismatches use BLOCKER and non-design degradation may use HIGH. A
+// third severity would bypass the report's existing verdict and rendering rules.
 test("the scaffold offers no severity below HIGH", () => {
   const vm = island().scenarios.find((s) => s.visualMatch).visualMatch;
   for (const f of vm.findings) {

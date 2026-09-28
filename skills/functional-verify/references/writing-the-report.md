@@ -162,9 +162,9 @@ screen was drawn before it was built and whether the build kept to the drawing.
 "visualMatch": {
   "baseline": "docs/design/reconciliation-detailed.png",
   "fidelity": 92,
-  "matched": "Region order, the filter row's controls, the Complete Match chip and its copy all read as drawn.",
+  "matched": "Compared design/reconciliation-detailed.png with screenshots/03_reconcile__02_filtered.png: the period selector uses the wrong visual treatment.",
   "findings": [
-    { "severity": "HIGH",
+    { "severity": "BLOCKER",
       "what": "The period selector is drawn as the screen's primary control and renders as a tertiary one",
       "baselineShows": "filled accent button, 16px label",
       "buildShows": "ghost button, 13px label",
@@ -176,14 +176,13 @@ screen was drawn before it was built and whether the build kept to the drawing.
 - **`baseline`** is the reference image's path, or `null` for a screen nobody drew. `null` renders as
   **no design reference** — visibly not a pass, because absence of a check must never read as one.
 - **`fidelity`** is derived, per `visual-verification.md`: 100, less 25 a BLOCKER and 8 a HIGH, floored at 0.
-  It is `null` wherever `baseline` is. **A scenario whose findings carry a BLOCKER is a `FAILURE`** — the
-  divergence is a bug, filmed from its own repro like any other, and its fidelity is not a second opinion the
-  reader gets to weigh against the verdict.
-- **`matched`** is one sentence on what lined up. A findings list with nothing beside it reads as a broken screen
-  even when nine tenths of it was right.
-- **`findings[]`** carry `severity` of `BLOCKER` or `HIGH` only. **A spacing or pixel delta against the baseline
-  is not a finding** and never appears here; where one broke something in the build, that break is a sanity
-  finding on its own terms, with its own measurement.
+  Text differences do not count. It is `null` wherever `baseline` is. Every visual mismatch is a
+  `BLOCKER`, so one mismatch makes the scenario a `FAILURE`.
+- **`matched`** is one sentence on what lined up, and it names the baseline file and the frame that were
+  compared. A findings list with nothing beside it reads as a broken screen even when nine tenths of it was right.
+- **`findings[]`** describe the visual difference, what the design shows, what the application
+  shows, and any supporting browser evidence. A mismatch with a baseline is always a `BLOCKER`.
+  Put the design image path in `baseline` and name the promoted screenshot path in `matched`.
 - The report renders the baseline and the scenario's first frame side by side, so a reader compares them without
   leaving the page.
 
@@ -302,9 +301,9 @@ sentence above passes it. `attempted` is what you actually ran, distinct approac
   measured rect, a captured webhook body. Where that observation is mechanism rather than surface, it is a `proofs[]`
   entry, written once.
 - Every UI scenario carries a `visualMatch`: a `baseline` path with a derived `fidelity` where a design defines the
-  screen, or `baseline: null` where none does. No `findings[]` entry rests on a spacing delta alone, every entry
-  cites a measurement or a computed style, and every `BLOCKER` has made its scenario a `FAILURE` with a `bugs[]`
-  entry behind it.
+  screen, or `baseline: null` where none does. Every `matched` with a baseline names the two files compared. No
+  text-only difference appears as a finding. Every visual mismatch names the element and visible
+  difference and makes its scenario a `FAILURE`.
 - Every UI scenario names its `video`, every path is report-relative, and every file named in `artifacts[]` exists
   beside the report under the same `NN_<slug>` prefix. No frame or file resolves to a broken link.
 - `report-media.ts --inline` ran after the last edit to the report and printed `ok` for every file it names.

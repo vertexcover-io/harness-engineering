@@ -2,8 +2,9 @@
 name: code-review
 description: >
   Deep code review that hunts for subtle bugs and for code that works but should have been
-  written differently. Runs eight reviewer personas in parallel, aggregates their findings
-  into a report, then applies the fixes and records them in it. Use when the user says
+  written differently. Runs eight reviewer personas in parallel, plus a Design persona when
+  design/spec.md exists, aggregates their findings into a report, then applies the fixes and
+  records them in it. Use when the user says
   "/code-review", "review my code", "review this change", or "review this against the plan".
 ---
 
@@ -86,13 +87,14 @@ present, and the paths of the governance sources you found on rungs 1–3. Skip 
 ## Step 2 — Dispatch in parallel
 
 `references/` holds one `persona-*.md` file per axis. Spawn **one `general-purpose` sub-agent
-per axis, eight in a single message** so they run concurrently. One agent holding every axis at
+per axis, all in a single message** so they run concurrently. One agent holding every axis at
 once matches shallowly across all of them.
 
 | Agent | File | Also give it |
 |---|---|---|
 | Defects | `references/persona-defects.md` | — |
 | Spec | `references/persona-spec.md` | the full text of the `--plan` file, when there is one |
+| Design | `references/persona-design.md` | `design/spec.md`, the plan file, and the diff command |
 | Security | `references/persona-security.md` | — |
 | Testing | `references/persona-testing.md` | — |
 | Reuse | `references/persona-reuse.md` | — |
@@ -100,8 +102,10 @@ once matches shallowly across all of them.
 | Efficiency | `references/persona-efficiency.md` | — |
 | Altitude | `references/persona-altitude.md` | — |
 
-**All eight run on every review.** There is no gate and no team selection: an axis with nothing
-to report returns nothing, and that emptiness is a result you present.
+The eight existing axes run on every review. Dispatch Design as a ninth axis only when
+`design/spec.md` exists beside the supplied plan. There is no other gate and no team selection:
+an axis with nothing to report returns nothing, and that emptiness is a result you present.
+When Design does not run, omit its heading from the report.
 
 Every prompt names that agent's persona file by path and tells it to read the file first, before
 anything else. Give each agent its own file and no other, so the only axis it can report under
@@ -112,7 +116,7 @@ Then paste in, as text: the map from Step 1, the governance sources you found on
 the brief below. A sub-agent shares none of your context, so a summary of a governance source
 leaves that standard out of the review.
 
-**One diff, one review, eight agents.** A change spanning several packages or several repos is
+**One diff, one review, one set of agents.** A change spanning several packages or several repos is
 still one change. Give every agent the whole diff and treat the working set as a single tree.
 
 > *"You own exactly one review axis — the persona file named for you — and report only under it;
@@ -128,14 +132,14 @@ still one change. Give every agent the whole diff and treat the working set as a
 > dispatched, so edit freely to test a hypothesis and `git checkout --` when you're done. Return
 > your report as your final message — write no files. Under 400 words."*
 
-**The tool result is the report.** Nothing lands on disk until you write it — wait for all
-eight results and go straight to Step 3 with them.
+**The tool result is the report.** Nothing lands on disk until you write it — wait for every
+result and go straight to Step 3 with them.
 
 ## Step 3 — Aggregate
 
 Present each persona's report under a heading named for its axis — `### Defects`,
-`### Spec`, `### Security`, `### Testing`, `### Reuse`, `### Simplification`, `### Efficiency`,
-`### Altitude` — verbatim or lightly cleaned. Do **not** merge or rerank across axes: that
+`### Spec`, `### Design`, `### Security`, `### Testing`, `### Reuse`, `### Simplification`,
+`### Efficiency`, `### Altitude` — verbatim or lightly cleaned. Do **not** merge or rerank across axes: that
 masking is what the separation exists to prevent. Drop only exact duplicates (same
 `file:line`, same finding); when two axes disagree, keep both — the disagreement is signal.
 
@@ -146,8 +150,9 @@ four only, keep one copy per mechanism under the axis that names the fix best.
 Open the file with a header: date, scope, and the plan path or "intent inferred". Then
 a 2-3 sentence summary of what the change does, and the verdict:
 
-- **`REQUEST CHANGES`** — a Critical defect, an uncontested hard violation, or a missing item
-  that breaks a core acceptance criterion.
+- **`REQUEST CHANGES`** — a Critical defect, an uncontested hard violation, a missing item
+  that breaks a core acceptance criterion, or `VERDICT: FAIL` from the Design agent. Its drift
+  table goes in the report as it came, every row.
 - **`APPROVE WITH SUGGESTIONS`** — Important defects worth discussing, but nothing that would
   cause a production incident.
 - **`APPROVE`** — no defects, or only judgement calls.

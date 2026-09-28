@@ -119,8 +119,7 @@ Do not split when the pieces share more than ~30% of files and ship together.
   to sample: Read each file it names, images included, before you write a step. A screen you have
   not looked at is one you cannot write a step for. Two frames of one screen at different
   viewports are two screens — a phone sheet is not the desktop panel scaled down, and each
-  settles its own order, spacing and copy. What you take from a frame is what its prose source
-  cannot carry — the style facts `references/step-card.md` lists under Designs.
+  settles its own order, spacing and copy.
 - When the repo holds fewer than 3 examples of the pattern this work needs, also research
   externally — prior art, known failure modes, current API facts. Findings return inline
   with source URLs.
@@ -295,7 +294,6 @@ Three rules bind every step you write:
   in its contract. Every screen in `design/INDEX.md` is claimed by at least one step; a screen no
   step builds is recorded in plan.md as `design/<file> — not built: <reason>`. A coder who cannot
   see the frame rebuilds it from imagination.
-
 **Done when:** every phase has a capability title, every requirement has a matrix row, every
 scenario has exactly one home and names a failure no other scenario catches, and every file
 a step edits was opened.
@@ -315,6 +313,11 @@ The `#phases` drill-down belongs to both: it is the payload's `## Implementation
 **transcribed** into HTML, part for part. `#tests` is the same move on the payloads'
 `## Test Scenarios`, per `references/test-scenarios.md`. `references/step-card.md` is the one contract for
 those parts — read it before writing either layer.
+
+**Keep design-spec references in the payloads.** When `design/spec.md` exists, read it before
+writing the phase payloads. In each affected `phases/phase-N.md` implementation step, refer to
+the relevant parts of the spec without copying their contents. Transcribe the same reference
+into that step's HTML drill-down.
 
 The page has been live since step 1, with the hero and the design gallery already on it. Fill
 the rest top-down, one save per section, so the reviewer watches each part land where its

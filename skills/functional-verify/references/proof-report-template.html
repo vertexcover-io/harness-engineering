@@ -81,10 +81,10 @@
                    against the design that defines it. baseline is the
                    reference image's path, or null for a screen nobody drew;
                    fidelity is derived (100, less 25 a BLOCKER and 8 a HIGH),
-                   null when baseline is. matched is one sentence on what lined
+                   null when baseline is. matched names the two files compared, then one sentence on what lined
                    up. findings[] are {severity,what,baselineShows,buildShows,
-                   evidence}, severity BLOCKER | HIGH only — a spacing delta
-                   against the baseline is not a finding. The baseline renders
+                   evidence}. A visual mismatch against a baseline
+                   is always BLOCKER; text-only differences are ignored. The baseline renders
                    beside the first frame, both opening in the modal.
        proofs[]    {tag,heading,body,capture} — what a frame cannot show.
                    capture is the verbatim exchange, inline and whole: the
@@ -170,14 +170,14 @@
       "visualMatch": {
         "baseline": "<path to the design that defines this screen, or null if nobody drew it>",
         "fidelity": 100,
-        "matched": "<one sentence on what lined up>",
+        "matched": "<the baseline file and the frame compared, then one sentence on what lined up>",
         "findings": [
           {
-            "severity": "<BLOCKER | HIGH — never a spacing delta>",
+            "severity": "<BLOCKER | HIGH>",
             "what": "<the divergence, in one line>",
             "baselineShows": "<what the design draws>",
             "buildShows": "<what the build renders>",
-            "evidence": "<the rect, computed style or quoted string that settles it>"
+            "evidence": "<the visible difference and any rect or computed style that settles it>"
           }
         ]
       },

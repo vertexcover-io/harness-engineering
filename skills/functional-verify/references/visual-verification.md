@@ -1,7 +1,8 @@
 # Visual Verification
 
-**Read this when:** a scenario's frames are shot and their asserts have passed, before you write the scenario up
-(Step 2). You are mid-walk with the session still open, which is what makes this cheap.
+**Read this when:** `agent-browser` has completed a scenario and its staged frames have passed
+their assertions, before those frames move into `verification/screenshots/`. You are mid-walk
+with the browser session still open.
 
 **This pass drives nothing, and it runs on one scenario at a time.** That scenario is a desktop walk or a phone
 replay; its frames are shot and the session is still open, so where a frame cannot answer a question you ask the
@@ -33,13 +34,21 @@ wrong-footed by, a bug that routes through Step 4.
 
 ## The baseline, and what it is authoritative about
 
-Where `plan.md`'s `## Design References` names an image for the screen — a mockup, a Figma export, a photo of a
-whiteboard — **that image is the baseline**, and the questions marked *(design)* below have an answer.
+**Open every staged screenshot first and confirm that it shows the state the scenario intended
+to capture.** When the assert and screenshot disagree, wait once and re-shoot. Repeat the browser
+action only if the application has left that state. Resolve the disagreement before choosing a
+design reference or promoting the frame.
 
-**It is authoritative about intent, not about measurement.** A supplied image routinely carries spacing nobody
-decided: padding off the grid, gaps that differ between two rows of the same list, a margin that is wherever the
-author's cursor landed. Grading against those numbers produces a long list of findings that are all noise and
-buries the one that mattered.
+Read the complete `## Design References` section from `plan.md`. For each scenario, select the
+image that represents the same screen, state and viewport. Use the image and the row's description
+to select it. Do not use the description as a substitute for the image.
+
+**Open the baseline image and staged frame, then compare them.** When several references show the
+same screen, choose the one with the same state and viewport. Compare desktop with desktop, phone
+with phone, and each state with its matching state.
+
+Compare the visible design: components, element order, layout, spacing, size, typography, colour,
+borders, radii, icons and states. Ignore differences in text content alone.
 
 **Where no image defines the screen, the *(design)* questions do not run.** Write
 `visualMatch: { baseline: null, fidelity: null }`, ask the rest, and move on — the scenario can pass with no
@@ -55,12 +64,11 @@ and only the *(always)* questions run.
 
 ## The three grades
 
-- **BLOCKER** — the build does not do what the design says. Its scenario is a `FAILURE`, and the divergence is a
-  bug: filmed from its own repro in Step 4, with a `bugs[]` entry like any other.
-- **HIGH** — the build says something different from the design, or the screen is degraded on its own terms.
-  A finding on the scenario, not a hard fail.
-- **Not a finding** — the difference is a number, and nothing turns on it. Report nothing at all: no
-  `findings[]` entry, nothing off the fidelity, no note in `extra[]`.
+- **BLOCKER** — any visual property differs from the corresponding baseline. The scenario is a
+  `FAILURE`, and the functional-verification verdict is `FAIL`.
+- **HIGH** — the screen is degraded on its own terms, but no design reference defines the
+  affected property.
+- **Not a finding** — the only difference is text content, or no image defines the screen.
 
 ## The pass — every question, in order
 
@@ -76,12 +84,12 @@ Ask all of these of each frame, in this order, so two runs of the same screen re
   **BLOCKER**, not a style difference.
 
 **3. Copy**
-- *(design)* Text differing in **meaning** rather than casing or punctuation → **BLOCKER**.
-- *(always)* Nothing reads `lorem`, `TODO`, `xxx`, `{{…}}`, `undefined`, `NaN`, or `[object Object]`.
+- *(always)* Nothing reads `lorem`, `TODO`, `xxx`, `{{…}}`, `undefined`, `NaN`, or `[object Object]`. Text that
+  differs from the baseline is not a finding.
 
 **4. Colour and type**
 - *(design)* Colour roles hold — a primary action rendered with a secondary's weight, or the reverse, is a
-  **HIGH**. The type hierarchy separates the levels the baseline separates.
+  **BLOCKER**. The type hierarchy separates the levels the baseline separates.
 - *(always)* Body text and interactive labels clear 4.5:1 against their real background. Compute it from
   `getComputedStyle()`; never estimate contrast off a screenshot.
 
@@ -92,18 +100,9 @@ Ask all of these of each frame, in this order, so two runs of the same screen re
 - *(desktop scenarios)* `documentElement.scrollWidth - clientWidth === 0`. The phone replay already asserts this
   and already files the bug — **do not assert it twice**; ask it on desktop, where nothing does.
 - *(phone replays)* Every control the replay drove is at least 44px on its short side.
-- *(design)* **A margin, padding, gap, border width, radius or element size that differs from the baseline is
-  not a finding.** Two things look like one and are not, so test for both before dropping it:
-  1. **It broke something above.** The overflow, the overlap, the clipped label. **The break is the finding** —
-     report what broke and the measurement that shows it, and say the baseline is not the authority for what the
-     value should become. Proving the break is your job; choosing the new number belongs to whoever owns the
-     design.
-  2. **It changed what the screen says.** A gap so much wider that one group now reads as two; an element so
-     much smaller that it drops out of the hierarchy it was drawn into. That is a **HIGH**, graded by what the
-     screen now communicates and never by the pixel count — which is the number you were told not to trust.
-
-  Neither test has a threshold, and do not invent one. *Did something break?* and *does the screen say something
-  different now?* Two noes means drop it and say nothing.
+- *(design)* Compare margin, padding, gap, border width, radius and element size. A visible
+  difference from the baseline is a **BLOCKER**. Describe the visual difference; do not claim an
+  exact pixel value from the image unless the browser supplies that measurement.
 
 **6. States**
 - *(design)* Every state the baseline draws is reachable and rendered: empty, loading, error, selected,
@@ -116,9 +115,9 @@ a number with more digits — is the check most worth having, because a layout t
 breaks on a real customer's name breaks in production and not here. It is an attack, not a look, so it is driven
 as a Step 4 probe under that step's rules, not from this file.
 
-**Every question is answered.** A finding with its evidence, or explicitly clean. A pass you did not look for is
-not a pass, and "looks off", "spacing feels wrong", "colours are a bit different" are not findings — name the
-element and quote the observation, or you have not looked closely enough to report it.
+**Every question is answered.** A finding names the element, the visual difference and both image
+paths. A pass you did not look for is not a pass. "Looks off" is not a
+finding; say what differs.
 
 ## What it produces
 
@@ -127,10 +126,12 @@ things the rule called not-a-finding subtract nothing. A number picked because t
 thing this field exists to prevent. It is `null` wherever the baseline is. **Below 80 with no BLOCKER is a finding
 on the scenario, not a fail** — say it in `reason` and let the reader weigh it.
 
-Each finding names what the design shows, what the build shows, and the evidence that settles it:
+Each finding names both files, what the design shows, what the build shows, and the evidence:
 
 ```
 BLOCKER — the empty state is never rendered
+  baseline: design/invoices-empty.png
+  actual:   verification/screenshots/04_invoices_empty__03_empty.png
   design:   an illustration and "No invoices yet — import one to begin" fill the table region
   built:    the table region is 0px tall with the list empty
   evidence: getBoundingClientRect() on [data-testid=invoice-table] → {height: 0, top: 214}
@@ -138,11 +139,11 @@ BLOCKER — the empty state is never rendered
 
 Then route what you found:
 
-- **Any BLOCKER, and any finding a user would be wrong-footed by** — a bug. Step 4 films it from its own repro
-  and it earns a `bugs[]` entry with its `reachedBy` and `origin`, like every other bug.
+- **Any visual mismatch** — mark the scenario `FAILURE`, which makes the overall verdict `FAIL`.
+  Promote the staged screenshot as failure evidence and include both final paths in the finding.
 - **Everything else, and the fidelity** — the scenario's `visualMatch`.
-- **Cosmetic drift nobody would be wrong-footed by** — a note in `extra[]`, as it always was.
 
 **Done when** every frame has been through all six questions with each answer evidenced or called clean; every
 scenario carries a `visualMatch` whose fidelity is derived from graded findings, or names the absent baseline;
-no finding rests on a number alone; and every BLOCKER has become a bug with a repro.
+every visual mismatch has made its scenario a `FAILURE`; and every mismatch names the reference,
+promoted screenshot and observed difference.
