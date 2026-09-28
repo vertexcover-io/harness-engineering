@@ -1,53 +1,13 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import type { IGit, ILogger } from "@harness/sdk";
 import * as z from "zod";
-import corePackage from "../package.json";
-import { type GitState, type Result, SlugSchema, type State } from "./contracts.ts";
-import { jsonlEventStore } from "./event-store.ts";
-import { coreHandlers, emitRunEvent, type RunRef, runDirOf } from "./events.ts";
+import { type Result, SlugSchema, type State } from "./contracts.ts";
+import { type RunRef, runDirOf } from "./events.ts";
 import { type Registry, type SessionRef, SessionRefSchema, type WorkflowRun } from "./registry.ts";
-import { syncState } from "./state.ts";
-import { findRoot, toRepoId } from "./workspace.ts";
-
-export const readGit = async (cwd: string, git: IGit): Promise<GitState> => {
-  const [branch, sha, defaultBranch] = await Promise.all([
-    git.currentBranch(cwd),
-    git.headSha(cwd),
-    git.defaultBranch(cwd),
-  ]);
-  const branchName = branch.ok ? branch.value : "HEAD";
-  return {
-    branch: branchName,
-    startSha: sha.ok ? sha.value : "",
-    baseBranch: defaultBranch ?? branchName,
-  };
-};
-
-export const initialState = (run: WorkflowRun, name: string, git: GitState): State => {
-  const now = new Date().toISOString();
-  return {
-    schemaVersion: 1,
-    lastEventSeq: 0,
-    specName: name,
-    harnessVersion: String(corePackage.version),
-    workflow: { name: run.workflow, path: "workflow.yaml" },
-    input: run.inputs,
-    scope: "workflow",
-    options: {},
-    startedAt: now,
-    completedAt: null,
-    outcome: null,
-    currentFile: null,
-    workspace: {
-      path: run.cwd,
-      repositories: { [toRepoId(basename(run.cwd))]: { path: run.cwd, git } },
-    },
-    activeNodeRuns: [],
-    nodeRuns: {},
-  };
-};
+import { createState, emitRunEvent, syncState } from "./state.ts";
+import { findRoot } from "./workspace.ts";
 
 export type InitOptions = Readonly<{
   registry: Registry;
@@ -60,6 +20,7 @@ export type InitOptions = Readonly<{
 const fillRunDir = async (run: WorkflowRun, name: string, options: InitOptions): Promise<State> => {
   const dir = runDirOf(run.cwd, name);
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
+  await createState(dir);
   const appended = await emitRunEvent(
     { id: run.id, cwd: run.cwd, name },
     {
@@ -70,12 +31,8 @@ const fillRunDir = async (run: WorkflowRun, name: string, options: InitOptions):
     },
   );
   if (!appended.ok) throw new Error(appended.error);
-  const state = await syncState({
-    runDir: dir,
-    store: jsonlEventStore(dir),
-    seed: initialState(run, name, await readGit(run.cwd, options.git)),
-    handlers: coreHandlers,
-  });
+  const state = await syncState(dir);
+  if (state === null) throw new Error(`${dir}/state.json disappeared during init`);
   options.log.debug({ dir, lastEventSeq: state.lastEventSeq }, "run folder written");
   return state;
 };

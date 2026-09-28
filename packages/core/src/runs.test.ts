@@ -12,10 +12,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createGit, noopLogger } from "@harness/sdk";
-import { StateSchema } from "./contracts.ts";
 import { jsonlEventStore } from "./event-store.ts";
 import { createRegistry, type WorkflowRun } from "./registry.ts";
-import { initializeRun, initialState, linkRunSession, readGit, resolveRun } from "./runs.ts";
+import { initializeRun, linkRunSession, resolveRun } from "./runs.ts";
 import { findRoot } from "./workspace.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
@@ -28,21 +27,6 @@ const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   name: null,
   createdAt: new Date().toISOString(),
   ...overrides,
-});
-
-describe("initialState", () => {
-  test("SC18: parses with StateSchema, workflow.path is workflow.yaml, and the repository key is the slug of the repo folder", () => {
-    const run = makeRun({ cwd: "/repos/Fix Login App" });
-    const state = initialState(run, "fix-login", {
-      branch: "main",
-      startSha: "abc123",
-      baseBranch: "main",
-    });
-
-    expect(StateSchema.safeParse(state).success).toBe(true);
-    expect(state.workflow).toEqual({ name: "demo", path: "workflow.yaml" });
-    expect(Object.keys(state.workspace.repositories)).toEqual(["fix-login-app"]);
-  });
 });
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "harness-run-")));
@@ -66,16 +50,6 @@ const makeRepo = (): string => {
   );
   return dir;
 };
-
-describe("readGit", () => {
-  test("SC21: baseBranch equals branch when the repo has no origin", async () => {
-    const root = makeRepo();
-    const git = await readGit(root, createGit());
-
-    expect(git.branch).toBe("main");
-    expect(git.baseBranch).toBe(git.branch);
-  });
-});
 
 // A run `harness run` saved in a fresh git repo, not yet initialized.
 const savedRun = async (overrides: Partial<WorkflowRun> = {}) => {
@@ -108,7 +82,12 @@ describe("initializeRun", () => {
     ]);
     expect(events[0]?.runId).toBe(run.id);
     expect(Math.abs(Date.now() - Date.parse(String(events[0]?.ts)))).toBeLessThan(1000);
-    expect(result.value.state).toMatchObject({ lastEventSeq: 1, specName: "fix-login" });
+    expect(result.value.state).toMatchObject({
+      lastEventSeq: 1,
+      specName: "fix-login",
+      input: run.inputs,
+      startedAt: events[0]?.ts,
+    });
     expect((await registry.findRun(run.id))?.name).toBe("fix-login");
   });
 

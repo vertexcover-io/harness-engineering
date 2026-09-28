@@ -1028,7 +1028,9 @@ describe("node events", () => {
       {},
       { emitter: { emit: (input) => emitEvent(store, "r-1", input) } },
     );
-    const state = await syncState({ runDir, store, seed: stateSeed, handlers: coreHandlers });
+    writeFileSync(join(runDir, "state.json"), JSON.stringify(stateSeed));
+    const state = await syncState(runDir, store);
+    if (state === null) throw new Error("state.json missing");
     expect(
       StateSchema.safeParse(JSON.parse(readFileSync(join(runDir, "state.json"), "utf8"))).success,
     ).toBe(true);
