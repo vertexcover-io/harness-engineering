@@ -41,8 +41,8 @@ export const projectEvents = (options: {
   readonly handlers: EventHandlers;
 }): State => options.events.reduce(applyEvent(options.handlers), options.state);
 
-const readState = async (path: string): Promise<State | null> => {
-  const text = await readIfExists(path);
+export const readState = async (runDir: string): Promise<State | null> => {
+  const text = await readIfExists(join(runDir, "state.json"));
   return text === null ? null : StateSchema.parse(JSON.parse(text));
 };
 
@@ -126,7 +126,7 @@ export const syncState = (
   store: IEventStore = jsonlEventStore(runDir),
 ): Promise<State | null> =>
   withLock(lockOf(runDir), async () => {
-    const current = await readState(join(runDir, "state.json"));
+    const current = await readState(runDir);
     if (current === null) return null;
     const events = await store.read();
     const next = projectEvents({ state: current, events, handlers: coreHandlers });

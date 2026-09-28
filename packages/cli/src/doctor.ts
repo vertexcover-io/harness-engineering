@@ -6,7 +6,7 @@ import {
   runDoctor,
   verdict,
 } from "@harness/core";
-import { killRunning } from "@harness/sdk";
+import { stopRunningOnSignal } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
 import { cliLog, commandLog } from "./client.ts";
 
@@ -77,13 +77,7 @@ export const doctorCommand = () =>
     .description("Check the tools, repository and config a harness run needs")
     .option("--json", "print the report as JSON")
     .action(async ({ json }) => {
-      // Commands run in their own process groups, so Ctrl-C would not reach them on its own.
-      const stop = (exitCode: number) => (): void => {
-        killRunning();
-        process.exit(exitCode);
-      };
-      process.once("SIGINT", stop(130));
-      process.once("SIGTERM", stop(143));
+      stopRunningOnSignal();
       const report = await runDoctor({
         cwd: process.cwd(),
         extraChecks: runtimeChecks(),

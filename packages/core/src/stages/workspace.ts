@@ -1,12 +1,18 @@
 import { existsSync, realpathSync } from "node:fs";
 import { rmdir } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 import { createGit, type ILogger, noopLogger, spawn } from "@harness/sdk";
 import * as z from "zod";
-import { type Config, LayoutSchema, loadConfigOrDefault, NameSchema } from "./config.ts";
-import { type JsonValue, NonEmptyStringSchema, type Result, SlugSchema } from "./contracts.ts";
-import { type EventError, eventError, type RunRef, stackOf } from "./events.ts";
-import { emitRunEvent, toRepoId } from "./state.ts";
+import {
+  type Config,
+  LayoutSchema,
+  loadConfigOrDefault,
+  NameSchema,
+  unknownPackage,
+} from "../config.ts";
+import { type JsonValue, NonEmptyStringSchema, type Result, SlugSchema } from "../contracts.ts";
+import { type EventError, eventError, type RunRef, stackOf } from "../events.ts";
+import { emitRunEvent, toRepoId } from "../state.ts";
 
 type Layout = Config["workspace"]["layout"];
 type Package = Config["packages"][string];
@@ -80,29 +86,7 @@ const packageCommand = (
   pkg: Package,
   key: "workspaceSetup" | "workspaceTeardown",
   shared: string | undefined,
-): string | undefined =>
-  Object.hasOwn(pkg.commands, key) ? (pkg.commands[key] ?? undefined) : shared;
-
-const metaRepoOf = async (repo: string, dir: string): Promise<string | undefined> => {
-  const parent = dirname(dir);
-  if (parent === dir) return undefined;
-  const config = await loadConfigOrDefault(parent);
-  const claims =
-    config.ok &&
-    config.value.workspace.layout === "multi" &&
-    Object.values(config.value.packages).some((pkg) => resolve(parent, pkg.path) === repo);
-  return claims ? parent : metaRepoOf(repo, parent);
-};
-
-// The common git dir is shared by every worktree, so its parent is the main checkout wherever cwd is.
-export const findRoot = async (cwd: string): Promise<Result<string>> => {
-  const commonDir = await git.commonDir(cwd);
-  if (commonDir === null) {
-    return { ok: false, error: "not inside a git repo; run from one or pass --root" };
-  }
-  const main = dirname(commonDir);
-  return { ok: true, value: (await metaRepoOf(main, main)) ?? main };
-};
+): string | undefined => (Object.hasOwn(pkg.commands, key) ? pkg.commands[key]?.command : shared);
 
 const fillPath = (template: string, branch: string): Result<string> => {
   const filled = template.replace(/\{\{\s*branch\s*\}\}/g, branch.replaceAll("/", "-"));
@@ -162,7 +146,7 @@ const planMulti = (
   if (names.length === 0) {
     return { ok: false, error: "workspace.layout multi needs --repos to name the repos to branch" };
   }
-  const unknown = names.find((name) => !known.includes(name));
+  const unknown = unknownPackage(config, names);
   if (unknown !== undefined) {
     return { ok: false, error: `unknown repo "${unknown}"; packages are: ${known.join(", ")}` };
   }

@@ -61,6 +61,18 @@ export const killRunning = (): void => {
   running.clear();
 };
 
+const stopRunning = (exitCode: number): void => {
+  killRunning();
+  process.exit(exitCode);
+};
+
+// Commands run in their own process groups, so a signal to this process would not reach them.
+// Installs handlers that kill them and exit with the shell's code for the signal.
+export const stopRunningOnSignal = (): void => {
+  process.once("SIGINT", () => stopRunning(130));
+  process.once("SIGTERM", () => stopRunning(143));
+};
+
 // Collects a stream up to a byte cap and hands each complete line to a callback as it arrives.
 const collector = (maxBytes: number, onLine: ((line: string) => void) | undefined) => {
   const kept: Buffer[] = [];

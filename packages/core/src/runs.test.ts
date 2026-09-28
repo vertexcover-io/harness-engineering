@@ -14,8 +14,7 @@ import { join } from "node:path";
 import { createGit, noopLogger } from "@harness/sdk";
 import { jsonlEventStore } from "./event-store.ts";
 import { createRegistry, type WorkflowRun } from "./registry.ts";
-import { initializeRun, linkRunSession, resolveRun } from "./runs.ts";
-import { findRoot } from "./workspace.ts";
+import { findRoot, initializeRun, linkRunSession, resolveRun } from "./runs.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id: "r-1",

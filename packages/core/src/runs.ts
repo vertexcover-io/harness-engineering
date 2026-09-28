@@ -1,13 +1,13 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
-import type { IGit, ILogger } from "@harness/sdk";
+import { dirname, join, resolve } from "node:path";
+import { createGit, type IGit, type ILogger } from "@harness/sdk";
 import * as z from "zod";
+import { loadConfigOrDefault } from "./config.ts";
 import { type Result, SlugSchema, type State } from "./contracts.ts";
 import { type RunRef, runDirOf } from "./events.ts";
 import { type Registry, type SessionRef, SessionRefSchema, type WorkflowRun } from "./registry.ts";
 import { createState, emitRunEvent, syncState } from "./state.ts";
-import { findRoot } from "./workspace.ts";
 
 export type InitOptions = Readonly<{
   registry: Registry;
@@ -75,6 +75,29 @@ export const initializeRun = async (
     await rm(dir, { recursive: true, force: true });
     throw error;
   }
+};
+
+const git = createGit();
+
+const metaRepoOf = async (repo: string, dir: string): Promise<string | undefined> => {
+  const parent = dirname(dir);
+  if (parent === dir) return undefined;
+  const config = await loadConfigOrDefault(parent);
+  const claims =
+    config.ok &&
+    config.value.workspace.layout === "multi" &&
+    Object.values(config.value.packages).some((pkg) => resolve(parent, pkg.path) === repo);
+  return claims ? parent : metaRepoOf(repo, parent);
+};
+
+// The common git dir is shared by every worktree, so its parent is the main checkout wherever cwd is.
+export const findRoot = async (cwd: string): Promise<Result<string>> => {
+  const commonDir = await git.commonDir(cwd);
+  if (commonDir === null) {
+    return { ok: false, error: "not inside a git repo; run from one or pass --root" };
+  }
+  const main = dirname(commonDir);
+  return { ok: true, value: (await metaRepoOf(main, main)) ?? main };
 };
 
 type RunLookup = Readonly<{ registry: Registry; root: string; name: string }>;

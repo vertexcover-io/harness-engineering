@@ -253,6 +253,49 @@ describe("coreHandlers", () => {
     expect(state.nodeRuns["loop[1].x"]?.index).toBe(1);
     expect(state.nodeRuns["loop[2].x"]?.index).toBe(2);
   });
+
+  test("BL11: artifact.created adds the ref to its node run, and a second with the same name replaces it", () => {
+    const created = (seq: number, path: string): Event => ({
+      ...nodeEvent(seq, "started", build, {}),
+      type: "artifact.created",
+      payload: { artifact: { name: "baseline", path } },
+    });
+    const report = { name: "report", path: "artifacts/report.md" };
+    const state = project([
+      nodeEvent(1, "started", build, { nodeType: "exec" }),
+      { ...created(2, "artifacts/report.md"), payload: { artifact: report } },
+      created(3, "artifacts/baseline.json"),
+      created(4, "artifacts/baseline-2.json"),
+    ]);
+    expect(state.nodeRuns.build?.artifacts).toEqual([
+      report,
+      { name: "baseline", path: "artifacts/baseline-2.json" },
+    ]);
+  });
+
+  test("BL11: artifact.created for a node run not in state leaves the state unchanged", () => {
+    const state = project([
+      {
+        ...nodeEvent(1, "started", build, {}),
+        type: "artifact.created",
+        payload: { artifact: { name: "baseline", path: "artifacts/baseline.json" } },
+      },
+    ]);
+    expect(state).toEqual({ ...seed, lastEventSeq: 1 });
+  });
+
+  test("BL11: emitEvent refuses an artifact.created whose path is outside artifacts/", async () => {
+    const store = memoryEventStore();
+    const result = await emitEvent(store, "r-1", {
+      type: "artifact.created",
+      source: "test",
+      ...build,
+      payload: { artifact: { name: "baseline", path: "baseline.json" } },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("artifact.created");
+    expect(await store.read()).toEqual([]);
+  });
 });
 
 const SHA = "3f2c9ab41d0e8c7b6a5f4e3d2c1b0a9f8e7d6c5b";

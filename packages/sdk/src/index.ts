@@ -40,5 +40,6 @@ export {
   spawn,
   spawnDetached,
   spawnInteractive,
+  stopRunningOnSignal,
 } from "./process.ts";
 export type { Result } from "./result.ts";
