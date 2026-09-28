@@ -1,0 +1,12 @@
+name: task
+inputs:
+  prompt:
+    type: string
+    required: true
+nodes:
+  - id: create-workspace
+    type: agent
+    adapter: claude
+    stage: create-workspace
+    input:
+      request: "{{ inputs.prompt }}"
