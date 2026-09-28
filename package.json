@@ -11,17 +11,18 @@
     "bun": ">=1.2"
   },
   "scripts": {
-    "typecheck": "bun run --filter '@harness/*' typecheck",
-    "test": "bun test ./packages",
+    "typecheck": "bun run --filter '@harness/*' typecheck && tsc -p skills/create-workspace",
+    "test": "bun test ./packages ./skills/create-workspace",
     "lint": "biome check",
     "lint:fix": "biome check --write",
     "orchestrate": "bun packages/core/src/orchestrate.ts",
+    "workspace": "bun skills/create-workspace/scripts/workspace.ts",
     "release:version": "bun scripts/version.ts",
     "release:version:node": "node scripts/version.ts",
     "test:scripts": "node --test scripts/*.test.ts",
     "test:scripts:bun": "bun test scripts/",
     "test:hooks": "node --test hooks/*.test.mjs",
-    "test:skills": "node --experimental-strip-types --test \"skills/**/*.test.ts\" \"skills/**/*.test.mjs\""
+    "test:skills": "node --experimental-strip-types --test \"skills/!(create-workspace)/**/*.test.ts\" \"skills/**/*.test.mjs\""
   },
   "pi": {
     "skills": [

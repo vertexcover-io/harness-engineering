@@ -1,11 +1,15 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
+  type Config,
   createState,
+  type EventHandlerRefs,
   emitRunEvent,
+  findRoot,
   type IGit,
   type ILogger,
+  loadConfigOrDefault,
   type Registry,
   type Result,
   type RunLookup,
@@ -29,10 +33,22 @@ export type InitOptions = Readonly<{
   log: ILogger;
 }>;
 
-const fillRunDir = async (run: WorkflowRun, name: string, options: InitOptions): Promise<State> => {
+type CheckedInit = Readonly<{ run: WorkflowRun; eventHandlers: EventHandlerRefs }>;
+
+const frozenHandlers = (config: Config, root: string): EventHandlerRefs =>
+  Object.fromEntries(
+    Object.entries(config.eventHandlers).map(([type, list]) => [
+      type,
+      list.map((ref) => ({ ...ref, module: resolve(root, ref.module) })),
+    ]),
+  );
+
+const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<State> => {
+  const { run, eventHandlers } = checked;
+  const { name } = options;
   const dir = runDirOf(run.cwd, name);
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
-  await createState(dir, String(corePackage.version));
+  await createState({ runDir: dir, harnessVersion: String(corePackage.version), eventHandlers });
   const appended = await emitRunEvent(
     { id: run.id, cwd: run.cwd, name },
     {
@@ -49,7 +65,7 @@ const fillRunDir = async (run: WorkflowRun, name: string, options: InitOptions):
   return state;
 };
 
-const checkInit = async (options: InitOptions): Promise<Result<WorkflowRun>> => {
+const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => {
   const { registry, runId, name, git } = options;
   const parsed = SlugSchema.safeParse(name);
   if (!parsed.success) {
@@ -66,7 +82,11 @@ const checkInit = async (options: InitOptions): Promise<Result<WorkflowRun>> => 
   if ((await git.repoRoot(run.cwd)) === null) {
     return { ok: false, error: `${run.cwd} is not inside a git repository` };
   }
-  return { ok: true, value: run };
+  const root = await findRoot(run.cwd);
+  if (!root.ok) return root;
+  const config = await loadConfigOrDefault(root.value);
+  if (!config.ok) return config;
+  return { ok: true, value: { run, eventHandlers: frozenHandlers(config.value, root.value) } };
 };
 
 export const initializeRun = async (
@@ -74,11 +94,11 @@ export const initializeRun = async (
 ): Promise<Result<{ dir: string; state: State }>> => {
   const checked = await checkInit(options);
   if (!checked.ok) return checked;
-  const run = checked.value;
+  const { run } = checked.value;
   const dir = runDirOf(run.cwd, options.name);
   await mkdir(dir, { recursive: true });
   try {
-    const state = await fillRunDir(run, options.name, options);
+    const state = await fillRunDir(checked.value, options);
     await options.registry.initRun(run.id, options.name);
     options.log.info({ runId: run.id, name: options.name, dir }, "run initialized");
     return { ok: true, value: { dir, state } };

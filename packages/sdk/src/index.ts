@@ -32,7 +32,14 @@ export * from "./event-store.ts";
 export * from "./events.ts";
 export * from "./files.ts";
 export { createGit, type IGit, type WorktreeEntry } from "./git.ts";
-export { type ILogger, noopLogger } from "./logger.ts";
+export {
+  type ILogger,
+  type JsonLoggerOptions,
+  jsonLogger,
+  type LogLevel,
+  LogLevelSchema,
+  noopLogger,
+} from "./logger.ts";
 export {
   execWithTimeout,
   killRunning,

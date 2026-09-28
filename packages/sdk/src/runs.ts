@@ -29,6 +29,13 @@ export const findRoot = async (cwd: string): Promise<Result<string>> => {
   return { ok: true, value: (await metaRepoOf(main, main)) ?? main };
 };
 
+// With no --root, a script works from the main checkout, even inside a workspace worktree:
+// that is where runs live.
+export const resolveRoot = (root: string | undefined): Promise<Result<string>> =>
+  root === undefined
+    ? findRoot(process.cwd())
+    : Promise.resolve({ ok: true, value: resolve(root) });
+
 export type RunLookup = Readonly<{ registry: Registry; root: string; name: string }>;
 
 // Every action after init names its run by spec name; the folder must still exist, since

@@ -5,9 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Event, type JsonValue, type State, StateSchema } from "./contracts.ts";
 import { type IEventStore, jsonlEventStore } from "./event-store.ts";
+import { runDirOf } from "./events.ts";
 import {
   createState,
+  type EventHandler,
   type EventHandlers,
+  emitRunEvent,
   projectEvents,
   readGit,
   syncState,
@@ -35,6 +38,8 @@ const seed: State = {
   },
   activeNodeRuns: [],
   nodeRuns: {},
+  custom: {},
+  eventHandlers: {},
 };
 
 const event = (seq: number, type: string, payload: JsonValue = null): Event => ({
@@ -71,13 +76,37 @@ describe("projectEvents", () => {
     expect(projectEvents({ state: seed, events, handlers })).toEqual({ ...seed, lastEventSeq: 2 });
   });
 
-  test("a custom.* event is not routed to a handler registered under its type", () => {
-    const customHandlers: EventHandlers = {
-      "custom.acme.ping": (state) => ({ ...state, currentFile: "changed" }),
+  test("EH5 — the built-in handler runs first, then each extension in listed order on the state the last one returned", () => {
+    const seen =
+      (label: string): EventHandler =>
+      (state) => ({
+        ...state,
+        custom: {
+          seen: [
+            ...(Array.isArray(state.custom.seen) ? state.custom.seen : []),
+            `${label}:${state.currentFile}`,
+          ],
+        },
+      });
+    const extensions = { "workflow.file.opened": [seen("first"), seen("second")] };
+    const events = [event(1, "workflow.file.opened", "a.ts")];
+
+    expect(projectEvents({ state: seed, events, handlers, extensions }).custom).toEqual({
+      seen: ["first:a.ts", "second:a.ts"],
+    });
+  });
+
+  test("EH6 — a custom.* event reaches the extension handlers registered for its type", () => {
+    const extensions = {
+      "custom.review.note": [
+        (state: State, note: Event): State => ({ ...state, custom: { note: note.payload } }),
+      ],
     };
-    const events = [event(1, "custom.acme.ping")];
-    expect(projectEvents({ state: seed, events, handlers: customHandlers })).toEqual({
+    const events = [event(1, "custom.review.note", "looks good")];
+
+    expect(projectEvents({ state: seed, events, handlers, extensions })).toEqual({
       ...seed,
+      custom: { note: "looks good" },
       lastEventSeq: 1,
     });
   });
@@ -187,6 +216,151 @@ describe("syncState", () => {
   });
 });
 
+const HANDLER_MODULE = `export const onReviewNote = (state, event) => ({ ...state, custom: { ...state.custom, note: event.payload } });
+export const onStarted = (state) => ({ ...state, custom: { ...state.custom, input: state.input } });
+export const notAFunction = 1;
+export const onRisky = (state, event) => {
+  if (event.payload === "bad") throw new Error("cannot apply a bad note");
+  return { ...state, custom: { ...state.custom, note: event.payload } };
+};
+export const onBadShape = (state) => ({ ...state, specName: "Not A Slug" });
+`;
+
+// A run folder whose state.json lists the given handlers from a module written beside it.
+const runWithHandlers = async (
+  refs: Readonly<Record<string, readonly { module?: string; handler: string }[]>>,
+) => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), "handlers-")));
+  const module = join(cwd, "review-state.ts");
+  await writeFile(module, HANDLER_MODULE);
+  const eventHandlers = Object.fromEntries(
+    Object.entries(refs).map(([type, list]) => [
+      type,
+      list.map((ref) => ({ module: ref.module ?? module, handler: ref.handler })),
+    ]),
+  );
+  const run = { id: "r-test", cwd, name: "fix-login" };
+  const runDir = runDirOf(cwd, run.name);
+  await mkdir(runDir, { recursive: true });
+  await writeFile(join(runDir, "state.json"), JSON.stringify({ ...seed, eventHandlers }));
+  const stateJson = async (): Promise<State> =>
+    StateSchema.parse(JSON.parse(await readFile(join(runDir, "state.json"), "utf8")));
+  return { run, runDir, stateJson };
+};
+
+describe("emitRunEvent with extension handlers", () => {
+  test("EH7 — a custom.* event's extension handler writes state.custom into state.json", async () => {
+    const { run, stateJson } = await runWithHandlers({
+      "custom.review.note": [{ handler: "onReviewNote" }],
+    });
+
+    const result = await emitRunEvent(run, {
+      type: "custom.review.note",
+      source: "test",
+      payload: "looks good",
+    });
+
+    expect(result.ok).toBe(true);
+    expect((await stateJson()).custom).toEqual({ note: "looks good" });
+  });
+
+  test("EH8 — an extension on a built-in type sees the state the built-in handler wrote", async () => {
+    const { run, stateJson } = await runWithHandlers({
+      "workflow.started": [{ handler: "onStarted" }],
+    });
+
+    await emitRunEvent(run, {
+      type: "workflow.started",
+      source: "test",
+      payload: { workflow: "feature", inputs: { ticket: "T-1" } },
+    });
+
+    expect((await stateJson()).custom).toEqual({ input: { ticket: "T-1" } });
+  });
+
+  test.each([
+    [
+      "a module that does not exist",
+      { module: "/nowhere/review-state.ts", handler: "onReviewNote" },
+      "/nowhere/review-state.ts",
+    ],
+    ["an export that is missing", { handler: "onMissing" }, "onMissing"],
+    ["an export that is not a function", { handler: "notAFunction" }, "notAFunction"],
+  ])("EH9 — %s fails the emit, naming it, and stores nothing", async (_label, ref, named) => {
+    const { run, runDir, stateJson } = await runWithHandlers({ "custom.review.note": [ref] });
+
+    const result = await emitRunEvent(run, {
+      type: "custom.review.note",
+      source: "test",
+      payload: "looks good",
+    });
+
+    expect(result.ok ? "" : result.error).toContain(named);
+    expect(result.ok ? "" : result.error).toContain(ref.handler);
+    expect(await jsonlEventStore(runDir).read()).toEqual([]);
+    expect((await stateJson()).lastEventSeq).toBe(0);
+  });
+
+  test.each([
+    ["throws", "onRisky"],
+    ["returns a state that fails the schema", "onBadShape"],
+  ])(
+    "EH13 — a handler that %s fails the emit and stores nothing, so later events still apply",
+    async (_label, handler) => {
+      const { run, runDir, stateJson } = await runWithHandlers({
+        "custom.review.note": [{ handler }],
+        "custom.review.other": [{ handler: "onReviewNote" }],
+      });
+
+      const bad = await emitRunEvent(run, {
+        type: "custom.review.note",
+        source: "test",
+        payload: "bad",
+      });
+      const good = await emitRunEvent(run, {
+        type: "custom.review.other",
+        source: "test",
+        payload: "fine",
+      });
+
+      expect(bad.ok ? "" : bad.error).toContain("event not stored");
+      expect(good.ok).toBe(true);
+      expect((await jsonlEventStore(runDir).read()).map((event) => event.type)).toEqual([
+        "custom.review.other",
+      ]);
+      expect(await stateJson()).toMatchObject({ lastEventSeq: 1, custom: { note: "fine" } });
+    },
+  );
+
+  test("EH14 — a handler module that throws while loading fails the emit and stores nothing", async () => {
+    const { run, runDir } = await runWithHandlers({
+      "custom.review.note": [{ handler: "onReviewNote" }],
+    });
+    const broken = join(run.cwd, "broken.ts");
+    await writeFile(
+      broken,
+      'throw new Error("module is broken");\nexport const onReviewNote = () => {};\n',
+    );
+    const state = StateSchema.parse(JSON.parse(await readFile(join(runDir, "state.json"), "utf8")));
+    await writeFile(
+      join(runDir, "state.json"),
+      JSON.stringify({
+        ...state,
+        eventHandlers: { "custom.review.note": [{ module: broken, handler: "onReviewNote" }] },
+      }),
+    );
+
+    const result = await emitRunEvent(run, {
+      type: "custom.review.note",
+      source: "test",
+      payload: "looks good",
+    });
+
+    expect(result.ok ? "" : result.error).toContain("module is broken");
+    expect(await jsonlEventStore(runDir).read()).toEqual([]);
+  });
+});
+
 const repoIn = async (name: string): Promise<string> => {
   const repo = join(await realpath(await mkdtemp(join(tmpdir(), "state-"))), name);
   await mkdir(repo);
@@ -197,13 +371,15 @@ const repoIn = async (name: string): Promise<string> => {
 };
 
 describe("createState", () => {
-  test("SC18: builds a valid first state from the run folder alone and writes it as state.json", async () => {
+  test("SC18: builds a valid first state from the run folder and the frozen handler list, and writes it as state.json", async () => {
     const repo = await repoIn("Fix Login App");
     const runDir = join(repo, ".harness", "fix-login");
     await mkdir(runDir, { recursive: true });
     await writeFile(join(runDir, "workflow.yaml"), "name: demo\nnodes: []\n");
 
-    const state = await createState(runDir, "1.0.0");
+    const eventHandlers = { "custom.review.note": [{ module: "/abs/review.ts", handler: "f" }] };
+
+    const state = await createState({ runDir, harnessVersion: "1.0.0", eventHandlers });
 
     expect(StateSchema.safeParse(state).success).toBe(true);
     expect(state).toMatchObject({
@@ -211,6 +387,8 @@ describe("createState", () => {
       specName: "fix-login",
       workflow: { name: "demo", path: "workflow.yaml" },
       input: {},
+      custom: {},
+      eventHandlers,
     });
     expect(state.workspace.path).toBe(repo);
     expect(Object.keys(state.workspace.repositories)).toEqual(["fix-login-app"]);

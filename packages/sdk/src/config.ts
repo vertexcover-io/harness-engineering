@@ -2,6 +2,8 @@ import { join } from "node:path";
 import * as z from "zod";
 import { EffortSchema } from "./agent.ts";
 import {
+  EventHandlerRefSchema,
+  EventTypeSchema,
   isNormalizedRelativePath,
   NonEmptyStringSchema,
   type Result,
@@ -99,6 +101,9 @@ const ExtensionSchema = z.strictObject({
   references: recordOf(SlugSchema, ReferenceExtensionSchema).default({}),
 });
 
+// Each event type's handlers run in list order, after the built-in handler for that type.
+const EventHandlerSchema = EventHandlerRefSchema.extend({ module: RepoPathSchema });
+
 // The top-level baseline runs once for the workspace; a package's commands.baseline runs for that package.
 export const ConfigSchema = z.strictObject({
   version: z.literal(2),
@@ -110,6 +115,7 @@ export const ConfigSchema = z.strictObject({
   extensions: recordOf(SkillNameSchema, ExtensionSchema).default({}),
   env: recordOf(EnvNameSchema, z.string()).default({}),
   workspace: WorkspaceConfigSchema.prefault({}),
+  eventHandlers: recordOf(EventTypeSchema, z.array(EventHandlerSchema)).default({}),
 });
 
 export type ConfigInput = z.input<typeof ConfigSchema>;

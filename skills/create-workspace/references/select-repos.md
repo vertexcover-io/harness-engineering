@@ -1,6 +1,10 @@
 # Select repos
 
-Pick which repos from `bun run orchestrate workspace info` go into a multi-repo workspace.
+Pick which repos from the workspace script's `info` go into a multi-repo workspace:
+
+```bash
+bun run workspace info
+```
 
 You have the input's `request` (what the run should do) and the `packages` list, where each entry
 has a `name`, a `path` and sometimes a `description`.
@@ -12,8 +16,14 @@ has a `name`, a `path` and sometimes a `description`.
   stage until someone adds it.
 - **No repo clearly matches:** pick all of them, and say so.
 
-Pass the picked names to `bun run orchestrate workspace create SPEC_NAME --run SPEC_NAME` as
-`--repos NAME1,NAME2`.
+Pass the picked names to the script's `create` as `--repos NAME1,NAME2`:
 
-A later stage that finds it needs another repo adds it to the existing workspace with
-`bun run orchestrate workspace add SPEC_NAME --repos NAME --run SPEC_NAME`.
+```bash
+bun run workspace create SPEC_NAME --run SPEC_NAME --repos NAME1,NAME2
+```
+
+A later stage that finds it needs another repo adds it to the existing workspace:
+
+```bash
+bun run workspace add SPEC_NAME --repos NAME --run SPEC_NAME
+```

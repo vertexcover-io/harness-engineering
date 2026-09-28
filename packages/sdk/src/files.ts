@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
 import type { Result } from "./contracts.ts";
 
@@ -108,4 +110,49 @@ export const withLock = async <T>(lockDir: string, action: () => Promise<T>): Pr
   } finally {
     await releaseLock(lockDir);
   }
+};
+
+export type ModuleError = Readonly<{
+  kind: "missing-module" | "load-failed" | "missing-export";
+  message: string;
+  cause?: unknown;
+}>;
+
+type AnyFunction = (...args: never[]) => unknown;
+
+export const importModule = async (
+  file: string,
+): Promise<Result<Record<string, unknown>, ModuleError>> => {
+  if (!existsSync(file)) {
+    return { ok: false, error: { kind: "missing-module", message: `module not found: ${file}` } };
+  }
+  try {
+    return { ok: true, value: await import(pathToFileURL(file).href) };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      error: { kind: "load-failed", message: `${file} failed to load: ${reason}` },
+    };
+  }
+};
+
+// Only callability can be checked at runtime; the signature is the caller's contract with the module.
+const isFunction = <F extends AnyFunction>(value: unknown): value is F =>
+  typeof value === "function";
+
+export const loadFunction = async <F extends AnyFunction>(
+  file: string,
+  name: string,
+): Promise<Result<F, ModuleError>> => {
+  const loaded = await importModule(file);
+  if (!loaded.ok) return loaded;
+  const exported = loaded.value[name];
+  if (!isFunction<F>(exported)) {
+    return {
+      ok: false,
+      error: { kind: "missing-export", message: `${file} has no callable export "${name}"` },
+    };
+  }
+  return { ok: true, value: exported };
 };

@@ -1,7 +1,10 @@
-import { existsSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { type JsonValue, spawn } from "@harness/sdk";
+import { resolve } from "node:path";
+import {
+  type JsonValue,
+  loadFunction as loadSdkFunction,
+  importModule as sdkImportModule,
+  spawn,
+} from "@harness/sdk";
 import { z } from "zod";
 import {
   type AgentAdapter,
@@ -48,10 +51,12 @@ export const importModule = async (
   modulePath: string,
   cwd: string,
 ): Promise<Record<string, unknown>> => {
-  const file = isAbsolute(modulePath) ? modulePath : resolve(cwd, modulePath);
-  if (!existsSync(file))
-    throw new WorkflowError("missing-module", `module not found: ${file}`, modulePath);
-  return import(pathToFileURL(file).href);
+  const loaded = await sdkImportModule(resolve(cwd, modulePath));
+  if (!loaded.ok) {
+    const { kind, message, cause } = loaded.error;
+    throw new WorkflowError(kind, message, modulePath, { cause });
+  }
+  return loaded.value;
 };
 
 export const loadFunction = async (
@@ -59,15 +64,12 @@ export const loadFunction = async (
   functionName: string,
   cwd: string,
 ): Promise<WorkflowFunction> => {
-  const exported = (await importModule(modulePath, cwd))[functionName];
-  if (typeof exported !== "function") {
-    throw new WorkflowError(
-      "missing-export",
-      `${modulePath} has no callable export "${functionName}"`,
-      modulePath,
-    );
+  const loaded = await loadSdkFunction<WorkflowFunction>(resolve(cwd, modulePath), functionName);
+  if (!loaded.ok) {
+    const { kind, message, cause } = loaded.error;
+    throw new WorkflowError(kind, message, modulePath, { cause });
   }
-  return exported as WorkflowFunction;
+  return loaded.value;
 };
 
 export const withTimeout = <T>(

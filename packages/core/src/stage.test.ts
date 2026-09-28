@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type ConfigInput, ConfigSchema } from "@harness/sdk";
 import * as z from "zod";
+import {
+  CreateWorkspaceInputSchema,
+  CreateWorkspaceOutputSchema,
+} from "../../../skills/create-workspace/scripts/workspace.ts";
 import { loadStage, resolveExtension, resolveReference, StageSchema } from "./stage.ts";
 
 const validStage = {
@@ -228,5 +233,19 @@ describe("resolveExtension", () => {
   ])("WS31 — with %s", async (_label, extensions, expected) => {
     const options = await setupResolve(extensions);
     expect(await resolveExtension(options)).toEqual({ ok: true, value: expected });
+  });
+});
+
+describe("the real create-workspace skill", () => {
+  test("WS34 — loads through loadStage with its own schemas, listing select-repos whose file exists", async () => {
+    const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "create-workspace");
+    const result = await loadStage(skillDir, {
+      "create-workspace.input.v1": CreateWorkspaceInputSchema,
+      "create-workspace.output.v1": CreateWorkspaceOutputSchema,
+    });
+    if (!result.ok) throw new Error(result.error);
+    const selectRepos = result.value.stage.references["select-repos"];
+    expect(selectRepos?.path).toBe("references/select-repos.md");
+    expect(existsSync(join(skillDir, selectRepos?.path ?? ""))).toBe(true);
   });
 });

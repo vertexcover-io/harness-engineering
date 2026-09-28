@@ -1,7 +1,8 @@
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import * as z from "zod";
 import { LayoutSchema } from "./config.ts";
 import {
+  AbsolutePathSchema,
   ArtifactRefSchema,
   type Event,
   EventSchema,
@@ -56,7 +57,6 @@ export const WorkflowStartedEvent = z.object({
 
 const workspaceEvent = <P extends z.ZodType>(payload: P) => z.object({ payload });
 
-const AbsolutePathSchema = NonEmptyStringSchema.refine(isAbsolute, "Expected an absolute path");
 const ShaSchema = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/, "Expected a full commit SHA");
 
 const WorkspaceRepositorySchema = z.strictObject({

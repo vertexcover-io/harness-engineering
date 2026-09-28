@@ -195,6 +195,7 @@ export const WorkflowErrorCodeSchema = z.enum([
   "invalid-reference",
   "input",
   "missing-module",
+  "load-failed",
   "missing-export",
   "missing-workflow",
   "include-recursion",

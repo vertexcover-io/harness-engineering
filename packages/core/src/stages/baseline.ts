@@ -88,7 +88,7 @@ const isFolder = (path: string): boolean =>
 
 // Without state.json, as in a run given --dir, there is no node run to check. A missing folder
 // would make spawn fail with exit 127 and read as a command that cannot start, and state.json
-// keeps workspace.path after `orchestrate workspace remove`, so the folder is checked here.
+// keeps workspace.path after `workspace.ts remove`, so the folder is checked here.
 const resolveWorkspace = async (
   options: BaselineOptions,
 ): Promise<Result<string, BaselineError>> => {

@@ -42,6 +42,19 @@ describe("StateSchema", () => {
     expect(StateSchema.safeParse(validState).success).toBe(true);
   });
 
+  test("EH3 — a state.json written before custom and eventHandlers existed parses with both empty", () => {
+    expect(StateSchema.parse(validState)).toMatchObject({ custom: {}, eventHandlers: {} });
+  });
+
+  test("EH4 — custom holds any JSON and eventHandlers keeps absolute module paths", () => {
+    const eventHandlers = { "custom.review.note": [{ module: "/repo/review.ts", handler: "f" }] };
+    const custom = { review: { notes: ["a", 1, null] } };
+    expect(StateSchema.parse({ ...validState, custom, eventHandlers })).toMatchObject({
+      custom,
+      eventHandlers,
+    });
+  });
+
   const withRun = (run: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
     ...validState,
     nodeRuns: { "plan-1": { ...agentRun, ...run } },
@@ -65,6 +78,10 @@ describe("StateSchema", () => {
     ["an active run that is not running", withRun({ status: "completed" })],
     ["duplicate active IDs", { ...validState, activeNodeRuns: ["plan-1", "plan-1"] }],
     ["an empty repository map", { ...validState, workspace: { path: "/w", repositories: {} } }],
+    [
+      "an event handler module that is not absolute",
+      { ...validState, eventHandlers: { "custom.a.b": [{ module: "a.ts", handler: "f" }] } },
+    ],
     [
       "a workflow path other than workflow.yaml",
       { ...validState, workflow: { name: "f", path: "w.yaml" } },
