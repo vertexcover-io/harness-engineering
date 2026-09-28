@@ -118,12 +118,9 @@ owes evidence the quality gate can read:
   permissions, including for any review preflight or repair commits. Recheck edits made by review.
   Ask before committing unless the user already authorized it.
 
-Pipeline commits and pushes use the caller's existing authorization. Stage only this assignment's changes;
+Pipeline commits use the caller's existing authorization. Stage only this assignment's changes;
 leave unrelated edits intact. If nothing changed, report that instead of making an empty commit.
-In every pipeline mode, the coder agent must commit and push its changes to the assigned remote
-branch before reporting completion, including fixes between verification rounds. Confirm the remote
-branch points to the returned commit. If a required commit or push is unauthorized or fails, return
-`BLOCKED` with the reason; never force-push. Opening a PR remains the caller's work.
+If a required commit is not authorized, return blocked. Pushing and opening a PR remain the caller's work.
 
 ## When blocked
 

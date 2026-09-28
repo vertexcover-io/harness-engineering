@@ -16,11 +16,9 @@ An open PR is the successful result; a doctor-approved PR skip must be reported 
    one-paragraph summary, TOC (`plan.html` first, then `design.md`, `plan.md`, `phases/`,
    review and verification reports), and PR-link placeholder. Include only artifacts produced
    by this route. Reviewers access this index separately because `.harness/` does not reach the PR.
-2. **Squash the run's working commits.** Coder phases, review repairs, verify fix rounds and WIP
-   checkpoints each committed as they went. Those commits were checkpoints for the stages that
-   needed them. The PR should show the finished change in a few meaningful commits, not the
-   history of how the run got there. Squash only what this run committed and nothing the remote
-   already has, so no push is ever forced.
+2. **Squash only unpublished working commits.** Verification already pushed the implementation
+   and fixes; preserve those commits in the PR. Apply the rules below only to remaining unpublished
+   commits from this run. Never rewrite published history or force-push.
 
    `BASE` is `START_SHA`, or the entry's `base_sha` on a resumed run. After
    `git fetch origin <BRANCH_NAME>`, if `origin/<BRANCH_NAME>` exists and is not an ancestor of
@@ -90,7 +88,7 @@ An open PR is the successful result; a doctor-approved PR skip must be reported 
 ## Resumed runs
 
 Commit and push once per `TARGETS[]` entry in its own worktree and branch; name unchanged entries
-in the report without creating empty commits. Squash each entry down to its own `base_sha`, or to
+in the report without creating empty commits. Squash only unpublished commits, using `base_sha`, or
 `origin/<branch>` when that is newer, so the review fixes land as a few new commits on top of what the
 PR already shows. Each entry already has a PR, so step 5 finds it and opens nothing.
 Skip the manifest and link update. The reviewer index stays in the primary spec dir.

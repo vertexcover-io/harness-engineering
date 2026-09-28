@@ -8,6 +8,12 @@ proves nothing regressed. Neither reads the other's output.
 
 ## Dispatch
 
+Before each verification attempt, including retries and resumed runs, the orchestrator waits for
+coding and review, commits remaining task changes under existing authorization, and pushes each
+affected repository's assigned branch. Leave unrelated edits untouched; never force-push.
+Dispatch only when no task changes remain uncommitted and every remote branch SHA matches local
+HEAD. A commit or push failure is not a reason to switch verification environments.
+
 ```text
 [PREAMBLE]
 
