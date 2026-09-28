@@ -31,7 +31,7 @@ reports success whatever happened.
 | planning, after `plan.html` + extracted plans are verified | `<HOOKS> fire --event artifact-created --kind plan --spec <SPEC_NAME> --data '{"path":".harness/<SPEC_NAME>/plan.html"}'` |
 | verify, right after the proof-report artifact check passes | `<HOOKS> fire --event artifact-created --kind proof-report --spec <SPEC_NAME> --data '{"path":".harness/<SPEC_NAME>/verification/proof-report.html"}'` |
 | commit-pr, after the `git-commit` skill returns | `<HOOKS> fire --event artifact-created --kind commit --spec <SPEC_NAME> --data '{"sha":"<HEAD sha>"}'` |
-| commit-pr, right after `gh pr create` prints the URL | `<HOOKS> fire --event artifact-created --kind pr --spec <SPEC_NAME> --data '{"url":"<PR_URL>"}'` |
+| commit-pr, after `git-pr` returns `PR_ACTION=created` | `<HOOKS> fire --event artifact-created --kind pr --spec <SPEC_NAME> --data '{"url":"<PR_URL>"}'` |
 
 A person outside the team may read `body` — write it in plain words: say what happened and what
 it means. Don't paste a verdict code, a raw metric, or a stage report.

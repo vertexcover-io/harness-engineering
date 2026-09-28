@@ -1,0 +1,9 @@
+{
+  "skill": "git-pr",
+  "path": "skills/git-pr",
+  "findings": [
+    {"id":"T5","category":"test_coverage","finding_type":"out_of_rubric","severity":"major","deterministic":false,"location":"evals/evals.json:1","evidence":"Five scenarios are defined; no baseline results recorded.","fix":"Run the scenarios with and without the skill."},
+    {"id":"T6","category":"test_coverage","finding_type":"out_of_rubric","severity":"major","deterministic":false,"location":"evals/evals.json:1","evidence":"No Haiku, Sonnet, or Opus execution results recorded.","fix":"Run behavioral evals across the supported models."},
+    {"id":"T7","category":"test_coverage","finding_type":"out_of_rubric","severity":"minor","deterministic":false,"location":"evals/evals.json:1","evidence":"No blind comparison results recorded.","fix":"Compare generated descriptions without revealing which version produced them."}
+  ]
+}

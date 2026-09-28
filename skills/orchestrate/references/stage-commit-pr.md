@@ -3,11 +3,11 @@
 `set-status commit-pr running` + `fire --event stage-started --stage commit-pr`. Run these steps in the main conversation.
 
 If [config.md](config.md) resolves a skill for this stage, invoke it in place of steps 2–5,
-passing `WORKTREE_PATH`, `BRANCH_NAME`, `BASE_BRANCH`, the PR title and body, and `MODE_ARG`.
-It owes the commit SHAs and either `PR_URL` or a stated reason there is none. Steps 1 and 6 to 9
+passing `WORKTREE_PATH`, `BRANCH_NAME`, `BASE_BRANCH`, the task context, verification results, and `MODE_ARG`.
+It owes the commit SHAs, `PR_URL`, `PR_NUMBER`, and `PR_ACTION`, or a stated reason there is no PR. Steps 1 and 6 to 9
 stay here either way, so the index, the events and the manifest do not change with the ship method.
 
-If a commit, push, or PR creation fails, stop as `SHIP_FAILED`, naming the operation and error;
+If a commit, push, or PR publication fails, stop as `SHIP_FAILED`, naming the operation and error;
 report any commits already pushed or PR already created so the next attempt can resume safely.
 If writing the index or updating the manifest fails, stop and report that path and error.
 An open PR is the successful result; a doctor-approved PR skip must be reported as uncreated.
@@ -56,33 +56,14 @@ An open PR is the successful result; a doctor-approved PR skip must be reported 
    invoke `git-commit` again without `--working-commits` for what is still dirty, and name the
    fallback in the stage report.
 4. Push: `git push -u origin <BRANCH_NAME>`.
-5. Open the PR, unless this branch already has one. Look first: `gh pr create` errors out when a
-   PR exists for the branch, and a caller that started from an existing PR — a review fixer
-   answering comments, say — is pushing to that PR rather than opening a second.
-
-   ```bash
-   gh pr view --json url,state --jq 'select(.state == "OPEN") | .url'
-   ```
-
-   Ask for the state, because `gh pr view` answers with a closed or merged PR just as readily as
-   an open one, and a branch reused after its PR merged would otherwise report success pointing at
-   a PR these commits are not in. A URL means an open PR exists: store it as `PR_URL` and record
-   in the report that it already existed. No URL means create one, with the spec title
-   and a one-paragraph body describing the change, its validation, and where the worktree
-   artifacts live. Use `--body-file` for multiline text:
-
-   ```bash
-   gh pr create --title '<spec title>' --body-file '<body file>' --base '<BASE_BRANCH>' --head '<BRANCH_NAME>'
-   ```
-
-   Store the `PR_URL` it prints. A doctor-approved skip of `gh` leaves the PR uncreated; report
-   that explicitly.
+5. Invoke `harness:git-pr` and follow its instructions.
+   Store the returned `PR_URL`, `PR_NUMBER`, and `PR_ACTION` for the remaining stage steps.
 6. Fire `artifact-created` with kind `commit` and the HEAD SHA, and — only when this run opened the
-   PR — kind `pr` with its URL, per [events.md](events.md). Both fire here rather than inside steps
+   PR (`PR_ACTION=created`) — kind `pr` with its URL, per [events.md](events.md). Both fire here rather than inside steps
    3 and 5, so a project that replaces those steps with its own ship skill keeps its hooks.
-7. Update `manifest.json` with `pr_number` and `completed_at` — merge into the file, never
+7. Update `manifest.json` with `pr_number` from `PR_NUMBER` and `completed_at` — merge into the file, never
    rewrite it: `thread` is the notifier's and the run's later events still need it. Backfill
-   `PR_URL` into README. If no PR was created, leave its number null and record the reason in the index.
+   `PR_URL` into README. If PR publication was skipped, leave its number null and record the reason in the index.
 8. `write-report commit-pr`, then `set-status commit-pr done` +
    `fire --event stage-completed --stage commit-pr --result pass`.
 9. Fire `run-completed`, with the PR URL or the actual commit/push outcome. Carry commits and `PR_URL`.
@@ -92,7 +73,7 @@ An open PR is the successful result; a doctor-approved PR skip must be reported 
 Commit and push once per `TARGETS[]` entry in its own worktree and branch; name unchanged entries
 in the report without creating empty commits. Squash each entry down to its own `base_sha`, or to
 `origin/<branch>` when that is newer, so the review fixes land as a few new commits on top of what the
-PR already shows. Each entry already has a PR, so step 5 finds it and opens nothing.
+PR already shows. Each entry already has a PR, so step 5 updates its description and opens nothing.
 Skip the manifest and link update. The reviewer index stays in the primary spec dir.
 
 Uploading the run's artifacts to a tracker belongs in a project `artifact-created` hook filtered to
