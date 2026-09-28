@@ -444,6 +444,25 @@ describe("fetching the base branch", () => {
     expect(result.value.repos[0]).toMatchObject({ baseBranch: "release", startSha: pushed });
   });
 
+  test("with no --base, branches from workspace.baseBranch instead of the origin default", async () => {
+    const remote = makeRemote();
+    const pushed = pushCommit(remote, "release");
+    writeConfig(remote.clone, { workspace: { baseBranch: "release" } });
+    const result = await createWorkspace({ root: remote.clone, branch: "feat-x" });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.repos[0]).toMatchObject({ baseBranch: "release", startSha: pushed });
+  });
+
+  test("--base wins over workspace.baseBranch", async () => {
+    const remote = makeRemote();
+    pushCommit(remote, "release");
+    const onMain = pushCommit(remote);
+    writeConfig(remote.clone, { workspace: { baseBranch: "release" } });
+    const result = await createWorkspace({ root: remote.clone, branch: "feat-x", base: "main" });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.repos[0]).toMatchObject({ baseBranch: "main", startSha: onMain });
+  });
+
   test.each([
     [
       "a branch that exists only in the clone",
@@ -549,6 +568,11 @@ const REJECTIONS: Rejection[] = [
     root: withConfig({}),
     base: "--upload-pack=touch pwned",
     messages: ["--upload-pack"],
+  },
+  {
+    name: "workspace.baseBranch that git would read as an option",
+    root: withConfig({ workspace: { baseBranch: "--upload-pack=touch pwned" } }),
+    messages: ["workspace.baseBranch", "--upload-pack"],
   },
   { name: "path git does not ignore", root: withConfig({}, ["other/"]), messages: ["not ignored"] },
   {

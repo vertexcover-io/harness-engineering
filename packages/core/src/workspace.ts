@@ -118,6 +118,7 @@ type Location = Readonly<{
   config: Config;
   layout: Layout;
   branch: string;
+  base: string | undefined;
   workspaceDir: string;
 }>;
 
@@ -184,18 +185,20 @@ const locateWorkspace = async (options: WorkspaceOptions): Promise<Result<Locati
   if (!(await git.isValidBranchName(options.root, options.branch))) {
     return { ok: false, error: `invalid branch name "${options.branch}"` };
   }
-  if (options.base !== undefined && !(await git.isValidBranchName(options.root, options.base))) {
-    return { ok: false, error: `invalid base "${options.base}"` };
-  }
   const config = await loadConfigOrDefault(options.root);
   if (!config.ok) return config;
-  const { layout, path } = config.value.workspace;
+  const { layout, path, baseBranch } = config.value.workspace;
+  const base = options.base ?? baseBranch;
+  if (base !== undefined && !(await git.isValidBranchName(options.root, base))) {
+    const source = options.base === undefined ? "workspace.baseBranch" : "base";
+    return { ok: false, error: `invalid ${source} "${base}"` };
+  }
   const filled = fillPath(path ?? DEFAULT_PATHS[layout], options.branch);
   if (!filled.ok) return filled;
   const workspaceDir = resolve(options.root, filled.value);
   return {
     ok: true,
-    value: { config: config.value, layout, branch: options.branch, workspaceDir },
+    value: { config: config.value, layout, branch: options.branch, base, workspaceDir },
   };
 };
 
@@ -349,13 +352,12 @@ const addWorktree = async (
 const createOne = async (
   repo: RepoPlan,
   plan: Plan,
+  base: string | undefined,
   options: WorkspaceOptions,
   log: ILogger,
 ): Promise<ReadyRepo | FailedRepo> => {
   const baseBranch =
-    options.base === undefined
-      ? await defaultBase(repo.checkoutDir)
-      : { ok: true as const, value: options.base };
+    base === undefined ? await defaultBase(repo.checkoutDir) : { ok: true as const, value: base };
   if (!baseBranch.ok) return failed(repo, "add", baseBranch.error);
   const addFailure = await addWorktree(repo, plan.branch, baseBranch.value);
   if (addFailure !== undefined) {
@@ -449,13 +451,22 @@ export const createWorkspace = async (
   const planned = await precheckCreate(located.value, options);
   if (!planned.ok) return planned;
   const plan = planned.value;
-  const repos = await Promise.all(plan.repos.map((repo) => createOne(repo, plan, options, log)));
+  const { base } = located.value;
+  const repos = await Promise.all(
+    plan.repos.map((repo) => createOne(repo, plan, base, options, log)),
+  );
   const eventError = await emitCreated(options.run, plan, repos);
   return reported({ ...plan, repos }, [eventError]);
 };
 
-const addOne = async (repo: RepoPlan, plan: Plan, options: WorkspaceOptions, log: ILogger) => {
-  const outcome = await createOne(repo, plan, options, log);
+const addOne = async (
+  repo: RepoPlan,
+  plan: Plan,
+  base: string | undefined,
+  options: WorkspaceOptions,
+  log: ILogger,
+) => {
+  const outcome = await createOne(repo, plan, base, options, log);
   const { workspaceDir, branch } = plan;
   const repoId = toRepoId(repo.name);
   const eventError =
@@ -485,7 +496,8 @@ export const addRepositories = async (
   const planned = await precheckAdd(located.value, options);
   if (!planned.ok) return planned;
   const plan = planned.value;
-  const added = await Promise.all(plan.repos.map((repo) => addOne(repo, plan, options, log)));
+  const { base } = located.value;
+  const added = await Promise.all(plan.repos.map((repo) => addOne(repo, plan, base, options, log)));
   const repos = added.map((result) => result.outcome);
   return reported(
     { ...plan, repos },
