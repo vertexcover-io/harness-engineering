@@ -1,17 +1,75 @@
 version: 2
+
+workspace:
+  layout: mono
+  path: .worktrees/{{ branch }}
+  baseBranch: v2
+  setup: bun install
+
 packages:
-  harness:
-    path: .
-    runner: node-test
-    commands:
-      testAll: node --test "skills/**/*.test.ts" "skills/**/*.test.mjs" "scripts/**/*.test.ts" "hooks/**/*.test.mjs" "extensions/**/*.test.mjs"
-      testFile: node --test {FILE}
-  v2:
-    path: .
+  sdk:
+    path: packages/sdk
     runner: bun
+    description: "@harness/sdk: shared primitives (agent, git, process, logger, check)"
     commands:
       bootstrap: bun install
-      typecheck: bun run typecheck
-      lint: bun run lint
-      testAll: bun test ./packages
+      typecheck: bun run --filter @harness/sdk typecheck
+      lint: bunx biome check packages/sdk
+      testAll: bun test ./packages/sdk
       testFile: bun test {FILE}
+
+  core:
+    path: packages/core
+    runner: bun
+    description: "@harness/core: config, run events, state, workspace and the orchestrate script"
+    commands:
+      bootstrap: bun install
+      typecheck: bun run --filter @harness/core typecheck
+      lint: bunx biome check packages/core
+      testAll: bun test ./packages/core
+      testFile: bun test {FILE}
+
+  agents:
+    path: packages/agents
+    runner: bun
+    description: "@harness/agents: agent adapters"
+    commands:
+      bootstrap: bun install
+      typecheck: bun run --filter @harness/agents typecheck
+      lint: bunx biome check packages/agents
+      testAll: bun test ./packages/agents
+      testFile: bun test {FILE}
+
+  server:
+    path: packages/server
+    runner: bun
+    description: "@harness/server: Hono server and its client"
+    commands:
+      bootstrap: bun install
+      typecheck: bun run --filter @harness/server typecheck
+      lint: bunx biome check packages/server
+      testAll: bun test ./packages/server
+      testFile: bun test {FILE}
+
+  cli:
+    path: packages/cli
+    runner: bun
+    description: "@harness/cli: the harness binary"
+    commands:
+      bootstrap: bun install
+      typecheck: bun run --filter @harness/cli typecheck
+      lint: bunx biome check packages/cli
+      testAll: bun test ./packages/cli
+      testFile: bun test {FILE}
+      build: bun run --filter @harness/cli build
+
+  plugins:
+    path: packages/plugins
+    runner: bun
+    description: "@harness/plugins: built-in plugins"
+    commands:
+      bootstrap: bun install
+      typecheck: bun run --filter @harness/plugins typecheck
+      lint: bunx biome check packages/plugins
+      testAll: null
+      testFile: null
