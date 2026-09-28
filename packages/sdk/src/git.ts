@@ -1,6 +1,6 @@
 import type { Exec, ExecResult } from "./check.ts";
+import type { Result } from "./contracts.ts";
 import { execWithTimeout } from "./process.ts";
-import type { Result } from "./result.ts";
 
 export type WorktreeEntry = Readonly<{ path: string; branch: string | null }>;
 

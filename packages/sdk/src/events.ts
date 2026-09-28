@@ -303,7 +303,7 @@ const onWorkflowStarted: EventHandler = (state, event) => {
   return { ...state, startedAt: event.ts, input: parsed.data.payload.inputs };
 };
 
-export const coreHandlers: EventHandlers = {
+export const builtInHandlers: EventHandlers = {
   "workflow.started": onWorkflowStarted,
   "workflow.node.started": onStarted,
   "workflow.node.completed": onEnded("completed"),

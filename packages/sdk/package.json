@@ -10,9 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "yaml": "^2.9.1",
     "zod": "^4"
-  },
-  "devDependencies": {
-    "@harness/core": "workspace:*"
   }
 }

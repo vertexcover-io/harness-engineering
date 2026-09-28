@@ -10,8 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jsonlEventStore } from "../event-store.ts";
-import { ERROR_MESSAGE_LIMIT, type RunRef, runDirOf } from "../events.ts";
+import { ERROR_MESSAGE_LIMIT, jsonlEventStore, type RunRef, runDirOf } from "@harness/sdk";
 import { loadStage } from "../stage.ts";
 import {
   addRepositories,

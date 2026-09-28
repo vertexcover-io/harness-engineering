@@ -10,9 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jsonlEventStore } from "./event-store.ts";
-import { runDirOf } from "./events.ts";
-import { RegistryFileSchema, type WorkflowRun } from "./registry.ts";
+import { jsonlEventStore, RegistryFileSchema, runDirOf, type WorkflowRun } from "@harness/sdk";
 
 const SCRIPT = join(import.meta.dir, "orchestrate.ts");
 

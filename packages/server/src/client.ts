@@ -1,5 +1,4 @@
-import { harnessHome } from "@harness/core";
-import { type ILogger, noopLogger, type Result } from "@harness/sdk";
+import { harnessHome, type ILogger, noopLogger, type Result } from "@harness/sdk";
 import type { ClientResponse } from "hono/client";
 import { hc } from "hono/client";
 import type { SuccessStatusCode } from "hono/utils/http-status";

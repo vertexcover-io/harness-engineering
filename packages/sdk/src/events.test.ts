@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Event, type JsonValue, type State, StateSchema } from "./contracts.ts";
 import { jsonlEventStore, memoryEventStore } from "./event-store.ts";
-import { coreHandlers, emitEvent, runDirOf, WorkspaceCreatedEvent } from "./events.ts";
+import { builtInHandlers, emitEvent, runDirOf, WorkspaceCreatedEvent } from "./events.ts";
 import { emitRunEvent, projectEvents } from "./state.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -178,11 +178,11 @@ const nodeEvent = (
 });
 
 const project = (events: readonly Event[]): State =>
-  projectEvents({ state: seed, events, handlers: coreHandlers });
+  projectEvents({ state: seed, events, handlers: builtInHandlers });
 
 const build = { nodeId: "build", nodeRunId: "build" };
 
-describe("coreHandlers", () => {
+describe("builtInHandlers", () => {
   test("workflow.started sets the run's startedAt to the event's time", () => {
     const state = project([
       {

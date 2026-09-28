@@ -1,13 +1,22 @@
 #!/usr/bin/env bun
 import { join, resolve } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
-import { AgentTypeSchema, createGit, stopRunningOnSignal } from "@harness/sdk";
-import { loadConfigOrDefault } from "./config.ts";
-import type { JsonValue, Result } from "./contracts.ts";
-import type { RunRef } from "./events.ts";
+import {
+  AgentTypeSchema,
+  createGit,
+  createRegistry,
+  emitRunEvent,
+  findRoot,
+  type JsonValue,
+  loadConfigOrDefault,
+  type Result,
+  type RunRef,
+  registryPath,
+  resolveRun,
+  stopRunningOnSignal,
+} from "@harness/sdk";
 import { createLogger, resolveLevel } from "./logging.ts";
-import { createRegistry, registryPath } from "./registry.ts";
-import { findRoot, initializeRun, linkRunSession, resolveRun } from "./runs.ts";
+import { initializeRun, linkRunSession } from "./runs.ts";
 import { resolveExtension, resolveReference } from "./stage.ts";
 import { captureBaseline } from "./stages/baseline.ts";
 import {
@@ -17,7 +26,6 @@ import {
   type WorkspaceOptions,
   workspaceInfo,
 } from "./stages/workspace.ts";
-import { emitRunEvent } from "./state.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
 const RUN_HELP = "spec name of the run, as given to init";

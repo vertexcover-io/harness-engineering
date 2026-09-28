@@ -1,9 +1,8 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { spawn } from "@harness/sdk";
+import { type JsonValue, spawn } from "@harness/sdk";
 import { z } from "zod";
-import type { JsonValue } from "../contracts.ts";
 import {
   type AgentAdapter,
   type AgentNode,

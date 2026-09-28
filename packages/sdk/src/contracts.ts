@@ -5,9 +5,6 @@ export const SlugSchema = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 export const SkillNameSchema = z
   .string()
   .regex(/^(?:[a-z][a-z0-9-]*:)?[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
-const UniqueSlugsSchema = z
-  .array(SlugSchema)
-  .refine((values) => new Set(values).size === values.length, "Names must be unique");
 export const JsonObjectSchema = z.record(z.string(), z.json());
 export const isNormalizedRelativePath = (value: string): boolean =>
   !value.startsWith("/") &&
@@ -22,45 +19,10 @@ const ArtifactPathSchema = RunPathSchema.refine(
   (value) => value.startsWith("artifacts/"),
   "Artifact paths must be inside artifacts/",
 );
-const SchemaKeySchema = z.string().regex(/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*\.v[1-9]\d*$/);
 
 export const ArtifactRefSchema = z.strictObject({
   name: NonEmptyStringSchema,
   path: ArtifactPathSchema,
-});
-
-export const ArtifactDeclarationSchema = z.strictObject({
-  artifact: SlugSchema,
-  optional: z.boolean().default(false),
-});
-
-export const StagePortSchema = z.strictObject({
-  description: NonEmptyStringSchema,
-  schema: SchemaKeySchema,
-});
-
-const ReferenceSchema = z.strictObject({
-  path: NonEmptyStringSchema.refine(
-    isNormalizedRelativePath,
-    "Expected a normalized path relative to the skill folder",
-  ),
-  description: NonEmptyStringSchema,
-});
-
-export const StageSchema = z.strictObject({
-  name: SlugSchema,
-  description: NonEmptyStringSchema,
-  mode: z.enum(["inline", "subagent"]),
-  tags: UniqueSlugsSchema.optional(),
-  "allowed-tools": z.array(NonEmptyStringSchema),
-  tier: NonEmptyStringSchema,
-  inputs: StagePortSchema,
-  outputs: StagePortSchema,
-  consumes: z.array(ArtifactDeclarationSchema).optional(),
-  produces: z.array(ArtifactDeclarationSchema).optional(),
-  protocols: UniqueSlugsSchema,
-  scopes: UniqueSlugsSchema,
-  references: z.record(SlugSchema, ReferenceSchema).default({}),
 });
 
 export const TokenUsageSchema = z.strictObject({
@@ -250,9 +212,6 @@ export const EventSchema = z
 export type JsonValue = z.infer<z.ZodJSONSchema>;
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
-export type ArtifactDeclaration = z.infer<typeof ArtifactDeclarationSchema>;
-export type StagePort = z.infer<typeof StagePortSchema>;
-export type Stage = z.infer<typeof StageSchema>;
 
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type AgentState = z.infer<typeof AgentStateSchema>;

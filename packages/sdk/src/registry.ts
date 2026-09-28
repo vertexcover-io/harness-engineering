@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import { rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { AgentTypeSchema, type ILogger, noopLogger } from "@harness/sdk";
 import * as z from "zod";
+import { AgentTypeSchema } from "./agent.ts";
 import { JsonObjectSchema, NonEmptyStringSchema, SlugSchema } from "./contracts.ts";
 import { readIfExists, withLock } from "./files.ts";
+import { type ILogger, noopLogger } from "./logger.ts";
 
 export const harnessHome = (env: NodeJS.ProcessEnv = process.env): string =>
   env.HARNESS_HOME ?? join(homedir(), ".harness");

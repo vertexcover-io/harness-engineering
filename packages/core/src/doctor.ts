@@ -11,14 +11,15 @@ import {
   fail,
   type ILogger,
   NOT_FOUND,
+  NonEmptyStringSchema,
   noopLogger,
   type Outcome,
   ok,
+  type Result,
+  readIfExists,
   warn,
 } from "@harness/sdk";
 import * as z from "zod";
-import { NonEmptyStringSchema, type Result } from "./contracts.ts";
-import { readIfExists } from "./files.ts";
 
 export const DoctorRowSchema = z.object({
   name: NonEmptyStringSchema,

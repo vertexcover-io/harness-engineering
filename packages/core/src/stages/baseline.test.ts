@@ -11,10 +11,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jsonlEventStore } from "../event-store.ts";
-import { type RunRef, runDirOf } from "../events.ts";
+import { createState, emitRunEvent, jsonlEventStore, type RunRef, runDirOf } from "@harness/sdk";
 import { captureLogger } from "../logging.ts";
-import { createState, emitRunEvent } from "../state.ts";
 import { type Baseline, captureBaseline } from "./baseline.ts";
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "baseline-")));
@@ -34,7 +32,7 @@ const setup = async (config: object, { state = true } = {}): Promise<Setup> => {
   git("init", "-q", "-b", "main");
   git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
   writeFileSync(join(runDir, "workflow.yaml"), "name: task\nnodes: []\n");
-  await createState(runDir);
+  await createState(runDir, "1.0.0");
   await emitRunEvent(run, {
     type: "workflow.node.started",
     source: "test",

@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
-import { compileWorkflow, type JsonObject, runDoctor, verdict } from "@harness/core";
-import { createGit, spawnInteractive } from "@harness/sdk";
+import { compileWorkflow, runDoctor, verdict } from "@harness/core";
+import { createGit, type JsonObject, spawnInteractive } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
 import { apiErrorText, cliLog, commandLog, ensureServer, fail, harnessClient } from "./client.ts";
 

@@ -1,9 +1,55 @@
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
+import {
+  type Config,
+  isNormalizedRelativePath,
+  NonEmptyStringSchema,
+  parseFrontmatter,
+  type Result,
+  readText,
+  SlugSchema,
+} from "@harness/sdk";
 import * as z from "zod";
-import type { Config } from "./config.ts";
-import { type Result, type Stage, StageSchema } from "./contracts.ts";
-import { parseFrontmatter, readText } from "./files.ts";
+
+const UniqueSlugsSchema = z
+  .array(SlugSchema)
+  .refine((values) => new Set(values).size === values.length, "Names must be unique");
+const SchemaKeySchema = z.string().regex(/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*\.v[1-9]\d*$/);
+
+const ArtifactDeclarationSchema = z.strictObject({
+  artifact: SlugSchema,
+  optional: z.boolean().default(false),
+});
+
+const StagePortSchema = z.strictObject({
+  description: NonEmptyStringSchema,
+  schema: SchemaKeySchema,
+});
+
+const ReferenceSchema = z.strictObject({
+  path: NonEmptyStringSchema.refine(
+    isNormalizedRelativePath,
+    "Expected a normalized path relative to the skill folder",
+  ),
+  description: NonEmptyStringSchema,
+});
+
+export const StageSchema = z.strictObject({
+  name: SlugSchema,
+  description: NonEmptyStringSchema,
+  mode: z.enum(["inline", "subagent"]),
+  tags: UniqueSlugsSchema.optional(),
+  "allowed-tools": z.array(NonEmptyStringSchema),
+  tier: NonEmptyStringSchema,
+  inputs: StagePortSchema,
+  outputs: StagePortSchema,
+  consumes: z.array(ArtifactDeclarationSchema).optional(),
+  produces: z.array(ArtifactDeclarationSchema).optional(),
+  protocols: UniqueSlugsSchema,
+  scopes: UniqueSlugsSchema,
+  references: z.record(SlugSchema, ReferenceSchema).default({}),
+});
+export type Stage = z.infer<typeof StageSchema>;
 
 export type SchemaRegistry = Readonly<Record<string, z.ZodType>>;
 

@@ -1,5 +1,5 @@
+import { type JsonValue, NonEmptyStringSchema } from "@harness/sdk";
 import { z } from "zod";
-import { type JsonValue, NonEmptyStringSchema } from "../contracts.ts";
 
 export const NodeIdSchema = z
   .string()

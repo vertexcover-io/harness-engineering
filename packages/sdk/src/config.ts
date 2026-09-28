@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { EffortSchema } from "@harness/sdk";
 import * as z from "zod";
+import { EffortSchema } from "./agent.ts";
 import {
   isNormalizedRelativePath,
   NonEmptyStringSchema,
@@ -149,7 +149,7 @@ const checkVersion = (value: unknown, path: string): Result<unknown, ConfigError
   if ("version" in value && value.version === 2) return { ok: true, value };
   const found = "version" in value ? `version ${JSON.stringify(value.version)}` : "no version";
   return invalid(
-    `${path}: expected "version: 2" but found ${found}. A file without it is a v1 config; rewrite it in the v2 shape that ConfigSchema in @harness/core defines`,
+    `${path}: expected "version: 2" but found ${found}. A file without it is a v1 config; rewrite it in the v2 shape that ConfigSchema in @harness/sdk defines`,
   );
 };
 
