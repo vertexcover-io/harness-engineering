@@ -9,3 +9,13 @@ nodes:
     stage: create-workspace
     input:
       request: "{{ inputs.prompt }}"
+
+  - id: baseline
+    type: exec
+    mode: background
+    runtime: sh
+    script: bun run orchestrate baseline --run "$(jq -r .run)"
+    output: { format: json }
+    dependsOn: [create-workspace]
+    input:
+      run: "{{ nodes.create-workspace.output.branch }}"

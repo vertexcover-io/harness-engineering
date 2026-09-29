@@ -1,0 +1,149 @@
+# Test workflow that uses every node type. Artifacts flow brief -> draft -> review.
+# Expected run with the default inputs:
+#   setup, intro          complete (intro writes the brief)
+#   quick-only            skipped: its when is false
+#   after-quick-only      skipped: it depends on a skipped node
+#   retry-loop            check fails on pass 1 and passes on pass 2; first-pass-only is
+#                         skipped on pass 2
+#   route                 takes the "docs" case; "code" and default never run
+#   no-match              skipped: no case matches and it has no default
+#   wrap-up               includes kitchen-sink-include.yaml, which writes the review
+#   report                plain agent node, writes the last artifact
+name: kitchen-sink
+inputs:
+  prompt: { type: string, required: true }
+  mode: { type: string, default: full }
+  track: { type: string, default: docs }
+nodes:
+  - id: setup
+    type: exec
+    runtime: sh
+    script: >-
+      jq -c '{track: .track, passOn: 2}'
+    output: { format: json }
+    input:
+      track: "{{ inputs.track }}"
+
+  - id: intro
+    type: agent
+    stage: demo-workflows/stages/demo-brief
+    dependsOn: [setup]
+    input:
+      topic: "{{ inputs.prompt }}"
+
+  - id: quick-only
+    type: exec
+    runtime: sh
+    script: echo "only in quick mode"
+    when: "{{ inputs.mode == 'quick' }}"
+    dependsOn: [setup]
+    input: {}
+
+  - id: after-quick-only
+    type: agent
+    stage: demo-workflows/stages/demo-draft
+    dependsOn: [intro, quick-only]
+    input:
+      name: never-written
+      angle: quick mode
+
+  - id: retry-loop
+    type: loop
+    until: "{{ iteration.nodes.check.output.value.passed }}"
+    maxIterations: 3
+    dependsOn: [setup, intro]
+    input:
+      passOn: "{{ nodes.setup.output.value.passOn }}"
+    nodes:
+      - id: attempt
+        type: agent
+        stage: demo-workflows/stages/demo-draft
+        input:
+          name: "attempt-{{ iteration.index }}"
+          angle: "loop pass {{ iteration.index }}"
+
+      - id: first-pass-only
+        type: exec
+        runtime: sh
+        script: echo "runs on pass 1, skipped on pass 2"
+        when: "{{ iteration.index == 1 }}"
+        input: {}
+
+      - id: check
+        type: exec
+        runtime: sh
+        script: >-
+          jq -c '{pass: .pass, passed: ((.pass | tonumber) >= (.passOn | tonumber))}'
+        output: { format: json }
+        dependsOn: [attempt]
+        input:
+          pass: "{{ iteration.index }}"
+          passOn: "{{ inputs.passOn }}"
+
+  - id: route
+    type: switch
+    expression: "{{ nodes.setup.output.value.track }}"
+    dependsOn: [setup, intro]
+    input:
+      topic: "{{ inputs.prompt }}"
+    cases:
+      - id: docs
+        value: docs
+        nodes:
+          - id: docs-draft
+            type: agent
+            stage: demo-workflows/stages/demo-draft
+            input:
+              name: docs-draft
+              angle: "docs for {{ inputs.topic }}"
+      - id: code
+        value: code
+        nodes:
+          - id: code-draft
+            type: agent
+            stage: demo-workflows/stages/demo-draft
+            input:
+              name: code-draft
+              angle: "code for {{ inputs.topic }}"
+    default:
+      - id: fallback
+        type: exec
+        runtime: sh
+        script: echo "no track matched"
+        input: {}
+
+  - id: no-match
+    type: switch
+    expression: "{{ inputs.mode }}"
+    dependsOn: [setup]
+    input: {}
+    cases:
+      - id: never
+        value: no-such-mode
+        nodes:
+          - id: unreachable
+            type: exec
+            runtime: sh
+            script: echo unreachable
+            input: {}
+
+  - id: wrap-up
+    type: include
+    workflow: demo-workflows/kitchen-sink-include.yaml
+    dependsOn: [retry-loop, route]
+    input:
+      passes: "{{ nodes.retry-loop.output.check.value.pass }}"
+
+  - id: report
+    type: agent
+    prompt: >
+      Write a short report of this run to .harness/RUN_NAME/artifacts/report.md: one line per
+      node in the input, with its status. Finish with --artifact report=artifacts/report.md and
+      reply { "report": "artifacts/report.md" }.
+    # A node that depends on a skipped node is skipped too, so report leaves out the skipped ones.
+    dependsOn: [wrap-up]
+    input:
+      intro: "{{ nodes.intro.status }}"
+      retry-loop: "{{ nodes.retry-loop.status }}"
+      route: "{{ nodes.route.status }}"
+      wrap-up: "{{ nodes.wrap-up.status }}"

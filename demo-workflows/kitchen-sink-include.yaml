@@ -1,0 +1,24 @@
+# Included by kitchen-sink.yaml, after the nodes that write the brief and the drafts.
+name: kitchen-sink-include
+inputs:
+  passes: { type: number, default: 1 }
+  strict: { type: boolean, default: false }
+nodes:
+  - id: pause
+    type: wait
+    durationMs: 1000
+    input: {}
+
+  - id: strict-check
+    type: exec
+    runtime: sh
+    script: echo "strict mode"
+    when: "{{ inputs.strict }}"
+    input: {}
+
+  - id: review
+    type: agent
+    stage: demo-workflows/stages/demo-review
+    dependsOn: [pause]
+    input:
+      passes: "{{ inputs.passes }}"
