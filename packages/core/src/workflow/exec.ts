@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { type JsonValue, stackOf } from "@harness/sdk";
+import { type JsonValue, type ProcessRecord, stackOf } from "@harness/sdk";
 import { own } from "../stage.ts";
 import { asJson, callFunction, importModule, loadFunction, runScript } from "./executors.ts";
 import {
@@ -49,7 +49,7 @@ const buildFailedRecord = (
   status: "failed",
   attempts: 1,
   error: { kind: failure.kind, message: failure.message, stack: stackOf(failure) },
-  ...(failure.output === undefined ? {} : { output: failure.output }),
+  ...(failure.process === undefined ? {} : { process: failure.process }),
 });
 
 const isSchema = (value: unknown): value is SchemaLike =>
@@ -100,43 +100,54 @@ const parseJson = (stdout: string, path: string): JsonValue => {
   }
 };
 
+// What one attempt gave: the node's output and, for a script, the process that produced it.
+type Attempted = Readonly<{ output: JsonValue; process?: ProcessRecord }>;
+
+const scriptOutput = (run: ExecRun, result: ProcessRecord): JsonValue => {
+  const { node, path } = run;
+  if (result.exitCode !== 0)
+    throw new NodeFailure("exit", `${path} exited with code ${result.exitCode}`);
+  const output = node.output?.format === "json" ? parseJson(result.stdout, path) : result.stdout;
+  return checkSchema(node, output, path, run.schema);
+};
+
+// Any failure after the script ran keeps its process record, so the event log shows what it printed.
 const runScriptNode = async (
-  node: ExecNode,
-  input: JsonValue,
+  run: ExecRun,
   context: Omit<NodeContext, "signal">,
-): Promise<JsonValue> => {
+): Promise<Attempted> => {
+  const { node } = run;
   if (node.runtime === undefined || node.script === undefined)
     throw new NodeFailure("exception", `${context.path} has no script to run`);
   const result = await runScript({
     runtime: node.runtime,
     script: node.script,
-    input,
+    input: run.input,
     cwd: context.cwd,
     timeoutMs: node.timeoutMs,
   });
-  if (result.exitCode !== 0)
-    throw new NodeFailure("exit", `${context.path} exited with code ${result.exitCode}`, result);
-  return node.output?.format === "json"
-    ? { ...result, value: parseJson(result.stdout, context.path) }
-    : result;
+  try {
+    return { output: scriptOutput(run, result), process: result };
+  } catch (error) {
+    const failure = toFailure(error);
+    throw new NodeFailure(failure.kind, failure.message, result, { cause: error });
+  }
 };
 
-const attempt = async (run: ExecRun, number: number): Promise<JsonValue> => {
+const attempt = async (run: ExecRun, number: number): Promise<Attempted> => {
   const { node, input, path } = run;
   const context = { path, cwd: resolve(run.cwd, node.cwd ?? "."), attempt: number };
-  const output =
-    run.fn === undefined
-      ? await runScriptNode(node, input, context)
-      : await callFunction(run.fn, input, context, node.timeoutMs);
-  return checkSchema(node, output, path, run.schema);
+  if (run.fn === undefined) return runScriptNode(run, context);
+  const output = await callFunction(run.fn, input, context, node.timeoutMs);
+  return { output: checkSchema(node, output, path, run.schema) };
 };
 
 // Output that fails its schema is not retried: running the same code again gives the same output.
 const runExec = async (run: ExecRun, number = 1): Promise<NodeRecord> => {
   const { node, path } = run;
   try {
-    const output = await attempt(run, number);
-    return { path, type: node.type, status: "completed", output, attempts: number };
+    const attempted = await attempt(run, number);
+    return { path, type: node.type, status: "completed", ...attempted, attempts: number };
   } catch (error) {
     const failure = toFailure(error);
     if (number >= (node.retry?.maxAttempts ?? 1) || failure.kind === "validation") {

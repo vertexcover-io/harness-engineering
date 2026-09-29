@@ -66,7 +66,8 @@ const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<S
   const { name } = options;
   const dir = runDirOf(run.cwd, name);
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
-  await createState({ runDir: dir, harnessVersion: String(corePackage.version), eventHandlers });
+  const version = String(corePackage.version);
+  await createState({ runId: run.id, runDir: dir, version, eventHandlers });
   const appended = await emitRunEvent(
     { id: run.id, cwd: run.cwd, name },
     {
@@ -270,6 +271,7 @@ const buildStepEndEvent = (
     nodeType: record.type,
     attempts: record.attempts,
     ...(record.output === undefined ? {} : { output: record.output }),
+    ...(record.process === undefined ? {} : { process: record.process }),
     ...(record.error === undefined
       ? {}
       : { error: eventError(record.error.kind, record.error.message, record.error.stack) }),

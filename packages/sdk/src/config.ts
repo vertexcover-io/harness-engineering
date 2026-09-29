@@ -5,6 +5,7 @@ import {
   EventHandlerRefSchema,
   EventTypeSchema,
   isNormalizedRelativePath,
+  LayoutSchema,
   NonEmptyStringSchema,
   type Result,
   SkillNameSchema,
@@ -80,8 +81,6 @@ const EnvironmentsSchema = z
 
 // setup and teardown run in every repo's worktree; a package's commands.workspaceSetup/workspaceTeardown override them in multi layout.
 // baseBranch is what new branches start from when --base is not given; without it, origin's default branch.
-export const LayoutSchema = z.enum(["mono", "multi"]);
-
 const WorkspaceConfigSchema = z.strictObject({
   layout: LayoutSchema.default("mono"),
   path: NonEmptyStringSchema.optional(),

@@ -36,24 +36,24 @@ const compilePlan = (
 const start = (input: JsonObject = {}): State => ({
   schemaVersion: 1,
   lastEventSeq: 0,
-  specName: "demo",
-  harnessVersion: "2.0.0",
+  runId: "r-1",
+  runName: "demo",
+  runDir: "/work/.harness/demo",
+  version: "2.0.0",
   workflow: { name: "demo", path: "workflow.yaml" },
   input,
-  scope: "workflow",
-  options: {},
+  scope: null,
   startedAt: "2026-09-28T09:00:00Z",
   completedAt: null,
-  outcome: null,
-  currentFile: null,
+  status: "running",
   workspace: {
+    type: "mono",
     path: "/work",
     repositories: {
       app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
     },
   },
   nodeRuns: {},
-  custom: {},
   eventHandlers: {},
 });
 
@@ -139,7 +139,7 @@ const exec = (id: string, extra = ""): string => `
 describe("decideNext", () => {
   test("IW1 — a is handed out alone, and b is handed out after it with a's output as its input", async () => {
     const plan = await compilePlan(`name: t
-nodes:${exec("a", "\n    input: {}")}${exec("b", '\n    dependsOn: [a]\n    input: "{{ nodes.a.output.value.n }}"')}
+nodes:${exec("a", "\n    input: {}")}${exec("b", '\n    dependsOn: [a]\n    input: "{{ nodes.a.output.n }}"')}
 `);
     const first = await advance(plan, start());
     const a = expectLeaf(first.stop);
@@ -150,7 +150,7 @@ nodes:${exec("a", "\n    input: {}")}${exec("b", '\n    dependsOn: [a]\n    inpu
       nodeRunId: a.nodeRunId,
     });
 
-    const afterA = end(first.state, a.nodeRunId, "completed", { output: { value: { n: 7 } } });
+    const afterA = end(first.state, a.nodeRunId, "completed", { output: { n: 7 } });
     const second = await advance(plan, afterA);
     const b = expectLeaf(second.stop);
     expect(b.node.id).toBe("b");
@@ -169,9 +169,32 @@ inputs:
 nodes:${exec("a", '\n    when: "{{ inputs.flag }}"\n    input: {}')}${exec("b", "\n    dependsOn: [a]\n    input: {}")}
 `);
     const done = await advance(plan, start({ flag: false }));
-    expect(done.stop).toEqual({ kind: "finished", outcome: "completed" });
-    expect(findRun(done.state, "a")).toMatchObject({ status: "skipped", startedAt: null });
-    expect(findRun(done.state, "b")).toMatchObject({ status: "skipped", startedAt: null });
+    expect(done.stop).toEqual({ kind: "finished", status: "completed" });
+    expect(findRun(done.state, "a")).toMatchObject({
+      status: "skipped",
+      output: { reason: "when-false", proof: { expression: "{{ inputs.flag }}", value: false } },
+    });
+    expect(findRun(done.state, "b")).toMatchObject({
+      status: "skipped",
+      output: { reason: "dependency-skipped", proof: { dependencies: ["a"] } },
+    });
+    expect(done.events.map((event) => event.payload)).toContainEqual(
+      expect.objectContaining({ skip: expect.objectContaining({ reason: "when-false" }) }),
+    );
+  });
+
+  test("IW42 — a dependency-skipped node names only the dependencies that were skipped", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${exec("a", '\n    when: "{{ false }}"\n    input: {}')}${exec("b", "\n    input: {}")}${exec("c", "\n    dependsOn: [a, b]\n    input: {}")}
+`);
+    const first = await advance(plan, start());
+    const b = expectLeaf(first.stop);
+    const done = await advance(plan, end(first.state, b.nodeRunId, "completed", { output: {} }));
+    expect(done.events[0]).toMatchObject({
+      type: "workflow.node.skipped",
+      nodeId: "c",
+      payload: { skip: { reason: "dependency-skipped", proof: { dependencies: ["a"] } } },
+    });
   });
 
   test("IW3 — after a fails, neither its dependent b nor the independent c starts, and the run ends failed", async () => {
@@ -183,7 +206,7 @@ nodes:${exec("a", "\n    input: {}")}${exec("b", "\n    dependsOn: [a]\n    inpu
     const failed = end(first.state, expectLeaf(first.stop).nodeRunId, "failed", { error });
     expect((await advance(plan, failed)).events[0]).toMatchObject({ type: "workflow.failed" });
     const done = await advance(plan, failed);
-    expect(done.stop).toEqual({ kind: "finished", outcome: "failed" });
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
     expect(findRun(done.state, "b")).toBeUndefined();
     expect(findRun(done.state, "c")).toBeUndefined();
   });
@@ -220,10 +243,10 @@ nodes:${exec("a", "\n    input: {}")}
     const ended = end(first.state, expectLeaf(first.stop).nodeRunId, "completed", { output: {} });
     expect((await advance(plan, ended)).events[0]).toMatchObject({ type: "workflow.completed" });
     const done = await advance(plan, ended);
-    expect(done.state).toMatchObject({ outcome: "completed", completedAt: expect.any(String) });
+    expect(done.state).toMatchObject({ status: "completed", completedAt: expect.any(String) });
     expect((await advance(plan, done.state)).stop).toEqual({
       kind: "finished",
-      outcome: "completed",
+      status: "completed",
     });
   });
 
@@ -240,7 +263,7 @@ nodes:${exec("a", "\n    input: {}")}${exec("b", '\n    dependsOn: [a]\n    inpu
     });
     const done = await advance(plan, afterA);
     expect(findRun(done.state, "b")).toMatchObject({ status: "failed", startedAt: null });
-    expect(done.stop).toEqual({ kind: "finished", outcome: "failed" });
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
   });
 });
 
@@ -338,7 +361,7 @@ nodes:
     runtime: sh
     script: "true"
     dependsOn: [decide]
-    input: "{{ nodes.decide.output.two }}"
+    input: "{{ nodes.decide.output }}"
 `;
 
 const loop = (until: string, maxIterations: number, extra = ""): string => `name: t
@@ -388,16 +411,45 @@ describe("decideNext with containers", () => {
     expect(expectLeaf(next.stop)).toMatchObject({ node: { id: "after" }, input: { x: 1 } });
     expect(findRun(next.state, "decide")).toMatchObject({
       status: "completed",
-      output: { two: { x: 1 } },
+      output: { x: 1 },
     });
     expect(findRun(next.state, "decide", "one")).toBeUndefined();
   });
 
   test("IW23 — a switch with no matching case and no default is skipped, and so is what depends on it", async () => {
     const done = await advance(await compilePlan(SWITCH), start({ kind: "c" }));
-    expect(done.stop).toEqual({ kind: "finished", outcome: "completed" });
-    expect(findRun(done.state, "decide")?.status).toBe("skipped");
-    expect(findRun(done.state, "after")?.status).toBe("skipped");
+    expect(done.stop).toEqual({ kind: "finished", status: "completed" });
+    expect(findRun(done.state, "decide")).toMatchObject({
+      status: "skipped",
+      output: {
+        reason: "no-matching-case",
+        proof: { expression: "{{ inputs.kind }}", value: "c" },
+      },
+    });
+    expect(findRun(done.state, "after")).toMatchObject({
+      status: "skipped",
+      output: { reason: "dependency-skipped", proof: { dependencies: ["decide"] } },
+    });
+  });
+
+  test("IW43 — a switch's output is null when the last node of its case did not complete", async () => {
+    const plan = await compilePlan(`name: t
+nodes:
+  - id: decide
+    type: switch
+    expression: "{{ 'go' }}"
+    input: {}
+    cases:
+      - id: go
+        value: go
+        nodes:
+          - { id: one, type: exec, runtime: sh, script: "true", input: {} }
+          - { id: two, type: exec, runtime: sh, script: "true", when: "{{ false }}", input: {} }
+`);
+    const first = await advance(plan, start());
+    const one = expectLeaf(first.stop);
+    const done = await advance(plan, end(first.state, one.nodeRunId, "completed", { output: 1 }));
+    expect(findRun(done.state, "decide")).toMatchObject({ status: "completed", output: null });
   });
 
   test("IW24 — a loop runs its body one pass at a time until until holds, and state keeps only the current pass", async () => {
@@ -409,7 +461,7 @@ describe("decideNext with containers", () => {
     expect(findRun(third.state, "fix")).toMatchObject({
       status: "running",
       iteration: 3,
-      output: { test: "out 2" },
+      output: "out 2",
     });
     expect(Object.keys(findRun(third.state, "fix")?.nodes ?? {})).toEqual(["test"]);
     expect(findRun(third.state, "fix", "test")).toMatchObject({
@@ -421,12 +473,53 @@ describe("decideNext with containers", () => {
       output: "out 3",
     });
     const done = await advance(plan, finished);
-    expect(done.stop).toEqual({ kind: "finished", outcome: "completed" });
+    expect(done.stop).toEqual({ kind: "finished", status: "completed" });
     expect(findRun(done.state, "fix")).toMatchObject({
       status: "completed",
       iteration: 3,
-      output: { test: "out 3" },
+      output: "out 3",
     });
+  });
+
+  test("IW44 — a loop's output, and so iteration.previous, is the output of the last node in its body", async () => {
+    const report = `
+      - { id: report, type: exec, runtime: sh, script: "true", dependsOn: [test], input: "{{ iteration.previous }}" }`;
+    const plan = await compilePlan(loop("{{ iteration.index >= 2 }}", 3, report));
+    const firstPass = await runLeaves(plan, start(), ["completed", "completed"]);
+    const second = await advance(plan, firstPass.state);
+    expect(second.events).toContainEqual(
+      expect.objectContaining({
+        type: "workflow.node.iterated",
+        payload: expect.objectContaining({ output: "out 2" }),
+      }),
+    );
+    const { state, inputs } = await runLeaves(plan, firstPass.state, ["completed", "completed"]);
+    expect(inputs).toEqual(["pass 2", "out 2"]);
+    const done = await advance(plan, state);
+    expect(findRun(done.state, "fix")).toMatchObject({ status: "completed", output: "out 2" });
+  });
+
+  test("IW45 — a loop whose last body node did not complete hands null to its next pass", async () => {
+    const plan = await compilePlan(`name: t
+nodes:
+  - id: fix
+    type: loop
+    until: "{{ iteration.index >= 2 }}"
+    maxIterations: 3
+    input: {}
+    nodes:
+      - { id: test, type: exec, runtime: sh, script: "true", input: "{{ iteration.previous }}" }
+      - { id: tail, type: exec, runtime: sh, script: "true", when: "{{ false }}", input: {} }
+`);
+    const firstPass = await runLeaves(plan, start(), ["completed"]);
+    const second = await advance(plan, firstPass.state);
+    expect(second.events).toContainEqual(
+      expect.objectContaining({
+        type: "workflow.node.iterated",
+        payload: expect.objectContaining({ output: null }),
+      }),
+    );
+    expect(expectLeaf(second.stop).input).toBeNull();
   });
 
   test("IW25 — a loop whose until never holds fails as exhausted after maxIterations passes", async () => {
@@ -438,14 +531,14 @@ describe("decideNext with containers", () => {
       nodeId: "fix",
       payload: { error: { kind: "exhausted" } },
     });
-    expect((await advance(plan, state)).stop).toEqual({ kind: "finished", outcome: "failed" });
+    expect((await advance(plan, state)).stop).toEqual({ kind: "finished", status: "failed" });
   });
 
   test("IW41 — a loop whose until cannot be worked out fails with a resolution error", async () => {
     const plan = await compilePlan(loop("{{ iteration.nodes.test.output.x.y }}", 3));
     const { state } = await runLeaves(plan, start(), ["completed"]);
     const done = await advance(plan, state);
-    expect(done.stop).toEqual({ kind: "finished", outcome: "failed" });
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
     expect(done.events[0]).toMatchObject({
       type: "workflow.node.failed",
       nodeId: "fix",
@@ -459,7 +552,7 @@ describe("decideNext with containers", () => {
     const plan = await compilePlan(loop("{{ iteration.index >= 3 }}", 5, other));
     const { state } = await runLeaves(plan, start(), ["failed"]);
     const done = await advance(plan, state);
-    expect(done.stop).toEqual({ kind: "finished", outcome: "failed" });
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
     expect(findRun(done.state, "fix")?.status).toBe("failed");
     expect(findRun(done.state, "fix")?.iteration).toBe(1);
     expect(findRun(done.state, "fix", "test")?.status).toBe("failed");
@@ -490,7 +583,7 @@ nodes:
       payload: { error: { kind: "validation" } },
     });
     const done = await advance(bad, start());
-    expect(done.stop).toEqual({ kind: "finished", outcome: "failed" });
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
     expect(findRun(done.state, "sub", "say")).toBeUndefined();
   });
 });
@@ -540,7 +633,7 @@ describe("decideNext inside nested containers", () => {
     const x = expectLeaf(first.stop);
     const error = { kind: "exit", message: "exited with code 1" };
     const done = await advance(plan, end(first.state, x.nodeRunId, "failed", { error }));
-    expect(done.stop).toEqual({ kind: "finished", outcome: "failed" });
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
     expect(findRun(done.state, "outer", "inner", "y")).toBeUndefined();
     expect(findRun(done.state, "outer", "inner")?.status).toBe("failed");
     expect(findRun(done.state, "outer", "f")).toBeUndefined();
@@ -609,7 +702,7 @@ nodes:${exec("a", '\n    when: "{{ inputs.name }}"\n    input: {}')}
     const plan = await compilePlan(TYPED_SWITCH);
     for (const value of [{}, { v: { a: 1 } }]) {
       const done = await advance(plan, start({ value }));
-      expect(done.stop).toEqual({ kind: "finished", outcome: "failed" });
+      expect(done.stop).toEqual({ kind: "finished", status: "failed" });
       expect(findRun(done.state, "decide")?.status).toBe("failed");
       expect(findRun(done.state, "decide", "a")).toBeUndefined();
     }

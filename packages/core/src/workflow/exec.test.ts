@@ -47,19 +47,24 @@ const lines = (file: string): string[] =>
   existsSync(file) ? readFileSync(file, "utf8").trim().split("\n").filter(Boolean) : [];
 
 describe("exec scripts", () => {
-  test("SC15 — a json-format script reads its input on stdin and its stdout is parsed into value", async () => {
+  test("SC15 — a json-format script reads its input on stdin, its parsed stdout is the output, and the process record is kept apart", async () => {
     const record = await runLeaf(
       makeRoot(),
       "    type: exec\n    runtime: sh\n    script: cat\n    input: null\n    output: { format: json }",
       { n: 41 },
     );
     expect(record).toMatchObject({ status: "completed", attempts: 1 });
-    expect(record.output).toEqual({
-      stdout: '{"n":41}',
-      stderr: "",
-      exitCode: 0,
-      value: { n: 41 },
-    });
+    expect(record.output).toEqual({ n: 41 });
+    expect(record.process).toEqual({ stdout: '{"n":41}', stderr: "", exitCode: 0 });
+  });
+
+  test("SC64 — a text script's output is its stdout", async () => {
+    const record = await runLeaf(
+      makeRoot(),
+      "    type: exec\n    runtime: sh\n    script: echo hi\n    input: null",
+    );
+    expect(record).toMatchObject({ status: "completed", output: "hi\n" });
+    expect(record.process).toEqual({ stdout: "hi\n", stderr: "", exitCode: 0 });
   });
 
   test("SC16 — script stdout that is not JSON fails a json-format node", async () => {
@@ -69,16 +74,18 @@ describe("exec scripts", () => {
     );
     expect(record.status).toBe("failed");
     expect(record.error?.kind).toBe("validation");
+    expect(record.process).toEqual({ stdout: "not json\n", stderr: "", exitCode: 0 });
   });
 
-  test("SC17 — a nonzero exit fails the node and keeps its output", async () => {
+  test("SC17 — a nonzero exit fails the node and keeps its process record, with no output", async () => {
     const record = await runLeaf(
       makeRoot(),
       '    type: exec\n    runtime: sh\n    script: "echo boom >&2; exit 3"\n    input: null',
     );
     expect(record.status).toBe("failed");
     expect(record.error?.kind).toBe("exit");
-    expect(record.output).toEqual({ stdout: "", stderr: "boom\n", exitCode: 3 });
+    expect(record.process).toEqual({ stdout: "", stderr: "boom\n", exitCode: 3 });
+    expect(record.output).toBeUndefined();
   });
 
   test("SC18 — a timeout kills the script and every process it started", async () => {
@@ -109,9 +116,8 @@ describe("exec scripts", () => {
       process.stderr.write("b".repeat(1_200_000));`,
     );
     expect(record.status).toBe("completed");
-    const output = record.output as { stdout: string; stderr: string };
-    expect(output.stdout).toBe("a".repeat(1_048_576));
-    expect(output.stderr).toBe("b".repeat(1_048_576));
+    expect(record.process?.stdout).toBe("a".repeat(1_048_576));
+    expect(record.process?.stderr).toBe("b".repeat(1_048_576));
   });
 });
 
@@ -136,6 +142,7 @@ describe("exec functions", () => {
       input: { value: 1 },
       context: { path: "nr-a", cwd: join(root, "sub"), attempt: 1 },
     });
+    expect(named.process).toBeUndefined();
     expect((await runLeaf(root, fnLines("./fns/echo.ts", "default"))).status).toBe("completed");
     expect((await runLeaf(root, fnLines(absolute, "echo"))).status).toBe("completed");
   });
@@ -209,7 +216,7 @@ const setupRoot = (): string => {
   writeFile(
     root,
     "schemas.ts",
-    `import { z } from "${zodUrl}";\nexport const schemas = { inspection: z.object({ status: z.string() }) };\n`,
+    `import { z } from "${zodUrl}";\nexport const schemas = {\n  inspection: z.object({ status: z.string() }),\n  boom: { safeParse: () => { throw new Error("user boom"); } },\n};\n`,
   );
   return root;
 };
@@ -225,6 +232,28 @@ describe("output schemas", () => {
     expect(lines(log)).toHaveLength(1);
     const good = await runLeaf(root, fnLines("./fns/helpers.ts", "goodInspection", schema));
     expect(good.status).toBe("completed");
+  });
+
+  test("a script whose output fails its schema keeps its process record", async () => {
+    const record = await runLeaf(
+      setupRoot(),
+      "    type: exec\n    runtime: sh\n    script: echo '{\"status\":1}'\n    input: null\n    output: { format: json, module: ./schemas.ts, zodSchema: inspection }",
+    );
+    expect(record).toMatchObject({ status: "failed", error: { kind: "validation" } });
+    expect(record.process).toEqual({ stdout: '{"status":1}\n', stderr: "", exitCode: 0 });
+  });
+
+  test("a script whose schema throws records the schema's own stack", async () => {
+    const record = await runLeaf(
+      setupRoot(),
+      "    type: exec\n    runtime: sh\n    script: echo '{}'\n    input: null\n    output: { format: json, module: ./schemas.ts, zodSchema: boom }",
+    );
+    expect(record).toMatchObject({
+      status: "failed",
+      error: { kind: "exception", message: "user boom" },
+    });
+    expect(record.error?.stack).toContain("schemas.ts");
+    expect(record.process?.exitCode).toBe(0);
   });
 
   test("SC40 — a schema missing from its module fails the node, naming the schema", async () => {

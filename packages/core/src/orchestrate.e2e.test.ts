@@ -420,7 +420,7 @@ nodes:
     type: wait
     durationMs: 10
     dependsOn: [a]
-    input: "{{ nodes.a.output.value }}"
+    input: "{{ nodes.a.output }}"
   - id: b
     type: exec
     runtime: sh
@@ -430,7 +430,7 @@ nodes:
 `;
 
 describe("orchestrate next and exec", () => {
-  test("IW10 — next and exec, called in turn, take an exec, wait and exec workflow from init to finished", () => {
+  test("IW10 — next and exec, called in turn, take an exec, wait and exec workflow from init to finished", async () => {
     const { repo, home } = startedRun(STEPS);
     const handedOut = ["a", "w", "b"].map((nodeId) => {
       const next = orchestrate(repo, home, ["next", "--run", "feat-x"]);
@@ -455,15 +455,23 @@ describe("orchestrate next and exec", () => {
     });
 
     const last = orchestrate(repo, home, ["next", "--run", "feat-x"]);
-    expect(JSON.parse(last.stdout)).toEqual({ kind: "finished", outcome: "completed" });
+    expect(JSON.parse(last.stdout)).toEqual({ kind: "finished", status: "completed" });
     const state = stateOf(repo);
-    expect(state.outcome).toBe("completed");
+    expect(state).toMatchObject({ runId: "r-1", runName: "feat-x", status: "completed" });
     expect(state.nodeRuns.w.nodeRunId).toBe(handedOut[1]);
     expect(state.nodeRuns.w.output).toEqual({ n: 1 });
-    expect(state.nodeRuns.b.output).toMatchObject({ stdout: '{"n":1}', exitCode: 0 });
+    expect(state.nodeRuns.b).toMatchObject({ nodeType: "exec", output: '{"n":1}' });
+    expect(state.nodeRuns.b).not.toHaveProperty("process");
+    const ended = (await eventsOf(repo)).find(
+      (event) => event.nodeRunId === handedOut[2] && event.type === "workflow.node.completed",
+    );
+    expect(ended?.payload).toMatchObject({
+      output: '{"n":1}',
+      process: { stdout: '{"n":1}', stderr: "", exitCode: 0 },
+    });
   });
 
-  test("IW11 — a script that keeps failing is retried as configured, exec exits 1, and the run ends failed", () => {
+  test("IW11 — a script that keeps failing is retried as configured, exec exits 1, and the run ends failed", async () => {
     const { repo, home } = startedRun(`name: steps
 inputs:
   prompt: { type: string, required: true }
@@ -484,8 +492,15 @@ nodes:
       error: { kind: "exit" },
     });
     expect(JSON.parse(exec.stdout).error).not.toHaveProperty("stack");
+    const failed = (await eventsOf(repo)).find((event) => event.type === "workflow.node.failed");
+    expect(failed?.payload).toMatchObject({ process: { stdout: "", stderr: "", exitCode: 3 } });
+    expect(failed?.payload).not.toHaveProperty("output");
+    expect(stateOf(repo).nodeRuns.a.output).toEqual({
+      kind: "exit",
+      message: `${reply.nodeRunId} exited with code 3`,
+    });
     const next = orchestrate(repo, home, ["next", "--run", "feat-x"]);
-    expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", outcome: "failed" });
+    expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", status: "failed" });
   });
 
   test("IW12 — exec refuses a node run that already ended or does not exist, and records nothing", async () => {
@@ -624,7 +639,7 @@ nodes:
       error: { kind: "validation" },
     });
     const next = orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]);
-    expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", outcome: "failed" });
+    expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", status: "failed" });
   });
 
   test("IW30 — done reads --output - and --error - from stdin, keeping quotes and $(…) as plain text", () => {
@@ -651,7 +666,10 @@ nodes:
       reason,
     );
     expect(failed.code).toBe(1);
-    expect(stateOf(repo).nodeRuns.use.result).toBe(reason.trim());
+    expect(stateOf(repo).nodeRuns.use.output).toEqual({
+      kind: "exception",
+      message: reason.trim(),
+    });
     expect(existsSync(join(repo, "PWNED"))).toBe(false);
   });
 
@@ -716,7 +734,7 @@ nodes:
     runtime: sh
     script: cat
     dependsOn: [sub, fix]
-    input: "{{ nodes.sub.output.say.stdout }} / {{ nodes.fix.output.test.stdout }}"
+    input: "{{ nodes.sub.output }} / {{ nodes.fix.output }}"
 `;
 
 const CHILD = `name: child
@@ -738,11 +756,15 @@ describe("orchestrate next and exec with containers", () => {
       return reply.nodeRunId;
     });
     const last = orchestrate(repo, home, ["next", "--run", "feat-x"]);
-    expect(JSON.parse(last.stdout)).toEqual({ kind: "finished", outcome: "completed" });
+    expect(JSON.parse(last.stdout)).toEqual({ kind: "finished", status: "completed" });
     const nodes = stateOf(repo).nodeRuns;
     expect(nodes.decide.nodes.greet).toMatchObject({ nodeRunId: handedOut[3] });
-    expect(nodes.decide.nodes.greet.output.stdout).toBe("hello-case\n");
-    expect(nodes.fix).toMatchObject({ iteration: 3, output: { test: expect.any(Object) } });
+    expect(nodes.decide).toMatchObject({
+      output: "hello-case\n",
+      nodes: { greet: { output: "hello-case\n" } },
+    });
+    expect(nodes.fix).toMatchObject({ iteration: 3, output: '"pass 3"' });
+    expect(nodes.sub.output).toBe('"hi"');
     expect(nodes.last.input).toBe('"hi" / "pass 3"');
   });
 });

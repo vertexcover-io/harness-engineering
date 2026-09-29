@@ -1,26 +1,27 @@
 import { join } from "node:path";
 import * as z from "zod";
-import { LayoutSchema } from "./config.ts";
 import {
   AbsolutePathSchema,
   ArtifactRefSchema,
+  ERROR_MESSAGE_LIMIT,
   type Event,
   EventSchema,
+  FailureOutputSchema,
   JsonObjectSchema,
+  type JsonValue,
+  LayoutSchema,
   type NodeRun,
+  type NodeType,
+  NodeTypeSchema,
   NonEmptyStringSchema,
   type Result,
+  SkipOutputSchema,
   SlugSchema,
 } from "./contracts.ts";
 import type { IEventStore } from "./event-store.ts";
 import type { EventHandler, EventHandlers } from "./state.ts";
 
-export const ERROR_MESSAGE_LIMIT = 500;
-export const ErrorSchema = z.strictObject({
-  kind: z.string(),
-  message: z.string().max(ERROR_MESSAGE_LIMIT),
-  stack: z.string().optional(),
-});
+export const ErrorSchema = FailureOutputSchema.extend({ stack: z.string().optional() });
 
 // The thrown error's own stack says where it broke; a wrapper's stack only says who caught it.
 export const stackOf = (error: Error): string | undefined =>
@@ -32,7 +33,6 @@ export const eventError = (kind: string, message: string, stack: string | undefi
   return stack === undefined ? error : { ...error, stack };
 };
 export type EventError = ReturnType<typeof eventError>;
-const nodeType = z.string().min(1);
 const attempts = z.int().nonnegative();
 // The ids of the loops, switches and includes a node sits inside, outermost first. Top-level nodes
 // leave it out. State is a tree keyed by node ids, so this says where in the tree the node goes.
@@ -46,29 +46,47 @@ const nodeEvent = <P extends z.ZodType>(payload: P) =>
 
 export const NodeStartedEvent = nodeEvent(
   z.strictObject({
-    nodeType,
+    nodeType: NodeTypeSchema,
     input: z.json().optional(),
     branch: NonEmptyStringSchema.optional(),
     ...placement,
   }),
 );
-export const NodeEndedEvent = nodeEvent(
-  z.strictObject({
-    nodeType,
-    attempts,
-    error: ErrorSchema.optional(),
-    output,
-    artifacts: z.array(ArtifactRefSchema).optional(),
-    ...placement,
-  }),
-);
+// A script's process record stays in the event log; state.json keeps only the node's output value.
+export const ProcessRecordSchema = z.strictObject({
+  stdout: z.string(),
+  stderr: z.string(),
+  exitCode: z.int(),
+});
+export type ProcessRecord = z.infer<typeof ProcessRecordSchema>;
+
+const NodeEndedPayload = z.strictObject({
+  nodeType: NodeTypeSchema,
+  attempts,
+  error: ErrorSchema.optional(),
+  output,
+  process: ProcessRecordSchema.optional(),
+  skip: SkipOutputSchema.optional(),
+  artifacts: z.array(ArtifactRefSchema).optional(),
+  ...placement,
+});
+export const NodeEndedEvent = nodeEvent(NodeEndedPayload);
 export const NodeFailedEvent = nodeEvent(
-  z.strictObject({ nodeType, attempts, error: ErrorSchema, output, ...placement }),
+  NodeEndedPayload.omit({ output: true, skip: true }).extend({ error: ErrorSchema }),
+);
+export const NodeCancelledEvent = nodeEvent(NodeEndedPayload.omit({ output: true, skip: true }));
+export const NodeSkippedEvent = nodeEvent(
+  NodeEndedPayload.omit({ output: true }).extend({ skip: SkipOutputSchema }),
 );
 
 // A loop starting its next pass: the pass number, and the result of the pass that just ended.
 export const NodeIteratedEvent = nodeEvent(
-  z.strictObject({ nodeType, iteration: z.int().min(2), output: z.json(), ...placement }),
+  z.strictObject({
+    nodeType: NodeTypeSchema,
+    iteration: z.int().min(2),
+    output: z.json(),
+    ...placement,
+  }),
 );
 
 export const WorkflowStartedEvent = z.object({
@@ -162,8 +180,8 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.failed": WorkflowEndedEvent,
   "workflow.node.started": NodeStartedEvent,
   "workflow.node.completed": NodeEndedEvent,
-  "workflow.node.skipped": NodeEndedEvent,
-  "workflow.node.cancelled": NodeEndedEvent,
+  "workflow.node.skipped": NodeSkippedEvent,
+  "workflow.node.cancelled": NodeCancelledEvent,
   "workflow.node.failed": NodeFailedEvent,
   "workflow.node.iterated": NodeIteratedEvent,
   "workspace.created": WorkspaceCreatedEvent,
@@ -256,7 +274,7 @@ const updateNode = (
   };
 };
 
-const CONTAINER_TYPES = new Set(["loop", "switch", "include"]);
+const CONTAINER_TYPES = new Set<NodeType>(["loop", "switch", "include"]);
 
 // A node started again (a new loop pass, or a re-run) replaces its entry: state keeps the latest run.
 const onStarted: EventHandler = (state, event) => {
@@ -265,10 +283,10 @@ const onStarted: EventHandler = (state, event) => {
   const { nodeId, nodeRunId, payload } = parsed.data;
   const run: NodeRun = {
     nodeRunId,
+    nodeType: payload.nodeType,
     status: "running",
     startedAt: event.ts,
     completedAt: null,
-    result: null,
     artifacts: [],
     ...(payload.input === undefined ? {} : { input: payload.input }),
     ...(payload.branch === undefined ? {} : { branch: payload.branch }),
@@ -282,30 +300,50 @@ const onStarted: EventHandler = (state, event) => {
 };
 
 type EndStatus = "completed" | "failed" | "skipped" | "cancelled";
+type NodeEndedPayload = z.infer<typeof NodeEndedPayload>;
 
-const resultOf = (status: EndStatus, message: string | undefined): string | null =>
-  message || (status === "skipped" ? "skipped by the workflow" : null);
+// A completed node's output is its value; a failed or cancelled node's is its error, without the
+// stack; a skipped node's is why.
+const endOutputOf = (
+  status: EndStatus,
+  { skip, error, output }: NodeEndedPayload,
+): JsonValue | undefined => {
+  if (status === "completed") return output;
+  if (status === "skipped") return skip;
+  return error === undefined ? undefined : { kind: error.kind, message: error.message };
+};
+
+// A node that did not complete drops what a loop's earlier pass left in its output.
+const withoutOutput = ({ output: _, ...run }: NodeRun): NodeRun => run;
 
 // A node can end without starting (skipped, cancelled, failed before it ran), so the end event
-// creates the entry when no entry holds this run.
+// creates the entry when no entry holds this run. A skipped node never runs, so it starts and ends
+// at the skip.
 const onEnded =
   (status: EndStatus): EventHandler =>
   (state, event) => {
     const parsed = NodeEndedEvent.safeParse(event);
     if (!parsed.success) return state;
     const { nodeId, nodeRunId, payload } = parsed.data;
+    const output = endOutputOf(status, payload);
     const end = (current: NodeRun | undefined): NodeRun => {
       const run: NodeRun =
         current?.nodeRunId === nodeRunId
           ? current
-          : { nodeRunId, status, startedAt: null, completedAt: null, result: null, artifacts: [] };
+          : {
+              nodeRunId,
+              nodeType: payload.nodeType,
+              status,
+              startedAt: status === "skipped" ? event.ts : null,
+              completedAt: null,
+              artifacts: [],
+            };
       return {
-        ...run,
-        ...(payload.output === undefined ? {} : { output: payload.output }),
+        ...(status === "completed" ? run : withoutOutput(run)),
+        ...(output === undefined ? {} : { output }),
         artifacts: payload.artifacts ?? run.artifacts,
         status,
         completedAt: event.ts,
-        result: resultOf(status, payload.error?.message),
       };
     };
     return { ...state, nodeRuns: updateNode(state.nodeRuns, payload.parents ?? [], nodeId, end) };
@@ -338,11 +376,12 @@ const toRepositoryState = (repo: WorkspaceRepository, branch: string) => ({
 const onWorkspaceCreated: EventHandler = (state, event) => {
   const parsed = WorkspaceCreatedEvent.safeParse(event);
   if (!parsed.success) return state;
-  const { workspaceDir, branch, repositories } = parsed.data.payload;
+  const { workspaceDir, branch, layout, repositories } = parsed.data.payload;
   const entries = Object.entries(repositories).map(
     ([key, repo]) => [key, toRepositoryState(repo, branch)] as const,
   );
-  return { ...state, workspace: { path: workspaceDir, repositories: Object.fromEntries(entries) } };
+  const workspace = { type: layout, path: workspaceDir, repositories: Object.fromEntries(entries) };
+  return { ...state, workspace };
 };
 
 const onRepositoryAdded: EventHandler = (state, event) => {
@@ -374,8 +413,8 @@ const onWorkflowStarted: EventHandler = (state, event) => {
 };
 
 const onWorkflowEnded =
-  (outcome: "completed" | "failed"): EventHandler =>
-  (state, event) => ({ ...state, outcome, completedAt: event.ts });
+  (status: "completed" | "failed"): EventHandler =>
+  (state, event) => ({ ...state, status, completedAt: event.ts });
 
 export const builtInHandlers: EventHandlers = {
   "workflow.started": onWorkflowStarted,

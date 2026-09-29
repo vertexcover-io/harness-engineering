@@ -83,6 +83,75 @@ describe("emitEvent", () => {
     });
     expect(result).toMatchObject({ ok: true, value: { payload: [1, "two", null] } });
   });
+
+  test("workflow.node.skipped without a skip reason is refused, naming skip, and nothing is stored", async () => {
+    const store = memoryEventStore();
+    const result = await emitEvent(store, "r-1", {
+      type: "workflow.node.skipped",
+      source: "test",
+      nodeId: "a",
+      nodeRunId: "a",
+      payload: { nodeType: "exec", attempts: 0 },
+    });
+    expect(result.ok ? "" : result.error).toContain("skip");
+    expect(await store.read()).toEqual([]);
+  });
+
+  test.each([
+    ["completed", { output: "hi\n" }],
+    ["failed", { error: { kind: "exit", message: "exit 1" } }],
+  ])("workflow.node.%s carries a script's process record", async (outcome, fields) => {
+    const result = await emitEvent(memoryEventStore(), "r-1", {
+      type: `workflow.node.${outcome}`,
+      source: "test",
+      nodeId: "a",
+      nodeRunId: "a",
+      payload: {
+        nodeType: "exec",
+        attempts: 1,
+        process: { stdout: "hi\n", stderr: "", exitCode: 0 },
+        ...fields,
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  test.each([
+    ["failed", { error: { kind: "exit", message: "exit 1" } }],
+    ["cancelled", {}],
+    [
+      "skipped",
+      { skip: { reason: "when-false", proof: { expression: "{{ false }}", value: false } } },
+    ],
+  ])("workflow.node.%s refuses an output it would never record", async (outcome, fields) => {
+    const result = await emitEvent(memoryEventStore(), "r-1", {
+      type: `workflow.node.${outcome}`,
+      source: "test",
+      nodeId: "a",
+      nodeRunId: "a",
+      payload: { nodeType: "exec", attempts: 1, output: "hi\n", ...fields },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test.each([
+    ["failed", { error: { kind: "exit", message: "exit 1" } }],
+    ["cancelled", {}],
+  ])("workflow.node.%s refuses a skip it would never record", async (outcome, fields) => {
+    const result = await emitEvent(memoryEventStore(), "r-1", {
+      type: `workflow.node.${outcome}`,
+      source: "test",
+      nodeId: "a",
+      nodeRunId: "a",
+      payload: {
+        nodeType: "exec",
+        attempts: 1,
+        skip: { reason: "when-false", proof: { expression: "{{ false }}", value: false } },
+        ...fields,
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("emitRunEvent", () => {
@@ -118,6 +187,7 @@ describe("emitRunEvent", () => {
     if (!result.ok) throw new Error(result.error);
     const state = StateSchema.parse(JSON.parse(await readFile(join(dir, "state.json"), "utf8")));
     expect(state.lastEventSeq).toBe(1);
+    expect(state.workspace.type).toBe("multi");
     expect(state.workspace.path).toBe(WS_DIR);
     expect(Object.keys(state.workspace.repositories)).toEqual(["api"]);
   });
@@ -140,24 +210,24 @@ describe("emitRunEvent", () => {
 const seed: State = {
   schemaVersion: 1,
   lastEventSeq: 0,
-  specName: "add-login",
-  harnessVersion: "2.0.0",
+  runId: "r-1",
+  runName: "add-login",
+  runDir: "/work/.harness/add-login",
+  version: "2.0.0",
   workflow: { name: "feature", path: "workflow.yaml" },
   input: {},
-  scope: "feature",
-  options: {},
+  scope: null,
   startedAt: "2026-09-26T10:00:00Z",
   completedAt: null,
-  outcome: null,
-  currentFile: null,
+  status: "running",
   workspace: {
+    type: "mono",
     path: "/work",
     repositories: {
       app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
     },
   },
   nodeRuns: {},
-  custom: {},
   eventHandlers: {},
 };
 
@@ -182,6 +252,7 @@ const project = (events: readonly Event[]): State =>
   projectEvents({ state: seed, events, handlers: builtInHandlers });
 
 const build = { nodeId: "build", nodeRunId: "build" };
+const skip = { reason: "when-false", proof: { expression: "inputs.quick", value: false } };
 
 describe("builtInHandlers", () => {
   test("workflow.started sets the run's startedAt to the event's time", () => {
@@ -204,41 +275,90 @@ describe("builtInHandlers", () => {
     const state = project([nodeEvent(1, "started", build, { nodeType: "exec" })]);
     expect(state.nodeRuns.build).toEqual({
       nodeRunId: "build",
+      nodeType: "exec",
       status: "running",
       startedAt: "2026-09-26T10:00:01Z",
       completedAt: null,
-      result: null,
       artifacts: [],
     });
   });
 
-  test("SC7: a failed node records status, end time and its error", () => {
+  test("SC7: a failed node records status, end time and its error as output, without the stack or process", () => {
     const message = "x".repeat(500);
     const state = project([
       nodeEvent(1, "started", build, { nodeType: "exec" }),
       nodeEvent(2, "failed", build, {
         nodeType: "exec",
         attempts: 2,
-        error: { kind: "exit", message },
+        error: { kind: "exit", message, stack: "Error: exit\n    at run" },
+        process: { stdout: "", stderr: "boom", exitCode: 1 },
       }),
     ]);
-    expect(state.nodeRuns.build).toMatchObject({
+    expect(state.nodeRuns.build).toEqual({
+      nodeRunId: "build",
+      nodeType: "exec",
       status: "failed",
       startedAt: "2026-09-26T10:00:01Z",
       completedAt: "2026-09-26T10:00:02Z",
-      result: message,
+      artifacts: [],
+      output: { kind: "exit", message },
     });
     expect(StateSchema.safeParse(state).success).toBe(true);
   });
 
-  test("SC8: a node that is skipped without starting still appears, with a reason and no start time", () => {
+  test("SC8: a node that is skipped without starting still appears, started and ended at the skip, with its skip as output", () => {
     const lint = { nodeId: "lint", nodeRunId: "lint" };
-    const state = project([nodeEvent(1, "skipped", lint, { nodeType: "exec", attempts: 0 })]);
-    expect(state.nodeRuns.lint).toMatchObject({
+    const state = project([nodeEvent(1, "skipped", lint, { nodeType: "exec", attempts: 0, skip })]);
+    expect(state.nodeRuns.lint).toEqual({
+      nodeRunId: "lint",
+      nodeType: "exec",
       status: "skipped",
-      startedAt: null,
-      result: "skipped by the workflow",
+      startedAt: "2026-09-26T10:00:01Z",
+      completedAt: "2026-09-26T10:00:01Z",
+      artifacts: [],
+      output: skip,
     });
+  });
+
+  test("a completed script node keeps only its output value in state; the process record stays in the event", () => {
+    const state = project([
+      nodeEvent(1, "started", build, { nodeType: "exec" }),
+      nodeEvent(2, "completed", build, {
+        nodeType: "exec",
+        attempts: 1,
+        output: { pass: true },
+        process: { stdout: '{"pass":true}', stderr: "", exitCode: 0 },
+      }),
+    ]);
+    expect(state.nodeRuns.build?.output).toEqual({ pass: true });
+    expect(JSON.stringify(state)).not.toContain("stdout");
+  });
+
+  test.each([
+    [
+      "with an error records it as output",
+      { error: { kind: "cancelled", message: "stopped" } },
+      { kind: "cancelled", message: "stopped" },
+    ],
+    ["without an error has no output", {}, undefined],
+  ])("a cancelled node %s", (_label, extra, output) => {
+    const state = project([
+      nodeEvent(1, "started", build, { nodeType: "agent" }),
+      nodeEvent(2, "cancelled", build, { nodeType: "agent", attempts: 1, ...extra }),
+    ]);
+    expect(state.nodeRuns.build?.status).toBe("cancelled");
+    expect(state.nodeRuns.build?.output).toEqual(output);
+    expect(StateSchema.safeParse(state).success).toBe(true);
+  });
+
+  test("a loop cancelled without an error drops the output its last pass left", () => {
+    const state = project([
+      nodeEvent(1, "started", build, { nodeType: "loop" }),
+      nodeEvent(2, "iterated", build, { nodeType: "loop", iteration: 2, output: { pass: false } }),
+      nodeEvent(3, "cancelled", build, { nodeType: "loop", attempts: 1 }),
+    ]);
+    expect(state.nodeRuns.build?.status).toBe("cancelled");
+    expect(state.nodeRuns.build?.output).toBeUndefined();
   });
 
   test("IW8 — a node run holds the input from its started event and the output from its completed event; a pair without them projects as before", () => {
@@ -275,6 +395,7 @@ describe("builtInHandlers", () => {
         {
           nodeType: "exec",
           attempts: 0,
+          skip,
           parents: ["fix"],
         },
       ),
@@ -348,7 +469,7 @@ describe("builtInHandlers", () => {
     });
   });
 
-  test("workflow.completed and workflow.failed set the run's outcome and completedAt", () => {
+  test("workflow.completed and workflow.failed set the run's status and completedAt", () => {
     const ended = (type: string): Event => ({
       schemaVersion: 1,
       seq: 1,
@@ -360,10 +481,10 @@ describe("builtInHandlers", () => {
       payload: {},
     });
     expect(project([ended("workflow.completed")])).toMatchObject({
-      outcome: "completed",
+      status: "completed",
       completedAt: "2026-09-28T09:00:00Z",
     });
-    expect(project([ended("workflow.failed")]).outcome).toBe("failed");
+    expect(project([ended("workflow.failed")]).status).toBe("failed");
   });
 
   test("SC9: a node started again replaces its entry, so state keeps only its latest run", () => {
@@ -383,10 +504,10 @@ describe("builtInHandlers", () => {
     ]);
     expect(state.nodeRuns.x).toEqual({
       nodeRunId: "nr-2",
+      nodeType: "exec",
       status: "running",
       startedAt: "2026-09-26T10:00:03Z",
       completedAt: null,
-      result: null,
       artifacts: [],
     });
   });
@@ -515,6 +636,7 @@ describe("workspace reducers", () => {
   test("WS41 — created, then web removed, then docs added: the workspace points at workspaceDir and holds exactly api and docs", () => {
     const state = project(workspaceHistory);
     expect(state.workspace).toEqual({
+      type: "multi",
       path: WS_DIR,
       repositories: {
         api: {

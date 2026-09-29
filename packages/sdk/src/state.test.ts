@@ -20,24 +20,24 @@ import {
 const seed: State = {
   schemaVersion: 1,
   lastEventSeq: 0,
-  specName: "add-login",
-  harnessVersion: "2.0.0",
+  runId: "r-test",
+  runName: "add-login",
+  runDir: "/work/.harness/add-login",
+  version: "2.0.0",
   workflow: { name: "feature", path: "workflow.yaml" },
   input: {},
-  scope: "feature",
-  options: {},
+  scope: null,
   startedAt: "2026-09-26T10:00:00Z",
   completedAt: null,
-  outcome: null,
-  currentFile: null,
+  status: "running",
   workspace: {
+    type: "mono",
     path: "/work",
     repositories: {
       app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
     },
   },
   nodeRuns: {},
-  custom: {},
   eventHandlers: {},
 };
 
@@ -55,7 +55,7 @@ const event = (seq: number, type: string, payload: JsonValue = null): Event => (
 const handlers: EventHandlers = {
   "workflow.file.opened": (state, opened) => ({
     ...state,
-    currentFile: typeof opened.payload === "string" ? opened.payload : null,
+    input: { file: opened.payload },
   }),
 };
 
@@ -67,7 +67,7 @@ describe("projectEvents", () => {
     ];
     const first = projectEvents({ state: seed, events, handlers });
     expect(first).toEqual(projectEvents({ state: seed, events, handlers }));
-    expect(first).toEqual({ ...seed, currentFile: "b.ts", lastEventSeq: 2 });
+    expect(first).toEqual({ ...seed, input: { file: "b.ts" }, lastEventSeq: 2 });
   });
 
   test("unhandled and custom.* events advance only lastEventSeq", () => {
@@ -78,15 +78,11 @@ describe("projectEvents", () => {
   test("EH5 — the built-in handler runs first, then each extension in listed order on the state the last one returned", () => {
     const seen =
       (label: string): EventHandler =>
-      (state) => ({
-        ...state,
-        custom: {
-          seen: [
-            ...(Array.isArray(state.custom.seen) ? state.custom.seen : []),
-            `${label}:${state.currentFile}`,
-          ],
-        },
-      });
+      (state) => {
+        const before = state.custom?.seen;
+        const seenSoFar = Array.isArray(before) ? before : [];
+        return { ...state, custom: { seen: [...seenSoFar, `${label}:${state.input.file}`] } };
+      };
     const extensions = { "workflow.file.opened": [seen("first"), seen("second")] };
     const events = [event(1, "workflow.file.opened", "a.ts")];
 
@@ -111,18 +107,18 @@ describe("projectEvents", () => {
   });
 
   test("events at or below lastEventSeq are skipped", () => {
-    const state = { ...seed, lastEventSeq: 1, currentFile: "kept.ts" };
+    const state = { ...seed, lastEventSeq: 1, input: { file: "kept.ts" } };
     const events = [event(1, "workflow.file.opened", "old.ts")];
     expect(projectEvents({ state, events, handlers })).toEqual(state);
   });
 
   test("a handler that returns an invalid state throws", () => {
     const broken: EventHandlers = {
-      "workflow.broken": (state) => ({ ...state, specName: "Not A Slug" }),
+      "workflow.broken": (state) => ({ ...state, runName: "Not A Slug" }),
     };
     expect(() =>
       projectEvents({ state: seed, events: [event(1, "workflow.broken")], handlers: broken }),
-    ).toThrow(/specName/);
+    ).toThrow(/runName/);
   });
 });
 
@@ -222,7 +218,7 @@ export const onRisky = (state, event) => {
   if (event.payload === "bad") throw new Error("cannot apply a bad note");
   return { ...state, custom: { ...state.custom, note: event.payload } };
 };
-export const onBadShape = (state) => ({ ...state, specName: "Not A Slug" });
+export const onBadShape = (state) => ({ ...state, runName: "Not A Slug" });
 `;
 
 // A run folder whose state.json lists the given handlers from a module written beside it.
@@ -378,17 +374,31 @@ describe("createState", () => {
 
     const eventHandlers = { "custom.review.note": [{ module: "/abs/review.ts", handler: "f" }] };
 
-    const state = await createState({ runDir, harnessVersion: "1.0.0", eventHandlers });
+    const state = await createState({
+      runId: "r-42",
+      runDir,
+      version: "1.0.0",
+      eventHandlers,
+    });
 
     expect(StateSchema.safeParse(state).success).toBe(true);
     expect(state).toMatchObject({
       lastEventSeq: 0,
-      specName: "fix-login",
+      runId: "r-42",
+      runName: "fix-login",
+      runDir,
+      version: "1.0.0",
       workflow: { name: "demo", path: "workflow.yaml" },
       input: {},
-      custom: {},
+      scope: null,
+      completedAt: null,
+      status: "running",
       eventHandlers,
     });
+    expect(state).not.toHaveProperty("custom");
+    expect(state).not.toHaveProperty("options");
+    expect(state).not.toHaveProperty("currentFile");
+    expect(state.workspace.type).toBe("mono");
     expect(state.workspace.path).toBe(repo);
     expect(Object.keys(state.workspace.repositories)).toEqual(["fix-login-app"]);
     expect(JSON.parse(await readFile(join(runDir, "state.json"), "utf8"))).toEqual(state);
