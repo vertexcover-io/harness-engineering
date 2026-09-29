@@ -16,7 +16,7 @@ export const isNormalizedRelativePath = (value: string): boolean =>
   !/^[A-Za-z]:/.test(value) &&
   !value.includes("\\") &&
   value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
-export const RunPathSchema = NonEmptyStringSchema.refine(
+const RunPathSchema = NonEmptyStringSchema.refine(
   isNormalizedRelativePath,
   "Expected a normalized path relative to the run folder",
 );
@@ -48,24 +48,25 @@ export const LayoutSchema = z.enum(["mono", "multi"]);
 export const NodeTypeSchema = z.enum(["exec", "wait", "agent", "loop", "switch", "include"]);
 
 export const ERROR_MESSAGE_LIMIT = 500;
-export const FailureOutputSchema = z.strictObject({
+export const ErrorSchema = z.strictObject({
   kind: z.string(),
   message: z.string().max(ERROR_MESSAGE_LIMIT),
+  stack: z.string().optional(),
 });
+const FailedOutputSchema = ErrorSchema.omit({ stack: true });
 
-export const SkipReasonSchema = z.enum(["when-false", "dependency-skipped", "no-matching-case"]);
 // Why the engine skipped a node, with the values it decided on, so a reader need not re-evaluate.
 export const SkipOutputSchema = z.discriminatedUnion("reason", [
   z.strictObject({
-    reason: SkipReasonSchema.extract(["when-false"]),
+    reason: z.literal("when-false"),
     proof: z.strictObject({ expression: NonEmptyStringSchema, value: z.literal(false) }),
   }),
   z.strictObject({
-    reason: SkipReasonSchema.extract(["dependency-skipped"]),
+    reason: z.literal("dependency-skipped"),
     proof: z.strictObject({ dependencies: z.array(NonEmptyStringSchema).min(1) }),
   }),
   z.strictObject({
-    reason: SkipReasonSchema.extract(["no-matching-case"]),
+    reason: z.literal("no-matching-case"),
     proof: z.strictObject({ expression: NonEmptyStringSchema, value: z.json() }),
   }),
 ]);
@@ -108,7 +109,7 @@ export const NodeRunSchema: z.ZodType<NodeRun> = NodeRunFieldsSchema.extend({
   if (run.status === "skipped" && !SkipOutputSchema.safeParse(run.output).success) {
     context.addIssue({ code: "custom", path: ["output"], message: "A skipped run needs a reason" });
   }
-  if (run.status === "failed" && !FailureOutputSchema.safeParse(run.output).success) {
+  if (run.status === "failed" && !FailedOutputSchema.safeParse(run.output).success) {
     context.addIssue({ code: "custom", path: ["output"], message: "A failed run needs its error" });
   }
 });
@@ -228,7 +229,6 @@ export type JsonValue = z.infer<z.ZodJSONSchema>;
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
 export type Layout = z.infer<typeof LayoutSchema>;
-export type NodeType = z.infer<typeof NodeTypeSchema>;
 export type SkipOutput = z.infer<typeof SkipOutputSchema>;
 
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;

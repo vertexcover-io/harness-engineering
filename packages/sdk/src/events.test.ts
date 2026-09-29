@@ -185,6 +185,23 @@ describe("emitEvent", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  test.each([
+    ["an error", { error: { kind: "exit", message: "exit 1" } }],
+    [
+      "a skip",
+      { skip: { reason: "when-false", proof: { expression: "{{ false }}", value: false } } },
+    ],
+  ])("workflow.node.completed refuses %s beside its output", async (_, fields) => {
+    const result = await emitEvent(memoryEventStore(), "r-1", {
+      type: "workflow.node.completed",
+      source: "test",
+      nodeId: "a",
+      nodeRunId: "a",
+      payload: { nodeType: "exec", attempts: 1, output: "hi\n", ...fields },
+    });
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("emitRunEvent", () => {

@@ -25,8 +25,8 @@ import {
   SessionRefSchema,
   SlugSchema,
   type State,
-  type StepOutcomeSchema,
-  type StepReportSchema,
+  type StepOutcome,
+  type StepReport,
   stackOf,
   syncState,
   type WorkflowRun,
@@ -177,10 +177,6 @@ export type StepReply =
 
 type NextOptions = Readonly<{ root: string; config: Config }>;
 
-export type StepOutcome = z.infer<typeof StepOutcomeSchema>;
-
-export type StepReport = z.infer<typeof StepReportSchema>;
-
 type Call = Readonly<{ command: "next" | "exec" | "done"; input: JsonValue }>;
 
 // A reply is plain data the CLI prints as JSON; parsing it gives it the type an event payload takes.
@@ -195,9 +191,9 @@ const replyOf = (outcome: Result<unknown> | Error): JsonValue => {
 const logCall = async <T>(
   run: RunRef,
   call: Call,
-  running: Promise<Result<T>>,
+  pending: Promise<Result<T>>,
 ): Promise<Result<T>> => {
-  const outcome = await running.catch((error: unknown) =>
+  const outcome = await pending.catch((error: unknown) =>
     error instanceof Error ? error : new Error(String(error)),
   );
   const logged = await emitRunEvent(run, {
