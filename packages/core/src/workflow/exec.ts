@@ -1,16 +1,12 @@
 import { resolve } from "node:path";
 import { type JsonValue, type ProcessRecord, stackOf } from "@harness/sdk";
-import { z } from "zod";
-import { own } from "../stage.ts";
-import { asJson, callFunction, importModule, loadFunction, runScript } from "./executors.ts";
+import { callFunction, loadFunction, runScript } from "./executors.ts";
 import {
-  type ExecNode,
   type NodeContext,
   NodeFailure,
   type NodeRecord,
-  type PlanAgentNode,
+  type PlanExecNode,
   type WaitNode,
-  WorkflowError,
   type WorkflowFunction,
 } from "./types.ts";
 
@@ -23,7 +19,7 @@ type OutputSchema = Readonly<{ name: string; schema: SchemaLike }>;
 
 // What one exec node needs for every attempt: its function and output schema are loaded once.
 type ExecRun = Readonly<{
-  node: ExecNode;
+  node: PlanExecNode;
   input: JsonValue;
   path: string;
   cwd: string;
@@ -43,11 +39,7 @@ const toFailure = (error: unknown): NodeFailure =>
         },
       );
 
-const buildFailedRecord = (
-  node: ExecNode | PlanAgentNode,
-  path: string,
-  failure: NodeFailure,
-): NodeRecord => ({
+const buildFailedRecord = (node: PlanExecNode, path: string, failure: NodeFailure): NodeRecord => ({
   path,
   type: node.type,
   status: "failed",
@@ -56,33 +48,6 @@ const buildFailedRecord = (
   ...(failure.process === undefined ? {} : { process: failure.process }),
 });
 
-const isSchema = (value: unknown): value is SchemaLike =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as { safeParse?: unknown }).safeParse === "function";
-
-// The zod schema a node's output must match: the built-in Json, or one from the `schemas` export of
-// its module.
-const loadSchema = async (
-  node: ExecNode | PlanAgentNode,
-  cwd: string,
-): Promise<OutputSchema | undefined> => {
-  const ref = node.output;
-  if (ref === undefined) return undefined;
-  if (ref.module === undefined) return { name: ref.zodSchema, schema: z.json() };
-  const registry = (await importModule(ref.module, cwd)).schemas;
-  const schema =
-    typeof registry === "object" && registry !== null
-      ? own(registry as Record<string, unknown>, ref.zodSchema)
-      : undefined;
-  if (!isSchema(schema)) {
-    const message = `${ref.module} has no schemas.${ref.zodSchema}`;
-    throw new WorkflowError("missing-schema", message, ref.zodSchema);
-  }
-  return { name: `${ref.module} schemas.${ref.zodSchema}`, schema };
-};
-
-// The schema only checks the output: the node keeps the JSON it was given.
 const checkOutput = (
   output: JsonValue,
   path: string,
@@ -165,7 +130,7 @@ const runExec = async (run: ExecRun, number = 1): Promise<NodeRecord> => {
 
 // Runs one exec or wait node that next already started; the caller records how it ended.
 export const runStepLeaf = async (
-  node: ExecNode | WaitNode,
+  node: PlanExecNode | WaitNode,
   input: JsonValue,
   options: Readonly<{ cwd: string; path: string }>,
 ): Promise<NodeRecord> => {
@@ -179,23 +144,11 @@ export const runStepLeaf = async (
       node.module === undefined || node.functionName === undefined
         ? undefined
         : await loadFunction(node.module, node.functionName, cwd);
-    const schema = await loadSchema(node, cwd);
+    const schema =
+      node.outputSchema === undefined
+        ? undefined
+        : { name: node.output?.zodSchema ?? "Json", schema: node.outputSchema };
     return await runExec({ node, input, path, cwd: resolve(cwd), fn, schema });
-  } catch (error) {
-    return buildFailedRecord(node, path, toFailure(error));
-  }
-};
-
-// Checks an agent node's reported output against its declared schema, for orchestrate done.
-export const checkAgentOutput = async (
-  node: PlanAgentNode,
-  output: JsonValue,
-  options: Readonly<{ cwd: string; path: string }>,
-): Promise<NodeRecord> => {
-  const { cwd, path } = options;
-  try {
-    const checked = checkOutput(asJson(output, path), path, await loadSchema(node, cwd));
-    return { path, type: node.type, status: "completed", output: checked, attempts: 1 };
   } catch (error) {
     return buildFailedRecord(node, path, toFailure(error));
   }

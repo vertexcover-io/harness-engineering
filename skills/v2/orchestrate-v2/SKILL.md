@@ -65,8 +65,12 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      If the skill could not finish, pass `--error -` instead, with the reason in the heredoc.
      Always use the quoted heredoc (`<<'JSON'`), never text inside `'…'` on the command line:
      the shell leaves a quoted heredoc alone, while a single apostrophe in quoted text ends the
-     quote and lets the rest run as shell. Log `✓` or `✗` from the printed JSON, then go back
-     to 1.
+     quote and lets the rest run as shell. If `done --output` exits non-zero, read its JSON error.
+     When `retryable` is `true`, fix the command input or each issue in `issues` and retry `done`
+     with the same `nodeRunId`; the node is still running. When `retryable` is `false`, stop and
+     report the error. Do not call `next` until `done` reports completed or you report an
+     unrecoverable stage error with `done --error`. Log `✓` or `✗` from the printed JSON, then
+     go back to 1.
    - `agent`: tell the user `▶ NODE_ID`. Do what `prompt` asks, with `input` as its data,
      then finish it with the reply's `done` command the same way as a stage.
    - `blocked`: the stage `stage` needs artifacts in `missing` that no finished node wrote.

@@ -10,6 +10,7 @@ inputs:
 outputs:
   description: Where the review was written and how many drafts it read.
   schema: demo-review.output.v1
+  module: ../schemas.ts
 consumes:
   - artifact: brief
   - artifact: draft

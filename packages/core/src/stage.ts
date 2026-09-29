@@ -42,7 +42,7 @@ export const StageSchema = z.strictObject({
   "allowed-tools": z.array(NonEmptyStringSchema),
   tier: NonEmptyStringSchema,
   inputs: StagePortSchema,
-  outputs: StagePortSchema,
+  outputs: StagePortSchema.extend({ module: NonEmptyStringSchema.optional() }),
   consumes: z.array(ArtifactDeclarationSchema).optional(),
   produces: z.array(ArtifactDeclarationSchema).optional(),
   protocols: UniqueSlugsSchema,

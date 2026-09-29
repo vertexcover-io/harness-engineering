@@ -225,26 +225,35 @@ const tryEvent = async (
 // throughout, so the event is checked against the same state it is then applied to. It also hands
 // back the state.json it wrote (null when the folder has none yet), so a caller storing many
 // events need not read the log again after each one.
-export const appendRunEvent = (
+export const appendRunEventIf = (
   run: RunRef,
   input: EmitInput,
+  allowed: (state: State | null) => boolean,
 ): Promise<Result<Readonly<{ event: Event; state: State | null }>>> => {
   const runDir = runDirOf(run.cwd, run.name);
   const store = jsonlEventStore(runDir);
   return withLock(lockOf(runDir), async () => {
     const current = await readState(runDir);
     if (current === null) {
+      if (!allowed(null)) return { ok: false, error: "condition-failed" };
       const stored = await emitEvent(store, run.id, input);
       return stored.ok ? { ok: true, value: { event: stored.value, state: null } } : stored;
     }
     const extensions = await loadEventHandlers(current.eventHandlers);
     if (!extensions.ok) return extensions;
+    const latest = await projectLog(runDir, store, current, extensions.value).catch(
+      (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
+    );
+    if (latest instanceof Error) {
+      return { ok: false, error: `state.json not synchronized: ${latest.message}` };
+    }
+    if (!allowed(latest)) return { ok: false, error: "condition-failed" };
     const draft = { ...input, id: input.id ?? crypto.randomUUID() };
-    const tried = await tryEvent(store, run.id, draft, current, extensions.value);
+    const tried = await tryEvent(store, run.id, draft, latest, extensions.value);
     if (!tried.ok) return tried;
     const stored = await emitEvent(store, run.id, draft);
     if (!stored.ok) return stored;
-    const synced = await projectLog(runDir, store, current, extensions.value).catch(
+    const synced = await projectLog(runDir, store, latest, extensions.value).catch(
       (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
     );
     if (synced instanceof Error) {
@@ -253,6 +262,12 @@ export const appendRunEvent = (
     return { ok: true, value: { event: stored.value, state: synced } };
   });
 };
+
+export const appendRunEvent = (
+  run: RunRef,
+  input: EmitInput,
+): Promise<Result<Readonly<{ event: Event; state: State | null }>>> =>
+  appendRunEventIf(run, input, () => true);
 
 export const emitRunEvent = async (run: RunRef, input: EmitInput): Promise<Result<Event>> => {
   const appended = await appendRunEvent(run, input);

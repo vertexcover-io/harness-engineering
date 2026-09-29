@@ -46,6 +46,40 @@ const resolveFailure = (value: string, scope: Scope): NodeFailure => {
 };
 
 describe("compile", () => {
+  test("resolves workflow.yaml output schemas before an exec or agent runs", async () => {
+    const modulePath = join(workflowDir, "compile-output-schemas.ts");
+    writeFileSync(
+      modulePath,
+      `import { z } from ${JSON.stringify(import.meta.resolve("zod"))};\nexport const schemas = { answer: z.object({ answer: z.number() }) };\n`,
+    );
+    const output = `\n    output: { module: ${modulePath}, zodSchema: answer }`;
+    const source = workflow(
+      script("compute", output) +
+        `\n  - id: review\n    type: agent\n    prompt: Review\n    input: null${output}`,
+    );
+    const plan = await compile(source);
+    expect(plan.nodes[0]).toHaveProperty("outputSchema");
+    expect(plan.nodes[1]).toHaveProperty("outputSchema");
+  });
+
+  test("rejects broken workflow.yaml schema references in nested and included nodes", async () => {
+    const missing = join(workflowDir, "missing-output-schema.ts");
+    const nested = workflow(
+      `\n  - id: repeat\n    type: loop\n    input: null\n    maxIterations: 1\n    until: "{{ true }}"\n    nodes:\n      - id: inner\n        type: exec\n        runtime: sh\n        script: "true"\n        input: null\n        output: { module: ${missing}, zodSchema: answer }`,
+    );
+    expect((await rejection(nested)).code).toBe("missing-module");
+
+    const includedPath = join(workflowDir, "included-with-missing-schema.yml");
+    writeFileSync(
+      includedPath,
+      workflow(script("inside", `\n    output: { module: ${missing}, zodSchema: answer }`)),
+    );
+    const included = workflow(
+      `\n  - id: child\n    type: include\n    workflow: ${includedPath}\n    input: null`,
+    );
+    expect((await rejection(included)).code).toBe("missing-module");
+  });
+
   test("SC1 — an unknown node field is rejected with its path", async () => {
     const error = await rejection(workflow(script("a", "\n    comand: x")));
     expect(error.code).toBe("schema");
@@ -306,9 +340,14 @@ describe("conditions and switch", () => {
         expect(error.message).toContain(message);
       }
     }
+    const schemaPath = join(workflowDir, "sc29-schemas.ts");
+    writeFileSync(
+      schemaPath,
+      `import { z } from ${JSON.stringify(import.meta.resolve("zod"))};\nexport const schemas = { inspection: z.object({ status: z.string() }) };\n`,
+    );
     for (const output of [
       "{ zodSchema: Json }",
-      "{ module: ./schemas.ts, zodSchema: inspection }",
+      `{ module: ${schemaPath}, zodSchema: inspection }`,
     ]) {
       await expect(compile(exec(output))).resolves.toBeDefined();
       await expect(compile(agent(output))).resolves.toBeDefined();
@@ -475,6 +514,79 @@ const stagesRejection = async (source: string): Promise<WorkflowError> => {
 };
 
 describe("compile with stages", () => {
+  test("a stage without a resolvable output schema is rejected before execution", async () => {
+    const project = mkdtempSync(join(tmpdir(), "wf-stage-schema-"));
+    writeStages(join(project, "stages"), DEMO_STAGES);
+    const skill = join(project, "stages", "producer", "SKILL.md");
+    const source = await Bun.file(skill).text();
+    writeFileSync(skill, source.replace(", module: ../schemas.ts", ""));
+    const path = join(project, "workflow.yml");
+    writeFileSync(path, workflow(stageNode("make", "stages/producer")));
+
+    try {
+      await compileWorkflow(path, { cwd: project });
+      throw new Error("expected a missing schema error");
+    } catch (error) {
+      if (!(error instanceof WorkflowError)) throw error;
+      expect(error.code).toBe("missing-schema");
+      expect(error.message).toContain("outputs.module");
+    }
+  });
+
+  test("a stage cannot override its own output schema in the workflow node", async () => {
+    const error = await stagesRejection(
+      workflow(
+        stageNode("make", "stages/producer", ", output: { module: ./other.ts, zodSchema: other }"),
+      ),
+    );
+    expect(error.code).toBe("schema");
+    expect(error.message).toContain("SKILL.md");
+  });
+
+  test("a required consumed artifact cannot depend only on an optional producer", async () => {
+    const project = mkdtempSync(join(tmpdir(), "wf-optional-producer-"));
+    writeStages(join(project, "stages"), {
+      producer: { produces: "[{ artifact: plan, optional: true }]" },
+      consumer: DEMO_STAGES.consumer,
+    });
+    const path = join(project, "workflow.yml");
+    writeFileSync(
+      path,
+      workflow(
+        `${stageNode("make", "stages/producer")}${stageNode("use", "stages/consumer", ", dependsOn: [make]")}`,
+      ),
+    );
+    try {
+      await compileWorkflow(path, { cwd: project });
+      throw new Error("expected a missing artifact error");
+    } catch (error) {
+      if (!(error instanceof WorkflowError)) throw error;
+      expect(error.code).toBe("missing-artifact");
+      expect(error.message).toContain("optional");
+    }
+  });
+
+  test("a consumer cannot rely on an artifact produced by only one switch case", async () => {
+    const source = workflow(`
+  - id: choice
+    type: switch
+    expression: "{{ inputs.route }}"
+    input: {}
+    cases:
+      - id: make
+        value: make
+        nodes:
+          - { id: producer, type: agent, stage: stages/producer, input: {} }
+      - id: skip
+        value: skip
+        nodes:
+          - { id: noop, type: wait, durationMs: 1, input: null }
+  - { id: use, type: agent, stage: stages/consumer, input: {}, dependsOn: [choice] }`);
+    const error = await stagesRejection(source);
+    expect(error.code).toBe("missing-artifact");
+    expect(error.message).toContain("plan");
+  });
+
   test("IW31 — a stage that needs an artifact compiles when it depends on the node producing it, and the plan lists each stage's artifacts", async () => {
     const { project, plan } = await compileWithStages(
       workflow(

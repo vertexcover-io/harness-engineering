@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { JsonValue } from "@harness/sdk";
 import { compileWorkflow } from "./compile.ts";
-import { checkAgentOutput, runStepLeaf } from "./exec.ts";
-import type { NodeRecord, PlanNode } from "./types.ts";
+import { runStepLeaf } from "./exec.ts";
+import { type NodeRecord, type PlanNode, WorkflowError } from "./types.ts";
 
 const makeRoot = (): string => mkdtempSync(join(tmpdir(), "wf-run-"));
 
@@ -217,7 +217,7 @@ const setupRoot = (): string => {
   writeFile(
     root,
     "schemas.ts",
-    `import { z } from "${zodUrl}";\nexport const schemas = {\n  inspection: z.object({ status: z.string() }),\n  counted: z.object({ n: z.coerce.number(), tag: z.string().default("none") }),\n  boom: { safeParse: () => { throw new Error("user boom"); } },\n};\n`,
+    `import { z } from "${zodUrl}";\nexport const schemas = {\n  inspection: z.object({ status: z.string() }),\n  counted: z.object({ n: z.coerce.number(), tag: z.string().default("none") }),\n  boom: z.any().superRefine(() => { throw new Error("user boom"); }),\n};\n`,
   );
   return root;
 };
@@ -257,7 +257,7 @@ describe("output schemas", () => {
     expect(record.process?.exitCode).toBe(0);
   });
 
-  test("SC40 — a schema missing from its module fails the node, naming the schema", async () => {
+  test("SC40 — a schema missing from its module fails compilation, naming the schema", async () => {
     const root = setupRoot();
     const missing = (module: string) =>
       fnLines(
@@ -265,10 +265,11 @@ describe("output schemas", () => {
         "goodInspection",
         `\n    output: { module: ${module}, zodSchema: nope }`,
       );
-    const noSchema = await runLeaf(root, missing("./schemas.ts"));
-    expect(noSchema.status).toBe("failed");
-    expect(noSchema.error?.message).toContain("nope");
-    expect((await runLeaf(root, missing("./missing.ts"))).status).toBe("failed");
+    await expect(compileNode(root, missing("./schemas.ts"))).rejects.toMatchObject({
+      code: "missing-schema",
+      message: expect.stringContaining("nope"),
+    });
+    await expect(compileNode(root, missing("./missing.ts"))).rejects.toBeInstanceOf(WorkflowError);
   });
 
   test("a schema only checks a script's output: the raw JSON it printed is stored", async () => {
@@ -299,43 +300,6 @@ describe("output schemas", () => {
       fnLines("./fns/helpers.ts", "rawCount", "\n    output: { zodSchema: Json }"),
     );
     expect(record).toMatchObject({ status: "completed", output: { n: "7" } });
-  });
-
-  test("checkAgentOutput stores the agent's output as reported once its schema accepts it, and the built-in Json takes any JSON", async () => {
-    const root = setupRoot();
-    const options = { cwd: root, path: "nr-a" };
-    const agent = async (output: string) => {
-      const node = await compileNode(
-        root,
-        `    type: agent\n    prompt: count\n    input: {}\n    output: ${output}`,
-      );
-      if (node.type !== "agent") throw new Error(`a is a ${node.type} node`);
-      return node;
-    };
-    const counted = await agent("{ module: ./schemas.ts, zodSchema: counted }");
-    expect(await checkAgentOutput(counted, { n: "3" }, options)).toMatchObject({
-      status: "completed",
-      output: { n: "3" },
-    });
-    const json = await agent("{ zodSchema: Json }");
-    expect(await checkAgentOutput(json, [1, "two"], options)).toMatchObject({
-      status: "completed",
-      output: [1, "two"],
-    });
-  });
-
-  test("SC62 — checkAgentOutput passes output that matches the agent's schema and fails output that does not", async () => {
-    const root = setupRoot();
-    const node = await compileNode(
-      root,
-      "    type: agent\n    prompt: inspect\n    input: {}\n    output: { module: ./schemas.ts, zodSchema: inspection }",
-    );
-    if (node.type !== "agent") throw new Error(`a is a ${node.type} node`);
-    const options = { cwd: root, path: "nr-a" };
-    const good = await checkAgentOutput(node, { status: "ok" }, options);
-    expect(good).toMatchObject({ status: "completed", output: { status: "ok" } });
-    const bad = await checkAgentOutput(node, { status: 1 }, options);
-    expect(bad).toMatchObject({ status: "failed", error: { kind: "validation" } });
   });
 });
 

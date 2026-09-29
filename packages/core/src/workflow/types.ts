@@ -188,6 +188,17 @@ export const WorkflowErrorCodeSchema = z.enum([
 
 // How one exec, wait or agent node ended, as orchestrate exec and done record it. A script's
 // process record goes to the event log only; output is the value state.json keeps.
+export const WorkflowCompileErrorSchema = z.strictObject({
+  kind: z.literal("compile"),
+  retryable: z.literal(false),
+  code: WorkflowErrorCodeSchema,
+  path: z.string(),
+  message: z.string(),
+});
+
+export type WorkflowCompileError = z.infer<typeof WorkflowCompileErrorSchema>;
+
+// How one exec, wait or agent node ended, as orchestrate exec and done record it.
 export const NodeRecordSchema = z.object({
   path: z.string(),
   type: NodeTypeSchema,
@@ -218,23 +229,37 @@ export type PlanStage = Readonly<{
   skill: string;
   consumes: readonly ArtifactDeclaration[];
   produces: readonly ArtifactDeclaration[];
+  outputSchemaName: string;
+  outputSchema: z.ZodType;
 }>;
 
 // Compiled nodes carry what they need: the ids of the containers around them (the path to their
 // entry in state.json), a stage node its loaded SKILL.md, an include node the workflow it
 // includes, and loops and switches their compiled children.
-type Placed = Readonly<{ parents: readonly string[] }>;
-export type PlanExecNode = ExecNode & Placed;
-export type PlanWaitNode = WaitNode & Placed;
-export type PlanAgentNode = Omit<AgentNode, "stage"> & Placed & { stage?: PlanStage };
-export type PlanIncludeNode = IncludeNode & Placed & { plan: WorkflowPlan };
-export type PlanLoopNode = Omit<LoopNode, "nodes"> & Placed & { nodes: PlanNode[] };
+export type PlanExecNode = ExecNode & {
+  readonly parents: readonly string[];
+  outputSchema?: z.ZodType | undefined;
+};
+export type PlanWaitNode = WaitNode & { readonly parents: readonly string[] };
+export type PlanAgentNode = Omit<AgentNode, "stage"> & {
+  readonly parents: readonly string[];
+  stage?: PlanStage;
+  outputSchema?: z.ZodType | undefined;
+};
+export type PlanIncludeNode = IncludeNode & {
+  readonly parents: readonly string[];
+  plan: WorkflowPlan;
+};
+export type PlanLoopNode = Omit<LoopNode, "nodes"> & {
+  readonly parents: readonly string[];
+  nodes: PlanNode[];
+};
 export type PlanSwitchCase = Omit<SwitchCase, "nodes"> & { nodes: PlanNode[] };
-export type PlanSwitchNode = Omit<SwitchNode, "cases" | "default"> &
-  Placed & {
-    cases: PlanSwitchCase[];
-    default?: PlanNode[] | undefined;
-  };
+export type PlanSwitchNode = Omit<SwitchNode, "cases" | "default"> & {
+  readonly parents: readonly string[];
+  cases: PlanSwitchCase[];
+  default?: PlanNode[] | undefined;
+};
 export type PlanNode =
   | PlanExecNode
   | PlanWaitNode

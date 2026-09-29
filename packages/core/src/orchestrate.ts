@@ -20,9 +20,18 @@ import {
   stopRunningOnSignal,
 } from "@harness/sdk";
 import { createLogger, resolveLevel } from "./logging.ts";
-import { execStep, finishStep, initializeRun, linkRunSession, nextStep } from "./runs.ts";
+import {
+  type DoneError,
+  DoneErrorSchema,
+  execStep,
+  finishStep,
+  initializeRun,
+  linkRunSession,
+  nextStep,
+} from "./runs.ts";
 import { harnessSkillsDir, resolveExtension, resolveReference } from "./stage.ts";
 import { captureBaseline } from "./stages/baseline.ts";
+import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
 const RUN_HELP = "spec name of the run, as given to init";
@@ -40,6 +49,30 @@ const log = createLogger(
 const fail = (error: string): void => {
   console.error(error);
   process.exitCode = 1;
+};
+
+const failJson = (error: unknown): void => {
+  console.error(JSON.stringify(error, null, 2));
+  process.exitCode = 1;
+};
+
+const failDone = (error: DoneError): void => failJson(DoneErrorSchema.parse(error));
+
+const runWorkflowCommand = async (work: () => Promise<void>): Promise<void> => {
+  try {
+    await work();
+  } catch (error) {
+    if (!(error instanceof WorkflowError)) throw error;
+    failJson(
+      WorkflowCompileErrorSchema.parse({
+        kind: "compile",
+        retryable: false,
+        code: error.code,
+        path: error.path,
+        message: error.message,
+      }),
+    );
+  }
 };
 
 const printJson = (value: unknown): void => {
@@ -126,6 +159,9 @@ const emitCommand = () =>
     .option("--stage <name>", "stage the event belongs to")
     .option("--root <dir>", ROOT_HELP)
     .action(async (type, opts) => {
+      if (type.startsWith("workflow.")) {
+        return fail(`${type} is engine-owned; use next, exec, or done for workflow lifecycle`);
+      }
       const payload = parseJsonFlag(opts.payload, "--payload");
       if (!payload.ok) return fail(payload.error);
       const target = await getWorkflowRun(opts.run, opts.root);
@@ -140,11 +176,13 @@ const nextCommand = () =>
     .description("Move the run to its next step and print that step as JSON")
     .requiredOption("--run <name>", RUN_HELP)
     .option("--root <dir>", ROOT_HELP)
-    .action(async (opts) => {
-      const target = await getWorkflowRun(opts.run, opts.root);
-      if (!target.ok) return fail(target.error);
-      printResult(await nextStep(target.value.run, target.value.root));
-    });
+    .action(async (opts) =>
+      runWorkflowCommand(async () => {
+        const target = await getWorkflowRun(opts.run, opts.root);
+        if (!target.ok) return fail(target.error);
+        printResult(await nextStep(target.value.run, target.value.root));
+      }),
+    );
 
 const execCommand = () =>
   new Command("exec")
@@ -152,14 +190,16 @@ const execCommand = () =>
     .argument("<nodeRunId>", "node run id from next")
     .requiredOption("--run <name>", RUN_HELP)
     .option("--root <dir>", ROOT_HELP)
-    .action(async (nodeRunId, opts) => {
-      if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
-      const target = await getWorkflowRun(opts.run, opts.root);
-      if (!target.ok) return fail(target.error);
-      const report = await execStep(target.value.run, nodeRunId);
-      printResult(report);
-      if (report.ok && report.value.status !== "completed") process.exitCode = 1;
-    });
+    .action(async (nodeRunId, opts) =>
+      runWorkflowCommand(async () => {
+        if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
+        const target = await getWorkflowRun(opts.run, opts.root);
+        if (!target.ok) return fail(target.error);
+        const report = await execStep(target.value.run, nodeRunId);
+        printResult(report);
+        if (report.ok && report.value.status !== "completed") process.exitCode = 1;
+      }),
+    );
 
 const collect = (value: string, acc: readonly string[]): string[] => [...acc, value];
 
@@ -220,13 +260,33 @@ const doneCommand = () =>
     .action(async (nodeRunId, opts) => {
       if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
       const outcome = await parseOutcome(opts);
-      if (!outcome.ok) return fail(outcome.error);
+      if (!outcome.ok)
+        return failDone({
+          kind: "input",
+          retryable: true,
+          flag: "--output/--error",
+          message: outcome.error,
+        });
       const artifacts = parseArtifacts(opts.artifact);
-      if (!artifacts.ok) return fail(artifacts.error);
+      if (!artifacts.ok)
+        return failDone({
+          kind: "input",
+          retryable: true,
+          flag: "--artifact",
+          message: artifacts.error,
+        });
       const target = await getWorkflowRun(opts.run, opts.root);
-      if (!target.ok) return fail(target.error);
+      if (!target.ok)
+        return failDone({
+          kind: "configuration",
+          retryable: false,
+          code: "run",
+          path: opts.run,
+          message: target.error,
+        });
       const report = await finishStep(target.value.run, nodeRunId, outcome.value, artifacts.value);
-      printResult(report);
+      if (!report.ok) return failDone(report.error);
+      printJson(report.value);
       if (report.ok && report.value.status !== "completed") process.exitCode = 1;
     });
 

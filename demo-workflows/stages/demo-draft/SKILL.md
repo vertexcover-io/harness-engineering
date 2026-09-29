@@ -10,6 +10,7 @@ inputs:
 outputs:
   description: Where the draft was written.
   schema: demo-draft.output.v1
+  module: ../schemas.ts
 consumes:
   - artifact: brief
 produces:

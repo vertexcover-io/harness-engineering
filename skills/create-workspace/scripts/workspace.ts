@@ -51,6 +51,8 @@ export const CreateWorkspaceOutputSchema = z.strictObject({
   repos: z.array(z.strictObject({ name: NonEmptyStringSchema, worktreeDir: NonEmptyStringSchema })),
 });
 
+export const schemas = { "create-workspace.output.v1": CreateWorkspaceOutputSchema };
+
 export type OutputLine = Readonly<{ repo: string; text: string }>;
 
 // With a run, the command records its events in that run's log; without one, it records none.

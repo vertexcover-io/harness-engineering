@@ -19,7 +19,7 @@ const validStage = {
   "allowed-tools": ["Read", "Write"],
   tier: "balanced",
   inputs: { description: "Task context.", schema: "planning.input.v1" },
-  outputs: { description: "Planning result.", schema: "planning.output.v1" },
+  outputs: { description: "Planning result.", schema: "planning.output.v1", module: "schemas.ts" },
   consumes: [{ artifact: "design", optional: true }],
   produces: [{ artifact: "plan" }],
   protocols: ["artifact-registration"],
@@ -50,6 +50,7 @@ inputs:
 outputs:
   description: Planning result.
   schema: planning.output.v1
+  module: schemas.ts
 consumes:
   - artifact: design
     optional: true
