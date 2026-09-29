@@ -50,7 +50,8 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      at `extension` when it is not null; where the extension conflicts with the skill, the
      extension wins. Follow the skill with the reply's `input` as its input, and `prompt` as
      extra instructions when present. When the skill needs one of its references, run
-     `bun run orchestrate skill ref STAGE REF`; never open a reference file by its path, since
+     `bun run orchestrate skill ref STAGE REF`, without `--run`, since references do not
+     belong to a run; never open a reference file by its path, since
      that skips the project's changes to it. When the skill is done, run the reply's `done`
      command with `--output -`, plus `--artifact NAME=artifacts/PATH` for each artifact the
      skill wrote under `.harness/NAME/`, and pass the output JSON on stdin in a quoted heredoc:
