@@ -12,8 +12,5 @@
   "dependencies": {
     "@harness/sdk": "workspace:*",
     "zod": "^4"
-  },
-  "devDependencies": {
-    "@harness/core": "workspace:*"
   }
 }

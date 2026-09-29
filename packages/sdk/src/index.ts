@@ -32,6 +32,7 @@ export * from "./event-store.ts";
 export * from "./events.ts";
 export * from "./files.ts";
 export { createGit, type IGit, type WorktreeEntry } from "./git.ts";
+export * from "./hooks.ts";
 export {
   type ILogger,
   type JsonLoggerOptions,

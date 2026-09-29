@@ -16,9 +16,6 @@
         "@harness/sdk": "workspace:*",
         "zod": "^4",
       },
-      "devDependencies": {
-        "@harness/core": "workspace:*",
-      },
     },
     "packages/cli": {
       "name": "@harness/cli",
@@ -39,6 +36,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@commander-js/extra-typings": "^15.0.0",
+        "@harness/agents": "workspace:*",
         "@harness/sdk": "workspace:*",
         "commander": "^15.0.0",
         "pino": "^9",

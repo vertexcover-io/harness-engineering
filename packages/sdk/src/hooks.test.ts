@@ -1,0 +1,274 @@
+import { describe, expect, test } from "bun:test";
+import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { NodeRun, State } from "./contracts.ts";
+import { jsonlEventStore } from "./event-store.ts";
+import { type RunRef, runDirOf } from "./events.ts";
+import { decideStop, runStopHook, type StopInput, type TranscriptEntry } from "./hooks.ts";
+import { noopLogger } from "./logger.ts";
+import { createRegistry, registryPath } from "./registry.ts";
+import { readState } from "./state.ts";
+
+const seed: State = {
+  schemaVersion: 1,
+  lastEventSeq: 0,
+  runId: "r-1",
+  runName: "feat-x",
+  runDir: "/repo/.harness/feat-x",
+  version: "2.0.0",
+  workflow: { name: "feature", path: "workflow.yaml" },
+  input: {},
+  scope: null,
+  startedAt: "2026-09-26T10:00:00Z",
+  completedAt: null,
+  status: "running",
+  workspace: {
+    type: "mono",
+    path: "/repo",
+    repositories: {
+      app: { path: "/repo", git: { branch: "b", baseBranch: "main", startSha: "a" } },
+    },
+  },
+  nodeRuns: {},
+  eventHandlers: {},
+};
+
+const RUN: RunRef = { id: "r-1", cwd: "/repo", name: "feat-x" };
+
+const nodeRun = (
+  nodeRunId: string,
+  status: NodeRun["status"],
+  nodeType: NodeRun["nodeType"] = "agent",
+  nodes?: Record<string, NodeRun>,
+): NodeRun => ({
+  nodeRunId,
+  nodeType,
+  status,
+  startedAt: "2026-09-26T10:00:00Z",
+  completedAt: status === "running" ? null : "2026-09-26T10:01:00Z",
+  artifacts: [],
+  ...(nodes === undefined ? {} : { nodes }),
+});
+
+const planOpen = { plan: nodeRun("plan", "running") };
+
+const decide = (overrides: Partial<State>, touchedRun: boolean | undefined = true) =>
+  decideStop({ run: RUN, state: { ...seed, ...overrides }, touchedRun, maxBlocks: 1 });
+
+describe("decideStop", () => {
+  test("SC1 — a finished run lets the turn end", () => {
+    const decision = decide({ status: "completed", nodeRuns: planOpen });
+    expect(decision).toMatchObject({ reason: "run-finished" });
+  });
+
+  test("SC2 — an open leaf inside a loop blocks with that leaf's done command", () => {
+    const loop = nodeRun("fix", "running", "loop", { review: nodeRun("fix/1/review", "running") });
+    const decision = decide({ nodeRuns: { fix: loop } });
+    expect(decision).toMatchObject({
+      reason: "node-not-done",
+      blockStreak: 1,
+      nodeRunId: "fix/1/review",
+    });
+    const message = "message" in decision ? decision.message : "";
+    expect(message).toContain("node review");
+    expect(message).toContain("bun run orchestrate done fix/1/review --run feat-x");
+  });
+
+  test("SC3 — a running loop with no running child blocks with the next command", () => {
+    const loop = nodeRun("fix", "running", "loop", {
+      review: nodeRun("fix/1/review", "completed"),
+    });
+    const decision = decide({ nodeRuns: { fix: loop } });
+    expect(decision).toMatchObject({
+      message: expect.stringContaining("bun run orchestrate next --run feat-x"),
+      reason: "next-not-run",
+    });
+  });
+
+  test("an open exec node is sent back with its exec command, never done", () => {
+    const decision = decide({ nodeRuns: { lint: nodeRun("lint", "running", "exec") } });
+    const message = "message" in decision ? decision.message : "";
+    expect(decision).toMatchObject({ reason: "node-not-done", nodeRunId: "lint" });
+    expect(message).toContain("bun run orchestrate exec lint --run feat-x");
+    expect(message).toContain("background task");
+    expect(message).not.toContain("orchestrate done");
+  });
+
+  test("SC4 — a chat turn between nodes lets the turn end", () => {
+    expect(decide({}, false)).toMatchObject({ reason: "user-chat" });
+  });
+
+  test("SC5 — an unknown turn between nodes still blocks", () => {
+    expect(decide({}, undefined)).toMatchObject({ reason: "next-not-run" });
+  });
+
+  test("SC6 — a chat turn with a node open still blocks", () => {
+    const decision = decide({ nodeRuns: planOpen }, false);
+    expect(decision).toMatchObject({
+      message: expect.stringContaining("orchestrate done plan"),
+      reason: "node-not-done",
+    });
+  });
+
+  test("SC7 — a second stop with no new event lets the turn end", () => {
+    const decision = decide({
+      nodeRuns: planOpen,
+      stopHook: { blockStreak: 1, seq: 12 },
+      lastEventSeq: 12,
+    });
+    expect(decision).toMatchObject({ reason: "max-blocks-reached", blockStreak: 1 });
+  });
+
+  test("SC8 — new events since the last hook call restart the count", () => {
+    const decision = decide({
+      nodeRuns: planOpen,
+      stopHook: { blockStreak: 1, seq: 12 },
+      lastEventSeq: 14,
+    });
+    expect(decision).toMatchObject({ reason: "node-not-done", blockStreak: 1 });
+  });
+
+  test("SC9 — an allowed call keeps the streak it found", () => {
+    const decision = decide({ stopHook: { blockStreak: 1, seq: 12 }, lastEventSeq: 12 }, false);
+    expect(decision).toMatchObject({ reason: "user-chat", blockStreak: 1 });
+  });
+});
+
+const setUp = async (nodeRuns: State["nodeRuns"]) => {
+  const home = await realpath(await mkdtemp(join(tmpdir(), "hooks-home-")));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), "hooks-repo-")));
+  const registry = createRegistry(registryPath(home));
+  await registry.addRun({
+    id: "r-1",
+    workflow: "feature",
+    workflowPath: join(cwd, "workflow.yaml"),
+    inputs: {},
+    cwd,
+    sessions: [{ agent: "claude", sessionId: "s1" }],
+    name: "feat-x",
+    createdAt: "2026-09-26T10:00:00Z",
+  });
+  const runDir = runDirOf(cwd, "feat-x");
+  await mkdir(runDir, { recursive: true });
+  await writeFile(join(runDir, "state.json"), JSON.stringify({ ...seed, nodeRuns }));
+  return { runDir, deps: { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger } };
+};
+
+const input = (entries: readonly TranscriptEntry[] | undefined): StopInput => ({
+  agent: "claude",
+  sessionId: "s1",
+  readTranscript: async () => entries,
+});
+
+const orchestrateAfterPrompt: TranscriptEntry[] = [
+  { kind: "prompt", text: "why?" },
+  { kind: "command", command: "ls" },
+  { kind: "prompt", text: "go" },
+  { kind: "command", command: "bun run orchestrate next --run feat-x" },
+];
+
+describe("runStopHook", () => {
+  test("SC10 — HARNESS_STOP_MAX_BLOCKS sets how many blocks in a row, and a bad value keeps the default of 1", async () => {
+    const replies = async (maxBlocks: string | undefined) => {
+      const { deps } = await setUp(planOpen);
+      const env = { ...deps.env, HARNESS_STOP_MAX_BLOCKS: maxBlocks };
+      const kinds: string[] = [];
+      for (const _ of [1, 2, 3, 4]) {
+        kinds.push((await runStopHook(input(undefined), { ...deps, env })).kind);
+      }
+      return kinds;
+    };
+    expect(await replies("3")).toEqual(["continue", "continue", "continue", "allow"]);
+    expect(await replies("0")).toEqual(["continue", "allow", "allow", "allow"]);
+    expect(await replies("abc")).toEqual(["continue", "allow", "allow", "allow"]);
+    expect(await replies(undefined)).toEqual(["continue", "allow", "allow", "allow"]);
+  });
+
+  test("SC11 — an orchestrate command after the last prompt marks the turn as run work", async () => {
+    const { deps } = await setUp({});
+    expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toMatchObject({
+      kind: "continue",
+    });
+  });
+
+  test("SC12 — commands only before the last prompt do not count", async () => {
+    const { deps } = await setUp({});
+    const entries: TranscriptEntry[] = [
+      { kind: "prompt", text: "go" },
+      { kind: "command", command: "bun run orchestrate next --run feat-x" },
+      { kind: "prompt", text: "why did lint fail?" },
+      { kind: "command", command: "cat lint.log" },
+    ];
+    expect(await runStopHook(input(entries), deps)).toEqual({ kind: "allow" });
+  });
+
+  test("reading or grepping orchestrate files is chat, and a direct call to the script is run work", async () => {
+    const reads: TranscriptEntry[] = [
+      { kind: "prompt", text: "how does next work?" },
+      { kind: "command", command: "grep -n decideNext packages/core/src/orchestrate.ts" },
+      { kind: "command", command: "cat skills/v2/orchestrate-v2/SKILL.md" },
+      { kind: "command", command: "grep -rn orchestrate packages/core" },
+    ];
+    const direct: TranscriptEntry[] = [
+      { kind: "prompt", text: "go" },
+      { kind: "command", command: "bun /h/packages/core/src/orchestrate.ts done n1 --run feat-x" },
+    ];
+    expect(await runStopHook(input(reads), (await setUp({})).deps)).toEqual({ kind: "allow" });
+    expect(await runStopHook(input(direct), (await setUp({})).deps)).toMatchObject({
+      kind: "continue",
+    });
+  });
+
+  test("SC13 — no prompt, or no transcript, is unknown, so the turn still blocks", async () => {
+    const onlyCommands: TranscriptEntry[] = [{ kind: "command", command: "ls" }];
+    for (const entries of [onlyCommands, undefined]) {
+      const { deps } = await setUp({});
+      expect(await runStopHook(input(entries), deps)).toMatchObject({ kind: "continue" });
+    }
+  });
+
+  test("the transcript is read only when no node is open, and every call is logged", async () => {
+    const { deps, runDir } = await setUp(planOpen);
+    let reads = 0;
+    const counted: StopInput = {
+      ...input(orchestrateAfterPrompt),
+      readTranscript: async () => {
+        reads += 1;
+        return orchestrateAfterPrompt;
+      },
+    };
+    await runStopHook(counted, deps);
+    await runStopHook(counted, deps);
+    expect(reads).toBe(0);
+    const events = await jsonlEventStore(runDir).read();
+    expect(events.map((event) => event.payload)).toEqual([
+      expect.objectContaining({
+        decision: "continue",
+        reason: "node-not-done",
+        blockStreak: 1,
+        touchedRun: null,
+      }),
+      expect.objectContaining({ decision: "allow", reason: "max-blocks-reached", blockStreak: 1 }),
+    ]);
+    expect((await readState(runDir))?.stopHook).toEqual({ blockStreak: 1, seq: 2 });
+  });
+
+  test("a block that cannot be logged lets the turn end, so an unsaved count can't trap the session", async () => {
+    const { deps, runDir } = await setUp(planOpen);
+    const log = join(runDir, "event.jsonl");
+    await writeFile(log, "");
+    await chmod(log, 0o444);
+
+    expect(await runStopHook(input(undefined), deps)).toEqual({ kind: "allow" });
+    expect(await readFile(log, "utf8")).toBe("");
+  });
+
+  test("a session the run does not own is never blocked and nothing is logged", async () => {
+    const { deps, runDir } = await setUp(planOpen);
+    const other = { ...input(undefined), sessionId: "other" };
+    expect(await runStopHook(other, deps)).toEqual({ kind: "allow" });
+    expect(await runStopHook(input(undefined), { ...deps, env: {} })).toEqual({ kind: "allow" });
+    expect(await jsonlEventStore(runDir).read()).toEqual([]);
+  });
+});

@@ -720,3 +720,45 @@ describe("workspace reducers", () => {
     expect(after.lastEventSeq).toBe(5);
   });
 });
+
+describe("hooks.stop.called", () => {
+  const called = {
+    agent: "claude",
+    sessionId: "s1",
+    touchedRun: null,
+    decision: "continue",
+    reason: "node-not-done",
+    blockStreak: 1,
+    message: "m",
+  };
+
+  test("SC14 — a stop-called event records its block streak and seq in state", () => {
+    const state = project([
+      {
+        schemaVersion: 1,
+        seq: 7,
+        id: "evt-7",
+        ts: "2026-09-26T10:00:07Z",
+        type: "hooks.stop.called",
+        source: "hooks",
+        runId: "r-1",
+        payload: called,
+      },
+    ]);
+    expect(state.stopHook).toEqual({ blockStreak: 1, seq: 7 });
+  });
+
+  test("SC14 — a stop-called event with an unknown decision is refused, naming the type", async () => {
+    const store = memoryEventStore();
+    const result = await emitEvent(store, "r-1", {
+      type: "hooks.stop.called",
+      source: "hooks",
+      payload: { ...called, decision: "maybe" },
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("hooks.stop.called"),
+    });
+    expect(await store.read()).toEqual([]);
+  });
+});

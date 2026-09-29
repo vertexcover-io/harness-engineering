@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { captureLogger } from "@harness/core";
-import type { ITerminal, Result, TerminalSpec } from "@harness/sdk";
+import { type ITerminal, jsonLogger, type Result, type TerminalSpec } from "@harness/sdk";
 import * as z from "zod";
 import { claudeArgs, claudeProvider, claudeRunArgs, interpretOutput } from "./claude.ts";
+import { claudeHookSettings } from "./claude-hooks.ts";
 
 describe("claudeArgs", () => {
   test("SC1: every option present puts the flags in order with prompt last", () => {
@@ -34,6 +34,13 @@ describe("claudeArgs", () => {
 
   test("SC1: omitted options add nothing beyond the session id", () => {
     expect(claudeArgs("id-2", {})).toEqual(["--session-id", "id-2"]);
+  });
+
+  test("SC24 — a hook command adds Claude settings with the Stop hook before the prompt", () => {
+    const hookCommand = ["/b", "/o.ts", "hook"];
+    const args = claudeArgs("id-1", { hookCommand, prompt: "go" });
+    expect(args).toEqual(["--session-id", "id-1", "--settings", expect.any(String), "go"]);
+    expect(JSON.parse(args[3] ?? "")).toEqual(claudeHookSettings(hookCommand));
   });
 });
 
@@ -125,7 +132,8 @@ describe("claudeProvider.launch", () => {
 
 describe("claudeProvider.launch logging", () => {
   test("SC37: no log line contains the prompt or system-prompt text", async () => {
-    const { log, lines } = captureLogger();
+    const lines: string[] = [];
+    const log = jsonLogger({ level: "debug", write: (line) => lines.push(line) });
     const terminal = fakeTerminal();
     const provider = claudeProvider({ terminal, log, newId: () => "s1" });
 

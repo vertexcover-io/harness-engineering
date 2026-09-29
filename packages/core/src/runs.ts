@@ -15,6 +15,7 @@ import {
   type ILogger,
   type JsonValue,
   loadConfigOrDefault,
+  orchestrateCommand,
   type Registry,
   type Result,
   type RunLookup,
@@ -206,9 +207,6 @@ const logCall = async <T>(
   return outcome;
 };
 
-const buildStepCommand = (verb: "exec" | "done", nodeRunId: string, run: RunRef): string =>
-  `bun run orchestrate ${verb} ${nodeRunId} --run ${run.name}`;
-
 const readRunState = async (runDir: string): Promise<State> => {
   const state = await syncState(runDir);
   if (state === null)
@@ -232,10 +230,10 @@ const buildLeafReply = (
       nodeRunId,
       nodeId: node.id,
       mode,
-      command: buildStepCommand("exec", nodeRunId, run),
+      command: orchestrateCommand({ verb: "exec", run, nodeRunId }),
     };
   }
-  const done = buildStepCommand("done", nodeRunId, run);
+  const done = orchestrateCommand({ verb: "done", run, nodeRunId });
   if (node.stage === undefined) {
     return { kind: "agent", nodeRunId, nodeId: node.id, prompt: node.prompt ?? "", input, done };
   }

@@ -22,6 +22,7 @@ export {
 export {
   type LoadedStage,
   loadStage,
+  orchestrateHookCommand,
   type SchemaRegistry,
   type Stage,
   StageSchema,

@@ -62,3 +62,17 @@ export const resolveRun = async ({ registry, root, name }: RunLookup): Promise<R
   if (!existsSync(dir)) return { ok: false, error: `${dir} no longer exists` };
   return { ok: true, value: { id: run.id, cwd: run.cwd, name } };
 };
+
+// The command an agent runs to act on a run; step replies and hook messages both name it this way.
+export const orchestrateCommand = ({
+  verb,
+  run,
+  nodeRunId,
+}: Readonly<{ verb: "next" | "exec" | "done"; run: RunRef; nodeRunId?: string }>): string =>
+  [
+    "bun run orchestrate",
+    verb,
+    ...(nodeRunId === undefined ? [] : [nodeRunId]),
+    "--run",
+    run.name,
+  ].join(" ");
