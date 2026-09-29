@@ -25,6 +25,9 @@ import {
   SessionRefSchema,
   SlugSchema,
   type State,
+  type StepOutcomeSchema,
+  type StepReportSchema,
+  stackOf,
   syncState,
   type WorkflowRun,
 } from "@harness/sdk";
@@ -172,17 +175,40 @@ export type StepReply =
     }>
   | Exclude<Decision, { kind: "leaf" }>;
 
-export type NextOptions = Readonly<{ root: string; config: Config }>;
+type NextOptions = Readonly<{ root: string; config: Config }>;
 
-export type StepOutcome = Readonly<{ output: JsonValue }> | Readonly<{ error: string }>;
+export type StepOutcome = z.infer<typeof StepOutcomeSchema>;
 
-export type StepReport = Readonly<{
-  nodeRunId: string;
-  nodeId: string;
-  status: NodeRecord["status"];
-  attempts: number;
-  error?: Readonly<{ kind: string; message: string }>;
-}>;
+export type StepReport = z.infer<typeof StepReportSchema>;
+
+type Call = Readonly<{ command: "next" | "exec" | "done"; input: JsonValue }>;
+
+// A reply is plain data the CLI prints as JSON; parsing it gives it the type an event payload takes.
+const replyOf = (outcome: Result<unknown> | Error): JsonValue => {
+  if (outcome instanceof Error) return eventError("error", outcome.message, stackOf(outcome));
+  if (!outcome.ok) return eventError("error", outcome.error, undefined);
+  return z.json().parse(outcome.value);
+};
+
+// Logs the call to event.jsonl with what it was given and what it replied, even when it threw,
+// so the log shows every step the skill took. The call's own result or error is passed on.
+const logCall = async <T>(
+  run: RunRef,
+  call: Call,
+  running: Promise<Result<T>>,
+): Promise<Result<T>> => {
+  const outcome = await running.catch((error: unknown) =>
+    error instanceof Error ? error : new Error(String(error)),
+  );
+  const logged = await emitRunEvent(run, {
+    type: `orchestrate.${call.command}`,
+    source: "orchestrate",
+    payload: { input: call.input, output: replyOf(outcome) },
+  });
+  if (outcome instanceof Error) throw outcome;
+  if (!logged.ok) throw new Error(`orchestrate.${call.command} was not stored: ${logged.error}`);
+  return outcome;
+};
 
 const buildStepCommand = (verb: "exec" | "done", nodeRunId: string, run: RunRef): string =>
   `bun run orchestrate ${verb} ${nodeRunId} --run ${run.name}`;
@@ -232,7 +258,9 @@ const buildLeafReply = (
 };
 
 // Walks the run to its next step, saving each engine event to event.jsonl as it is recorded.
-export const nextStep = async (run: RunRef, options: NextOptions): Promise<Result<StepReply>> => {
+const walkToNextStep = async (run: RunRef, root: string): Promise<Result<StepReply>> => {
+  const config = await loadConfigOrDefault(root);
+  if (!config.ok) return config;
   const runDir = runDirOf(run.cwd, run.name);
   const [plan, state] = await Promise.all([compileWorkflowPlan(run), readRunState(runDir)]);
   const emit: Emit = async (_state, event) => {
@@ -242,9 +270,13 @@ export const nextStep = async (run: RunRef, options: NextOptions): Promise<Resul
     return appended.value.state;
   };
   const { decision } = await decideNext(plan, state, emit);
+  const options = { root, config: config.value };
   const reply = decision.kind === "leaf" ? buildLeafReply(decision, run, options) : decision;
   return { ok: true, value: reply };
 };
+
+export const nextStep = (run: RunRef, root: string): Promise<Result<StepReply>> =>
+  logCall(run, { command: "next", input: {} }, walkToNextStep(run, root));
 
 // The step the run is at, when `nodeRunId` is its run, read from its workflow and state.json.
 const loadRunningLeaf = async (run: RunRef, nodeRunId: string): Promise<Result<RunningLeaf>> => {
@@ -291,7 +323,7 @@ const buildReport = (step: RunningLeaf, record: NodeRecord): StepReport => ({
     : { error: { kind: record.error.kind, message: record.error.message } }),
 });
 
-export const execStep = async (run: RunRef, nodeRunId: string): Promise<Result<StepReport>> => {
+const runExecStep = async (run: RunRef, nodeRunId: string): Promise<Result<StepReport>> => {
   const step = await loadRunningLeaf(run, nodeRunId);
   if (!step.ok) return step;
   const { node } = step.value;
@@ -307,8 +339,11 @@ export const execStep = async (run: RunRef, nodeRunId: string): Promise<Result<S
   return stored.ok ? { ok: true, value: buildReport(step.value, record) } : stored;
 };
 
+export const execStep = (run: RunRef, nodeRunId: string): Promise<Result<StepReport>> =>
+  logCall(run, { command: "exec", input: { nodeRunId } }, runExecStep(run, nodeRunId));
+
 // Finishes an agent or stage node that next handed out, with the output or error the agent reports.
-export const finishStep = async (
+const recordStepEnd = async (
   run: RunRef,
   nodeRunId: string,
   outcome: StepOutcome,
@@ -345,3 +380,15 @@ export const finishStep = async (
   const stored = await emitRunEvent(run, buildStepEndEvent(step.value, record, kept));
   return stored.ok ? { ok: true, value: buildReport(step.value, record) } : stored;
 };
+
+export const finishStep = (
+  run: RunRef,
+  nodeRunId: string,
+  outcome: StepOutcome,
+  artifacts: readonly ArtifactRef[],
+): Promise<Result<StepReport>> =>
+  logCall(
+    run,
+    { command: "done", input: { nodeRunId, ...outcome, artifacts: [...artifacts] } },
+    recordStepEnd(run, nodeRunId, outcome, artifacts),
+  );

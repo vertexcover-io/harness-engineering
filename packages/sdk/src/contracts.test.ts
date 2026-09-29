@@ -173,6 +173,7 @@ describe("EventSchema", () => {
     ["a forge event", { ...baseEvent, type: "forge.pr.opened" }],
     ["a learning event", { ...baseEvent, type: "learning.captured" }],
     ["an agent event", { ...baseEvent, type: "agent.tokens" }],
+    ["an orchestrate call event", { ...baseEvent, type: "orchestrate.next" }],
     [
       "a stage event",
       { ...baseEvent, type: "stage.planning.question", stage: "planning", ...nodeFields },

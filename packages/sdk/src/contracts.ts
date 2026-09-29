@@ -153,7 +153,7 @@ export const EventTypeSchema = z
   .string()
   .refine(
     (value) =>
-      /^(workflow|artifact|hooks|workspace|forge|learning|agent)(\.[a-z][a-z0-9_-]*)+$/.test(
+      /^(workflow|artifact|hooks|workspace|forge|learning|agent|orchestrate)(\.[a-z][a-z0-9_-]*)+$/.test(
         value,
       ) ||
       /^stage\.[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(value) ||

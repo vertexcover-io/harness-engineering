@@ -10,7 +10,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jsonlEventStore, RegistryFileSchema, runDirOf, type WorkflowRun } from "@harness/sdk";
+import {
+  type JsonValue,
+  jsonlEventStore,
+  RegistryFileSchema,
+  runDirOf,
+  type WorkflowRun,
+} from "@harness/sdk";
 import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
 const SCRIPT = join(import.meta.dir, "orchestrate.ts");
@@ -503,11 +509,12 @@ nodes:
     expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", status: "failed" });
   });
 
-  test("IW12 — exec refuses a node run that already ended or does not exist, and records nothing", async () => {
+  test("IW12 — exec refuses a node run that already ended or does not exist, recording only the refused calls", async () => {
     const { repo, home } = startedRun(STEPS);
     const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
     orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
     const before = (await eventsOf(repo)).length;
+    const stateBefore = stateOf(repo);
 
     const again = orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
     expect(again.code).toBe(1);
@@ -515,7 +522,19 @@ nodes:
     const unknown = orchestrate(repo, home, ["exec", "nr-00000000", "--run", "feat-x"]);
     expect(unknown.code).toBe(1);
     expect(unknown.stderr).toContain("nr-00000000");
-    expect(await eventsOf(repo)).toHaveLength(before);
+    const added = (await eventsOf(repo)).slice(before);
+    expect(added.map((event) => event.payload)).toEqual([
+      {
+        input: { nodeRunId: reply.nodeRunId },
+        output: { kind: "error", message: again.stderr.trim() },
+      },
+      {
+        input: { nodeRunId: "nr-00000000" },
+        output: { kind: "error", message: unknown.stderr.trim() },
+      },
+    ]);
+    expect(added.map((event) => event.type)).toEqual(["orchestrate.exec", "orchestrate.exec"]);
+    expect(stateOf(repo)).toEqual({ ...stateBefore, lastEventSeq: before + 2 });
   });
 });
 
@@ -592,8 +611,12 @@ describe("orchestrate next and done with stages", () => {
     const missing = step([...done, ...artifact]);
     expect(missing.code).toBe(1);
     expect(missing.stderr).toContain(join(runDirOf(repo, "feat-x"), "artifacts/plan.md"));
-    const before = (await eventsOf(repo)).length;
-    expect(before).toBe(2);
+    expect((await eventsOf(repo)).map((event) => event.type)).toEqual([
+      "workflow.started",
+      "workflow.node.started",
+      "orchestrate.next",
+      "orchestrate.done",
+    ]);
 
     mkdirSync(join(runDirOf(repo, "feat-x"), "artifacts"), { recursive: true });
     writeFileSync(join(runDirOf(repo, "feat-x"), "artifacts/plan.md"), "plan\n");
@@ -766,5 +789,171 @@ describe("orchestrate next and exec with containers", () => {
     expect(nodes.fix).toMatchObject({ iteration: 3, output: '"pass 3"' });
     expect(nodes.sub.output).toBe('"hi"');
     expect(nodes.last.input).toBe('"hi" / "pass 3"');
+  });
+});
+
+const ONE_EXEC = `name: one
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - { id: a, type: exec, runtime: sh, script: printf done, input: {} }
+`;
+
+const AGENT = `name: asked
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - { id: ask, type: agent, prompt: check it, input: {} }
+`;
+
+const callsOf = async (repo: string) =>
+  (await eventsOf(repo))
+    .filter((event) => event.type.startsWith("orchestrate."))
+    .map(({ type, source, payload }) => ({ type, source, payload }));
+
+const call = (type: string, input: JsonValue, output: JsonValue) => ({
+  type: `orchestrate.${type}`,
+  source: "orchestrate",
+  payload: { input, output },
+});
+
+describe("orchestrate call log", () => {
+  test("OL1 — next and exec each log their input and whole reply, after the engine events the call recorded", async () => {
+    const { repo, home } = startedRun(ONE_EXEC);
+    const step = (args: readonly string[]) => JSON.parse(orchestrate(repo, home, args).stdout);
+
+    const exec = step(["next", "--run", "feat-x"]);
+    const report = step(["exec", exec.nodeRunId, "--run", "feat-x"]);
+    const finished = step(["next", "--run", "feat-x"]);
+
+    expect(exec).toMatchObject({ kind: "exec", nodeId: "a" });
+    expect(finished).toEqual({ kind: "finished", status: "completed" });
+    expect(await callsOf(repo)).toEqual([
+      call("next", {}, exec),
+      call("exec", { nodeRunId: exec.nodeRunId }, report),
+      call("next", {}, finished),
+    ]);
+    expect((await eventsOf(repo)).map((event) => event.type)).toEqual([
+      "workflow.started",
+      "workflow.node.started",
+      "orchestrate.next",
+      "workflow.node.completed",
+      "orchestrate.exec",
+      "workflow.completed",
+      "orchestrate.next",
+    ]);
+  });
+
+  test("OL2 — a stage reply, a refused done, a recorded done and a blocked reply are each logged", async () => {
+    const run = startedRun(STAGES_WORKFLOW);
+    const env = { HARNESS_SKILLS_DIR: stageSkills() };
+    const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args, env);
+    const stage = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    const done = ["done", stage.nodeRunId, "--run", "feat-x"];
+
+    const refused = step([
+      ...done,
+      "--output",
+      '{"ok":true}',
+      "--artifact",
+      "plan=artifacts/plan.md",
+    ]);
+    const report = JSON.parse(step([...done, "--output", "{}"]).stdout);
+    const blocked = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+
+    expect(refused.code).toBe(1);
+    expect(stage).toMatchObject({ kind: "stage", nodeId: "make" });
+    expect(blocked).toMatchObject({ kind: "blocked", nodeId: "use" });
+    const artifacts = [{ name: "plan", path: "artifacts/plan.md" }];
+    expect(await callsOf(run.repo)).toEqual([
+      call("next", {}, stage),
+      call(
+        "done",
+        { nodeRunId: stage.nodeRunId, output: { ok: true }, artifacts },
+        { kind: "error", message: refused.stderr.trim() },
+      ),
+      call("done", { nodeRunId: stage.nodeRunId, output: {}, artifacts: [] }, report),
+      call("next", {}, blocked),
+    ]);
+  });
+
+  test("OL3 — an agent reply and a done --error log the error as the agent reported it", async () => {
+    const { repo, home } = startedRun(AGENT);
+    const agent = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+    const failed = orchestrate(repo, home, [
+      "done",
+      agent.nodeRunId,
+      "--run",
+      "feat-x",
+      "--error",
+      "could not",
+    ]);
+
+    expect(agent).toMatchObject({ kind: "agent", prompt: "check it" });
+    expect(await callsOf(repo)).toEqual([
+      call("next", {}, agent),
+      call(
+        "done",
+        { nodeRunId: agent.nodeRunId, error: "could not", artifacts: [] },
+        JSON.parse(failed.stdout),
+      ),
+    ]);
+  });
+
+  test("OL4 — a next that throws logs the error with its stack, fails as before, and leaves state.json alone but for lastEventSeq", async () => {
+    const { repo, home } = startedRun(ONE_EXEC);
+    writeFileSync(join(runDirOf(repo, "feat-x"), "workflow.yaml"), "name: one\nnodes: 3\n");
+    const before = stateOf(repo);
+
+    const next = orchestrate(repo, home, ["next", "--run", "feat-x"]);
+
+    expect(next.code).toBe(1);
+    expect(next.stdout).toBe("");
+    expect(await callsOf(repo)).toEqual([
+      call(
+        "next",
+        {},
+        {
+          kind: "error",
+          message: next.stderr.trim(),
+          stack: expect.stringContaining("workflow/compile.ts"),
+        },
+      ),
+    ]);
+    expect(stateOf(repo)).toEqual({ ...before, lastEventSeq: before.lastEventSeq + 1 });
+  });
+
+  test("OL5 — a next refused over a config broken after init is logged", async () => {
+    const { repo, home } = startedRun(ONE_EXEC);
+    writeFileSync(join(repo, "orchestrate.config.json"), "{");
+
+    const next = orchestrate(repo, home, ["next", "--run", "feat-x"]);
+
+    expect(next.code).toBe(1);
+    expect(next.stderr).toContain("orchestrate.config.json: invalid YAML");
+    expect(await callsOf(repo)).toEqual([
+      call(
+        "next",
+        {},
+        {
+          kind: "error",
+          message: expect.stringContaining("orchestrate.config.json: invalid YAML"),
+        },
+      ),
+    ]);
+  });
+
+  test("OL6 — exec and done refuse an empty node run id before touching the run", async () => {
+    const { repo, home } = startedRun(ONE_EXEC);
+    const before = (await eventsOf(repo)).length;
+
+    const exec = orchestrate(repo, home, ["exec", "", "--run", "feat-x"]);
+    const done = orchestrate(repo, home, ["done", "", "--run", "feat-x", "--output", "{}"]);
+
+    for (const refused of [exec, done]) {
+      expect(refused.code).toBe(1);
+      expect(refused.stderr.trim()).toBe("nodeRunId must not be empty");
+    }
+    expect(await eventsOf(repo)).toHaveLength(before);
   });
 });

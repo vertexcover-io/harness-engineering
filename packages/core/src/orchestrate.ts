@@ -31,6 +31,7 @@ import { captureBaseline } from "./stages/baseline.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
 const RUN_HELP = "spec name of the run, as given to init";
+const EMPTY_NODE_RUN_ID = "nodeRunId must not be empty";
 
 // stdout carries only command output, so skills can parse it; logs go to stderr.
 const log = createLogger(
@@ -147,10 +148,7 @@ const nextCommand = () =>
     .action(async (opts) => {
       const target = await getWorkflowRun(opts.run, opts.root);
       if (!target.ok) return fail(target.error);
-      const { root, run } = target.value;
-      const config = await loadConfigOrDefault(root);
-      if (!config.ok) return fail(config.error);
-      printResult(await nextStep(run, { root, config: config.value }));
+      printResult(await nextStep(target.value.run, target.value.root));
     });
 
 const execCommand = () =>
@@ -160,6 +158,7 @@ const execCommand = () =>
     .requiredOption("--run <name>", RUN_HELP)
     .option("--root <dir>", ROOT_HELP)
     .action(async (nodeRunId, opts) => {
+      if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
       const target = await getWorkflowRun(opts.run, opts.root);
       if (!target.ok) return fail(target.error);
       const report = await execStep(target.value.run, nodeRunId);
@@ -224,6 +223,7 @@ const doneCommand = () =>
     )
     .option("--root <dir>", ROOT_HELP)
     .action(async (nodeRunId, opts) => {
+      if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
       const outcome = await parseOutcome(opts);
       if (!outcome.ok) return fail(outcome.error);
       const artifacts = parseArtifacts(opts.artifact);
