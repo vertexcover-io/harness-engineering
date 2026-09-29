@@ -23,7 +23,7 @@ nodes:
     runtime: sh
     script: cat
     dependsOn: [hello]
-    input: "{{ nodes.hello.output.value.greeting }} from quick-check"
+    input: "{{ nodes.hello.output.greeting }} from quick-check"
 
   - id: full-lint
     type: exec
@@ -37,7 +37,7 @@ nodes:
     type: wait
     durationMs: 2000
     dependsOn: [quick-check]
-    input: "{{ nodes.hello.output.value.count }}"
+    input: "{{ nodes.hello.output.count }}"
 
   - id: summary
     type: exec
@@ -46,6 +46,6 @@ nodes:
     output: { format: json }
     dependsOn: [slow-build, pause]
     input:
-      build: "{{ nodes.slow-build.output.stdout }}"
+      build: "{{ nodes.slow-build.output }}"
       waited: "{{ nodes.pause.output }}"
       prompt: "{{ inputs.prompt }}"

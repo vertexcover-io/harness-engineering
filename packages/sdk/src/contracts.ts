@@ -16,7 +16,7 @@ export const isNormalizedRelativePath = (value: string): boolean =>
   !/^[A-Za-z]:/.test(value) &&
   !value.includes("\\") &&
   value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
-const RunPathSchema = NonEmptyStringSchema.refine(
+export const RunPathSchema = NonEmptyStringSchema.refine(
   isNormalizedRelativePath,
   "Expected a normalized path relative to the run folder",
 );
@@ -44,16 +44,42 @@ export const AgentStateSchema = z.strictObject({
   tokens: TokenUsageSchema.nullable(),
 });
 
+export const LayoutSchema = z.enum(["mono", "multi"]);
+export const NodeTypeSchema = z.enum(["exec", "wait", "agent", "loop", "switch", "include"]);
+
+export const ERROR_MESSAGE_LIMIT = 500;
+export const FailureOutputSchema = z.strictObject({
+  kind: z.string(),
+  message: z.string().max(ERROR_MESSAGE_LIMIT),
+});
+
+export const SkipReasonSchema = z.enum(["when-false", "dependency-skipped", "no-matching-case"]);
+// Why the engine skipped a node, with the values it decided on, so a reader need not re-evaluate.
+export const SkipOutputSchema = z.discriminatedUnion("reason", [
+  z.strictObject({
+    reason: SkipReasonSchema.extract(["when-false"]),
+    proof: z.strictObject({ expression: NonEmptyStringSchema, value: z.literal(false) }),
+  }),
+  z.strictObject({
+    reason: SkipReasonSchema.extract(["dependency-skipped"]),
+    proof: z.strictObject({ dependencies: z.array(NonEmptyStringSchema).min(1) }),
+  }),
+  z.strictObject({
+    reason: SkipReasonSchema.extract(["no-matching-case"]),
+    proof: z.strictObject({ expression: NonEmptyStringSchema, value: z.json() }),
+  }),
+]);
+
 // A node's current run: state.json is the graph as it stands now, not its history (that is
 // event.jsonl). A loop, switch or include holds its children in `nodes`, keyed by the ids
 // workflow.yaml gives them; a loop holds only its current pass, numbered by `iteration`, with the
 // last finished pass's result in `output`.
 const NodeRunFieldsSchema = z.strictObject({
   nodeRunId: NonEmptyStringSchema,
+  nodeType: NodeTypeSchema,
   status: z.enum(["running", "completed", "failed", "skipped", "cancelled", "interrupted"]),
   startedAt: z.iso.datetime().nullable(),
   completedAt: z.iso.datetime().nullable(),
-  result: z.string().max(500).nullable(),
   artifacts: z.array(ArtifactRefSchema),
   input: z.json().optional(),
   output: z.json().optional(),
@@ -79,12 +105,11 @@ export const NodeRunSchema: z.ZodType<NodeRun> = NodeRunFieldsSchema.extend({
       message: "Stage and agentState must appear together",
     });
   }
-  if (run.status === "skipped" && !run.result?.trim()) {
-    context.addIssue({
-      code: "custom",
-      path: ["result"],
-      message: "A skipped run needs a reason",
-    });
+  if (run.status === "skipped" && !SkipOutputSchema.safeParse(run.output).success) {
+    context.addIssue({ code: "custom", path: ["output"], message: "A skipped run needs a reason" });
+  }
+  if (run.status === "failed" && !FailureOutputSchema.safeParse(run.output).success) {
+    context.addIssue({ code: "custom", path: ["output"], message: "A failed run needs its error" });
   }
 });
 
@@ -106,6 +131,7 @@ export const RepositorySchema = z.strictObject({
 });
 
 export const WorkspaceSchema = z.strictObject({
+  type: LayoutSchema,
   path: NonEmptyStringSchema,
   repositories: z
     .record(SlugSchema, RepositorySchema)
@@ -120,7 +146,7 @@ export const NotificationSchema = z.record(NonEmptyStringSchema, z.json());
 
 export const WorkflowRefSchema = z.strictObject({
   name: SlugSchema,
-  path: z.literal("workflow.yaml"),
+  path: RunPathSchema,
 });
 
 export const EventTypeSchema = z
@@ -145,21 +171,21 @@ export const EventHandlerRefsSchema = z.record(EventTypeSchema, z.array(EventHan
 export const StateSchema = z.strictObject({
   schemaVersion: z.literal(1),
   lastEventSeq: z.int().nonnegative(),
-  specName: SlugSchema,
-  harnessVersion: NonEmptyStringSchema,
+  runId: NonEmptyStringSchema,
+  runName: SlugSchema,
+  runDir: AbsolutePathSchema,
+  version: NonEmptyStringSchema,
   workflow: WorkflowRefSchema,
   input: JsonObjectSchema,
-  scope: NonEmptyStringSchema,
-  options: JsonObjectSchema,
+  scope: z.null(),
   startedAt: z.iso.datetime(),
   completedAt: z.iso.datetime().nullable(),
-  outcome: z.enum(["completed", "failed", "cancelled"]).nullable(),
-  currentFile: NonEmptyStringSchema.nullable(),
+  status: z.enum(["running", "completed", "failed", "cancelled"]),
   workspace: WorkspaceSchema,
   ticket: TicketSchema.optional(),
   notification: NotificationSchema.optional(),
   nodeRuns: z.record(NonEmptyStringSchema, NodeRunSchema),
-  custom: JsonObjectSchema.default({}),
+  custom: JsonObjectSchema.optional(),
   eventHandlers: EventHandlerRefsSchema.default({}),
 });
 
@@ -201,6 +227,9 @@ export const EventSchema = z
 export type JsonValue = z.infer<z.ZodJSONSchema>;
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
+export type Layout = z.infer<typeof LayoutSchema>;
+export type NodeType = z.infer<typeof NodeTypeSchema>;
+export type SkipOutput = z.infer<typeof SkipOutputSchema>;
 
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type AgentState = z.infer<typeof AgentStateSchema>;

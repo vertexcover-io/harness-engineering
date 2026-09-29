@@ -99,34 +99,36 @@ const workflowNameOf = async (runDir: string): Promise<string> => {
 // Writes a run's first state.json from the run folder: a run folder is CWD/.harness/NAME,
 // holding the workflow.yaml init copied in. Events then fill in the rest (inputs, startedAt).
 export const createState = async ({
+  runId,
   runDir,
-  harnessVersion,
+  version,
   eventHandlers,
 }: Readonly<{
+  runId: string;
   runDir: string;
-  harnessVersion: string;
+  version: string;
   eventHandlers: EventHandlerRefs;
 }>): Promise<State> => {
   const cwd = dirname(dirname(runDir));
   const state: State = {
     schemaVersion: 1,
     lastEventSeq: 0,
-    specName: basename(runDir),
-    harnessVersion,
+    runId,
+    runName: basename(runDir),
+    runDir,
+    version,
     workflow: { name: await workflowNameOf(runDir), path: "workflow.yaml" },
     input: {},
-    scope: "workflow",
-    options: {},
+    scope: null,
     startedAt: new Date().toISOString(),
     completedAt: null,
-    outcome: null,
-    currentFile: null,
+    status: "running",
     workspace: {
+      type: "mono",
       path: cwd,
       repositories: { [toRepoId(basename(cwd))]: { path: cwd, git: await readGit(cwd) } },
     },
     nodeRuns: {},
-    custom: {},
     eventHandlers,
   };
   await withLock(lockOf(runDir), () => writeStateAtomically(runDir, state));

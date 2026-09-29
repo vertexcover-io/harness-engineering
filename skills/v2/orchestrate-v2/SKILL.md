@@ -75,7 +75,7 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      background task to finish, then go back to 1. If none of your background tasks is
      still running, stop and report `nodeRunId`: its process ended
      without recording a result.
-   - `finished`: tell the user the run ended with `outcome`, then stop.
+   - `finished`: tell the user the run ended with `status`, then stop.
 3. On any non-zero exit from `next`, show its error output and stop.
 
 `exec` and `done` record how each node ended. Never run `bun run orchestrate emit` for a node, and

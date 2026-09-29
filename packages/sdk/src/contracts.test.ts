@@ -3,10 +3,10 @@ import { EventSchema, StateSchema } from "./contracts.ts";
 
 const agentRun = {
   nodeRunId: "plan-1",
+  nodeType: "agent",
   status: "running",
   startedAt: "2026-09-26T10:00:00Z",
   completedAt: null,
-  result: null,
   artifacts: [{ name: "plan", path: "artifacts/plan-1/plan.md" }],
   stage: "planning",
   agentState: { agent: "claude", model: "opus", sessionId: null, tokens: null },
@@ -15,17 +15,18 @@ const agentRun = {
 const validState = {
   schemaVersion: 1,
   lastEventSeq: 0,
-  specName: "add-login",
-  harnessVersion: "2.0.0",
+  runId: "r-test",
+  runName: "add-login",
+  runDir: "/work/.harness/add-login",
+  version: "2.0.0",
   workflow: { name: "feature", path: "workflow.yaml" },
   input: { prompt: "add login" },
-  scope: "feature",
-  options: {},
+  scope: null,
   startedAt: "2026-09-26T10:00:00Z",
   completedAt: null,
-  outcome: null,
-  currentFile: null,
+  status: "running",
   workspace: {
+    type: "mono",
     path: "/work/add-login",
     repositories: {
       app: { path: "/work/add-login", git: { branch: "b", baseBranch: "main", startSha: "abc" } },
@@ -39,8 +40,48 @@ describe("StateSchema", () => {
     expect(StateSchema.safeParse(validState).success).toBe(true);
   });
 
-  test("EH3 — a state.json written before custom and eventHandlers existed parses with both empty", () => {
-    expect(StateSchema.parse(validState)).toMatchObject({ custom: {}, eventHandlers: {} });
+  test("EH3 — a state.json with no custom or eventHandlers parses with no custom and no handlers", () => {
+    const parsed = StateSchema.parse(validState);
+    expect(parsed.eventHandlers).toEqual({});
+    expect(parsed).not.toHaveProperty("custom");
+  });
+
+  const skip = { reason: "when-false", proof: { expression: "inputs.quick", value: false } };
+
+  test.each([
+    ["a skipped run whose output says why", { status: "skipped", output: skip }],
+    [
+      "a run skipped because its dependencies were",
+      {
+        status: "skipped",
+        output: { reason: "dependency-skipped", proof: { dependencies: ["lint"] } },
+      },
+    ],
+    [
+      "a switch skipped because no case matched its value",
+      {
+        status: "skipped",
+        output: { reason: "no-matching-case", proof: { expression: "inputs.track", value: 3 } },
+      },
+    ],
+    [
+      "a failed run whose output is its error",
+      { status: "failed", output: { kind: "exit", message: "boom" } },
+    ],
+    ["a cancelled run with no output", { status: "cancelled" }],
+    ["a completed run with any JSON output", { status: "completed", output: [1, "two"] }],
+  ])("accepts %s", (_label, run) => {
+    const state = { ...validState, nodeRuns: { plan: { ...agentRun, ...run } } };
+    expect(StateSchema.safeParse(state).success).toBe(true);
+  });
+
+  test.each([
+    ["a workflow path inside the run folder", "stages/workflow.yaml", true],
+    ["a workflow path escaping the run folder", "../workflow.yaml", false],
+    ["an absolute workflow path", "/work/workflow.yaml", false],
+  ])("%s parses: %p", (_label, path, parses) => {
+    const state = { ...validState, workflow: { name: "feature", path } };
+    expect(StateSchema.safeParse(state).success).toBe(parses);
   });
 
   test("EH4 — custom holds any JSON and eventHandlers keeps absolute module paths", () => {
@@ -71,6 +112,17 @@ describe("StateSchema", () => {
     ["agentState without stage", { ...validState, nodeRuns: { plan: runWithoutStage } }],
     ["a skipped run with no reason", withRun({ status: "skipped" })],
     [
+      "a skipped run with an unknown reason",
+      withRun({ status: "skipped", output: { reason: "because", proof: {} } }),
+    ],
+    [
+      "a when-false skip whose proof has no expression",
+      withRun({ status: "skipped", output: { reason: "when-false", proof: { value: false } } }),
+    ],
+    ["a failed run with no error output", withRun({ status: "failed" })],
+    ["a node run with an unknown nodeType", withRun({ nodeType: "script" })],
+    ["a node run with the removed result field", withRun({ result: null })],
+    [
       "a skipped run with no reason inside a container",
       withRun({
         nodes: { lint: { ...runWithoutStage, status: "skipped", agentState: undefined } },
@@ -81,10 +133,15 @@ describe("StateSchema", () => {
       "an event handler module that is not absolute",
       { ...validState, eventHandlers: { "custom.a.b": [{ module: "a.ts", handler: "f" }] } },
     ],
+    ["a relative runDir", { ...validState, runDir: ".harness/add-login" }],
+    ["a scope other than null", { ...validState, scope: "feature" }],
+    ["a null status", { ...validState, status: null }],
     [
-      "a workflow path other than workflow.yaml",
-      { ...validState, workflow: { name: "f", path: "w.yaml" } },
+      "an unknown workspace type",
+      { ...validState, workspace: { ...validState.workspace, type: "poly" } },
     ],
+    ["the removed options field", { ...validState, options: {} }],
+    ["the removed specName field", { ...validState, specName: "add-login" }],
   ])("rejects %s", (_label, state) => {
     expect(StateSchema.safeParse(state).success).toBe(false);
   });

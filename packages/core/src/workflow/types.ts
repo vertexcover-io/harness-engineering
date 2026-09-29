@@ -1,4 +1,10 @@
-import { type JsonValue, NonEmptyStringSchema } from "@harness/sdk";
+import {
+  type JsonValue,
+  NodeTypeSchema,
+  NonEmptyStringSchema,
+  type ProcessRecord,
+  ProcessRecordSchema,
+} from "@harness/sdk";
 import { z } from "zod";
 import type { ArtifactDeclaration } from "../stage.ts";
 
@@ -34,7 +40,7 @@ const leafFields = {
 export const ExecNodeSchema = z
   .strictObject({
     ...leafFields,
-    type: z.literal("exec"),
+    type: NodeTypeSchema.extract(["exec"]),
     mode: z.enum(["inline", "background"]).default("inline"),
     runtime: z.enum(["sh", "bun"]).optional(),
     script: NonEmptyStringSchema.optional(),
@@ -77,7 +83,7 @@ export const ExecNodeSchema = z
 
 export const WaitNodeSchema = z.strictObject({
   ...guardedFields,
-  type: z.literal("wait"),
+  type: NodeTypeSchema.extract(["wait"]),
   durationMs: z.number().int().positive(),
 });
 
@@ -85,7 +91,7 @@ const SwitchCaseFieldsSchema = z.strictObject({ id: NodeIdSchema, value: ScalarS
 
 const SwitchNodeFieldsSchema = z.strictObject({
   ...baseFields,
-  type: z.literal("switch"),
+  type: NodeTypeSchema.extract(["switch"]),
   expression: ExpressionSchema,
 });
 
@@ -97,13 +103,13 @@ export type SwitchNode = z.infer<typeof SwitchNodeFieldsSchema> & {
 
 export const IncludeNodeSchema = z.strictObject({
   ...guardedFields,
-  type: z.literal("include"),
+  type: NodeTypeSchema.extract(["include"]),
   workflow: NonEmptyStringSchema,
 });
 
 const LoopNodeFieldsSchema = z.strictObject({
   ...guardedFields,
-  type: z.literal("loop"),
+  type: NodeTypeSchema.extract(["loop"]),
   until: ExpressionSchema,
   maxIterations: z.number().int().min(1).max(1000),
 });
@@ -113,7 +119,7 @@ export type LoopNode = z.infer<typeof LoopNodeFieldsSchema> & { nodes: WorkflowN
 export const AgentNodeSchema = z
   .strictObject({
     ...leafFields,
-    type: z.literal("agent"),
+    type: NodeTypeSchema.extract(["agent"]),
     stage: NonEmptyStringSchema.optional(),
     prompt: NonEmptyStringSchema.optional(),
     output: z
@@ -194,12 +200,14 @@ export const WorkflowErrorCodeSchema = z.enum([
   "missing-artifact",
 ]);
 
-// How one exec, wait or agent node ended, as orchestrate exec and done record it.
+// How one exec, wait or agent node ended, as orchestrate exec and done record it. A script's
+// process record goes to the event log only; output is the value state.json keeps.
 export const NodeRecordSchema = z.object({
   path: z.string(),
-  type: z.string(),
+  type: NodeTypeSchema,
   status: z.enum(["completed", "failed"]),
   output: z.json().optional(),
+  process: ProcessRecordSchema.optional(),
   attempts: z.number().int().min(1),
   error: z
     .object({ kind: FailureKindSchema, message: z.string(), stack: z.string().optional() })
@@ -283,7 +291,7 @@ export class NodeFailure extends Error {
   constructor(
     readonly kind: FailureKind,
     message: string,
-    readonly output?: JsonValue,
+    readonly process?: ProcessRecord,
     options?: ErrorOptions,
   ) {
     super(message, options);

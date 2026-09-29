@@ -22,6 +22,7 @@ import {
   StateSchema,
   type WorkflowRun,
 } from "@harness/sdk";
+import corePackage from "../package.json";
 import { initializeRun, linkRunSession } from "./runs.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
@@ -72,7 +73,7 @@ const savedRun = async (overrides: Partial<WorkflowRun> = {}) => {
 };
 
 describe("initializeRun", () => {
-  test("SC19: writes workflow.yaml, one workflow.started event, a state.json with lastEventSeq 1, and names the run in the registry", async () => {
+  test("SC19: writes workflow.yaml, one workflow.started event, a state.json with lastEventSeq 1 and the run's id, folder and running status, and names the run in the registry", async () => {
     const { cwd, workflowPath, registry, run, init } = await savedRun();
 
     const result = await init("fix-login");
@@ -91,7 +92,11 @@ describe("initializeRun", () => {
     expect(Math.abs(Date.now() - Date.parse(String(events[0]?.ts)))).toBeLessThan(1000);
     expect(result.value.state).toMatchObject({
       lastEventSeq: 1,
-      specName: "fix-login",
+      runId: run.id,
+      runName: "fix-login",
+      runDir: dir,
+      version: String(corePackage.version),
+      status: "running",
       input: run.inputs,
       startedAt: events[0]?.ts,
     });

@@ -49,11 +49,11 @@ nodes:
 
   - id: retry-loop
     type: loop
-    until: "{{ iteration.nodes.check.output.value.passed }}"
+    until: "{{ iteration.nodes.check.output.passed }}"
     maxIterations: 3
     dependsOn: [setup, intro]
     input:
-      passOn: "{{ nodes.setup.output.value.passOn }}"
+      passOn: "{{ nodes.setup.output.passOn }}"
     nodes:
       - id: attempt
         type: agent
@@ -82,7 +82,7 @@ nodes:
 
   - id: route
     type: switch
-    expression: "{{ nodes.setup.output.value.track }}"
+    expression: "{{ nodes.setup.output.track }}"
     dependsOn: [setup, intro]
     input:
       topic: "{{ inputs.prompt }}"
@@ -132,7 +132,7 @@ nodes:
     workflow: demo-workflows/kitchen-sink-include.yaml
     dependsOn: [retry-loop, route]
     input:
-      passes: "{{ nodes.retry-loop.output.check.value.pass }}"
+      passes: "{{ nodes.retry-loop.output.pass }}"
 
   - id: report
     type: agent

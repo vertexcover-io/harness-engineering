@@ -5,6 +5,7 @@ import {
   findNodeRuns,
   type JsonValue,
   type NodeRun,
+  type SkipOutput,
   type State,
   stackOf,
 } from "@harness/sdk";
@@ -39,7 +40,7 @@ export type Decision =
   | Readonly<{ kind: "leaf"; node: Leaf; nodeRunId: string; input: JsonValue }>
   | Readonly<{ kind: "waiting"; nodeRunId: string }>
   | Readonly<{ kind: "blocked"; nodeId: string; stage: string; missing: readonly string[] }>
-  | Readonly<{ kind: "finished"; outcome: NonNullable<State["outcome"]> }>;
+  | Readonly<{ kind: "finished"; status: Exclude<State["status"], "running"> }>;
 
 // Saves one event and gives back the state with it applied.
 export type Emit = (state: State, event: EmitInput) => Promise<State>;
@@ -63,6 +64,8 @@ export const buildParentsField = (parents: readonly string[]) =>
 
 const createNodeRunId = (): string => `nr-${randomBytes(8).toString("hex")}`;
 
+type Container = Exclude<PlanNode, Leaf>;
+
 const isLeaf = (node: PlanNode): node is Leaf =>
   node.type === "exec" || node.type === "wait" || node.type === "agent";
 
@@ -71,7 +74,7 @@ const findNodeRun = (state: State, node: PlanNode): NodeRun | undefined =>
 
 // The nodes a running container holds now: a loop's body, the included workflow, or the case
 // the switch took.
-const pickChildren = (node: Exclude<PlanNode, Leaf>, nodeRun: NodeRun): readonly PlanNode[] => {
+const pickChildren = (node: Container, nodeRun: NodeRun): readonly PlanNode[] => {
   if (node.type === "loop") return node.nodes;
   if (node.type === "include") return node.plan.nodes;
   if (nodeRun.branch === "default") return node.default ?? [];
@@ -121,25 +124,31 @@ const resolveIncludeInputs = (
 };
 
 // The case a switch takes: the one whose value matches, by type too, else "default" when it has
-// one; undefined when none fits, or why the expression cannot be worked out.
-const pickBranch = (node: PlanSwitchNode, scope: Scope): string | undefined | NodeFailure => {
+// one; the skip when none fits, or why the expression cannot be worked out.
+const pickBranch = (node: PlanSwitchNode, scope: Scope): string | SkipOutput | NodeFailure => {
   try {
     const value = evaluateScalar(node.expression, scope);
     const matched = node.cases.find((c) => c.value === value)?.id;
-    return matched ?? (node.default === undefined ? undefined : "default");
+    if (matched !== undefined) return matched;
+    if (node.default !== undefined) return "default";
+    return { reason: "no-matching-case", proof: { expression: node.expression, value } };
   } catch (error) {
     if (!(error instanceof NodeFailure)) throw error;
     return error;
   }
 };
 
-// A container's output: each child that completed, by id.
-const collectOutputs = (results: Readonly<Record<string, NodeResult>>): JsonValue =>
-  Object.fromEntries(
-    Object.entries(results)
-      .filter(([, view]) => view.status === "completed")
-      .map(([id, view]) => [id, view.output ?? null]),
-  );
+// A container's output is the output of the last node it ran (the case a switch took, a loop's
+// body, the included workflow), null when that node did not complete.
+const buildContainerOutput = (
+  node: Container,
+  nodeRun: NodeRun,
+  results: Readonly<Record<string, NodeResult>>,
+): JsonValue => {
+  const last = pickChildren(node, nodeRun).at(-1);
+  const result = last === undefined ? undefined : own(results, last.id);
+  return result?.status === "completed" ? (result.output ?? null) : null;
+};
 
 // The artifacts a stage needs, did not mark optional, and no completed node has listed yet.
 const findMissingArtifacts = (stage: PlanStage, state: State): readonly string[] => {
@@ -154,9 +163,10 @@ const findMissingArtifacts = (stage: PlanStage, state: State): readonly string[]
     .map((consumed) => consumed.artifact);
 };
 
-// An unstarted node either ends before it starts (skipped, or failed with `failure`) or starts.
+// An unstarted node either ends before it starts (skipped with why, or failed) or starts.
+type Ending = SkipOutput | NodeFailure;
 type Start =
-  | Readonly<{ kind: "end"; failure?: NodeFailure }>
+  | Readonly<{ kind: "end"; ending: Ending }>
   | Readonly<{ kind: "start"; input: JsonValue; scope: Scope }>;
 
 // Whether an unstarted node runs: skipped when a dependency was skipped or its `when` is false,
@@ -164,7 +174,11 @@ type Start =
 // dependencies have ended.
 const decideStart = (node: PlanNode, walk: Walk, state: State): Start => {
   const results = findNodeRuns(state.nodeRuns, node.parents);
-  if (node.dependsOn.some((id) => results[id]?.status === "skipped")) return { kind: "end" };
+  const skipped = node.dependsOn.filter((id) => own(results, id)?.status === "skipped");
+  if (skipped.length > 0) {
+    const ending: Ending = { reason: "dependency-skipped", proof: { dependencies: skipped } };
+    return { kind: "end", ending };
+  }
   const scope: Scope = {
     inputs: walk.inputs,
     nodes: results,
@@ -172,11 +186,15 @@ const decideStart = (node: PlanNode, walk: Walk, state: State): Start => {
   };
   try {
     if (node.type !== "switch" && node.when !== undefined && !evaluateBoolean(node.when, scope)) {
-      return { kind: "end" };
+      const ending: Ending = {
+        reason: "when-false",
+        proof: { expression: node.when, value: false },
+      };
+      return { kind: "end", ending };
     }
     return { kind: "start", input: resolveValue(node.input, scope), scope };
   } catch (error) {
-    if (error instanceof NodeFailure) return { kind: "end", failure: error };
+    if (error instanceof NodeFailure) return { kind: "end", ending: error };
     throw error;
   }
 };
@@ -202,18 +220,19 @@ const emitNodeEvent = (
     payload: { nodeType: node.type, ...buildParentsField(node.parents), ...event.payload },
   });
 
-// Records a node that ends before it starts: skipped, or failed with the error that stopped it.
+// Records a node that ends before it starts: skipped with why, or failed with the error that
+// stopped it.
 const recordSkipOrFail = async (
   node: PlanNode,
-  failure: NodeFailure | undefined,
+  ending: Ending,
   walk: Walk,
   state: State,
 ): Promise<Walked> => {
   const nodeRunId = createNodeRunId();
   const event =
-    failure === undefined
-      ? { type: "skipped", nodeRunId, payload: { attempts: 0 } }
-      : { type: "failed", nodeRunId, payload: { attempts: 0, error: toEventError(failure) } };
+    ending instanceof NodeFailure
+      ? { type: "failed", nodeRunId, payload: { attempts: 0, error: toEventError(ending) } }
+      : { type: "skipped", nodeRunId, payload: { attempts: 0, skip: ending } };
   return { state: await emitNodeEvent(walk, state, node, event), step: CONTINUE };
 };
 
@@ -232,9 +251,9 @@ const recordStart = async (
 };
 
 // Ends a container: failed with `failure` or, without one, with its first failed child;
-// otherwise completed with its children's outputs.
+// otherwise completed with its output.
 const endContainer = async (
-  node: PlanNode,
+  node: Container,
   nodeRun: NodeRun,
   walk: Walk,
   state: State,
@@ -249,7 +268,7 @@ const endContainer = async (
       : new NodeFailure("exception", `${node.id}.${failedChild} failed`));
   const payload =
     failure === undefined
-      ? { attempts: ending.attempts, output: collectOutputs(results) }
+      ? { attempts: ending.attempts, output: buildContainerOutput(node, nodeRun, results) }
       : { attempts: ending.attempts, error: toEventError(failure) };
   const type = failure === undefined ? "completed" : "failed";
   const event = { type, nodeRunId: nodeRun.nodeRunId, payload };
@@ -267,7 +286,7 @@ const executeLeaf = async (
     return { state, step: { kind: "waiting", nodeRunId: nodeRun.nodeRunId } };
   }
   const start = decideStart(node, walk, state);
-  if (start.kind === "end") return recordSkipOrFail(node, start.failure, walk, state);
+  if (start.kind === "end") return recordSkipOrFail(node, start.ending, walk, state);
   if (node.type === "agent" && node.stage !== undefined) {
     const missing = findMissingArtifacts(node.stage, state);
     if (missing.length > 0) {
@@ -290,11 +309,9 @@ const executeSwitch = async (
 ): Promise<Walked> => {
   if (nodeRun === undefined) {
     const start = decideStart(node, walk, state);
-    if (start.kind === "end") return recordSkipOrFail(node, start.failure, walk, state);
+    if (start.kind === "end") return recordSkipOrFail(node, start.ending, walk, state);
     const branch = pickBranch(node, start.scope);
-    if (branch === undefined || branch instanceof NodeFailure) {
-      return recordSkipOrFail(node, branch, walk, state);
-    }
+    if (typeof branch !== "string") return recordSkipOrFail(node, branch, walk, state);
     const started = await recordStart(node, { input: start.input, branch }, walk, state);
     return executeSwitch(node, started.nodeRun, walk, started.state);
   }
@@ -314,7 +331,7 @@ const executeInclude = async (
 ): Promise<Walked> => {
   if (nodeRun === undefined) {
     const start = decideStart(node, walk, state);
-    if (start.kind === "end") return recordSkipOrFail(node, start.failure, walk, state);
+    if (start.kind === "end") return recordSkipOrFail(node, start.ending, walk, state);
     // Recorded with its defaults filled in, so the included nodes read it as their inputs.
     const input = resolveIncludeInputs(node, start.input);
     if (input instanceof NodeFailure) return recordSkipOrFail(node, input, walk, state);
@@ -327,8 +344,8 @@ const executeInclude = async (
   return endContainer(node, nodeRun, walk, walked.state);
 };
 
-// A loop's node run holds only its current pass: `iteration` numbers it, and `output` is the result
-// of the pass before it, which the pass reads as `iteration.previous`. Once a pass ends, until
+// A loop's node run holds only its current pass: `iteration` numbers it, and `output` is the output
+// of the pass before it (its last body node's), which the pass reads as `iteration.previous`. Once a pass ends, until
 // decides: stop, fail, or record the next pass (which clears the children) and walk it.
 const executeLoop = async (
   node: PlanLoopNode,
@@ -338,7 +355,7 @@ const executeLoop = async (
 ): Promise<Walked> => {
   if (nodeRun === undefined) {
     const start = decideStart(node, walk, state);
-    if (start.kind === "end") return recordSkipOrFail(node, start.failure, walk, state);
+    if (start.kind === "end") return recordSkipOrFail(node, start.ending, walk, state);
     const started = await recordStart(node, { input: start.input }, walk, state);
     return executeLoop(node, started.nodeRun, walk, started.state);
   }
@@ -366,7 +383,7 @@ const executeLoop = async (
     const failure = new NodeFailure("exhausted", message);
     return endContainer(node, nodeRun, walk, walked.state, { ...ending, failure });
   }
-  const output = collectOutputs(results);
+  const output = buildContainerOutput(node, nodeRun, results);
   const event = {
     type: "iterated",
     nodeRunId: nodeRun.nodeRunId,
@@ -412,17 +429,17 @@ export const decideNext = async (
   state: State,
   emit: Emit,
 ): Promise<Readonly<{ state: State; decision: Decision }>> => {
-  if (state.outcome !== null) {
-    return { state, decision: { kind: "finished", outcome: state.outcome } };
+  if (state.status !== "running") {
+    return { state, decision: { kind: "finished", status: state.status } };
   }
   const inputs = resolveWorkflowInputs(plan.inputs, state.input);
   const walked = await executeNodes(plan.nodes, { emit, inputs, loop: undefined }, state);
   if (walked.step.kind !== "continue") return { state: walked.state, decision: walked.step };
-  const outcome = Object.values(walked.state.nodeRuns).some((run) => run.status === "failed")
+  const status = Object.values(walked.state.nodeRuns).some((run) => run.status === "failed")
     ? "failed"
     : "completed";
-  const event = { type: `workflow.${outcome}`, source: "workflow", payload: {} };
-  return { state: await emit(walked.state, event), decision: { kind: "finished", outcome } };
+  const event = { type: `workflow.${status}`, source: "workflow", payload: {} };
+  return { state: await emit(walked.state, event), decision: { kind: "finished", status } };
 };
 
 // A running leaf and its node run in state.json.

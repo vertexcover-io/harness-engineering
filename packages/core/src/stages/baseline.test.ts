@@ -29,7 +29,7 @@ const setup = async (config: object, { state = true } = {}): Promise<Setup> => {
   git("init", "-q", "-b", "main");
   git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
   writeFileSync(join(runDir, "workflow.yaml"), "name: task\nnodes: []\n");
-  await createState({ runDir, harnessVersion: "1.0.0", eventHandlers: {} });
+  await createState({ runId: run.id, runDir, version: "1.0.0", eventHandlers: {} });
   return { root, run, runDir };
 };
 

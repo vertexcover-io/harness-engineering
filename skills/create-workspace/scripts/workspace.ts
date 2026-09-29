@@ -13,6 +13,7 @@ import {
   type ILogger,
   type JsonValue,
   jsonLogger,
+  type Layout,
   LayoutSchema,
   LogLevelSchema,
   loadConfigOrDefault,
@@ -33,7 +34,6 @@ import {
 } from "@harness/sdk";
 import * as z from "zod";
 
-type Layout = Config["workspace"]["layout"];
 type Package = Config["packages"][string];
 
 // request is the run's prompt or ticket text; only the select-repos reference reads it.

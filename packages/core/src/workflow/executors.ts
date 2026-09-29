@@ -2,13 +2,12 @@ import { resolve } from "node:path";
 import {
   type JsonValue,
   loadFunction as loadSdkFunction,
+  type ProcessRecord,
   importModule as sdkImportModule,
   spawn,
 } from "@harness/sdk";
 import { z } from "zod";
 import { type NodeContext, NodeFailure, WorkflowError, type WorkflowFunction } from "./types.ts";
-
-export type ScriptResult = { stdout: string; stderr: string; exitCode: number };
 
 export type ScriptRequest = Readonly<{
   runtime: "sh" | "bun";
@@ -20,7 +19,7 @@ export type ScriptRequest = Readonly<{
 
 export const MAX_OUTPUT_BYTES = 1_048_576;
 
-export const runScript = async (request: ScriptRequest): Promise<ScriptResult> => {
+export const runScript = async (request: ScriptRequest): Promise<ProcessRecord> => {
   const [command, args] =
     request.runtime === "sh" ? ["sh", ["-c", request.script]] : ["bun", ["-e", request.script]];
   const result = await spawn(command, args, {
