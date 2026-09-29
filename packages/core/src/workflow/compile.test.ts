@@ -70,10 +70,7 @@ describe("compile", () => {
   test("SC4 — an exec node must be exactly a script or exactly a function", async () => {
     const both = workflow(script("a", "\n    module: ./x.ts\n    functionName: f"));
     const neither = workflow("\n  - id: a\n    type: exec\n    input: null");
-    const formatOnModule = workflow(
-      "\n  - id: a\n    type: exec\n    module: ./x.ts\n    functionName: f\n    input: null\n    output:\n      format: json",
-    );
-    for (const source of [both, neither, formatOnModule]) {
+    for (const source of [both, neither]) {
       expect((await rejection(source)).code).toBe("schema");
     }
     const fn = workflow(
@@ -287,16 +284,46 @@ describe("conditions and switch", () => {
     await expect(compile(switchWorkflow(""))).resolves.toBeDefined();
   });
 
-  test("SC29 — output.module and output.zodSchema must come together", async () => {
-    const fn = (output: string) =>
+  test("SC29 — an output schema is a zodSchema from output.module, or the built-in Json with no module", async () => {
+    const exec = (output: string) =>
       workflow(
         `\n  - id: a\n    type: exec\n    module: ./x.ts\n    functionName: f\n    input: null\n    output: ${output}`,
       );
-    for (const output of ["{ zodSchema: inspection }", "{ module: ./schemas.ts }"]) {
-      const error = await rejection(fn(output));
-      expect(error.code).toBe("schema");
-      expect(error.message).toContain("output");
+    const agent = (output: string) =>
+      workflow(
+        `\n  - id: a\n    type: agent\n    prompt: p\n    input: null\n    output: ${output}`,
+      );
+    const rejected: [string, string][] = [
+      ["{ module: ./schemas.ts }", "zodSchema"],
+      ["{ zodSchema: inspection }", "output.module is required unless zodSchema is Json"],
+      ["{}", "zodSchema"],
+    ];
+    for (const [output, message] of rejected) {
+      for (const source of [exec(output), agent(output)]) {
+        const error = await rejection(source);
+        expect(error.code).toBe("schema");
+        expect(error.message).toContain("output");
+        expect(error.message).toContain(message);
+      }
     }
+    for (const output of [
+      "{ zodSchema: Json }",
+      "{ module: ./schemas.ts, zodSchema: inspection }",
+    ]) {
+      await expect(compile(exec(output))).resolves.toBeDefined();
+      await expect(compile(agent(output))).resolves.toBeDefined();
+    }
+    await expect(
+      compile(workflow(script("a", "\n    output: { zodSchema: Json }"))),
+    ).resolves.toBeDefined();
+  });
+
+  test("output.format is not a field of an exec node", async () => {
+    const error = await rejection(
+      workflow(script("a", "\n    output: { zodSchema: Json, format: json }")),
+    );
+    expect(error.code).toBe("schema");
+    expect(error.message).toContain("format");
   });
 });
 

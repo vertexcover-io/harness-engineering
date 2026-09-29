@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { type JsonValue, type ProcessRecord, stackOf } from "@harness/sdk";
+import { z } from "zod";
 import { own } from "../stage.ts";
 import { asJson, callFunction, importModule, loadFunction, runScript } from "./executors.ts";
 import {
@@ -17,6 +18,9 @@ type SchemaLike = {
   safeParse: (value: unknown) => { success: boolean; error?: { message: string } };
 };
 
+// A node's loaded output schema, with the name its validation failures report.
+type OutputSchema = Readonly<{ name: string; schema: SchemaLike }>;
+
 // What one exec node needs for every attempt: its function and output schema are loaded once.
 type ExecRun = Readonly<{
   node: ExecNode;
@@ -24,7 +28,7 @@ type ExecRun = Readonly<{
   path: string;
   cwd: string;
   fn: WorkflowFunction | undefined;
-  schema: SchemaLike | undefined;
+  schema: OutputSchema | undefined;
 }>;
 
 const toFailure = (error: unknown): NodeFailure =>
@@ -57,13 +61,15 @@ const isSchema = (value: unknown): value is SchemaLike =>
   value !== null &&
   typeof (value as { safeParse?: unknown }).safeParse === "function";
 
-// The zod schema a node's output must match, from the `schemas` export of its module.
+// The zod schema a node's output must match: the built-in Json, or one from the `schemas` export of
+// its module.
 const loadSchema = async (
   node: ExecNode | PlanAgentNode,
   cwd: string,
-): Promise<SchemaLike | undefined> => {
+): Promise<OutputSchema | undefined> => {
   const ref = node.output;
-  if (ref?.module === undefined || ref.zodSchema === undefined) return undefined;
+  if (ref === undefined) return undefined;
+  if (ref.module === undefined) return { name: ref.zodSchema, schema: z.json() };
   const registry = (await importModule(ref.module, cwd)).schemas;
   const schema =
     typeof registry === "object" && registry !== null
@@ -73,22 +79,21 @@ const loadSchema = async (
     const message = `${ref.module} has no schemas.${ref.zodSchema}`;
     throw new WorkflowError("missing-schema", message, ref.zodSchema);
   }
-  return schema;
+  return { name: `${ref.module} schemas.${ref.zodSchema}`, schema };
 };
 
-const checkSchema = (
-  node: ExecNode | PlanAgentNode,
+// The schema only checks the output: the node keeps the JSON it was given.
+const checkOutput = (
   output: JsonValue,
   path: string,
-  schema: SchemaLike | undefined,
+  schema: OutputSchema | undefined,
 ): JsonValue => {
   if (schema === undefined) return output;
-  const result = schema.safeParse(output);
+  const result = schema.schema.safeParse(output);
   if (result.success) return output;
-  const where = `${node.output?.module} schemas.${node.output?.zodSchema}`;
   throw new NodeFailure(
     "validation",
-    `${path} output does not match ${where}: ${result.error?.message ?? ""}`,
+    `${path} output does not match ${schema.name}: ${result.error?.message ?? ""}`,
   );
 };
 
@@ -104,11 +109,11 @@ const parseJson = (stdout: string, path: string): JsonValue => {
 type Attempted = Readonly<{ output: JsonValue; process?: ProcessRecord }>;
 
 const scriptOutput = (run: ExecRun, result: ProcessRecord): JsonValue => {
-  const { node, path } = run;
+  const { path, schema } = run;
   if (result.exitCode !== 0)
     throw new NodeFailure("exit", `${path} exited with code ${result.exitCode}`);
-  const output = node.output?.format === "json" ? parseJson(result.stdout, path) : result.stdout;
-  return checkSchema(node, output, path, run.schema);
+  if (schema === undefined) return result.stdout;
+  return checkOutput(parseJson(result.stdout, path), path, schema);
 };
 
 // Any failure after the script ran keeps its process record, so the event log shows what it printed.
@@ -139,7 +144,7 @@ const attempt = async (run: ExecRun, number: number): Promise<Attempted> => {
   const context = { path, cwd: resolve(run.cwd, node.cwd ?? "."), attempt: number };
   if (run.fn === undefined) return runScriptNode(run, context);
   const output = await callFunction(run.fn, input, context, node.timeoutMs);
-  return { output: checkSchema(node, output, path, run.schema) };
+  return { output: checkOutput(output, path, run.schema) };
 };
 
 // Output that fails its schema is not retried: running the same code again gives the same output.
@@ -189,7 +194,7 @@ export const checkAgentOutput = async (
 ): Promise<NodeRecord> => {
   const { cwd, path } = options;
   try {
-    const checked = checkSchema(node, asJson(output, path), path, await loadSchema(node, cwd));
+    const checked = checkOutput(asJson(output, path), path, await loadSchema(node, cwd));
     return { path, type: node.type, status: "completed", output: checked, attempts: 1 };
   } catch (error) {
     return buildFailedRecord(node, path, toFailure(error));

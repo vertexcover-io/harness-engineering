@@ -20,7 +20,7 @@ nodes:
     runtime: sh
     script: >-
       jq -c '{track: .track, passOn: 2}'
-    output: { format: json }
+    output: { zodSchema: Json }
     input:
       track: "{{ inputs.track }}"
 
@@ -74,7 +74,7 @@ nodes:
         runtime: sh
         script: >-
           jq -c '{pass: .pass, passed: ((.pass | tonumber) >= (.passOn | tonumber))}'
-        output: { format: json }
+        output: { zodSchema: Json }
         dependsOn: [attempt]
         input:
           pass: "{{ iteration.index }}"

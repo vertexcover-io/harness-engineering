@@ -414,7 +414,7 @@ nodes:
     type: exec
     runtime: sh
     script: printf '{"n":1}'
-    output: { format: json }
+    output: { zodSchema: Json }
     input: {}
   - id: w
     type: wait

@@ -15,7 +15,7 @@ nodes:
     mode: background
     runtime: sh
     script: bun run orchestrate baseline --run "$(jq -r .run)"
-    output: { format: json }
+    output: { zodSchema: Json }
     dependsOn: [create-workspace]
     input:
       run: "{{ nodes.create-workspace.output.branch }}"

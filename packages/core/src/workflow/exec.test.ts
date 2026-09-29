@@ -47,10 +47,10 @@ const lines = (file: string): string[] =>
   existsSync(file) ? readFileSync(file, "utf8").trim().split("\n").filter(Boolean) : [];
 
 describe("exec scripts", () => {
-  test("SC15 — a json-format script reads its input on stdin, its parsed stdout is the output, and the process record is kept apart", async () => {
+  test("SC15 — a script with the built-in Json schema reads its input on stdin, its parsed stdout is the output, and the process record is kept apart", async () => {
     const record = await runLeaf(
       makeRoot(),
-      "    type: exec\n    runtime: sh\n    script: cat\n    input: null\n    output: { format: json }",
+      "    type: exec\n    runtime: sh\n    script: cat\n    input: null\n    output: { zodSchema: Json }",
       { n: 41 },
     );
     expect(record).toMatchObject({ status: "completed", attempts: 1 });
@@ -58,7 +58,7 @@ describe("exec scripts", () => {
     expect(record.process).toEqual({ stdout: '{"n":41}', stderr: "", exitCode: 0 });
   });
 
-  test("SC64 — a text script's output is its stdout", async () => {
+  test("SC64 — a script with no output schema has its stdout text as its output", async () => {
     const record = await runLeaf(
       makeRoot(),
       "    type: exec\n    runtime: sh\n    script: echo hi\n    input: null",
@@ -67,10 +67,10 @@ describe("exec scripts", () => {
     expect(record.process).toEqual({ stdout: "hi\n", stderr: "", exitCode: 0 });
   });
 
-  test("SC16 — script stdout that is not JSON fails a json-format node", async () => {
+  test("SC16 — script stdout that is not JSON fails a node with an output schema and keeps its process record", async () => {
     const record = await runLeaf(
       makeRoot(),
-      "    type: exec\n    runtime: sh\n    script: echo not json\n    input: null\n    output: { format: json }",
+      "    type: exec\n    runtime: sh\n    script: echo not json\n    input: null\n    output: { zodSchema: Json }",
     );
     expect(record.status).toBe("failed");
     expect(record.error?.kind).toBe("validation");
@@ -207,6 +207,7 @@ export const badInspection = (input) => {
   return { status: 1 };
 };
 export const goodInspection = () => ({ status: "ok" });
+export const rawCount = () => ({ n: "7" });
 export const boom = () => { throw new Error("x".repeat(700)); };
 `;
 
@@ -216,7 +217,7 @@ const setupRoot = (): string => {
   writeFile(
     root,
     "schemas.ts",
-    `import { z } from "${zodUrl}";\nexport const schemas = {\n  inspection: z.object({ status: z.string() }),\n  boom: { safeParse: () => { throw new Error("user boom"); } },\n};\n`,
+    `import { z } from "${zodUrl}";\nexport const schemas = {\n  inspection: z.object({ status: z.string() }),\n  counted: z.object({ n: z.coerce.number(), tag: z.string().default("none") }),\n  boom: { safeParse: () => { throw new Error("user boom"); } },\n};\n`,
   );
   return root;
 };
@@ -237,7 +238,7 @@ describe("output schemas", () => {
   test("a script whose output fails its schema keeps its process record", async () => {
     const record = await runLeaf(
       setupRoot(),
-      "    type: exec\n    runtime: sh\n    script: echo '{\"status\":1}'\n    input: null\n    output: { format: json, module: ./schemas.ts, zodSchema: inspection }",
+      "    type: exec\n    runtime: sh\n    script: echo '{\"status\":1}'\n    input: null\n    output: { module: ./schemas.ts, zodSchema: inspection }",
     );
     expect(record).toMatchObject({ status: "failed", error: { kind: "validation" } });
     expect(record.process).toEqual({ stdout: '{"status":1}\n', stderr: "", exitCode: 0 });
@@ -246,7 +247,7 @@ describe("output schemas", () => {
   test("a script whose schema throws records the schema's own stack", async () => {
     const record = await runLeaf(
       setupRoot(),
-      "    type: exec\n    runtime: sh\n    script: echo '{}'\n    input: null\n    output: { format: json, module: ./schemas.ts, zodSchema: boom }",
+      "    type: exec\n    runtime: sh\n    script: echo '{}'\n    input: null\n    output: { module: ./schemas.ts, zodSchema: boom }",
     );
     expect(record).toMatchObject({
       status: "failed",
@@ -268,6 +269,59 @@ describe("output schemas", () => {
     expect(noSchema.status).toBe("failed");
     expect(noSchema.error?.message).toContain("nope");
     expect((await runLeaf(root, missing("./missing.ts"))).status).toBe("failed");
+  });
+
+  test("a schema only checks a script's output: the raw JSON it printed is stored", async () => {
+    const record = await runLeaf(
+      setupRoot(),
+      '    type: exec\n    runtime: sh\n    script: echo \'{"n":"5"}\'\n    input: null\n    output: { module: ./schemas.ts, zodSchema: counted }',
+    );
+    expect(record).toMatchObject({ status: "completed", output: { n: "5" } });
+    expect(record.process?.stdout).toBe('{"n":"5"}\n');
+  });
+
+  test("a schema only checks a function's output: the value it returned is stored", async () => {
+    const record = await runLeaf(
+      setupRoot(),
+      fnLines(
+        "./fns/helpers.ts",
+        "rawCount",
+        "\n    output: { module: ./schemas.ts, zodSchema: counted }",
+      ),
+    );
+    expect(record).toMatchObject({ status: "completed", output: { n: "7" } });
+    expect(record.process).toBeUndefined();
+  });
+
+  test("a function with the built-in Json schema keeps its value as returned", async () => {
+    const record = await runLeaf(
+      setupRoot(),
+      fnLines("./fns/helpers.ts", "rawCount", "\n    output: { zodSchema: Json }"),
+    );
+    expect(record).toMatchObject({ status: "completed", output: { n: "7" } });
+  });
+
+  test("checkAgentOutput stores the agent's output as reported once its schema accepts it, and the built-in Json takes any JSON", async () => {
+    const root = setupRoot();
+    const options = { cwd: root, path: "nr-a" };
+    const agent = async (output: string) => {
+      const node = await compileNode(
+        root,
+        `    type: agent\n    prompt: count\n    input: {}\n    output: ${output}`,
+      );
+      if (node.type !== "agent") throw new Error(`a is a ${node.type} node`);
+      return node;
+    };
+    const counted = await agent("{ module: ./schemas.ts, zodSchema: counted }");
+    expect(await checkAgentOutput(counted, { n: "3" }, options)).toMatchObject({
+      status: "completed",
+      output: { n: "3" },
+    });
+    const json = await agent("{ zodSchema: Json }");
+    expect(await checkAgentOutput(json, [1, "two"], options)).toMatchObject({
+      status: "completed",
+      output: [1, "two"],
+    });
   });
 
   test("SC62 — checkAgentOutput passes output that matches the agent's schema and fails output that does not", async () => {

@@ -7,7 +7,7 @@ nodes:
     type: exec
     runtime: sh
     script: printf '{"greeting":"hello","count":2}'
-    output: { format: json }
+    output: { zodSchema: Json }
     input: {}
 
   - id: slow-build
@@ -43,7 +43,7 @@ nodes:
     type: exec
     runtime: sh
     script: cat
-    output: { format: json }
+    output: { zodSchema: Json }
     dependsOn: [slow-build, pause]
     input:
       build: "{{ nodes.slow-build.output }}"
