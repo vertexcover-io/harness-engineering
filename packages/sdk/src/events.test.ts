@@ -84,6 +84,39 @@ describe("emitEvent", () => {
     expect(result).toMatchObject({ ok: true, value: { payload: [1, "two", null] } });
   });
 
+  test.each([
+    ["orchestrate.exec", "without its input", { output: { kind: "error", message: "x" } }],
+    [
+      "orchestrate.done",
+      "with a report missing its status",
+      {
+        input: { nodeRunId: "nr-1", output: {}, artifacts: [] },
+        output: { nodeRunId: "nr-1", nodeId: "a", attempts: 1 },
+      },
+    ],
+    [
+      "orchestrate.done",
+      "with neither an output nor an error",
+      {
+        input: { nodeRunId: "nr-1", artifacts: [] },
+        output: { nodeRunId: "nr-1", nodeId: "a", status: "completed", attempts: 1 },
+      },
+    ],
+    [
+      "orchestrate.done",
+      "with both an output and an error",
+      {
+        input: { nodeRunId: "nr-1", output: {}, error: "no", artifacts: [] },
+        output: { nodeRunId: "nr-1", nodeId: "a", status: "completed", attempts: 1 },
+      },
+    ],
+  ])("%s %s is refused and nothing is stored", async (type, _case, payload) => {
+    const store = memoryEventStore();
+    const result = await emitEvent(store, "r-1", { type, source: "orchestrate", payload });
+    expect(result.ok ? "" : result.error).toContain(type);
+    expect(await store.read()).toEqual([]);
+  });
+
   test("workflow.node.skipped without a skip reason is refused, naming skip, and nothing is stored", async () => {
     const store = memoryEventStore();
     const result = await emitEvent(store, "r-1", {

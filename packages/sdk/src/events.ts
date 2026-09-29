@@ -174,6 +174,37 @@ export const WorkspaceRepositoryRemoveFailedEvent = workspaceEvent(RepositoryRem
 export const WorkspaceRemovedEvent = workspaceEvent(WorkspaceRemovedPayload);
 export const WorkspaceRemoveFailedEvent = workspaceEvent(WorkspaceFailedPayload);
 
+// What orchestrate exec and done print.
+export const StepReportSchema = z.strictObject({
+  nodeRunId: NonEmptyStringSchema,
+  nodeId: NonEmptyStringSchema,
+  status: z.enum(["completed", "failed"]),
+  attempts,
+  error: z.strictObject({ kind: z.string(), message: z.string() }).optional(),
+});
+
+// A call of orchestrate next, exec or done: what it was called with, and the reply it printed, or
+// the error it failed with. Nothing reads these into state.json.
+const callEvent = <I extends z.ZodType, O extends z.ZodType>(input: I, output: O) =>
+  z.object({ payload: z.strictObject({ input, output }) });
+const CallErrorSchema = ErrorSchema.extend({ kind: z.literal("error") });
+const reportOrError = z.union([StepReportSchema, CallErrorSchema]);
+
+export const OrchestrateNextEvent = callEvent(z.strictObject({}), z.json());
+export const OrchestrateExecEvent = callEvent(
+  z.strictObject({ nodeRunId: NonEmptyStringSchema }),
+  reportOrError,
+);
+const OutputOutcomeSchema = z.strictObject({ output: z.json() });
+const ErrorOutcomeSchema = z.strictObject({ error: z.string() });
+export const StepOutcomeSchema = z.union([OutputOutcomeSchema, ErrorOutcomeSchema]);
+
+const doneInput = { nodeRunId: NonEmptyStringSchema, artifacts: z.array(ArtifactRefSchema) };
+export const OrchestrateDoneEvent = callEvent(
+  z.union([OutputOutcomeSchema.extend(doneInput), ErrorOutcomeSchema.extend(doneInput)]),
+  reportOrError,
+);
+
 const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.started": WorkflowStartedEvent,
   "workflow.completed": WorkflowEndedEvent,
@@ -192,6 +223,9 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workspace.repository.remove-failed": WorkspaceRepositoryRemoveFailedEvent,
   "workspace.removed": WorkspaceRemovedEvent,
   "workspace.remove-failed": WorkspaceRemoveFailedEvent,
+  "orchestrate.next": OrchestrateNextEvent,
+  "orchestrate.exec": OrchestrateExecEvent,
+  "orchestrate.done": OrchestrateDoneEvent,
 };
 
 // An event before the emitter fills runId, ts and (when not given) id. Built from the shape,
