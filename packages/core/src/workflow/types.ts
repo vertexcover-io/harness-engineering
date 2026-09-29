@@ -37,6 +37,14 @@ const leafFields = {
   retry: RetrySchema.optional(),
 };
 
+// Json is the built-in schema for any JSON value; every other schema is an export of `module`.
+const OutputSchemaRefSchema = z
+  .strictObject({ module: NonEmptyStringSchema.optional(), zodSchema: NonEmptyStringSchema })
+  .refine((ref) => ref.module !== undefined || ref.zodSchema === "Json", {
+    path: ["module"],
+    message: "output.module is required unless zodSchema is Json",
+  });
+
 export const ExecNodeSchema = z
   .strictObject({
     ...leafFields,
@@ -46,13 +54,7 @@ export const ExecNodeSchema = z
     script: NonEmptyStringSchema.optional(),
     module: NonEmptyStringSchema.optional(),
     functionName: NonEmptyStringSchema.optional(),
-    output: z
-      .strictObject({
-        format: z.enum(["text", "json"]).optional(),
-        module: NonEmptyStringSchema.optional(),
-        zodSchema: NonEmptyStringSchema.optional(),
-      })
-      .optional(),
+    output: OutputSchemaRefSchema.optional(),
   })
   .superRefine((node, ctx) => {
     const scriptKeys = [node.runtime, node.script].filter((v) => v !== undefined).length;
@@ -63,20 +65,6 @@ export const ExecNodeSchema = z
       ctx.addIssue({
         code: "custom",
         message: "exec needs runtime + script, or module + functionName",
-      });
-    }
-    if (isModule && node.output?.format !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["output", "format"],
-        message: "output.format applies to scripts only",
-      });
-    }
-    if ((node.output?.module === undefined) !== (node.output?.zodSchema === undefined)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["output"],
-        message: "output.module and output.zodSchema go together",
       });
     }
   });
@@ -122,9 +110,7 @@ export const AgentNodeSchema = z
     type: NodeTypeSchema.extract(["agent"]),
     stage: NonEmptyStringSchema.optional(),
     prompt: NonEmptyStringSchema.optional(),
-    output: z
-      .strictObject({ module: NonEmptyStringSchema, zodSchema: NonEmptyStringSchema })
-      .optional(),
+    output: OutputSchemaRefSchema.optional(),
   })
   .superRefine((node, ctx) => {
     if (node.stage === undefined && node.prompt === undefined) {
