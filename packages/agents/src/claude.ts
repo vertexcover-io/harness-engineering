@@ -10,11 +10,13 @@ import {
   type LaunchOptions,
   noopLogger,
   type PermissionMode,
+  parseJson,
   type Result,
   type RunRequest,
   spawn,
 } from "@harness/sdk";
 import * as z from "zod";
+import { claudeHookSettings } from "./claude-hooks.ts";
 
 // Claude never returns while it is waiting for Enter to submit; the spike found 150ms reliable.
 export const SUBMIT_DELAY_MS = 150;
@@ -25,6 +27,7 @@ export type ClaudeArgOptions = Readonly<{
   permissionMode?: PermissionMode;
   systemPrompt?: string;
   prompt?: string;
+  hookCommand?: readonly string[];
 }>;
 
 export const claudeArgs = (sessionId: string, options: ClaudeArgOptions): string[] => [
@@ -34,6 +37,9 @@ export const claudeArgs = (sessionId: string, options: ClaudeArgOptions): string
   ...(options.effort !== undefined ? ["--effort", options.effort] : []),
   ...(options.permissionMode !== undefined ? ["--permission-mode", options.permissionMode] : []),
   ...(options.systemPrompt !== undefined ? ["--append-system-prompt", options.systemPrompt] : []),
+  ...(options.hookCommand !== undefined
+    ? ["--settings", JSON.stringify(claudeHookSettings(options.hookCommand))]
+    : []),
   ...(options.prompt !== undefined ? [options.prompt] : []),
 ];
 
@@ -70,14 +76,6 @@ export type ClaudeProviderOptions = Readonly<{
   binary?: string;
   newId?: () => string;
 }>;
-
-const parseJson = (text: string): Result<unknown> => {
-  try {
-    return { ok: true, value: JSON.parse(text) };
-  } catch {
-    return { ok: false, error: "invalid JSON" };
-  }
-};
 
 const parseResult = <T>(
   result: string,

@@ -71,6 +71,14 @@ export const own = <T>(record: Readonly<Record<string, T>>, key: string): T | un
 export const harnessSkillsDir = (): string =>
   process.env.HARNESS_SKILLS_DIR || join(import.meta.dir, "..", "..", "..", "skills");
 
+// Agent hooks run outside this repo's package.json, so they call bun and the script by
+// absolute path. The server that asks for this runs under bun, so execPath is bun.
+export const orchestrateHookCommand = (): readonly string[] => [
+  process.execPath,
+  join(import.meta.dir, "orchestrate.ts"),
+  "hook",
+];
+
 // A stage name is one of the harness's own skills; a stage with a "/" is a skill folder in the
 // project at `root`.
 export const findStageDir = (

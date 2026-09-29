@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import * as z from "zod";
+import { AgentTypeSchema } from "./agent.ts";
 import {
   AbsolutePathSchema,
   ArtifactRefSchema,
@@ -91,6 +92,33 @@ export const WorkflowStartedEvent = z.object({
 });
 
 export const WorkflowEndedEvent = z.object({ payload: z.strictObject({}) });
+
+// Why the Stop hook answered as it did. The first three let the turn end; the last two send the
+// agent back to work.
+export const StopReasonSchema = z.enum([
+  "run-finished",
+  "user-chat",
+  "max-blocks-reached",
+  "node-not-done",
+  "next-not-run",
+]);
+export type StopReason = z.infer<typeof StopReasonSchema>;
+
+// nodeRunId rides in the payload: the envelope's nodeRunId needs a nodeId beside it.
+export const StopCalledEvent = z.object({
+  payload: z.strictObject({
+    agent: AgentTypeSchema,
+    sessionId: NonEmptyStringSchema,
+    // null when the hook did not need the transcript, or could not read it
+    touchedRun: z.boolean().nullable(),
+    decision: z.enum(["allow", "continue"]),
+    reason: StopReasonSchema,
+    blockStreak: z.int().nonnegative(),
+    // the text the agent was sent back with
+    message: z.string().optional(),
+    nodeRunId: NonEmptyStringSchema.optional(),
+  }),
+});
 
 const workspaceEvent = <P extends z.ZodType>(payload: P) => z.object({ payload });
 
@@ -224,6 +252,7 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "orchestrate.next": OrchestrateNextEvent,
   "orchestrate.exec": OrchestrateExecEvent,
   "orchestrate.done": OrchestrateDoneEvent,
+  "hooks.stop.called": StopCalledEvent,
 };
 
 // An event before the emitter fills runId, ts and (when not given) id. Built from the shape,
@@ -448,6 +477,12 @@ const onWorkflowEnded = (status: "completed" | "failed", state: State, event: Ev
   completedAt: event.ts,
 });
 
+const onStopCalled: EventHandler = (state, event) => {
+  const parsed = StopCalledEvent.safeParse(event);
+  if (!parsed.success) return state;
+  return { ...state, stopHook: { blockStreak: parsed.data.payload.blockStreak, seq: event.seq } };
+};
+
 export const builtInHandlers: EventHandlers = {
   "workflow.started": onWorkflowStarted,
   "workflow.completed": (state, event) => onWorkflowEnded("completed", state, event),
@@ -461,4 +496,5 @@ export const builtInHandlers: EventHandlers = {
   "workspace.created": onWorkspaceCreated,
   "workspace.repository.added": onRepositoryAdded,
   "workspace.repository.removed": onRepositoryRemoved,
+  "hooks.stop.called": onStopCalled,
 };

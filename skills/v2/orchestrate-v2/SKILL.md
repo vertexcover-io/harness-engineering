@@ -80,3 +80,7 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
 
 `exec` and `done` record how each node ended. Never run `bun run orchestrate emit` for a node, and
 never edit `.harness/NAME/state.json` or `.harness/NAME/event.jsonl` yourself.
+
+When you need the user's input, ask with `AskUserQuestion`. Never end your turn with a question
+in plain text: a Stop hook checks the run when your turn ends, and a turn that ends with a node
+still open, or before `next`, is sent back to you with the command you still owe.

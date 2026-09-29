@@ -186,6 +186,11 @@ export const StateSchema = z.strictObject({
   ticket: TicketSchema.optional(),
   notification: NotificationSchema.optional(),
   nodeRuns: z.record(NonEmptyStringSchema, NodeRunSchema),
+  // The Stop hook's last check. blockStreak: times in a row it sent the agent back at this spot.
+  // seq: that check's own event, so the next check knows nothing happened if it is still the newest.
+  stopHook: z
+    .strictObject({ blockStreak: z.int().nonnegative(), seq: z.int().positive() })
+    .optional(),
   custom: JsonObjectSchema.optional(),
   eventHandlers: EventHandlerRefsSchema.default({}),
 });
@@ -248,3 +253,11 @@ export type Event = z.infer<typeof EventSchema>;
 export type Result<T, E = string> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: E };
+
+export const parseJson = (text: string): Result<unknown> => {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false, error: "invalid JSON" };
+  }
+};

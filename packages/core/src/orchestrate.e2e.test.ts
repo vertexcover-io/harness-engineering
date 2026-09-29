@@ -957,3 +957,136 @@ describe("orchestrate call log", () => {
     expect(await eventsOf(repo)).toHaveLength(before);
   });
 });
+
+const ONE_AGENT = `name: one
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: plan
+    type: agent
+    prompt: plan it
+    input: {}
+`;
+
+describe("orchestrate hook stop", () => {
+  const STOP = JSON.stringify({ session_id: "s1", stop_hook_active: false });
+  const RUN_ENV = { HARNESS_RUN_ID: "r-1" };
+
+  // A run whose claude session s1 was handed node plan by next and has not run done.
+  const openNodeRun = () => {
+    const run = startedRun(ONE_AGENT);
+    const link = ["link-session", "--run", "feat-x", "--agent", "claude", "--session-id", "s1"];
+    expect(orchestrate(run.repo, run.home, link).code).toBe(0);
+    const next = JSON.parse(orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]).stdout);
+    expect(next).toMatchObject({ kind: "agent", nodeId: "plan" });
+    return run;
+  };
+
+  const stop = (run: Readonly<{ repo: string; home: string }>, input = STOP, env: Env = RUN_ENV) =>
+    orchestrate(run.repo, run.home, ["hook", "stop", "--agent", "claude"], env, input);
+
+  test("SC20 — the hook blocks a turn that left an agent node open, and logs the call", async () => {
+    const run = openNodeRun();
+
+    const first = stop(run);
+
+    expect(first.code).toBe(0);
+    const reply = JSON.parse(first.stdout);
+    expect(reply).toEqual({
+      decision: "block",
+      reason: expect.stringContaining("orchestrate done"),
+    });
+    const last = (await eventsOf(run.repo)).at(-1);
+    expect(last).toMatchObject({
+      type: "hooks.stop.called",
+      payload: {
+        agent: "claude",
+        sessionId: "s1",
+        decision: "continue",
+        reason: "node-not-done",
+        blockStreak: 1,
+        message: reply.reason,
+      },
+    });
+    expect(stateOf(run.repo).stopHook).toEqual({ blockStreak: 1, seq: last?.seq });
+  });
+
+  test("SC21 — a second stop with nothing done lets the turn end, and that call is logged too", async () => {
+    const run = openNodeRun();
+    stop(run);
+    const before = (await eventsOf(run.repo)).length;
+
+    const second = stop(run);
+
+    expect(second).toMatchObject({ code: 0, stdout: "" });
+    const events = await eventsOf(run.repo);
+    expect(events).toHaveLength(before + 1);
+    expect(events.at(-1)?.payload).toEqual({
+      agent: "claude",
+      sessionId: "s1",
+      touchedRun: null,
+      decision: "allow",
+      reason: "max-blocks-reached",
+      blockStreak: 1,
+    });
+  });
+
+  test("SC22 — a session that is not the run's own is never blocked", async () => {
+    const run = openNodeRun();
+    const before = await eventsOf(run.repo);
+
+    expect(stop(run, JSON.stringify({ session_id: "other" }))).toMatchObject({
+      code: 0,
+      stdout: "",
+    });
+    expect(stop(run, STOP, {})).toMatchObject({ code: 0, stdout: "" });
+    expect(await eventsOf(run.repo)).toEqual(before);
+  });
+
+  // A run between nodes, and a Claude transcript whose last lines are PROMPT and then COMMAND, if any.
+  const betweenNodes = (prompt: string, command?: string) => {
+    const run = startedRun(ONE_AGENT);
+    const link = ["link-session", "--run", "feat-x", "--agent", "claude", "--session-id", "s1"];
+    expect(orchestrate(run.repo, run.home, link).code).toBe(0);
+    const transcript = join(tempDir(), "s1.jsonl");
+    const lines = [
+      { type: "user", message: { role: "user", content: prompt } },
+      ...(command === undefined
+        ? [{ type: "assistant", message: { content: [{ type: "text", text: "answer" }] } }]
+        : [
+            {
+              type: "assistant",
+              message: { content: [{ type: "tool_use", name: "Bash", input: { command } }] },
+            },
+          ]),
+    ];
+    writeFileSync(transcript, lines.map((line) => JSON.stringify(line)).join("\n"));
+    return { run, input: JSON.stringify({ session_id: "s1", transcript_path: transcript }) };
+  };
+
+  test("a chat turn between nodes ends, and is logged as chat", async () => {
+    const { run, input } = betweenNodes("what does this workflow do?");
+
+    expect(stop(run, input)).toMatchObject({ code: 0, stdout: "" });
+    expect((await eventsOf(run.repo)).at(-1)?.payload).toMatchObject({
+      decision: "allow",
+      reason: "user-chat",
+      touchedRun: false,
+    });
+  });
+
+  test("a turn that ran orchestrate but not next is sent back with the next command", () => {
+    const { run, input } = betweenNodes("go", "bun run orchestrate done n1 --run feat-x");
+
+    const reply = JSON.parse(stop(run, input).stdout);
+
+    expect(reply.reason).toContain("bun run orchestrate next --run feat-x");
+  });
+
+  test("SC23 — a broken state.json lets the turn end", () => {
+    const run = openNodeRun();
+    writeFileSync(join(runDirOf(run.repo, "feat-x"), "state.json"), '{"schemaVersion":2}');
+
+    expect(stop(run)).toMatchObject({ code: 0, stdout: "" });
+  });
+});

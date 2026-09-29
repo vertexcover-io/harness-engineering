@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
+import { HOOK_AGENTS, stopHooks } from "@harness/agents";
 import {
   AgentTypeSchema,
   type ArtifactRef,
@@ -299,6 +300,26 @@ const skillCommand = () => {
   return skill;
 };
 
+const hookCommand = () => {
+  const hook = new Command("hook").description(
+    "Answer an agent's hook call with that agent's own hook function",
+  );
+  // Always exits 0 and prints only the agent's reply: an error here must never trap a session.
+  hook
+    .command("stop")
+    .description("Decide from the run's state.json whether the agent may end its turn")
+    .addOption(
+      new Option("--agent <type>", "agent that called the hook")
+        .choices(HOOK_AGENTS)
+        .makeOptionMandatory(),
+    )
+    .action(async (opts) => {
+      const deps = { registry: registry(), env: process.env, log };
+      process.stdout.write(await stopHooks[opts.agent](await Bun.stdin.text(), deps));
+    });
+  return hook;
+};
+
 stopRunningOnSignal();
 
 await new Command()
@@ -312,5 +333,6 @@ await new Command()
   .addCommand(execCommand())
   .addCommand(doneCommand())
   .addCommand(skillCommand())
+  .addCommand(hookCommand())
   .parseAsync(process.argv)
   .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));

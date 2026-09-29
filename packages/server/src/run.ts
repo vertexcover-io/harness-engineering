@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
+import { orchestrateHookCommand } from "@harness/core";
 import type { IAgentProvider, ITerminal, Registry, WorkflowRun } from "@harness/sdk";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -42,6 +43,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
       cwd,
       prompt: `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}`,
       env: { HARNESS_RUN_ID: id, HARNESS_HOME: deps.home },
+      hookCommand: orchestrateHookCommand(),
     })
     .catch(async (error: unknown) => {
       await deps.registry.removeRun(id);

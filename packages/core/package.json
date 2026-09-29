@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@commander-js/extra-typings": "^15.0.0",
+    "@harness/agents": "workspace:*",
     "@harness/sdk": "workspace:*",
     "commander": "^15.0.0",
     "pino": "^9",
