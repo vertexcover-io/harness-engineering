@@ -4,24 +4,22 @@ import {
   AbsolutePathSchema,
   ArtifactRefSchema,
   ERROR_MESSAGE_LIMIT,
+  ErrorSchema,
   type Event,
   EventSchema,
-  FailureOutputSchema,
   JsonObjectSchema,
   type JsonValue,
   LayoutSchema,
   type NodeRun,
-  type NodeType,
   NodeTypeSchema,
   NonEmptyStringSchema,
   type Result,
   SkipOutputSchema,
   SlugSchema,
+  type State,
 } from "./contracts.ts";
 import type { IEventStore } from "./event-store.ts";
 import type { EventHandler, EventHandlers } from "./state.ts";
-
-export const ErrorSchema = FailureOutputSchema.extend({ stack: z.string().optional() });
 
 // The thrown error's own stack says where it broke; a wrapper's stack only says who caught it.
 export const stackOf = (error: Error): string | undefined =>
@@ -37,7 +35,6 @@ const attempts = z.int().nonnegative();
 // The ids of the loops, switches and includes a node sits inside, outermost first. Top-level nodes
 // leave it out. State is a tree keyed by node ids, so this says where in the tree the node goes.
 const placement = { parents: z.array(NonEmptyStringSchema).min(1).optional() };
-const output = z.json().optional();
 
 // Each event family adds the top-level fields its events must carry; other envelope
 // fields pass through, since EventSchema checks them when the store appends.
@@ -60,24 +57,24 @@ export const ProcessRecordSchema = z.strictObject({
 });
 export type ProcessRecord = z.infer<typeof ProcessRecordSchema>;
 
-const NodeEndedPayload = z.strictObject({
-  nodeType: NodeTypeSchema,
-  attempts,
-  error: ErrorSchema.optional(),
-  output,
-  process: ProcessRecordSchema.optional(),
-  skip: SkipOutputSchema.optional(),
-  artifacts: z.array(ArtifactRefSchema).optional(),
-  ...placement,
-});
-export const NodeEndedEvent = nodeEvent(NodeEndedPayload);
-export const NodeFailedEvent = nodeEvent(
-  NodeEndedPayload.omit({ output: true, skip: true }).extend({ error: ErrorSchema }),
-);
-export const NodeCancelledEvent = nodeEvent(NodeEndedPayload.omit({ output: true, skip: true }));
-export const NodeSkippedEvent = nodeEvent(
-  NodeEndedPayload.omit({ output: true }).extend({ skip: SkipOutputSchema }),
-);
+const endFields = { nodeType: NodeTypeSchema, attempts, ...placement };
+
+// Keyed by how the node ended; each payload refuses the fields another ending carries.
+const nodeEndedEvents = {
+  completed: nodeEvent(
+    z.strictObject({
+      ...endFields,
+      output: z.json().optional(),
+      process: ProcessRecordSchema.optional(),
+      artifacts: z.array(ArtifactRefSchema).optional(),
+    }),
+  ),
+  failed: nodeEvent(
+    z.strictObject({ ...endFields, error: ErrorSchema, process: ProcessRecordSchema.optional() }),
+  ),
+  skipped: nodeEvent(z.strictObject({ ...endFields, skip: SkipOutputSchema })),
+  cancelled: nodeEvent(z.strictObject({ ...endFields, error: ErrorSchema.optional() })),
+};
 
 // A loop starting its next pass: the pass number, and the result of the pass that just ended.
 export const NodeIteratedEvent = nodeEvent(
@@ -175,32 +172,33 @@ export const WorkspaceRemovedEvent = workspaceEvent(WorkspaceRemovedPayload);
 export const WorkspaceRemoveFailedEvent = workspaceEvent(WorkspaceFailedPayload);
 
 // What orchestrate exec and done print.
-export const StepReportSchema = z.strictObject({
+const StepReportSchema = z.strictObject({
   nodeRunId: NonEmptyStringSchema,
   nodeId: NonEmptyStringSchema,
   status: z.enum(["completed", "failed"]),
   attempts,
   error: z.strictObject({ kind: z.string(), message: z.string() }).optional(),
 });
+export type StepReport = z.infer<typeof StepReportSchema>;
 
 // A call of orchestrate next, exec or done: what it was called with, and the reply it printed, or
 // the error it failed with. Nothing reads these into state.json.
 const callEvent = <I extends z.ZodType, O extends z.ZodType>(input: I, output: O) =>
   z.object({ payload: z.strictObject({ input, output }) });
-const CallErrorSchema = ErrorSchema.extend({ kind: z.literal("error") });
-const reportOrError = z.union([StepReportSchema, CallErrorSchema]);
+const reportOrError = z.union([StepReportSchema, ErrorSchema.extend({ kind: z.literal("error") })]);
 
-export const OrchestrateNextEvent = callEvent(z.strictObject({}), z.json());
-export const OrchestrateExecEvent = callEvent(
+const OrchestrateNextEvent = callEvent(z.strictObject({}), z.json());
+const OrchestrateExecEvent = callEvent(
   z.strictObject({ nodeRunId: NonEmptyStringSchema }),
   reportOrError,
 );
 const OutputOutcomeSchema = z.strictObject({ output: z.json() });
 const ErrorOutcomeSchema = z.strictObject({ error: z.string() });
-export const StepOutcomeSchema = z.union([OutputOutcomeSchema, ErrorOutcomeSchema]);
+const StepOutcomeSchema = z.union([OutputOutcomeSchema, ErrorOutcomeSchema]);
+export type StepOutcome = z.infer<typeof StepOutcomeSchema>;
 
 const doneInput = { nodeRunId: NonEmptyStringSchema, artifacts: z.array(ArtifactRefSchema) };
-export const OrchestrateDoneEvent = callEvent(
+const OrchestrateDoneEvent = callEvent(
   z.union([OutputOutcomeSchema.extend(doneInput), ErrorOutcomeSchema.extend(doneInput)]),
   reportOrError,
 );
@@ -210,10 +208,10 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.completed": WorkflowEndedEvent,
   "workflow.failed": WorkflowEndedEvent,
   "workflow.node.started": NodeStartedEvent,
-  "workflow.node.completed": NodeEndedEvent,
-  "workflow.node.skipped": NodeSkippedEvent,
-  "workflow.node.cancelled": NodeCancelledEvent,
-  "workflow.node.failed": NodeFailedEvent,
+  "workflow.node.completed": nodeEndedEvents.completed,
+  "workflow.node.skipped": nodeEndedEvents.skipped,
+  "workflow.node.cancelled": nodeEndedEvents.cancelled,
+  "workflow.node.failed": nodeEndedEvents.failed,
   "workflow.node.iterated": NodeIteratedEvent,
   "workspace.created": WorkspaceCreatedEvent,
   "workspace.create-failed": WorkspaceCreateFailedEvent,
@@ -308,7 +306,7 @@ const updateNode = (
   };
 };
 
-const CONTAINER_TYPES = new Set<NodeType>(["loop", "switch", "include"]);
+const CONTAINER_TYPES = new Set<z.infer<typeof NodeTypeSchema>>(["loop", "switch", "include"]);
 
 // A node started again (a new loop pass, or a re-run) replaces its entry: state keeps the latest run.
 const onStarted: EventHandler = (state, event) => {
@@ -333,18 +331,17 @@ const onStarted: EventHandler = (state, event) => {
   };
 };
 
-type EndStatus = "completed" | "failed" | "skipped" | "cancelled";
-type NodeEndedPayload = z.infer<typeof NodeEndedPayload>;
+type EndStatus = keyof typeof nodeEndedEvents;
+type NodeEndedPayload = z.infer<(typeof nodeEndedEvents)[EndStatus]>["payload"];
 
 // A completed node's output is its value; a failed or cancelled node's is its error, without the
 // stack; a skipped node's is why.
-const endOutputOf = (
-  status: EndStatus,
-  { skip, error, output }: NodeEndedPayload,
-): JsonValue | undefined => {
-  if (status === "completed") return output;
-  if (status === "skipped") return skip;
-  return error === undefined ? undefined : { kind: error.kind, message: error.message };
+const endOutputOf = (payload: NodeEndedPayload): JsonValue | undefined => {
+  if ("skip" in payload) return payload.skip;
+  if ("error" in payload && payload.error !== undefined) {
+    return { kind: payload.error.kind, message: payload.error.message };
+  }
+  return "output" in payload ? payload.output : undefined;
 };
 
 // A node that did not complete drops what a loop's earlier pass left in its output.
@@ -353,35 +350,34 @@ const withoutOutput = ({ output: _, ...run }: NodeRun): NodeRun => run;
 // A node can end without starting (skipped, cancelled, failed before it ran), so the end event
 // creates the entry when no entry holds this run. A skipped node never runs, so it starts and ends
 // at the skip.
-const onEnded =
-  (status: EndStatus): EventHandler =>
-  (state, event) => {
-    const parsed = NodeEndedEvent.safeParse(event);
-    if (!parsed.success) return state;
-    const { nodeId, nodeRunId, payload } = parsed.data;
-    const output = endOutputOf(status, payload);
-    const end = (current: NodeRun | undefined): NodeRun => {
-      const run: NodeRun =
-        current?.nodeRunId === nodeRunId
-          ? current
-          : {
-              nodeRunId,
-              nodeType: payload.nodeType,
-              status,
-              startedAt: status === "skipped" ? event.ts : null,
-              completedAt: null,
-              artifacts: [],
-            };
-      return {
-        ...(status === "completed" ? run : withoutOutput(run)),
-        ...(output === undefined ? {} : { output }),
-        artifacts: payload.artifacts ?? run.artifacts,
-        status,
-        completedAt: event.ts,
-      };
+const onEnded = (status: EndStatus, state: State, event: Event): State => {
+  const parsed = nodeEndedEvents[status].safeParse(event);
+  if (!parsed.success) return state;
+  const { nodeId, nodeRunId, payload } = parsed.data;
+  const output = endOutputOf(payload);
+  const artifacts = "artifacts" in payload ? payload.artifacts : undefined;
+  const end = (current: NodeRun | undefined): NodeRun => {
+    const run: NodeRun =
+      current?.nodeRunId === nodeRunId
+        ? current
+        : {
+            nodeRunId,
+            nodeType: payload.nodeType,
+            status,
+            startedAt: status === "skipped" ? event.ts : null,
+            completedAt: null,
+            artifacts: [],
+          };
+    return {
+      ...(status === "completed" ? run : withoutOutput(run)),
+      ...(output === undefined ? {} : { output }),
+      artifacts: artifacts ?? run.artifacts,
+      status,
+      completedAt: event.ts,
     };
-    return { ...state, nodeRuns: updateNode(state.nodeRuns, payload.parents ?? [], nodeId, end) };
   };
+  return { ...state, nodeRuns: updateNode(state.nodeRuns, payload.parents ?? [], nodeId, end) };
+};
 
 // The next pass of a loop starts empty: the last pass's children are history now (event.jsonl).
 const onIterated: EventHandler = (state, event) => {
@@ -446,19 +442,21 @@ const onWorkflowStarted: EventHandler = (state, event) => {
   return { ...state, startedAt: event.ts, input: parsed.data.payload.inputs };
 };
 
-const onWorkflowEnded =
-  (status: "completed" | "failed"): EventHandler =>
-  (state, event) => ({ ...state, status, completedAt: event.ts });
+const onWorkflowEnded = (status: "completed" | "failed", state: State, event: Event): State => ({
+  ...state,
+  status,
+  completedAt: event.ts,
+});
 
 export const builtInHandlers: EventHandlers = {
   "workflow.started": onWorkflowStarted,
-  "workflow.completed": onWorkflowEnded("completed"),
-  "workflow.failed": onWorkflowEnded("failed"),
+  "workflow.completed": (state, event) => onWorkflowEnded("completed", state, event),
+  "workflow.failed": (state, event) => onWorkflowEnded("failed", state, event),
   "workflow.node.started": onStarted,
-  "workflow.node.completed": onEnded("completed"),
-  "workflow.node.failed": onEnded("failed"),
-  "workflow.node.skipped": onEnded("skipped"),
-  "workflow.node.cancelled": onEnded("cancelled"),
+  "workflow.node.completed": (state, event) => onEnded("completed", state, event),
+  "workflow.node.failed": (state, event) => onEnded("failed", state, event),
+  "workflow.node.skipped": (state, event) => onEnded("skipped", state, event),
+  "workflow.node.cancelled": (state, event) => onEnded("cancelled", state, event),
   "workflow.node.iterated": onIterated,
   "workspace.created": onWorkspaceCreated,
   "workspace.repository.added": onRepositoryAdded,

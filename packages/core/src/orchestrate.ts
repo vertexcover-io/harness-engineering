@@ -15,17 +15,11 @@ import {
   registryPath,
   resolveRoot,
   resolveRun,
+  type StepOutcome,
   stopRunningOnSignal,
 } from "@harness/sdk";
 import { createLogger, resolveLevel } from "./logging.ts";
-import {
-  execStep,
-  finishStep,
-  initializeRun,
-  linkRunSession,
-  nextStep,
-  type StepOutcome,
-} from "./runs.ts";
+import { execStep, finishStep, initializeRun, linkRunSession, nextStep } from "./runs.ts";
 import { harnessSkillsDir, resolveExtension, resolveReference } from "./stage.ts";
 import { captureBaseline } from "./stages/baseline.ts";
 
