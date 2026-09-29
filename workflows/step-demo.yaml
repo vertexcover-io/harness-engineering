@@ -1,0 +1,51 @@
+name: step-demo
+inputs:
+  prompt: { type: string, required: true }
+  mode: { type: string, default: quick }
+nodes:
+  - id: hello
+    type: exec
+    runtime: sh
+    script: printf '{"greeting":"hello","count":2}'
+    output: { format: json }
+    input: {}
+
+  - id: slow-build
+    type: exec
+    mode: background
+    runtime: sh
+    script: sleep 20 && echo built
+    dependsOn: [hello]
+    input: {}
+
+  - id: quick-check
+    type: exec
+    runtime: sh
+    script: cat
+    dependsOn: [hello]
+    input: "{{ nodes.hello.output.value.greeting }} from quick-check"
+
+  - id: full-lint
+    type: exec
+    runtime: sh
+    script: echo linting
+    when: "{{ inputs.mode == 'full' }}"
+    dependsOn: [hello]
+    input: {}
+
+  - id: pause
+    type: wait
+    durationMs: 2000
+    dependsOn: [quick-check]
+    input: "{{ nodes.hello.output.value.count }}"
+
+  - id: summary
+    type: exec
+    runtime: sh
+    script: cat
+    output: { format: json }
+    dependsOn: [slow-build, pause]
+    input:
+      build: "{{ nodes.slow-build.output.stdout }}"
+      waited: "{{ nodes.pause.output }}"
+      prompt: "{{ inputs.prompt }}"

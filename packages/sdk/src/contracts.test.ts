@@ -3,8 +3,6 @@ import { EventSchema, StateSchema } from "./contracts.ts";
 
 const agentRun = {
   nodeRunId: "plan-1",
-  nodeId: "plan",
-  index: 1,
   status: "running",
   startedAt: "2026-09-26T10:00:00Z",
   completedAt: null,
@@ -33,8 +31,7 @@ const validState = {
       app: { path: "/work/add-login", git: { branch: "b", baseBranch: "main", startSha: "abc" } },
     },
   },
-  activeNodeRuns: ["plan-1"],
-  nodeRuns: { "plan-1": agentRun },
+  nodeRuns: { plan: agentRun },
 };
 
 describe("StateSchema", () => {
@@ -57,7 +54,7 @@ describe("StateSchema", () => {
 
   const withRun = (run: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
     ...validState,
-    nodeRuns: { "plan-1": { ...agentRun, ...run } },
+    nodeRuns: { plan: { ...agentRun, ...run } },
     ...extra,
   });
   const { stage: _stage, ...runWithoutStage } = agentRun;
@@ -71,12 +68,14 @@ describe("StateSchema", () => {
       "an artifact path escaping with ..",
       withRun({ artifacts: [{ name: "p", path: "artifacts/../x" }] }),
     ],
-    ["agentState without stage", { ...validState, nodeRuns: { "plan-1": runWithoutStage } }],
-    ["a skipped run with no reason", withRun({ status: "skipped" }, { activeNodeRuns: [] })],
-    ["a nodeRuns key that differs from nodeRunId", withRun({ nodeRunId: "other" })],
-    ["a missing parent run", withRun({ parentNodeRunId: "ghost" })],
-    ["an active run that is not running", withRun({ status: "completed" })],
-    ["duplicate active IDs", { ...validState, activeNodeRuns: ["plan-1", "plan-1"] }],
+    ["agentState without stage", { ...validState, nodeRuns: { plan: runWithoutStage } }],
+    ["a skipped run with no reason", withRun({ status: "skipped" })],
+    [
+      "a skipped run with no reason inside a container",
+      withRun({
+        nodes: { lint: { ...runWithoutStage, status: "skipped", agentState: undefined } },
+      }),
+    ],
     ["an empty repository map", { ...validState, workspace: { path: "/w", repositories: {} } }],
     [
       "an event handler module that is not absolute",

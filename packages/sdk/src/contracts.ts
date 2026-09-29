@@ -44,37 +44,49 @@ export const AgentStateSchema = z.strictObject({
   tokens: TokenUsageSchema.nullable(),
 });
 
-export const NodeRunSchema = z
-  .strictObject({
-    nodeRunId: NonEmptyStringSchema,
-    nodeId: NonEmptyStringSchema,
-    index: z.int().positive(),
-    status: z.enum(["running", "completed", "failed", "skipped", "cancelled", "interrupted"]),
-    startedAt: z.iso.datetime().nullable(),
-    completedAt: z.iso.datetime().nullable(),
-    result: z.string().max(500).nullable(),
-    artifacts: z.array(ArtifactRefSchema),
-    parentNodeRunId: NonEmptyStringSchema.optional(),
-    iteration: z.int().positive().optional(),
-    stage: SlugSchema.optional(),
-    agentState: AgentStateSchema.optional(),
-  })
-  .superRefine((run, context) => {
-    if ((run.stage === undefined) !== (run.agentState === undefined)) {
-      context.addIssue({
-        code: "custom",
-        path: ["agentState"],
-        message: "Stage and agentState must appear together",
-      });
-    }
-    if (run.status === "skipped" && !run.result?.trim()) {
-      context.addIssue({
-        code: "custom",
-        path: ["result"],
-        message: "A skipped run needs a reason",
-      });
-    }
-  });
+// A node's current run: state.json is the graph as it stands now, not its history (that is
+// event.jsonl). A loop, switch or include holds its children in `nodes`, keyed by the ids
+// workflow.yaml gives them; a loop holds only its current pass, numbered by `iteration`, with the
+// last finished pass's result in `output`.
+const NodeRunFieldsSchema = z.strictObject({
+  nodeRunId: NonEmptyStringSchema,
+  status: z.enum(["running", "completed", "failed", "skipped", "cancelled", "interrupted"]),
+  startedAt: z.iso.datetime().nullable(),
+  completedAt: z.iso.datetime().nullable(),
+  result: z.string().max(500).nullable(),
+  artifacts: z.array(ArtifactRefSchema),
+  input: z.json().optional(),
+  output: z.json().optional(),
+  branch: NonEmptyStringSchema.optional(),
+  iteration: z.int().positive().optional(),
+  stage: SlugSchema.optional(),
+  agentState: AgentStateSchema.optional(),
+});
+
+// `nodes` is spelled out because the type contains itself. zod's getter pattern infers it under
+// TypeScript 5.9, but TypeScript 7 types it as unknown in every package that imports the sdk.
+export type NodeRun = z.infer<typeof NodeRunFieldsSchema> & {
+  nodes?: Record<string, NodeRun> | undefined;
+};
+
+export const NodeRunSchema: z.ZodType<NodeRun> = NodeRunFieldsSchema.extend({
+  nodes: z.lazy(() => z.record(NonEmptyStringSchema, NodeRunSchema)).optional(),
+}).superRefine((run, context) => {
+  if ((run.stage === undefined) !== (run.agentState === undefined)) {
+    context.addIssue({
+      code: "custom",
+      path: ["agentState"],
+      message: "Stage and agentState must appear together",
+    });
+  }
+  if (run.status === "skipped" && !run.result?.trim()) {
+    context.addIssue({
+      code: "custom",
+      path: ["result"],
+      message: "A skipped run needs a reason",
+    });
+  }
+});
 
 export const PullRequestSchema = z.strictObject({
   id: NonEmptyStringSchema,
@@ -130,63 +142,26 @@ export const EventHandlerRefSchema = z.strictObject({
 });
 export const EventHandlerRefsSchema = z.record(EventTypeSchema, z.array(EventHandlerRefSchema));
 
-export const StateSchema = z
-  .strictObject({
-    schemaVersion: z.literal(1),
-    lastEventSeq: z.int().nonnegative(),
-    specName: SlugSchema,
-    harnessVersion: NonEmptyStringSchema,
-    workflow: WorkflowRefSchema,
-    input: JsonObjectSchema,
-    scope: NonEmptyStringSchema,
-    options: JsonObjectSchema,
-    startedAt: z.iso.datetime(),
-    completedAt: z.iso.datetime().nullable(),
-    outcome: z.enum(["completed", "failed", "cancelled"]).nullable(),
-    currentFile: NonEmptyStringSchema.nullable(),
-    workspace: WorkspaceSchema,
-    ticket: TicketSchema.optional(),
-    notification: NotificationSchema.optional(),
-    activeNodeRuns: z.array(NonEmptyStringSchema),
-    nodeRuns: z.record(NonEmptyStringSchema, NodeRunSchema),
-    custom: JsonObjectSchema.default({}),
-    eventHandlers: EventHandlerRefsSchema.default({}),
-  })
-  .superRefine((state, context) => {
-    const active = new Set(state.activeNodeRuns);
-    if (active.size !== state.activeNodeRuns.length) {
-      context.addIssue({
-        code: "custom",
-        path: ["activeNodeRuns"],
-        message: "Active IDs must be unique",
-      });
-    }
-    for (const [id, run] of Object.entries(state.nodeRuns)) {
-      if (id !== run.nodeRunId) {
-        context.addIssue({
-          code: "custom",
-          path: ["nodeRuns", id],
-          message: "Key must equal nodeRunId",
-        });
-      }
-      if (run.parentNodeRunId && !state.nodeRuns[run.parentNodeRunId]) {
-        context.addIssue({
-          code: "custom",
-          path: ["nodeRuns", id, "parentNodeRunId"],
-          message: "Parent run is missing",
-        });
-      }
-    }
-    for (const id of active) {
-      if (state.nodeRuns[id]?.status !== "running") {
-        context.addIssue({
-          code: "custom",
-          path: ["activeNodeRuns"],
-          message: `Run ${id} is not running`,
-        });
-      }
-    }
-  });
+export const StateSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  lastEventSeq: z.int().nonnegative(),
+  specName: SlugSchema,
+  harnessVersion: NonEmptyStringSchema,
+  workflow: WorkflowRefSchema,
+  input: JsonObjectSchema,
+  scope: NonEmptyStringSchema,
+  options: JsonObjectSchema,
+  startedAt: z.iso.datetime(),
+  completedAt: z.iso.datetime().nullable(),
+  outcome: z.enum(["completed", "failed", "cancelled"]).nullable(),
+  currentFile: NonEmptyStringSchema.nullable(),
+  workspace: WorkspaceSchema,
+  ticket: TicketSchema.optional(),
+  notification: NotificationSchema.optional(),
+  nodeRuns: z.record(NonEmptyStringSchema, NodeRunSchema),
+  custom: JsonObjectSchema.default({}),
+  eventHandlers: EventHandlerRefsSchema.default({}),
+});
 
 export const EventSchema = z
   .strictObject({
@@ -229,7 +204,6 @@ export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
 
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type AgentState = z.infer<typeof AgentStateSchema>;
-export type NodeRun = z.infer<typeof NodeRunSchema>;
 export type PullRequest = z.infer<typeof PullRequestSchema>;
 export type GitState = z.infer<typeof GitStateSchema>;
 export type Repository = z.infer<typeof RepositorySchema>;

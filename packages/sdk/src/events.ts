@@ -11,7 +11,6 @@ import {
   NonEmptyStringSchema,
   type Result,
   SlugSchema,
-  type State,
 } from "./contracts.ts";
 import type { IEventStore } from "./event-store.ts";
 import type { EventHandler, EventHandlers } from "./state.ts";
@@ -35,25 +34,48 @@ export const eventError = (kind: string, message: string, stack: string | undefi
 export type EventError = ReturnType<typeof eventError>;
 const nodeType = z.string().min(1);
 const attempts = z.int().nonnegative();
+// The ids of the loops, switches and includes a node sits inside, outermost first. Top-level nodes
+// leave it out. State is a tree keyed by node ids, so this says where in the tree the node goes.
+const placement = { parents: z.array(NonEmptyStringSchema).min(1).optional() };
+const output = z.json().optional();
 
 // Each event family adds the top-level fields its events must carry; other envelope
 // fields pass through, since EventSchema checks them when the store appends.
 const nodeEvent = <P extends z.ZodType>(payload: P) =>
   z.object({ nodeId: NonEmptyStringSchema, nodeRunId: NonEmptyStringSchema, payload });
 
-export const NodeStartedEvent = nodeEvent(z.strictObject({ nodeType }));
+export const NodeStartedEvent = nodeEvent(
+  z.strictObject({
+    nodeType,
+    input: z.json().optional(),
+    branch: NonEmptyStringSchema.optional(),
+    ...placement,
+  }),
+);
 export const NodeEndedEvent = nodeEvent(
-  z.strictObject({ nodeType, attempts, error: ErrorSchema.optional() }),
+  z.strictObject({
+    nodeType,
+    attempts,
+    error: ErrorSchema.optional(),
+    output,
+    artifacts: z.array(ArtifactRefSchema).optional(),
+    ...placement,
+  }),
 );
 export const NodeFailedEvent = nodeEvent(
-  z.strictObject({ nodeType, attempts, error: ErrorSchema }),
+  z.strictObject({ nodeType, attempts, error: ErrorSchema, output, ...placement }),
 );
 
-export const ArtifactCreatedEvent = nodeEvent(z.strictObject({ artifact: ArtifactRefSchema }));
+// A loop starting its next pass: the pass number, and the result of the pass that just ended.
+export const NodeIteratedEvent = nodeEvent(
+  z.strictObject({ nodeType, iteration: z.int().min(2), output: z.json(), ...placement }),
+);
 
 export const WorkflowStartedEvent = z.object({
   payload: z.strictObject({ workflow: SlugSchema, inputs: JsonObjectSchema }),
 });
+
+export const WorkflowEndedEvent = z.object({ payload: z.strictObject({}) });
 
 const workspaceEvent = <P extends z.ZodType>(payload: P) => z.object({ payload });
 
@@ -136,12 +158,14 @@ export const WorkspaceRemoveFailedEvent = workspaceEvent(WorkspaceFailedPayload)
 
 const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.started": WorkflowStartedEvent,
+  "workflow.completed": WorkflowEndedEvent,
+  "workflow.failed": WorkflowEndedEvent,
   "workflow.node.started": NodeStartedEvent,
   "workflow.node.completed": NodeEndedEvent,
   "workflow.node.skipped": NodeEndedEvent,
   "workflow.node.cancelled": NodeEndedEvent,
   "workflow.node.failed": NodeFailedEvent,
-  "artifact.created": ArtifactCreatedEvent,
+  "workflow.node.iterated": NodeIteratedEvent,
   "workspace.created": WorkspaceCreatedEvent,
   "workspace.create-failed": WorkspaceCreateFailedEvent,
   "workspace.repository.added": WorkspaceRepositoryAddedEvent,
@@ -202,33 +226,59 @@ export const runDirOf = (cwd: string, name: string): string => join(cwd, ".harne
 
 export type RunRef = Readonly<{ id: string; cwd: string; name: string }>;
 
-const findOrCreateRun = (state: State, nodeId: string, nodeRunId: string): NodeRun =>
-  state.nodeRuns[nodeRunId] ?? {
-    nodeRunId,
-    nodeId,
-    index: Object.values(state.nodeRuns).filter((run) => run.nodeId === nodeId).length + 1,
-    status: "running",
-    startedAt: null,
-    completedAt: null,
-    result: null,
-    artifacts: [],
-  };
+type Nodes = Readonly<Record<string, NodeRun>>;
 
-// activeNodeRuns follows status: a node is listed exactly while it is running.
-const saveRun = (state: State, run: NodeRun): State => {
-  const others = state.activeNodeRuns.filter((id) => id !== run.nodeRunId);
+// The node runs inside the containers named by `parents`: the read side of updateNode.
+export const findNodeRuns = (nodeRuns: Nodes, parents: readonly string[]): Nodes =>
+  parents.reduce<Nodes>(
+    (runs, id) => (Object.hasOwn(runs, id) ? (runs[id]?.nodes ?? {}) : {}),
+    nodeRuns,
+  );
+
+// Rewrites the entry for `nodeId` inside the containers named by `parents`, rebuilding each
+// container on the way down. A container missing from state means an event came before the event
+// that started its container, which the engines never emit, so it is refused.
+const updateNode = (
+  nodes: Nodes,
+  parents: readonly string[],
+  nodeId: string,
+  update: (current: NodeRun | undefined) => NodeRun,
+): Nodes => {
+  const [container, ...rest] = parents;
+  if (container === undefined) return { ...nodes, [nodeId]: update(nodes[nodeId]) };
+  const holder = nodes[container];
+  if (holder === undefined) {
+    throw new Error(`${nodeId}: its container ${container} is not in state.json`);
+  }
   return {
-    ...state,
-    nodeRuns: { ...state.nodeRuns, [run.nodeRunId]: run },
-    activeNodeRuns: run.status === "running" ? [...others, run.nodeRunId] : others,
+    ...nodes,
+    [container]: { ...holder, nodes: updateNode(holder.nodes ?? {}, rest, nodeId, update) },
   };
 };
 
+const CONTAINER_TYPES = new Set(["loop", "switch", "include"]);
+
+// A node started again (a new loop pass, or a re-run) replaces its entry: state keeps the latest run.
 const onStarted: EventHandler = (state, event) => {
   const parsed = NodeStartedEvent.safeParse(event);
   if (!parsed.success) return state;
-  const run = findOrCreateRun(state, parsed.data.nodeId, parsed.data.nodeRunId);
-  return saveRun(state, { ...run, status: "running", startedAt: event.ts });
+  const { nodeId, nodeRunId, payload } = parsed.data;
+  const run: NodeRun = {
+    nodeRunId,
+    status: "running",
+    startedAt: event.ts,
+    completedAt: null,
+    result: null,
+    artifacts: [],
+    ...(payload.input === undefined ? {} : { input: payload.input }),
+    ...(payload.branch === undefined ? {} : { branch: payload.branch }),
+    ...(payload.nodeType === "loop" ? { iteration: 1 } : {}),
+    ...(CONTAINER_TYPES.has(payload.nodeType) ? { nodes: {} } : {}),
+  };
+  return {
+    ...state,
+    nodeRuns: updateNode(state.nodeRuns, payload.parents ?? [], nodeId, () => run),
+  };
 };
 
 type EndStatus = "completed" | "failed" | "skipped" | "cancelled";
@@ -236,25 +286,45 @@ type EndStatus = "completed" | "failed" | "skipped" | "cancelled";
 const resultOf = (status: EndStatus, message: string | undefined): string | null =>
   message || (status === "skipped" ? "skipped by the workflow" : null);
 
+// A node can end without starting (skipped, cancelled, failed before it ran), so the end event
+// creates the entry when no entry holds this run.
 const onEnded =
   (status: EndStatus): EventHandler =>
   (state, event) => {
     const parsed = NodeEndedEvent.safeParse(event);
     if (!parsed.success) return state;
     const { nodeId, nodeRunId, payload } = parsed.data;
-    const run = findOrCreateRun(state, nodeId, nodeRunId);
-    const result = resultOf(status, payload.error?.message);
-    return saveRun(state, { ...run, status, completedAt: event.ts, result });
+    const end = (current: NodeRun | undefined): NodeRun => {
+      const run: NodeRun =
+        current?.nodeRunId === nodeRunId
+          ? current
+          : { nodeRunId, status, startedAt: null, completedAt: null, result: null, artifacts: [] };
+      return {
+        ...run,
+        ...(payload.output === undefined ? {} : { output: payload.output }),
+        artifacts: payload.artifacts ?? run.artifacts,
+        status,
+        completedAt: event.ts,
+        result: resultOf(status, payload.error?.message),
+      };
+    };
+    return { ...state, nodeRuns: updateNode(state.nodeRuns, payload.parents ?? [], nodeId, end) };
   };
 
-const onArtifactCreated: EventHandler = (state, event) => {
-  const parsed = ArtifactCreatedEvent.safeParse(event);
+// The next pass of a loop starts empty: the last pass's children are history now (event.jsonl).
+const onIterated: EventHandler = (state, event) => {
+  const parsed = NodeIteratedEvent.safeParse(event);
   if (!parsed.success) return state;
-  const { nodeRunId, payload } = parsed.data;
-  const run = state.nodeRuns[nodeRunId];
-  if (run === undefined) return state;
-  const others = run.artifacts.filter((artifact) => artifact.name !== payload.artifact.name);
-  return saveRun(state, { ...run, artifacts: [...others, payload.artifact] });
+  const { nodeId, payload } = parsed.data;
+  const nextPass = (current: NodeRun | undefined): NodeRun => {
+    if (current === undefined)
+      throw new Error(`${nodeId}: a loop that never started cannot iterate`);
+    return { ...current, iteration: payload.iteration, output: payload.output, nodes: {} };
+  };
+  return {
+    ...state,
+    nodeRuns: updateNode(state.nodeRuns, payload.parents ?? [], nodeId, nextPass),
+  };
 };
 
 type WorkspaceRepository = z.infer<typeof WorkspaceRepositorySchema>;
@@ -303,14 +373,20 @@ const onWorkflowStarted: EventHandler = (state, event) => {
   return { ...state, startedAt: event.ts, input: parsed.data.payload.inputs };
 };
 
+const onWorkflowEnded =
+  (outcome: "completed" | "failed"): EventHandler =>
+  (state, event) => ({ ...state, outcome, completedAt: event.ts });
+
 export const builtInHandlers: EventHandlers = {
   "workflow.started": onWorkflowStarted,
+  "workflow.completed": onWorkflowEnded("completed"),
+  "workflow.failed": onWorkflowEnded("failed"),
   "workflow.node.started": onStarted,
   "workflow.node.completed": onEnded("completed"),
   "workflow.node.failed": onEnded("failed"),
   "workflow.node.skipped": onEnded("skipped"),
   "workflow.node.cancelled": onEnded("cancelled"),
-  "artifact.created": onArtifactCreated,
+  "workflow.node.iterated": onIterated,
   "workspace.created": onWorkspaceCreated,
   "workspace.repository.added": onRepositoryAdded,
   "workspace.repository.removed": onRepositoryRemoved,

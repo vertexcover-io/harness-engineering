@@ -1,17 +1,18 @@
-import type { JsonValue } from "@harness/sdk";
-import { NodeFailure, type NodeRecord } from "./types.ts";
+import type { JsonValue, NodeRun } from "@harness/sdk";
+import { NodeFailure } from "./types.ts";
 
-export type NodeView = Readonly<Pick<NodeRecord, "status" | "input" | "output">>;
+// What an expression can read of a node, from its node run in state.json.
+export type NodeResult = Readonly<Pick<NodeRun, "status" | "input" | "output">>;
 
 export type IterationView = Readonly<{
   index: number;
   previous: JsonValue;
-  nodes: Readonly<Record<string, NodeView>>;
+  nodes: Readonly<Record<string, NodeResult>>;
 }>;
 
 export type Scope = Readonly<{
   inputs: JsonValue;
-  nodes: Readonly<Record<string, NodeView>>;
+  nodes: Readonly<Record<string, NodeResult>>;
   iteration?: IterationView;
 }>;
 
@@ -74,7 +75,7 @@ const descend = (value: JsonValue, keys: readonly string[], label: string): Json
   }, value);
 
 const readNode = (
-  views: Readonly<Record<string, NodeView>>,
+  views: Readonly<Record<string, NodeResult>>,
   [id = "", field, ...rest]: readonly string[],
   label: string,
 ): JsonValue => {

@@ -125,7 +125,6 @@ export const createState = async ({
       path: cwd,
       repositories: { [toRepoId(basename(cwd))]: { path: cwd, git: await readGit(cwd) } },
     },
-    activeNodeRuns: [],
     nodeRuns: {},
     custom: {},
     eventHandlers,
@@ -221,13 +220,21 @@ const tryEvent = async (
 
 // Stores an event in a run's own folder, CWD/.harness/NAME/event.jsonl, then brings its
 // state.json up to date, so every reader of the state sees the change. The state lock is held
-// throughout, so the event is checked against the same state it is then applied to.
-export const emitRunEvent = (run: RunRef, input: EmitInput): Promise<Result<Event>> => {
+// throughout, so the event is checked against the same state it is then applied to. It also hands
+// back the state.json it wrote (null when the folder has none yet), so a caller storing many
+// events need not read the log again after each one.
+export const appendRunEvent = (
+  run: RunRef,
+  input: EmitInput,
+): Promise<Result<Readonly<{ event: Event; state: State | null }>>> => {
   const runDir = runDirOf(run.cwd, run.name);
   const store = jsonlEventStore(runDir);
   return withLock(lockOf(runDir), async () => {
     const current = await readState(runDir);
-    if (current === null) return emitEvent(store, run.id, input);
+    if (current === null) {
+      const stored = await emitEvent(store, run.id, input);
+      return stored.ok ? { ok: true, value: { event: stored.value, state: null } } : stored;
+    }
     const extensions = await loadEventHandlers(current.eventHandlers);
     if (!extensions.ok) return extensions;
     const draft = { ...input, id: input.id ?? crypto.randomUUID() };
@@ -241,6 +248,11 @@ export const emitRunEvent = (run: RunRef, input: EmitInput): Promise<Result<Even
     if (synced instanceof Error) {
       return { ok: false, error: `event stored, but state.json not updated: ${synced.message}` };
     }
-    return stored;
+    return { ok: true, value: { event: stored.value, state: synced } };
   });
+};
+
+export const emitRunEvent = async (run: RunRef, input: EmitInput): Promise<Result<Event>> => {
+  const appended = await appendRunEvent(run, input);
+  return appended.ok ? { ok: true, value: appended.value.event } : appended;
 };

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -11,13 +10,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createState, emitRunEvent, jsonlEventStore, type RunRef, runDirOf } from "@harness/sdk";
+import { createState, jsonlEventStore, type RunRef, runDirOf } from "@harness/sdk";
 import { captureLogger } from "../logging.ts";
 import { type Baseline, captureBaseline } from "./baseline.ts";
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "baseline-")));
-
-const NODE = { nodeId: "baseline", nodeRunId: "baseline" };
 
 type Setup = Readonly<{ root: string; run: RunRef; runDir: string }>;
 
@@ -33,25 +30,17 @@ const setup = async (config: object, { state = true } = {}): Promise<Setup> => {
   git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
   writeFileSync(join(runDir, "workflow.yaml"), "name: task\nnodes: []\n");
   await createState({ runDir, harnessVersion: "1.0.0", eventHandlers: {} });
-  await emitRunEvent(run, {
-    type: "workflow.node.started",
-    source: "test",
-    ...NODE,
-    payload: { nodeType: "exec" },
-  });
   return { root, run, runDir };
 };
 
 const capture = (
   { root, run }: Setup,
-  options: { packages?: readonly string[]; dir?: string; nodeRunId?: string } = {},
+  options: { packages?: readonly string[]; dir?: string } = {},
   log = captureLogger().log,
 ) =>
   captureBaseline({
     root,
     run,
-    ...NODE,
-    nodeRunId: options.nodeRunId ?? NODE.nodeRunId,
     packages: options.packages ?? [],
     dir: options.dir,
     log,
@@ -62,8 +51,7 @@ const baselineOf = (runDir: string): Baseline =>
 
 const stateOf = (runDir: string) => JSON.parse(readFileSync(join(runDir, "state.json"), "utf8"));
 
-const artifactEvents = async (runDir: string) =>
-  (await jsonlEventStore(runDir).read()).filter((event) => event.type === "artifact.created");
+const eventsIn = async (runDir: string) => jsonlEventStore(runDir).read();
 
 const pkg = (baseline: string | object | null | undefined, path = ".") => ({
   path,
@@ -71,7 +59,7 @@ const pkg = (baseline: string | object | null | undefined, path = ".") => ({
 });
 
 describe("captureBaseline", () => {
-  test("BL1: the workspace and package scripts combine into one file, recorded on the node run", async () => {
+  test("BL1: the workspace and package scripts combine into one file, and no event is recorded", async () => {
     const run = await setup({
       baseline: `echo '{"a":1}'`,
       packages: { core: pkg(`echo '{"b":2}'`) },
@@ -88,9 +76,7 @@ describe("captureBaseline", () => {
       value: { path: join(run.runDir, "artifacts", "baseline.json"), baseline: expected },
     });
     expect(baselineOf(run.runDir)).toEqual(expected);
-    expect(stateOf(run.runDir).nodeRuns.baseline.artifacts).toEqual([
-      { name: "baseline", path: "artifacts/baseline.json" },
-    ]);
+    expect(await eventsIn(run.runDir)).toEqual([]);
   });
 
   test("BL2: text output is stored trimmed", async () => {
@@ -167,7 +153,7 @@ describe("captureBaseline", () => {
     });
   });
 
-  test("BL5: a command that cannot start stops with CONFIG_STALE and writes and records nothing", async () => {
+  test("BL5: a command that cannot start stops with CONFIG_STALE and writes nothing", async () => {
     const run = await setup({ packages: { core: pkg("definitely-not-a-command") } });
 
     const result = await capture(run);
@@ -177,7 +163,6 @@ describe("captureBaseline", () => {
     expect(result.error.message).toContain("definitely-not-a-command");
     expect(result.error.message).toContain("core");
     expect(existsSync(join(run.runDir, "artifacts", "baseline.json"))).toBe(false);
-    expect(await artifactEvents(run.runDir)).toEqual([]);
   });
 
   test.each([
@@ -241,14 +226,13 @@ describe("captureBaseline", () => {
     expect(unknown.error.message).toContain("nope");
   });
 
-  test("BL8: with no baseline script anywhere, nothing runs, is written or recorded", async () => {
+  test("BL8: with no baseline script anywhere, nothing runs or is written", async () => {
     const run = await setup({ packages: { core: pkg(undefined) } });
 
     const result = await capture(run);
 
     expect(result).toEqual({ ok: true, value: null });
     expect(existsSync(join(run.runDir, "artifacts", "baseline.json"))).toBe(false);
-    expect(await artifactEvents(run.runDir)).toEqual([]);
   });
 
   test("BL9: --dir wins over state.json's workspace.path", async () => {
@@ -325,37 +309,6 @@ describe("captureBaseline", () => {
       error: { code: "WORKTREE_MISSING", message: `no run folder at ${gone}` },
     });
     expect(existsSync(join(run.runDir, "artifacts", "baseline.json"))).toBe(false);
-  });
-
-  test("BL14: a node run not in state.json stops with NODE_RUN_UNKNOWN before anything runs", async () => {
-    const run = await setup({ baseline: "touch ran" });
-
-    const result = await capture(run, { nodeRunId: "nope" });
-
-    expect(result).toEqual({
-      ok: false,
-      error: { code: "NODE_RUN_UNKNOWN", message: "no node run nope in run feat-x" },
-    });
-    expect(existsSync(join(run.root, "ran"))).toBe(false);
-  });
-
-  test("BL16: when the event cannot be recorded, it stops with EVENT_FAILED and keeps baseline.json", async () => {
-    const run = await setup({ baseline: "echo hi" });
-    chmodSync(join(run.runDir, "event.jsonl"), 0o444);
-
-    const result = await capture(run);
-
-    if (result.ok) throw new Error("expected a failure");
-    expect(result.error.code).toBe("EVENT_FAILED");
-    expect(baselineOf(run.runDir).workspace?.output).toBe("hi");
-  });
-
-  test("BL14: with --dir and no state.json, the node run is not checked", async () => {
-    const run = await setup({ baseline: "echo hi" }, { state: false });
-
-    const result = await capture(run, { dir: tempDir(), nodeRunId: "nope" });
-
-    expect(result.ok).toBe(true);
   });
 
   test("BL9: in multi layout a package script runs in its own folder under the workspace", async () => {

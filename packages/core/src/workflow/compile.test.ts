@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compileWorkflow } from "./compile.ts";
 import { evaluateBoolean, resolveValue, type Scope } from "./evaluate.ts";
+import { DEMO_STAGES, writeStages } from "./test-stages.ts";
 import { NodeFailure, WorkflowError } from "./types.ts";
 
 let workflowCount = 0;
@@ -80,6 +81,17 @@ describe("compile", () => {
     );
     await expect(compile(fn)).resolves.toBeDefined();
     await expect(compile(workflow(script("a")))).resolves.toBeDefined();
+  });
+
+  test("IW7 — an exec node runs inline unless it asks for background, and any other mode is rejected", async () => {
+    const [plain, background] = await Promise.all([
+      compile(workflow(script("a"))),
+      compile(workflow(script("a", "\n    mode: background"))),
+    ]);
+    expect(plain.nodes[0]).toMatchObject({ mode: "inline" });
+    expect(background.nodes[0]).toMatchObject({ mode: "background" });
+    const error = await rejection(workflow(script("a", "\n    mode: later")));
+    expect(error.code).toBe("schema");
   });
 
   test("SC5 — two nodes with the same id are rejected", async () => {
@@ -361,30 +373,36 @@ describe("includes, loops and agents", () => {
     expect(error.message).toContain("missing.yml");
   });
 
-  test("SC49 — editing an included workflow changes the parent's hash", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "wf-hash-"));
+  test("SC49 — an include node holds the included workflow, compiled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-include-"));
     const root = writeIn(dir, "root.yml", workflow(includeNode("a", "./child.yml")));
-    writeIn(dir, "child.yml", workflow(script("x")));
-    const first = await compileWorkflow(root, { cwd: dir });
-    writeIn(dir, "child.yml", workflow(script("y")));
-    const second = await compileWorkflow(root, { cwd: dir });
-    expect(first.hash).not.toBe(second.hash);
+    writeIn(
+      dir,
+      "child.yml",
+      `name: child\ninputs:\n  word: { type: string, default: hi }\nnodes:${script("x")}\n`,
+    );
+    const [include] = (await compileWorkflow(root, { cwd: dir })).nodes;
+    expect(include).toMatchObject({
+      type: "include",
+      plan: { name: "child", inputs: { word: { type: "string" } }, nodes: [{ id: "x" }] },
+    });
   });
 
   test("SC50 — an agent node needs a stage or a prompt", async () => {
     const agent = (fields: string) =>
-      workflow(`\n  - id: a\n    type: agent\n    adapter: default\n    input: null${fields}`);
+      workflow(`\n  - id: a\n    type: agent\n    input: null${fields}`);
     for (const fields of [
       "",
       "\n    prompt: hi\n    command: go",
       "\n    prompt: hi\n    skills: [x]",
+      "\n    prompt: hi\n    adapter: claude",
     ]) {
       expect((await rejection(agent(fields))).code).toBe("schema");
     }
     for (const fields of [
       "\n    prompt: hi",
-      "\n    stage: review",
-      "\n    stage: review\n    prompt: hi",
+      "\n    stage: create-workspace",
+      "\n    stage: create-workspace\n    prompt: hi",
     ]) {
       await expect(compile(agent(fields))).resolves.toBeDefined();
     }
@@ -404,5 +422,147 @@ describe("includes, loops and agents", () => {
       `\n  - id: fix\n    type: loop\n    maxIterations: 3\n    until: "{{ inputs.n + 1 }}"\n    input: null\n    nodes:${script("step").replaceAll("\n  ", "\n      ")}`,
     );
     expect((await rejection(loop)).code).toBe("invalid-expression");
+  });
+});
+
+const stageNode = (id: string, stage: string, extra = ""): string => `
+  - { id: ${id}, type: agent, stage: ${stage}, input: {}${extra} }`;
+
+// Compiles SOURCE in a fresh project whose stages/ folder holds the demo stages.
+const compileWithStages = async (source: string) => {
+  const project = mkdtempSync(join(tmpdir(), "wf-project-"));
+  writeStages(join(project, "stages"), DEMO_STAGES);
+  const path = join(project, "workflow.yml");
+  writeFileSync(path, source);
+  return { project, plan: await compileWorkflow(path, { cwd: project }) };
+};
+
+const stagesRejection = async (source: string): Promise<WorkflowError> => {
+  try {
+    await compileWithStages(source);
+  } catch (error) {
+    if (error instanceof WorkflowError) return error;
+    throw error;
+  }
+  throw new Error("expected compileWorkflow to reject");
+};
+
+describe("compile with stages", () => {
+  test("IW31 — a stage that needs an artifact compiles when it depends on the node producing it, and the plan lists each stage's artifacts", async () => {
+    const { project, plan } = await compileWithStages(
+      workflow(
+        `${stageNode("make", "stages/producer")}${stageNode("use", "stages/consumer", ", dependsOn: [make]")}`,
+      ),
+    );
+    const [make, use] = plan.nodes;
+    expect(make).toMatchObject({ stage: { produces: [{ artifact: "plan" }] } });
+    expect(use).toMatchObject({
+      stage: {
+        ref: "stages/consumer",
+        name: "consumer",
+        skill: join(project, "stages/consumer/SKILL.md"),
+        consumes: [{ artifact: "plan" }],
+      },
+    });
+  });
+
+  test("IW32 — a stage that needs an artifact no node before it produces is rejected, naming the stage, the artifact and the fix", async () => {
+    const error = await stagesRejection(
+      workflow(`${stageNode("use", "stages/consumer")}${stageNode("make", "stages/producer")}`),
+    );
+    expect(error.code).toBe("missing-artifact");
+    expect(error.message).toContain("use");
+    expect(error.message).toContain("plan");
+    expect(error.message).toContain("dependsOn");
+  });
+
+  test.each([
+    [
+      "a consumer inside a loop that depends on the producer",
+      `${stageNode("make", "stages/producer")}
+  - id: fix
+    type: loop
+    dependsOn: [make]
+    until: "{{ true }}"
+    maxIterations: 1
+    input: {}
+    nodes:${stageNode("use", "stages/consumer").replaceAll("\n  ", "\n      ")}`,
+    ],
+    [
+      "a consumer depending on a switch whose case holds the producer",
+      `
+  - id: pick
+    type: switch
+    expression: "{{ 'a' }}"
+    input: {}
+    cases:
+      - id: a
+        value: a
+        nodes:${stageNode("make", "stages/producer").replaceAll("\n  ", "\n          ")}${stageNode("use", "stages/consumer", ", dependsOn: [pick]")}`,
+    ],
+    ["a stage whose artifact is optional", stageNode("read", "stages/reader")],
+  ])(
+    "IW33 — artifacts reach every node that is guaranteed to come after their producer: %s",
+    async (_label, nodes) => {
+      await expect(compileWithStages(workflow(nodes))).resolves.toBeDefined();
+    },
+  );
+
+  test("IW34 — a stage name reads the harness's own skills folder, a stage path reads the project root, and a stage in neither is rejected", async () => {
+    const { plan } = await compileWithStages(workflow(stageNode("ws", "create-workspace")));
+    expect(plan.nodes[0]).toMatchObject({
+      stage: { skill: expect.stringMatching(/\/skills\/create-workspace\/SKILL\.md$/) },
+    });
+    for (const stage of ["nowhere", "stages/nowhere"]) {
+      const error = await stagesRejection(workflow(stageNode("x", stage)));
+      expect(error.code).toBe("missing-stage");
+      expect(error.message).toContain(stage);
+    }
+  });
+});
+
+describe("compiled node placement", () => {
+  test("IW42 — every compiled node lists the ids of the containers around it, through switches, loops and includes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wf-parents-"));
+    writeIn(dir, "child.yml", workflow(script("c")));
+    const root = writeIn(
+      dir,
+      "root.yml",
+      `name: t
+nodes:
+  - id: top
+    type: exec
+    runtime: sh
+    script: "true"
+    input: null
+  - id: fix
+    type: loop
+    until: "{{ true }}"
+    maxIterations: 1
+    input: null
+    nodes:
+      - id: pick
+        type: switch
+        expression: "{{ 'a' }}"
+        input: null
+        cases:
+          - id: a
+            value: a
+            nodes:
+              - { id: sub, type: include, workflow: ./child.yml, input: {} }
+`,
+    );
+    const plan = await compileWorkflow(root, { cwd: dir });
+    const [top, fix] = plan.nodes;
+    expect(top?.parents).toEqual([]);
+    expect(fix?.parents).toEqual([]);
+    if (fix?.type !== "loop") throw new Error("fix is not a loop");
+    const [pick] = fix.nodes;
+    expect(pick?.parents).toEqual(["fix"]);
+    if (pick?.type !== "switch") throw new Error("pick is not a switch");
+    const [sub] = pick.cases[0]?.nodes ?? [];
+    expect(sub?.parents).toEqual(["fix", "pick"]);
+    if (sub?.type !== "include") throw new Error("sub is not an include");
+    expect(sub.plan.nodes[0]?.parents).toEqual(["fix", "pick", "sub"]);
   });
 });
