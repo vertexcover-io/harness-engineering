@@ -4,6 +4,7 @@ import { fail } from "./client.ts";
 import { doctorCommand } from "./doctor.ts";
 import { runCommand } from "./run.ts";
 import { serverCommand } from "./server.ts";
+import { verifyCommand } from "./verify.ts";
 
 await new Command()
   .name("harness")
@@ -11,5 +12,6 @@ await new Command()
   .addCommand(doctorCommand())
   .addCommand(runCommand())
   .addCommand(serverCommand())
+  .addCommand(verifyCommand())
   .parseAsync(process.argv)
   .catch((error: unknown) => fail(error instanceof Error ? error : new Error(String(error))));
