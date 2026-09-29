@@ -375,6 +375,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/implement` | Manual coding entry point: TDD + code-quality, review when green |
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md, then applies the fixes |
 | `/git-commit` | Groups changes into logical conventional commits |
+| `/git-pr` | Creates or updates PR titles and descriptions with visual outlines and validation |
 | `/resolve-merge-conflict` | Resolves merge and rebase conflicts, locally or on an open PR |
 | `/tech-debt-finder` | Finds code smells, creates GitHub issues |
 | `/coverage-guard` | Enforces minimum test coverage |
@@ -408,6 +409,7 @@ harness/
     ├── coverage-guard/
     ├── doc-quality-guard/
     ├── git-commit/
+    ├── git-pr/
     ├── harness-retro/
     ├── implement/
     ├── learn/

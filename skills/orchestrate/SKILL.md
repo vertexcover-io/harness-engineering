@@ -49,7 +49,7 @@ precisely to open one. The commit-pr stage tells those apart by looking, so neit
 | Verify | `verify` | sub-agent, plus a coder fix pass per auto-fix round on `FAIL` | proof-report.html | [stage-verify.md](references/stage-verify.md) |
 | Quality Gate | `quality-gate` | sub-agent | the gate report | [stage-quality-gate.md](references/stage-quality-gate.md) |
 | Sync Docs | `sync-docs` | main | updated docs | [stage-sync-docs.md](references/stage-sync-docs.md) |
-| Commit & PR | `commit-pr` | main | commits, PR URL | [stage-commit-pr.md](references/stage-commit-pr.md) |
+| Commit & PR | `commit-pr` | main | commits, PR URL | [stage-commit.md](references/stage-commit.md) |
 | Retro | `retro` | sub-agent | retro/report.md | [stage-retro.md](references/stage-retro.md) |
 
 The id is the stage's name everywhere else: its config key, its dashboard node, and the `--stage`
