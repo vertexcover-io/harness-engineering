@@ -7,6 +7,7 @@ import { type Event, type JsonValue, type State, StateSchema } from "./contracts
 import { type IEventStore, jsonlEventStore } from "./event-store.ts";
 import { runDirOf } from "./events.ts";
 import {
+  appendRunEventIf,
   createState,
   type EventHandler,
   type EventHandlers,
@@ -16,6 +17,47 @@ import {
   syncState,
   toRepoId,
 } from "./state.ts";
+
+test("conditional event append admits only one caller for the same state", async () => {
+  const { run, runDir } = await runWithHandlers({});
+  const append = (source: string) =>
+    appendRunEventIf(
+      run,
+      { type: "custom.once.note", source, payload: null },
+      (state) => state?.lastEventSeq === 0,
+    );
+  const results = await Promise.all([append("first"), append("second")]);
+  expect(results.filter((result) => result.ok)).toHaveLength(1);
+  expect(results.find((result) => !result.ok)).toMatchObject({
+    ok: false,
+    error: "condition-failed",
+  });
+  expect(await jsonlEventStore(runDir).read()).toHaveLength(1);
+});
+
+test("conditional append checks the event log when state.json is behind", async () => {
+  const { run, runDir, stateJson } = await runWithHandlers({});
+  const store = jsonlEventStore(runDir);
+  const prior = await store.append({
+    id: "already-stored",
+    ts: new Date().toISOString(),
+    runId: run.id,
+    type: "custom.once.note",
+    source: "prior",
+    payload: null,
+  });
+  expect(prior.ok).toBe(true);
+
+  const attempted = await appendRunEventIf(
+    run,
+    { type: "custom.once.note", source: "late", payload: null },
+    (state) => state?.lastEventSeq === 0,
+  );
+
+  expect(attempted).toMatchObject({ ok: false, error: "condition-failed" });
+  expect(await store.read()).toHaveLength(1);
+  expect((await stateJson()).lastEventSeq).toBe(1);
+});
 
 const seed: State = {
   schemaVersion: 1,

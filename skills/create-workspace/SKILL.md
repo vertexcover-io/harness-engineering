@@ -12,6 +12,7 @@ inputs:
 outputs:
   description: Layout, branch, workspace folder and the repos in it.
   schema: create-workspace.output.v1
+  module: scripts/workspace.ts
 protocols: []
 scopes: []
 references:

@@ -2,8 +2,10 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { JsonValue } from "@harness/sdk";
 import { parseDocument } from "yaml";
+import { z } from "zod";
 import { findStageDir, loadSkill } from "../stage.ts";
 import { expressionPaths, isWholeExpression } from "./evaluate.ts";
+import { importModule } from "./executors.ts";
 import {
   type IncludeNode,
   type LoopNode,
@@ -198,16 +200,47 @@ const readWorkflow = async (path: string): Promise<string> => {
 const MAX_INCLUDE_DEPTH = 8;
 const MAX_EXPANDED_NODES = 1000;
 
+const resolveOutputSchema = async (
+  ref: Readonly<{ module?: string | undefined; zodSchema: string }>,
+  cwd: string,
+  location: string,
+): Promise<z.ZodType> => {
+  if (ref.module === undefined) {
+    if (ref.zodSchema === "Json") return z.json();
+    throw new WorkflowError("missing-schema", `${location}: output.module is required`, location);
+  }
+  const loaded = await importModule(ref.module, cwd);
+  const registry = z.record(z.string(), z.unknown()).safeParse(loaded.schemas);
+  const schema = registry.success ? registry.data[ref.zodSchema] : undefined;
+  if (schema instanceof z.ZodType) return schema;
+  throw new WorkflowError(
+    "missing-schema",
+    `${location}: ${ref.module} has no schemas["${ref.zodSchema}"]`,
+    location,
+  );
+};
+
 const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
   const dir = findStageDir(ref, cwd);
   const stage = await loadSkill(dir);
   if (!stage.ok) throw new WorkflowError("missing-stage", `stage ${ref}: ${stage.error}`, ref);
+  const { outputs } = stage.value;
+  if (outputs.module === undefined) {
+    throw new WorkflowError("missing-schema", `stage ${ref}: outputs.module is required`, ref);
+  }
+  const schema = await resolveOutputSchema(
+    { module: outputs.module, zodSchema: outputs.schema },
+    dir,
+    `stage ${ref}`,
+  );
   return {
     ref,
     name: stage.value.name,
     skill: join(dir, "SKILL.md"),
     consumes: stage.value.consumes ?? [],
     produces: stage.value.produces ?? [],
+    outputSchemaName: outputs.schema,
+    outputSchema: schema,
   };
 };
 
@@ -245,8 +278,28 @@ async function compileNode(node: WorkflowNode, at: Compiling): Promise<PlanNode>
   }
   if (node.type === "agent") {
     const { stage, ...rest } = node;
-    if (stage === undefined) return { ...rest, parents };
+    if (stage === undefined) {
+      const outputSchema =
+        node.output === undefined
+          ? undefined
+          : await resolveOutputSchema(node.output, at.cwd, node.id);
+      return { ...rest, parents, outputSchema };
+    }
+    if (node.output !== undefined) {
+      throw new WorkflowError(
+        "schema",
+        `${node.id}: stage output schema is declared in SKILL.md; remove the node output override`,
+        node.id,
+      );
+    }
     return { ...rest, parents, stage: await loadStage(stage, at.cwd) };
+  }
+  if (node.type === "exec") {
+    const outputSchema =
+      node.output === undefined
+        ? undefined
+        : await resolveOutputSchema(node.output, at.cwd, node.id);
+    return { ...node, parents, outputSchema };
   }
   if (node.type !== "switch") return { ...node, parents };
   const { cases, default: fallback, ...rest } = node;
@@ -288,11 +341,43 @@ async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
   return Object.freeze({ name: workflow.name, inputs: workflow.inputs, nodes });
 }
 
-// The artifacts written once `node` has ended: its own stage's, and those of every node inside it.
-const listProducedArtifacts = (node: PlanNode): readonly string[] => [
-  ...(node.type === "agent" ? (node.stage?.produces ?? []) : []).map((p) => p.artifact),
-  ...listChildren(node).flatMap((nodes) => nodes.flatMap(listProducedArtifacts)),
-];
+const guaranteedInScope = (
+  nodes: readonly PlanNode[],
+  requiredOnly: boolean,
+): readonly string[] => {
+  const completed = new Set<string>();
+  const artifacts = new Set<string>();
+  for (const node of nodes) {
+    const canSkip =
+      (node.type !== "switch" && node.when !== undefined) ||
+      node.dependsOn.some((dependency) => !completed.has(dependency)) ||
+      (node.type === "switch" && node.default === undefined);
+    if (canSkip) continue;
+    completed.add(node.id);
+    for (const artifact of listProducedArtifacts(node, requiredOnly)) artifacts.add(artifact);
+  }
+  return [...artifacts];
+};
+
+// Artifacts guaranteed when a node completes, even if it contains conditional children.
+function listProducedArtifacts(node: PlanNode, requiredOnly = false): readonly string[] {
+  if (node.type === "agent") {
+    return (node.stage?.produces ?? [])
+      .filter((produced) => !requiredOnly || !produced.optional)
+      .map((produced) => produced.artifact);
+  }
+  if (node.type === "switch") {
+    const branches = [
+      ...node.cases.map((branch) => branch.nodes),
+      ...(node.default === undefined ? [] : [node.default]),
+    ];
+    const [first, ...rest] = branches.map((branch) => guaranteedInScope(branch, requiredOnly));
+    return first?.filter((artifact) => rest.every((branch) => branch.includes(artifact))) ?? [];
+  }
+  if (node.type === "include") return guaranteedInScope(node.plan.nodes, requiredOnly);
+  if (node.type === "loop") return guaranteedInScope(node.nodes, requiredOnly);
+  return [];
+}
 
 // A stage may start only once every artifact it needs is written, so each one must come from a
 // node it depends on, directly or through a chain, or from a node its container depends on.
@@ -304,7 +389,10 @@ const checkArtifacts = (
   const ancestors = ancestorsOf(nodes);
   for (const node of nodes) {
     const deps = nodes.filter((candidate) => ancestors.get(node.id)?.has(candidate.id));
-    const before = new Set([...written, ...deps.flatMap(listProducedArtifacts)]);
+    const before = new Set([
+      ...written,
+      ...deps.flatMap((dep) => listProducedArtifacts(dep, true)),
+    ]);
     const stage = node.type === "agent" ? node.stage : undefined;
     const missing = stage?.consumes.find((c) => !c.optional && !before.has(c.artifact));
     if (missing !== undefined) {
@@ -312,7 +400,9 @@ const checkArtifacts = (
       const fix =
         makers.length === 0
           ? "no node in this scope produces it"
-          : `add dependsOn: [${makers.map((n) => n.id).join(", ")}]`;
+          : makers.every((maker) => !listProducedArtifacts(maker, true).includes(missing.artifact))
+            ? "all producers declare it optional; mark the consume optional or require production"
+            : `add dependsOn: [${makers.map((n) => n.id).join(", ")}]`;
       throw new WorkflowError(
         "missing-artifact",
         `${scope}${node.id} needs artifact "${missing.artifact}", but no node it depends on produces it; ${fix}`,

@@ -27,6 +27,7 @@ Explain reasoning for non-obvious decisions
 - Before implementing, check `.harness/knowledge/lessons/` for relevant gotchas and patterns
 - Search by tags/keywords related to the feature area: `Grep pattern="<keyword>" path=.harness/knowledge/lessons/`
 - Critical gotchas that caused pipeline failures:
+  - In a nested worktree, run `bun install --frozen-lockfile` before testing. Otherwise Bun may resolve workspace packages from the parent checkout and test stale code.
   <!-- Updated automatically by learn skill -->
 
 ## Codex compatibility

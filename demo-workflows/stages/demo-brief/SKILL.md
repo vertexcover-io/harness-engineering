@@ -10,6 +10,7 @@ inputs:
 outputs:
   description: Where the brief was written.
   schema: demo-brief.output.v1
+  module: ../schemas.ts
 produces:
   - artifact: brief
 protocols: []
