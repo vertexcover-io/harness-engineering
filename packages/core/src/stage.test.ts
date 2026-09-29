@@ -226,6 +226,24 @@ describe("resolveReference", () => {
   });
 });
 
+describe("a stage path", () => {
+  test("WS35 — skill ref on a stage with a / reads its reference from the project folder, with the extension set for its skill name", async () => {
+    const root = join(dir, "project");
+    await writeFiles(join(root, "stages", "demo"), {
+      "SKILL.md": `---\n${demoFrontmatter}---\n`,
+      "notes.md": "project text\n",
+    });
+    await writeFiles(root, { "ext/notes.md": "extension text\n" });
+    const extensions = { demo: { references: { notes: { extend: "ext/notes.md" } } } };
+    const config = ConfigSchema.parse({ version: 2, extensions });
+    const options = { skillsDir: join(dir, "no-skills"), root, config, skill: "stages/demo" };
+    expect(await resolveReference({ ...options, ref: "notes" })).toEqual({
+      ok: true,
+      value: "project text\n\nextension text\n",
+    });
+  });
+});
+
 describe("resolveExtension", () => {
   test.each([
     ["extensions.demo.skill set", { demo: { skill: "ext/demo.md" } }, "skill rules\n"],

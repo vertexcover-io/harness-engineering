@@ -36,7 +36,6 @@ const seed: State = {
       app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
     },
   },
-  activeNodeRuns: [],
   nodeRuns: {},
   custom: {},
   eventHandlers: {},
@@ -119,11 +118,11 @@ describe("projectEvents", () => {
 
   test("a handler that returns an invalid state throws", () => {
     const broken: EventHandlers = {
-      "workflow.broken": (state) => ({ ...state, activeNodeRuns: ["ghost"] }),
+      "workflow.broken": (state) => ({ ...state, specName: "Not A Slug" }),
     };
     expect(() =>
       projectEvents({ state: seed, events: [event(1, "workflow.broken")], handlers: broken }),
-    ).toThrow(/ghost/);
+    ).toThrow(/specName/);
   });
 });
 

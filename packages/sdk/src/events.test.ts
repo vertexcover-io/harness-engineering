@@ -156,7 +156,6 @@ const seed: State = {
       app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
     },
   },
-  activeNodeRuns: [],
   nodeRuns: {},
   custom: {},
   eventHandlers: {},
@@ -201,22 +200,19 @@ describe("builtInHandlers", () => {
     expect(state.startedAt).toBe("2026-09-27T09:00:00Z");
   });
 
-  test("SC6: a started node is running and active, with index 1 and no artifacts", () => {
+  test("SC6: a started node is kept under its own id, running, with its run id and no artifacts", () => {
     const state = project([nodeEvent(1, "started", build, { nodeType: "exec" })]);
     expect(state.nodeRuns.build).toEqual({
       nodeRunId: "build",
-      nodeId: "build",
-      index: 1,
       status: "running",
       startedAt: "2026-09-26T10:00:01Z",
       completedAt: null,
       result: null,
       artifacts: [],
     });
-    expect(state.activeNodeRuns).toEqual(["build"]);
   });
 
-  test("SC7: a failed node records status, end time and its error, and leaves the active list", () => {
+  test("SC7: a failed node records status, end time and its error", () => {
     const message = "x".repeat(500);
     const state = project([
       nodeEvent(1, "started", build, { nodeType: "exec" }),
@@ -232,7 +228,6 @@ describe("builtInHandlers", () => {
       completedAt: "2026-09-26T10:00:02Z",
       result: message,
     });
-    expect(state.activeNodeRuns).toEqual([]);
     expect(StateSchema.safeParse(state).success).toBe(true);
   });
 
@@ -243,60 +238,157 @@ describe("builtInHandlers", () => {
       status: "skipped",
       startedAt: null,
       result: "skipped by the workflow",
-      index: 1,
     });
   });
 
-  test("SC9: a second run of the same node gets index 2", () => {
+  test("IW8 — a node run holds the input from its started event and the output from its completed event; a pair without them projects as before", () => {
+    const fresh = { nodeId: "fresh", nodeRunId: "nr-00000001" };
+    const legacy = { nodeId: "legacy", nodeRunId: "legacy" };
     const state = project([
-      nodeEvent(1, "started", { nodeId: "x", nodeRunId: "loop[1].x" }, { nodeType: "exec" }),
-      nodeEvent(2, "started", { nodeId: "x", nodeRunId: "loop[2].x" }, { nodeType: "exec" }),
+      nodeEvent(1, "started", fresh, { nodeType: "exec", input: { n: 1 } }),
+      nodeEvent(2, "completed", fresh, { nodeType: "exec", attempts: 1, output: { n: 2 } }),
+      nodeEvent(3, "started", legacy, { nodeType: "exec" }),
+      nodeEvent(4, "completed", legacy, { nodeType: "exec", attempts: 1 }),
     ]);
-    expect(state.nodeRuns["loop[1].x"]?.index).toBe(1);
-    expect(state.nodeRuns["loop[2].x"]?.index).toBe(2);
-  });
-
-  test("BL11: artifact.created adds the ref to its node run, and a second with the same name replaces it", () => {
-    const created = (seq: number, path: string): Event => ({
-      ...nodeEvent(seq, "started", build, {}),
-      type: "artifact.created",
-      payload: { artifact: { name: "baseline", path } },
+    expect(state.nodeRuns.fresh).toMatchObject({
+      nodeRunId: "nr-00000001",
+      input: { n: 1 },
+      output: { n: 2 },
     });
-    const report = { name: "report", path: "artifacts/report.md" };
-    const state = project([
-      nodeEvent(1, "started", build, { nodeType: "exec" }),
-      { ...created(2, "artifacts/report.md"), payload: { artifact: report } },
-      created(3, "artifacts/baseline.json"),
-      created(4, "artifacts/baseline-2.json"),
-    ]);
-    expect(state.nodeRuns.build?.artifacts).toEqual([
-      report,
-      { name: "baseline", path: "artifacts/baseline-2.json" },
-    ]);
+    expect(state.nodeRuns.legacy).not.toHaveProperty("input");
+    expect(state.nodeRuns.legacy).not.toHaveProperty("output");
+    expect(StateSchema.safeParse(state).success).toBe(true);
   });
 
-  test("BL11: artifact.created for a node run not in state leaves the state unchanged", () => {
+  test("a node inside a container lands in that container's nodes, under its own id, at any depth", () => {
     const state = project([
-      {
-        ...nodeEvent(1, "started", build, {}),
-        type: "artifact.created",
-        payload: { artifact: { name: "baseline", path: "artifacts/baseline.json" } },
-      },
+      nodeEvent(
+        1,
+        "started",
+        { nodeId: "fix", nodeRunId: "nr-1" },
+        { nodeType: "loop", input: {} },
+      ),
+      nodeEvent(
+        2,
+        "skipped",
+        { nodeId: "lint", nodeRunId: "nr-2" },
+        {
+          nodeType: "exec",
+          attempts: 0,
+          parents: ["fix"],
+        },
+      ),
+      nodeEvent(
+        3,
+        "started",
+        { nodeId: "pick", nodeRunId: "nr-3" },
+        {
+          nodeType: "switch",
+          branch: "a",
+          parents: ["fix"],
+        },
+      ),
+      nodeEvent(
+        4,
+        "started",
+        { nodeId: "act", nodeRunId: "nr-4" },
+        {
+          nodeType: "exec",
+          parents: ["fix", "pick"],
+        },
+      ),
     ]);
-    expect(state).toEqual({ ...seed, lastEventSeq: 1 });
+    expect(state.nodeRuns.fix).toMatchObject({ status: "running", iteration: 1 });
+    expect(state.nodeRuns.fix?.nodes?.lint).toMatchObject({ nodeRunId: "nr-2", status: "skipped" });
+    expect(state.nodeRuns.fix?.nodes?.pick).toMatchObject({ branch: "a", status: "running" });
+    expect(state.nodeRuns.fix?.nodes?.pick?.nodes?.act).toMatchObject({ status: "running" });
+    expect(Object.keys(state.nodeRuns)).toEqual(["fix"]);
+    expect(StateSchema.safeParse(state).success).toBe(true);
   });
 
-  test("BL11: emitEvent refuses an artifact.created whose path is outside artifacts/", async () => {
-    const store = memoryEventStore();
-    const result = await emitEvent(store, "r-1", {
-      type: "artifact.created",
-      source: "test",
-      ...build,
-      payload: { artifact: { name: "baseline", path: "baseline.json" } },
+  test("a node whose container is not in state is refused, naming the container", () => {
+    expect(() =>
+      project([
+        nodeEvent(
+          1,
+          "started",
+          { nodeId: "act", nodeRunId: "nr-1" },
+          {
+            nodeType: "exec",
+            parents: ["ghost"],
+          },
+        ),
+      ]),
+    ).toThrow(/ghost/);
+  });
+
+  test("workflow.node.iterated moves a loop to its next pass: new pass number, last pass's output, children cleared", () => {
+    const fix = { nodeId: "fix", nodeRunId: "nr-1" };
+    const state = project([
+      nodeEvent(1, "started", fix, { nodeType: "loop", input: {} }),
+      nodeEvent(
+        2,
+        "completed",
+        { nodeId: "test", nodeRunId: "nr-2" },
+        {
+          nodeType: "exec",
+          attempts: 1,
+          output: "p1",
+          parents: ["fix"],
+        },
+      ),
+      nodeEvent(3, "iterated", fix, { nodeType: "loop", iteration: 2, output: { test: "p1" } }),
+    ]);
+    expect(state.nodeRuns.fix).toMatchObject({
+      nodeRunId: "nr-1",
+      status: "running",
+      iteration: 2,
+      output: { test: "p1" },
+      nodes: {},
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain("artifact.created");
-    expect(await store.read()).toEqual([]);
+  });
+
+  test("workflow.completed and workflow.failed set the run's outcome and completedAt", () => {
+    const ended = (type: string): Event => ({
+      schemaVersion: 1,
+      seq: 1,
+      id: "end",
+      ts: "2026-09-28T09:00:00Z",
+      type,
+      source: "workflow",
+      runId: "r-1",
+      payload: {},
+    });
+    expect(project([ended("workflow.completed")])).toMatchObject({
+      outcome: "completed",
+      completedAt: "2026-09-28T09:00:00Z",
+    });
+    expect(project([ended("workflow.failed")]).outcome).toBe("failed");
+  });
+
+  test("SC9: a node started again replaces its entry, so state keeps only its latest run", () => {
+    const state = project([
+      nodeEvent(1, "started", { nodeId: "x", nodeRunId: "nr-1" }, { nodeType: "exec" }),
+      nodeEvent(
+        2,
+        "completed",
+        { nodeId: "x", nodeRunId: "nr-1" },
+        {
+          nodeType: "exec",
+          attempts: 1,
+          output: "first",
+        },
+      ),
+      nodeEvent(3, "started", { nodeId: "x", nodeRunId: "nr-2" }, { nodeType: "exec" }),
+    ]);
+    expect(state.nodeRuns.x).toEqual({
+      nodeRunId: "nr-2",
+      status: "running",
+      startedAt: "2026-09-26T10:00:03Z",
+      completedAt: null,
+      result: null,
+      artifacts: [],
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import {
   type Config,
   isNormalizedRelativePath,
@@ -50,6 +50,7 @@ export const StageSchema = z.strictObject({
   references: z.record(SlugSchema, ReferenceSchema).default({}),
 });
 export type Stage = z.infer<typeof StageSchema>;
+export type ArtifactDeclaration = z.infer<typeof ArtifactDeclarationSchema>;
 
 export type SchemaRegistry = Readonly<Record<string, z.ZodType>>;
 
@@ -62,8 +63,21 @@ export type LoadedStage = {
 type ResolveOptions = Readonly<{ skillsDir: string; root: string; config: Config; skill: string }>;
 
 // Parsed records inherit Object.prototype, so a key like "constructor" must not read through to it.
-const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined =>
+export const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined =>
   Object.hasOwn(record, key) ? record[key] : undefined;
+
+// The harness's own skills ship beside this code, so their text always matches this version;
+// HARNESS_SKILLS_DIR points tests at a demo set instead.
+export const harnessSkillsDir = (): string =>
+  process.env.HARNESS_SKILLS_DIR || join(import.meta.dir, "..", "..", "..", "skills");
+
+// A stage name is one of the harness's own skills; a stage with a "/" is a skill folder in the
+// project at `root`.
+export const findStageDir = (
+  stage: string,
+  root: string,
+  skillsDir = harnessSkillsDir(),
+): string => (stage.includes("/") ? resolve(root, stage) : join(skillsDir, stage));
 
 export const loadSkill = async (skillDir: string): Promise<Result<Stage>> => {
   const path = join(skillDir, "SKILL.md");
@@ -105,8 +119,12 @@ export const loadStage = async (
   return { ok: true, value: { stage, inputSchema, outputSchema } };
 };
 
+export const extensionPath = (config: Config, skill: string): string | undefined =>
+  own(config.extensions, skill)?.skill;
+
+// The project's extensions are set per skill name, which is also the last part of a stage path.
 export const resolveExtension = async (options: ResolveOptions): Promise<Result<string>> => {
-  const doc = own(options.config.extensions, options.skill)?.skill;
+  const doc = extensionPath(options.config, basename(options.skill));
   return doc === undefined ? { ok: true, value: "" } : readText(join(options.root, doc));
 };
 
@@ -114,19 +132,19 @@ export const resolveReference = async (
   options: ResolveOptions & Readonly<{ ref: string }>,
 ): Promise<Result<string>> => {
   const { skill, ref, root } = options;
-  const skillDir = join(options.skillsDir, skill);
+  const skillDir = findStageDir(skill, root, options.skillsDir);
   const loaded = await loadSkill(skillDir);
   if (!loaded.ok) return loaded;
-  const { references } = loaded.value;
+  const { name, references } = loaded.value;
   const reference = own(references, ref);
   if (reference === undefined) {
     const known = Object.keys(references).join(", ");
     return { ok: false, error: `unknown reference "${ref}"; ${skill} has: ${known}` };
   }
-  const extensions = own(options.config.extensions, skill)?.references ?? {};
+  const extensions = own(options.config.extensions, name)?.references ?? {};
   const stray = Object.keys(extensions).find((key) => own(references, key) === undefined);
   if (stray !== undefined) {
-    const error = `extensions.${skill}.references.${stray}: ${skill} has no reference ${stray}`;
+    const error = `extensions.${name}.references.${stray}: ${skill} has no reference ${stray}`;
     return { ok: false, error };
   }
   const extension = own(extensions, ref);

@@ -2,9 +2,7 @@ import { statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
-  type ArtifactRef,
   type Config,
-  emitRunEvent,
   type ILogger,
   loadConfig,
   NameSchema,
@@ -37,7 +35,8 @@ type BaselineEntry = z.infer<typeof BaselineEntrySchema>;
 
 export type CapturedBaseline = Readonly<{ path: string; baseline: Baseline }>;
 
-const BASELINE_ARTIFACT: ArtifactRef = { name: "baseline", path: "artifacts/baseline.json" };
+// The stage reports this file as its `baseline` artifact through orchestrate done.
+const BASELINE_PATH = "artifacts/baseline.json";
 
 export type BaselineError = Readonly<{
   code:
@@ -46,18 +45,14 @@ export type BaselineError = Readonly<{
     | "CONFIG_INVALID"
     | "PACKAGE_UNKNOWN"
     | "STATE_MISSING"
-    | "NODE_RUN_UNKNOWN"
     | "CONFIG_STALE"
-    | "WORKTREE_MISSING"
-    | "EVENT_FAILED";
+    | "WORKTREE_MISSING";
   message: string;
 }>;
 
 export type BaselineOptions = Readonly<{
   root: string;
   run: RunRef;
-  nodeId: string;
-  nodeRunId: string;
   dir?: string | undefined;
   packages: readonly string[];
   log: ILogger;
@@ -76,7 +71,6 @@ const WORKSPACE_TIMEOUT_SECONDS = 1200;
 const TIMED_OUT = 124;
 const LAUNCH_FAILURE =
   /command not found|Missing script|is not recognized|Script not found|No packages matched/i;
-const EVENT_SOURCE = "orchestrate-baseline";
 
 const failure = (code: BaselineError["code"], message: string): Result<never, BaselineError> => ({
   ok: false,
@@ -86,17 +80,13 @@ const failure = (code: BaselineError["code"], message: string): Result<never, Ba
 const isFolder = (path: string): boolean =>
   statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
-// Without state.json, as in a run given --dir, there is no node run to check. A missing folder
-// would make spawn fail with exit 127 and read as a command that cannot start, and state.json
-// keeps workspace.path after `workspace.ts remove`, so the folder is checked here.
+// A missing folder would make spawn fail with exit 127 and read as a command that cannot start,
+// and state.json keeps workspace.path after `workspace.ts remove`, so the folder is checked here.
 const resolveWorkspace = async (
   options: BaselineOptions,
 ): Promise<Result<string, BaselineError>> => {
-  const { run, nodeRunId, dir } = options;
-  const state = await readState(runDirOf(run.cwd, run.name));
-  if (state !== null && state.nodeRuns[nodeRunId] === undefined) {
-    return failure("NODE_RUN_UNKNOWN", `no node run ${nodeRunId} in run ${run.name}`);
-  }
+  const { run, dir } = options;
+  const state = dir === undefined ? await readState(runDirOf(run.cwd, run.name)) : null;
   const workspace = dir ?? state?.workspace.path;
   if (workspace === undefined) {
     return failure("STATE_MISSING", `no state.json for run ${run.name}: pass --dir`);
@@ -234,30 +224,6 @@ const runScripts = async (
   return { ok: true, value: baseline };
 };
 
-const recordBaseline = async (
-  options: BaselineOptions,
-  baseline: Baseline,
-): Promise<Result<CapturedBaseline, BaselineError>> => {
-  const { run, nodeId, nodeRunId } = options;
-  const path = join(runDirOf(run.cwd, run.name), BASELINE_ARTIFACT.path);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(baseline, null, 2)}\n`);
-  const stored = await emitRunEvent(run, {
-    type: "artifact.created",
-    source: EVENT_SOURCE,
-    nodeId,
-    nodeRunId,
-    payload: { artifact: BASELINE_ARTIFACT },
-  });
-  if (!stored.ok) {
-    return failure(
-      "EVENT_FAILED",
-      `baseline.json written, but its event was not recorded: ${stored.error}`,
-    );
-  }
-  return { ok: true, value: { path, baseline } };
-};
-
 export const captureBaseline = async (
   options: BaselineOptions,
 ): Promise<Result<CapturedBaseline | null, BaselineError>> => {
@@ -271,5 +237,8 @@ export const captureBaseline = async (
   if (scripts.value.length === 0) return { ok: true, value: null };
   const baseline = await runScripts(scripts.value, log);
   if (!baseline.ok) return baseline;
-  return recordBaseline(options, baseline.value);
+  const path = join(runDirOf(options.run.cwd, options.run.name), BASELINE_PATH);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(baseline.value, null, 2)}\n`);
+  return { ok: true, value: { path, baseline: baseline.value } };
 };

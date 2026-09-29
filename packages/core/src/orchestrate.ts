@@ -1,22 +1,32 @@
 #!/usr/bin/env bun
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
 import {
   AgentTypeSchema,
+  type ArtifactRef,
+  ArtifactRefSchema,
   createGit,
   createRegistry,
   emitRunEvent,
   type JsonValue,
   loadConfigOrDefault,
   type Result,
+  type RunRef,
   registryPath,
   resolveRoot,
   resolveRun,
   stopRunningOnSignal,
 } from "@harness/sdk";
 import { createLogger, resolveLevel } from "./logging.ts";
-import { initializeRun, linkRunSession } from "./runs.ts";
-import { resolveExtension, resolveReference } from "./stage.ts";
+import {
+  execStep,
+  finishStep,
+  initializeRun,
+  linkRunSession,
+  nextStep,
+  type StepOutcome,
+} from "./runs.ts";
+import { harnessSkillsDir, resolveExtension, resolveReference } from "./stage.ts";
 import { captureBaseline } from "./stages/baseline.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
@@ -51,11 +61,11 @@ const splitList = (value: string): string[] =>
     .map((name) => name.trim())
     .filter((name) => name !== "");
 
-const parsePayload = (text: string): Result<JsonValue> => {
+const parseJsonFlag = (text: string, flag: string): Result<JsonValue> => {
   try {
     return { ok: true, value: JSON.parse(text) };
   } catch {
-    return { ok: false, error: "--payload is not valid JSON" };
+    return { ok: false, error: `${flag} is not valid JSON` };
   }
 };
 
@@ -97,6 +107,16 @@ const linkSessionCommand = () =>
       );
     });
 
+const getWorkflowRun = async (
+  name: string,
+  rootFlag: string | undefined,
+): Promise<Result<Readonly<{ root: string; run: RunRef }>>> => {
+  const root = await resolveRoot(rootFlag);
+  if (!root.ok) return root;
+  const run = await resolveRun({ registry: registry(), root: root.value, name });
+  return run.ok ? { ok: true, value: { root: root.value, run: run.value } } : run;
+};
+
 const emitCommand = () =>
   new Command("emit")
     .description("Add an event to the run's event log")
@@ -110,25 +130,117 @@ const emitCommand = () =>
     .option("--stage <name>", "stage the event belongs to")
     .option("--root <dir>", ROOT_HELP)
     .action(async (type, opts) => {
-      const payload = parsePayload(opts.payload);
+      const payload = parseJsonFlag(opts.payload, "--payload");
       if (!payload.ok) return fail(payload.error);
-      const root = await resolveRoot(opts.root);
-      if (!root.ok) return fail(root.error);
-      const run = await resolveRun({ registry: registry(), root: root.value, name: opts.run });
-      if (!run.ok) return fail(run.error);
+      const target = await getWorkflowRun(opts.run, opts.root);
+      if (!target.ok) return fail(target.error);
       const { source, id, nodeId, nodeRunId, stage } = opts;
       const input = { type, payload: payload.value, source, id, nodeId, nodeRunId, stage };
-      printResult(await emitRunEvent(run.value, input));
+      printResult(await emitRunEvent(target.value.run, input));
+    });
+
+const nextCommand = () =>
+  new Command("next")
+    .description("Move the run to its next step and print that step as JSON")
+    .requiredOption("--run <name>", RUN_HELP)
+    .option("--root <dir>", ROOT_HELP)
+    .action(async (opts) => {
+      const target = await getWorkflowRun(opts.run, opts.root);
+      if (!target.ok) return fail(target.error);
+      const { root, run } = target.value;
+      const config = await loadConfigOrDefault(root);
+      if (!config.ok) return fail(config.error);
+      printResult(await nextStep(run, { root, config: config.value }));
+    });
+
+const execCommand = () =>
+  new Command("exec")
+    .description("Run an exec or wait node that next handed out, and record how it ended")
+    .argument("<nodeRunId>", "node run id from next")
+    .requiredOption("--run <name>", RUN_HELP)
+    .option("--root <dir>", ROOT_HELP)
+    .action(async (nodeRunId, opts) => {
+      const target = await getWorkflowRun(opts.run, opts.root);
+      if (!target.ok) return fail(target.error);
+      const report = await execStep(target.value.run, nodeRunId);
+      printResult(report);
+      if (report.ok && report.value.status !== "completed") process.exitCode = 1;
+    });
+
+const collect = (value: string, acc: readonly string[]): string[] => [...acc, value];
+
+// A pair with no NAME before its "=" is refused, so a bare path never becomes an artifact name.
+const parseArtifact = (pair: string): ArtifactRef | undefined => {
+  const index = pair.indexOf("=");
+  if (index <= 0) return undefined;
+  const parsed = ArtifactRefSchema.safeParse({
+    name: pair.slice(0, index),
+    path: pair.slice(index + 1),
+  });
+  return parsed.success ? parsed.data : undefined;
+};
+
+const parseArtifacts = (pairs: readonly string[]): Result<ArtifactRef[]> => {
+  const refs: ArtifactRef[] = [];
+  for (const pair of pairs) {
+    const ref = parseArtifact(pair);
+    if (ref === undefined) {
+      return { ok: false, error: `--artifact must be NAME=artifacts/PATH, got "${pair}"` };
+    }
+    refs.push(ref);
+  }
+  return { ok: true, value: refs };
+};
+
+// "-" reads the value from stdin, so an agent can pass it in a quoted heredoc (<<'EOF'): the
+// shell never parses that text, so quotes, backticks and $(…) in it stay plain text.
+const readValue = async (value: string): Promise<string> =>
+  value === "-" ? (await Bun.stdin.text()).trimEnd() : value;
+
+const parseOutcome = async (
+  flags: Readonly<{ output?: string; error?: string }>,
+): Promise<Result<StepOutcome>> => {
+  if ((flags.output === undefined) === (flags.error === undefined)) {
+    return { ok: false, error: "pass exactly one of --output and --error" };
+  }
+  if (flags.error !== undefined)
+    return { ok: true, value: { error: await readValue(flags.error) } };
+  const output = parseJsonFlag(await readValue(flags.output ?? ""), "--output");
+  return output.ok ? { ok: true, value: { output: output.value } } : output;
+};
+
+const doneCommand = () =>
+  new Command("done")
+    .description("Finish an agent or stage node that next handed out, with its output or error")
+    .argument("<nodeRunId>", "node run id from next")
+    .requiredOption("--run <name>", RUN_HELP)
+    .option("--output <json>", "the node's output as JSON, or - to read it from stdin")
+    .option("--error <message>", "why the node failed, or - to read it from stdin")
+    .option(
+      "--artifact <name=path>",
+      "artifact the node wrote, repeatable",
+      collect,
+      [] as string[],
+    )
+    .option("--root <dir>", ROOT_HELP)
+    .action(async (nodeRunId, opts) => {
+      const outcome = await parseOutcome(opts);
+      if (!outcome.ok) return fail(outcome.error);
+      const artifacts = parseArtifacts(opts.artifact);
+      if (!artifacts.ok) return fail(artifacts.error);
+      const target = await getWorkflowRun(opts.run, opts.root);
+      if (!target.ok) return fail(target.error);
+      const report = await finishStep(target.value.run, nodeRunId, outcome.value, artifacts.value);
+      printResult(report);
+      if (report.ok && report.value.status !== "completed") process.exitCode = 1;
     });
 
 const baselineCommand = () =>
   new Command("baseline")
     .description(
-      "Run the config's baseline scripts and record their output as the node run's baseline artifact",
+      "Run the config's baseline scripts and write their output to the run's artifacts/baseline.json",
     )
     .requiredOption("--run <name>", RUN_HELP)
-    .requiredOption("--node-id <id>", "node the baseline belongs to")
-    .requiredOption("--node-run-id <id>", "node run the baseline belongs to")
     .option(
       "--dir <path>",
       "folder the scripts run in (default: the run's workspace.path in state.json)",
@@ -137,15 +249,11 @@ const baselineCommand = () =>
     .option("--packages <names>", "comma-separated packages to run (default: all)", splitList)
     .option("--root <dir>", ROOT_HELP)
     .action(async (opts) => {
-      const root = await resolveRoot(opts.root);
-      if (!root.ok) return fail(root.error);
-      const run = await resolveRun({ registry: registry(), root: root.value, name: opts.run });
-      if (!run.ok) return fail(run.error);
+      const target = await getWorkflowRun(opts.run, opts.root);
+      if (!target.ok) return fail(target.error);
       const result = await captureBaseline({
-        root: root.value,
-        run: run.value,
-        nodeId: opts.nodeId,
-        nodeRunId: opts.nodeRunId,
+        root: target.value.root,
+        run: target.value.run,
         dir: opts.dir,
         packages: opts.packages ?? [],
         log,
@@ -162,10 +270,6 @@ const baselineCommand = () =>
       printJson({ path, workspace, packages: Object.fromEntries(exitCodes) });
     });
 
-// The skills ship beside this script, so reference text always matches this version.
-const skillsDir = (): string =>
-  process.env.HARNESS_SKILLS_DIR || join(import.meta.dir, "..", "..", "..", "skills");
-
 const printResolved = async (
   skill: string,
   flags: { root?: string },
@@ -175,7 +279,7 @@ const printResolved = async (
   if (!root.ok) return fail(root.error);
   const config = await loadConfigOrDefault(root.value);
   if (!config.ok) return fail(config.error);
-  const options = { skillsDir: skillsDir(), root: root.value, config: config.value, skill };
+  const options = { skillsDir: harnessSkillsDir(), root: root.value, config: config.value, skill };
   const text = await resolveText(options);
   if (!text.ok) return fail(text.error);
   process.stdout.write(text.value);
@@ -210,6 +314,9 @@ await new Command()
   .addCommand(linkSessionCommand())
   .addCommand(emitCommand())
   .addCommand(baselineCommand())
+  .addCommand(nextCommand())
+  .addCommand(execCommand())
+  .addCommand(doneCommand())
   .addCommand(skillCommand())
   .parseAsync(process.argv)
   .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));

@@ -1,3 +1,3 @@
 export { type CompileOptions, compileWorkflow } from "./compile.ts";
-export { type RunOptions, runWorkflow } from "./run.ts";
+export { type Decision, decideNext } from "./next.ts";
 export * from "./types.ts";

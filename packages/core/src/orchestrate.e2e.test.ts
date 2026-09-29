@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { jsonlEventStore, RegistryFileSchema, runDirOf, type WorkflowRun } from "@harness/sdk";
+import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
 const SCRIPT = join(import.meta.dir, "orchestrate.ts");
 
@@ -66,10 +67,17 @@ const eventsOf = (cwd: string, name = "feat-x") => jsonlEventStore(runDirOf(cwd,
 type Env = Readonly<Record<string, string | undefined>>;
 
 // A run id or harness home from the shell running the tests must never reach a real registry.
-const orchestrate = (cwd: string, home: string, args: readonly string[], env: Env = {}) => {
+const orchestrate = (
+  cwd: string,
+  home: string,
+  args: readonly string[],
+  env: Env = {},
+  input = "",
+) => {
   const run = spawnSync("bun", [SCRIPT, ...args], {
     cwd,
     encoding: "utf8",
+    input,
     env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home, ...env },
   });
   return { code: run.status, stdout: run.stdout, stderr: run.stderr };
@@ -220,8 +228,7 @@ describe("orchestrate emit", () => {
   });
 });
 
-const BASELINE_NODE = ["--node-id", "baseline", "--node-run-id", "baseline"];
-const BASELINE_ARGS = ["baseline", "--run", "feat-x", ...BASELINE_NODE];
+const BASELINE_ARGS = ["baseline", "--run", "feat-x"];
 
 const baselineRun = (baseline: string | undefined): { repo: string; home: string } => {
   const repo = tempRepo();
@@ -229,9 +236,6 @@ const baselineRun = (baseline: string | undefined): { repo: string; home: string
   writeRegistry(home, [savedRun(repo)]);
   writeFileSync(join(repo, "orchestrate.config.json"), JSON.stringify({ version: 2, baseline }));
   expect(orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"]).code).toBe(0);
-  const started = ["emit", "workflow.node.started", "--run", "feat-x", "--source", "engine"];
-  const payload = ["--payload", '{"nodeType":"exec"}'];
-  expect(orchestrate(repo, home, [...started, ...payload, ...BASELINE_NODE]).code).toBe(0);
   return { repo, home };
 };
 
@@ -253,7 +257,7 @@ const waitFor = async (condition: () => boolean, timeoutMs = 10_000): Promise<vo
 };
 
 describe("orchestrate baseline", () => {
-  test("BL12: baseline runs the configured script, writes artifacts/baseline.json and lists it on the node run", () => {
+  test("BL12: baseline runs the configured script and writes artifacts/baseline.json, recording no event", async () => {
     const { repo, home } = baselineRun(`echo '{"tests":3}'`);
 
     const run = orchestrate(repo, home, BASELINE_ARGS);
@@ -266,10 +270,7 @@ describe("orchestrate baseline", () => {
     };
     expect(JSON.parse(run.stdout)).toEqual({ path, workspace: 0, packages: {} });
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(baseline);
-    const state = JSON.parse(readFileSync(join(runDirOf(repo, "feat-x"), "state.json"), "utf8"));
-    expect(state.nodeRuns.baseline.artifacts).toEqual([
-      { name: "baseline", path: "artifacts/baseline.json" },
-    ]);
+    expect((await eventsOf(repo)).map((event) => event.type)).toEqual(["workflow.started"]);
   });
 
   test("BL12: with no baseline script configured, it prints a null path and no exit codes", () => {
@@ -387,5 +388,361 @@ describe("orchestrate skill", () => {
 
     expect(run.code).toBe(0);
     expect(run.stdout).toBe("use pnpm\n");
+  });
+});
+
+// A run named feat-x in a fresh repo, started from SOURCE the way `harness run` + init leave it.
+const startedRun = (source: string): Readonly<{ repo: string; home: string }> => {
+  const repo = tempRepo();
+  const home = tempDir();
+  const workflowPath = join(repo, "steps.yaml");
+  writeFileSync(workflowPath, source);
+  writeRegistry(home, [savedRun(repo, { workflowPath })]);
+  const init = orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"]);
+  if (init.code !== 0) throw new Error(init.stderr);
+  return { repo, home };
+};
+
+const stateOf = (repo: string) =>
+  JSON.parse(readFileSync(join(runDirOf(repo, "feat-x"), "state.json"), "utf8"));
+
+const STEPS = `name: steps
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: a
+    type: exec
+    runtime: sh
+    script: printf '{"n":1}'
+    output: { format: json }
+    input: {}
+  - id: w
+    type: wait
+    durationMs: 10
+    dependsOn: [a]
+    input: "{{ nodes.a.output.value }}"
+  - id: b
+    type: exec
+    runtime: sh
+    script: cat
+    dependsOn: [w]
+    input: "{{ nodes.w.output }}"
+`;
+
+describe("orchestrate next and exec", () => {
+  test("IW10 — next and exec, called in turn, take an exec, wait and exec workflow from init to finished", () => {
+    const { repo, home } = startedRun(STEPS);
+    const handedOut = ["a", "w", "b"].map((nodeId) => {
+      const next = orchestrate(repo, home, ["next", "--run", "feat-x"]);
+      expect(next.code).toBe(0);
+      const reply = JSON.parse(next.stdout);
+      expect(reply).toEqual({
+        kind: "exec",
+        nodeRunId: expect.stringMatching(/^nr-[0-9a-f]{16}$/),
+        nodeId,
+        mode: "inline",
+        command: `bun run orchestrate exec ${reply.nodeRunId} --run feat-x`,
+      });
+      const exec = orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
+      expect(exec.code).toBe(0);
+      expect(JSON.parse(exec.stdout)).toEqual({
+        nodeRunId: reply.nodeRunId,
+        nodeId,
+        status: "completed",
+        attempts: 1,
+      });
+      return reply.nodeRunId;
+    });
+
+    const last = orchestrate(repo, home, ["next", "--run", "feat-x"]);
+    expect(JSON.parse(last.stdout)).toEqual({ kind: "finished", outcome: "completed" });
+    const state = stateOf(repo);
+    expect(state.outcome).toBe("completed");
+    expect(state.nodeRuns.w.nodeRunId).toBe(handedOut[1]);
+    expect(state.nodeRuns.w.output).toEqual({ n: 1 });
+    expect(state.nodeRuns.b.output).toMatchObject({ stdout: '{"n":1}', exitCode: 0 });
+  });
+
+  test("IW11 — a script that keeps failing is retried as configured, exec exits 1, and the run ends failed", () => {
+    const { repo, home } = startedRun(`name: steps
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: a
+    type: exec
+    runtime: sh
+    script: exit 3
+    retry: { maxAttempts: 2 }
+    input: {}
+`);
+    const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+    const exec = orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
+    expect(exec.code).toBe(1);
+    expect(JSON.parse(exec.stdout)).toMatchObject({
+      status: "failed",
+      attempts: 2,
+      error: { kind: "exit" },
+    });
+    expect(JSON.parse(exec.stdout).error).not.toHaveProperty("stack");
+    const next = orchestrate(repo, home, ["next", "--run", "feat-x"]);
+    expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", outcome: "failed" });
+  });
+
+  test("IW12 — exec refuses a node run that already ended or does not exist, and records nothing", async () => {
+    const { repo, home } = startedRun(STEPS);
+    const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+    orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
+    const before = (await eventsOf(repo)).length;
+
+    const again = orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
+    expect(again.code).toBe(1);
+    expect(again.stderr).toContain(reply.nodeRunId);
+    const unknown = orchestrate(repo, home, ["exec", "nr-00000000", "--run", "feat-x"]);
+    expect(unknown.code).toBe(1);
+    expect(unknown.stderr).toContain("nr-00000000");
+    expect(await eventsOf(repo)).toHaveLength(before);
+  });
+});
+
+// A skills folder holding the producer and consumer demo stages, for HARNESS_SKILLS_DIR.
+const stageSkills = (): string => {
+  const dir = tempDir();
+  writeStages(dir, { producer: DEMO_STAGES.producer, consumer: DEMO_STAGES.consumer });
+  return dir;
+};
+
+const STAGES_WORKFLOW = `name: stages
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: make
+    type: agent
+    stage: producer
+    input: { request: "{{ inputs.prompt }}" }
+  - id: use
+    type: agent
+    stage: consumer
+    dependsOn: [make]
+    input: {}
+`;
+
+describe("orchestrate next and done with stages", () => {
+  const stageRun = () => {
+    const skills = stageSkills();
+    const run = startedRun(STAGES_WORKFLOW);
+    const env = { HARNESS_SKILLS_DIR: skills };
+    const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args, env);
+    return { ...run, skills, step };
+  };
+
+  test("IW17 — next replies with the stage's skill path, the project's extension path, its input and a done command; a stage whose SKILL.md consumes a missing artifact is blocked", () => {
+    const { repo, skills, step } = stageRun();
+    mkdirSync(join(repo, "docs"));
+    writeFileSync(join(repo, "docs/producer-ext.md"), "use short names\n");
+    writeFileSync(
+      join(repo, "orchestrate.config.json"),
+      JSON.stringify({ version: 2, extensions: { producer: { skill: "docs/producer-ext.md" } } }),
+    );
+    const next = step(["next", "--run", "feat-x"]);
+    expect(next.code).toBe(0);
+    const reply = JSON.parse(next.stdout);
+    expect(reply).toEqual({
+      kind: "stage",
+      nodeRunId: expect.stringMatching(/^nr-[0-9a-f]{16}$/),
+      nodeId: "make",
+      stage: "producer",
+      skill: join(skills, "producer/SKILL.md"),
+      extension: join(repo, "docs/producer-ext.md"),
+      input: { request: "hi" },
+      done: `bun run orchestrate done ${reply.nodeRunId} --run feat-x`,
+    });
+
+    step(["done", reply.nodeRunId, "--run", "feat-x", "--output", "{}"]);
+    const second = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    expect(second).toEqual({
+      kind: "blocked",
+      nodeId: "use",
+      stage: "consumer",
+      missing: ["plan"],
+    });
+  });
+
+  test("IW18 — done records a stage's output and artifacts, and refuses an artifact file that does not exist", async () => {
+    const { repo, step } = stageRun();
+    const reply = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    expect(reply).toMatchObject({ kind: "stage", nodeId: "make", extension: null });
+    const done = ["done", reply.nodeRunId, "--run", "feat-x", "--output", '{"ok":true}'];
+    const artifact = ["--artifact", "plan=artifacts/plan.md"];
+
+    const missing = step([...done, ...artifact]);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain(join(runDirOf(repo, "feat-x"), "artifacts/plan.md"));
+    const before = (await eventsOf(repo)).length;
+    expect(before).toBe(2);
+
+    mkdirSync(join(runDirOf(repo, "feat-x"), "artifacts"), { recursive: true });
+    writeFileSync(join(runDirOf(repo, "feat-x"), "artifacts/plan.md"), "plan\n");
+    const recorded = step([...done, ...artifact]);
+    expect(recorded.code).toBe(0);
+    expect(JSON.parse(recorded.stdout)).toMatchObject({ nodeId: "make", status: "completed" });
+    expect(stateOf(repo).nodeRuns.make).toMatchObject({
+      nodeRunId: reply.nodeRunId,
+      output: { ok: true },
+      artifacts: [{ name: "plan", path: "artifacts/plan.md" }],
+    });
+  });
+
+  test("IW19 — done output that fails the node's declared schema fails the node with a validation error", () => {
+    const zodUrl = import.meta.resolve("zod");
+    const run = startedRun(`name: checked
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: ask
+    type: agent
+    prompt: check it
+    output: { module: ./schemas.ts, zodSchema: result }
+    input: {}
+`);
+    writeFileSync(
+      join(run.repo, "schemas.ts"),
+      `import { z } from "${zodUrl}";\nexport const schemas = { result: z.object({ ok: z.boolean() }) };\n`,
+    );
+    const reply = JSON.parse(orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]).stdout);
+    expect(reply).toMatchObject({ kind: "agent", prompt: "check it", input: {} });
+    const done = orchestrate(run.repo, run.home, [
+      "done",
+      reply.nodeRunId,
+      "--run",
+      "feat-x",
+      "--output",
+      '{"ok":"yes"}',
+    ]);
+    expect(done.code).toBe(1);
+    expect(JSON.parse(done.stdout)).toMatchObject({
+      status: "failed",
+      error: { kind: "validation" },
+    });
+    const next = orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]);
+    expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", outcome: "failed" });
+  });
+
+  test("IW30 — done reads --output - and --error - from stdin, keeping quotes and $(…) as plain text", () => {
+    const { repo, home, skills } = stageRun();
+    const env = { HARNESS_SKILLS_DIR: skills };
+    const next = () => JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"], env).stdout);
+    const make = next();
+    const output = '{"note":"can\'t stop; $(touch PWNED)"}';
+    mkdirSync(join(runDirOf(repo, "feat-x"), "artifacts"), { recursive: true });
+    writeFileSync(join(runDirOf(repo, "feat-x"), "artifacts/plan.md"), "plan\n");
+    const artifact = ["--artifact", "plan=artifacts/plan.md"];
+    const doneArgs = ["done", make.nodeRunId, "--run", "feat-x", "--output", "-", ...artifact];
+    const done = orchestrate(repo, home, doneArgs, env, output);
+    expect(done.code).toBe(0);
+    expect(stateOf(repo).nodeRuns.make.output).toEqual({ note: "can't stop; $(touch PWNED)" });
+
+    const use = next();
+    const reason = "couldn't read the plan; `rm -rf x`\n";
+    const failed = orchestrate(
+      repo,
+      home,
+      ["done", use.nodeRunId, "--run", "feat-x", "--error", "-"],
+      env,
+      reason,
+    );
+    expect(failed.code).toBe(1);
+    expect(stateOf(repo).nodeRuns.use.result).toBe(reason.trim());
+    expect(existsSync(join(repo, "PWNED"))).toBe(false);
+  });
+
+  test("IW20 — done refuses bad flags before touching the run, and done --error fails the node", async () => {
+    const { repo, step } = stageRun();
+    const reply = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    const done = ["done", reply.nodeRunId, "--run", "feat-x"];
+    const before = (await eventsOf(repo)).length;
+    const refusals = [
+      { flags: ["--output", "{}", "--error", "no"], names: ["--output", "--error"] },
+      { flags: [], names: ["--output", "--error"] },
+      { flags: ["--output", "not json"], names: ["--output"] },
+      { flags: ["--error", "x", "--artifact", "plan"], names: ["--artifact", "plan"] },
+      { flags: ["--error", "x", "--artifact", "artifacts/plan.md"], names: ["--artifact"] },
+    ];
+    for (const { flags, names } of refusals) {
+      const refused = step([...done, ...flags]);
+      expect(refused.code).toBe(1);
+      for (const name of names) expect(refused.stderr).toContain(name);
+    }
+    expect(await eventsOf(repo)).toHaveLength(before);
+
+    const wrongCommand = step(["exec", reply.nodeRunId, "--run", "feat-x"]);
+    expect(wrongCommand.code).toBe(1);
+    expect(wrongCommand.stderr).toContain(reply.nodeRunId);
+
+    const failed = step([...done, "--error", "could not"]);
+    expect(failed.code).toBe(1);
+    expect(JSON.parse(failed.stdout)).toMatchObject({
+      status: "failed",
+      error: { message: "could not" },
+    });
+  });
+});
+
+const MIXED = `name: mixed
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: fix
+    type: loop
+    until: "{{ iteration.index >= 3 }}"
+    maxIterations: 5
+    input: {}
+    nodes:
+      - { id: test, type: exec, runtime: sh, script: cat, input: "pass {{ iteration.index }}" }
+  - id: decide
+    type: switch
+    dependsOn: [fix]
+    expression: "{{ inputs.prompt }}"
+    input: {}
+    cases:
+      - id: hello
+        value: hi
+        nodes:
+          - { id: greet, type: exec, runtime: sh, script: echo hello-case, input: {} }
+    default:
+      - { id: greet, type: exec, runtime: sh, script: echo default-case, input: {} }
+  - { id: sub, type: include, workflow: child.yaml, dependsOn: [decide], input: {} }
+  - id: last
+    type: exec
+    runtime: sh
+    script: cat
+    dependsOn: [sub, fix]
+    input: "{{ nodes.sub.output.say.stdout }} / {{ nodes.fix.output.test.stdout }}"
+`;
+
+const CHILD = `name: child
+inputs:
+  word: { type: string, default: hi }
+nodes:
+  - { id: say, type: exec, runtime: sh, script: cat, input: "{{ inputs.word }}" }
+`;
+
+describe("orchestrate next and exec with containers", () => {
+  test("IW28 — next and exec run a workflow mixing a loop, a switch and an include to finished", () => {
+    const { repo, home } = startedRun(MIXED);
+    writeFileSync(join(repo, "child.yaml"), CHILD);
+    const handedOut = ["test", "test", "test", "greet", "say", "last"].map((nodeId) => {
+      const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+      expect(reply).toMatchObject({ kind: "exec", nodeId });
+      const exec = orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
+      expect(JSON.parse(exec.stdout)).toMatchObject({ nodeId, status: "completed" });
+      return reply.nodeRunId;
+    });
+    const last = orchestrate(repo, home, ["next", "--run", "feat-x"]);
+    expect(JSON.parse(last.stdout)).toEqual({ kind: "finished", outcome: "completed" });
+    const nodes = stateOf(repo).nodeRuns;
+    expect(nodes.decide.nodes.greet).toMatchObject({ nodeRunId: handedOut[3] });
+    expect(nodes.decide.nodes.greet.output.stdout).toBe("hello-case\n");
+    expect(nodes.fix).toMatchObject({ iteration: 3, output: { test: expect.any(Object) } });
+    expect(nodes.last.input).toBe('"hi" / "pass 3"');
   });
 });

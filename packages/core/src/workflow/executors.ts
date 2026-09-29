@@ -6,14 +6,7 @@ import {
   spawn,
 } from "@harness/sdk";
 import { z } from "zod";
-import {
-  type AgentAdapter,
-  type AgentNode,
-  type NodeContext,
-  NodeFailure,
-  WorkflowError,
-  type WorkflowFunction,
-} from "./types.ts";
+import { type NodeContext, NodeFailure, WorkflowError, type WorkflowFunction } from "./types.ts";
 
 export type ScriptResult = { stdout: string; stderr: string; exitCode: number };
 
@@ -23,12 +16,9 @@ export type ScriptRequest = Readonly<{
   input: JsonValue;
   cwd: string;
   timeoutMs: number | undefined;
-  signal: AbortSignal;
 }>;
 
 export const MAX_OUTPUT_BYTES = 1_048_576;
-
-const aborted = (): NodeFailure => new NodeFailure("aborted", "run aborted");
 
 export const runScript = async (request: ScriptRequest): Promise<ScriptResult> => {
   const [command, args] =
@@ -36,11 +26,9 @@ export const runScript = async (request: ScriptRequest): Promise<ScriptResult> =
   const result = await spawn(command, args, {
     cwd: request.cwd,
     input: JSON.stringify(request.input),
-    signal: request.signal,
     maxOutputBytes: MAX_OUTPUT_BYTES,
     ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
   });
-  if (result.stopped === "aborted") throw aborted();
   if (result.stopped === "timeout") {
     throw new NodeFailure("timeout", `timed out after ${request.timeoutMs}ms`);
   }
@@ -72,45 +60,24 @@ export const loadFunction = async (
   return loaded.value;
 };
 
+// Runs `work` with a signal that aborts once `timeoutMs` passes, and fails it with a timeout then.
 export const withTimeout = <T>(
   work: (signal: AbortSignal) => T | Promise<T>,
   timeoutMs: number | undefined,
-  signal: AbortSignal,
 ): Promise<T> =>
   new Promise((resolveWork, reject) => {
-    if (signal.aborted) return reject(aborted());
     const attempt = new AbortController();
-    const stop = (reason: NodeFailure): void => {
-      attempt.abort();
-      reject(reason);
-    };
-    const onAbort = (): void => stop(aborted());
     const timer =
       timeoutMs === undefined
         ? undefined
-        : setTimeout(
-            () => stop(new NodeFailure("timeout", `timed out after ${timeoutMs}ms`)),
-            timeoutMs,
-          );
-    signal.addEventListener("abort", onAbort, { once: true });
+        : setTimeout(() => {
+            attempt.abort();
+            reject(new NodeFailure("timeout", `timed out after ${timeoutMs}ms`));
+          }, timeoutMs);
     Promise.resolve(attempt.signal)
       .then(work)
-      .then(resolveWork, (error: unknown) =>
-        reject(
-          error instanceof NodeFailure
-            ? error
-            : new NodeFailure(
-                "exception",
-                error instanceof Error ? error.message : String(error),
-                undefined,
-                { cause: error },
-              ),
-        ),
-      )
-      .finally(() => {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-      });
+      .then(resolveWork, reject)
+      .finally(() => clearTimeout(timer));
   });
 
 export const asJson = (value: unknown, path: string): JsonValue => {
@@ -123,28 +90,7 @@ export const asJson = (value: unknown, path: string): JsonValue => {
 export const callFunction = async (
   fn: WorkflowFunction,
   input: JsonValue,
-  context: NodeContext,
+  context: Omit<NodeContext, "signal">,
   timeoutMs: number | undefined,
 ): Promise<JsonValue> =>
-  asJson(
-    await withTimeout((signal) => fn(input, { ...context, signal }), timeoutMs, context.signal),
-    context.path,
-  );
-
-export const runAgent = async (
-  adapter: AgentAdapter,
-  node: AgentNode,
-  input: JsonValue,
-  context: NodeContext,
-): Promise<JsonValue> => {
-  const request = (signal: AbortSignal) => ({
-    input,
-    context: { ...context, signal },
-    ...(node.stage === undefined ? {} : { stage: node.stage }),
-    ...(node.prompt === undefined ? {} : { prompt: node.prompt }),
-  });
-  return asJson(
-    await withTimeout((signal) => adapter.run(request(signal)), node.timeoutMs, context.signal),
-    context.path,
-  );
-};
+  asJson(await withTimeout((signal) => fn(input, { ...context, signal }), timeoutMs), context.path);

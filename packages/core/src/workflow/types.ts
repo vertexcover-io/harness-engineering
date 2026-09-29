@@ -1,5 +1,6 @@
 import { type JsonValue, NonEmptyStringSchema } from "@harness/sdk";
 import { z } from "zod";
+import type { ArtifactDeclaration } from "../stage.ts";
 
 export const NodeIdSchema = z
   .string()
@@ -34,6 +35,7 @@ export const ExecNodeSchema = z
   .strictObject({
     ...leafFields,
     type: z.literal("exec"),
+    mode: z.enum(["inline", "background"]).default("inline"),
     runtime: z.enum(["sh", "bun"]).optional(),
     script: NonEmptyStringSchema.optional(),
     module: NonEmptyStringSchema.optional(),
@@ -112,7 +114,6 @@ export const AgentNodeSchema = z
   .strictObject({
     ...leafFields,
     type: z.literal("agent"),
-    adapter: NonEmptyStringSchema,
     stage: NonEmptyStringSchema.optional(),
     prompt: NonEmptyStringSchema.optional(),
     output: z
@@ -161,19 +162,8 @@ export const WorkflowSchema = z.strictObject({
   name: NonEmptyStringSchema,
   version: z.union([z.string(), z.number()]).optional(),
   inputs: z.record(NodeIdSchema, InputDeclarationSchema).default({}),
-  maxConcurrency: z.number().int().positive().default(4),
   nodes: z.array(NodeSchema).min(1),
 });
-
-export const NodeStatusSchema = z.enum([
-  "pending",
-  "running",
-  "waiting",
-  "completed",
-  "failed",
-  "skipped",
-  "cancelled",
-]);
 
 export const FailureKindSchema = z.enum([
   "exit",
@@ -181,7 +171,6 @@ export const FailureKindSchema = z.enum([
   "resolution",
   "validation",
   "exception",
-  "aborted",
   "exhausted",
 ]);
 
@@ -200,28 +189,21 @@ export const WorkflowErrorCodeSchema = z.enum([
   "missing-workflow",
   "include-recursion",
   "include-limit",
-  "missing-adapter",
   "missing-schema",
-  "event-lost",
+  "missing-stage",
+  "missing-artifact",
 ]);
 
+// How one exec, wait or agent node ended, as orchestrate exec and done record it.
 export const NodeRecordSchema = z.object({
   path: z.string(),
   type: z.string(),
-  status: NodeStatusSchema,
-  input: z.json().optional(),
+  status: z.enum(["completed", "failed"]),
   output: z.json().optional(),
-  attempts: z.number().int().min(0),
-  startedAt: z.number().optional(),
-  endedAt: z.number().optional(),
+  attempts: z.number().int().min(1),
   error: z
     .object({ kind: FailureKindSchema, message: z.string(), stack: z.string().optional() })
     .optional(),
-});
-
-export const RunResultSchema = z.object({
-  status: z.enum(["completed", "failed"]),
-  nodes: z.record(z.string(), NodeRecordSchema),
 });
 
 export type Workflow = z.infer<typeof WorkflowSchema>;
@@ -230,31 +212,47 @@ export type ExecNode = z.infer<typeof ExecNodeSchema>;
 export type WaitNode = z.infer<typeof WaitNodeSchema>;
 export type IncludeNode = z.infer<typeof IncludeNodeSchema>;
 export type AgentNode = z.infer<typeof AgentNodeSchema>;
-export type NodeStatus = z.infer<typeof NodeStatusSchema>;
 export type FailureKind = z.infer<typeof FailureKindSchema>;
 export type WorkflowErrorCode = z.infer<typeof WorkflowErrorCodeSchema>;
 export type NodeRecord = z.infer<typeof NodeRecordSchema>;
-export type RunResult = z.infer<typeof RunResultSchema>;
+
+// A stage as compile loads it: the text the workflow wrote, the skill's name, where its SKILL.md
+// is, and the artifacts it needs and writes.
+export type PlanStage = Readonly<{
+  ref: string;
+  name: string;
+  skill: string;
+  consumes: readonly ArtifactDeclaration[];
+  produces: readonly ArtifactDeclaration[];
+}>;
+
+// Compiled nodes carry what they need: the ids of the containers around them (the path to their
+// entry in state.json), a stage node its loaded SKILL.md, an include node the workflow it
+// includes, and loops and switches their compiled children.
+type Placed = Readonly<{ parents: readonly string[] }>;
+export type PlanExecNode = ExecNode & Placed;
+export type PlanWaitNode = WaitNode & Placed;
+export type PlanAgentNode = Omit<AgentNode, "stage"> & Placed & { stage?: PlanStage };
+export type PlanIncludeNode = IncludeNode & Placed & { plan: WorkflowPlan };
+export type PlanLoopNode = Omit<LoopNode, "nodes"> & Placed & { nodes: PlanNode[] };
+export type PlanSwitchCase = Omit<SwitchCase, "nodes"> & { nodes: PlanNode[] };
+export type PlanSwitchNode = Omit<SwitchNode, "cases" | "default"> &
+  Placed & {
+    cases: PlanSwitchCase[];
+    default?: PlanNode[] | undefined;
+  };
+export type PlanNode =
+  | PlanExecNode
+  | PlanWaitNode
+  | PlanAgentNode
+  | PlanIncludeNode
+  | PlanLoopNode
+  | PlanSwitchNode;
 
 export type WorkflowPlan = Readonly<{
   name: string;
   inputs: InputDeclarations;
-  maxConcurrency: number;
-  nodes: readonly WorkflowNode[];
-  includes: ReadonlyMap<string, WorkflowPlan>;
-  size: number;
-  hash: string;
-}>;
-
-export type AgentRequest = Readonly<{
-  input: JsonValue;
-  stage?: string;
-  prompt?: string;
-  context: NodeContext;
-}>;
-
-export type AgentAdapter = Readonly<{
-  run: (request: AgentRequest) => Promise<JsonValue>;
+  nodes: readonly PlanNode[];
 }>;
 
 export type NodeContext = Readonly<{

@@ -1,12 +1,15 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { JsonValue } from "@harness/sdk";
 import { parseDocument } from "yaml";
+import { findStageDir, loadSkill } from "../stage.ts";
 import { expressionPaths, isWholeExpression } from "./evaluate.ts";
 import {
+  type IncludeNode,
   type LoopNode,
   NodeFailure,
+  type PlanNode,
+  type PlanStage,
   type SwitchNode,
   type Workflow,
   WorkflowError,
@@ -62,7 +65,9 @@ const sortTopologically = (nodes: readonly WorkflowNode[], scope: string): Workf
   return placed;
 };
 
-const ancestorsOf = (sorted: readonly WorkflowNode[]): ReadonlyMap<string, ReadonlySet<string>> =>
+const ancestorsOf = (
+  sorted: readonly Readonly<{ id: string; dependsOn: readonly string[] }>[],
+): ReadonlyMap<string, ReadonlySet<string>> =>
   sorted.reduce(
     (map, node) =>
       map.set(node.id, new Set(node.dependsOn.flatMap((dep) => [dep, ...(map.get(dep) ?? [])]))),
@@ -99,15 +104,6 @@ const checkCases = (node: SwitchNode, scope: string): void => {
       scope + node.id,
     );
 };
-
-export const walkNodes = (nodes: readonly WorkflowNode[]): WorkflowNode[] =>
-  nodes.flatMap((node) =>
-    node.type === "switch"
-      ? [node, ...node.cases.flatMap((c) => walkNodes(c.nodes)), ...walkNodes(node.default ?? [])]
-      : node.type === "loop"
-        ? [node, ...walkNodes(node.nodes)]
-        : [node],
-  );
 
 const pathsOf = (
   node: WorkflowNode,
@@ -202,79 +198,143 @@ const readWorkflow = async (path: string): Promise<string> => {
 const MAX_INCLUDE_DEPTH = 8;
 const MAX_EXPANDED_NODES = 1000;
 
-const compileIncludes = async (
-  nodes: readonly WorkflowNode[],
-  chain: readonly string[],
-  cwd: string,
-): Promise<ReadonlyMap<string, WorkflowPlan>> => {
-  const targets = [
-    ...new Set(walkNodes(nodes).flatMap((n) => (n.type === "include" ? [n.workflow] : []))),
-  ];
-  if (targets.length > 0 && chain.length > MAX_INCLUDE_DEPTH) {
-    throw new WorkflowError(
-      "include-limit",
-      `includes nest deeper than ${MAX_INCLUDE_DEPTH}: ${chain.join(" -> ")}`,
-    );
-  }
-  const compiled = await Promise.all(
-    targets.map(async (target) => {
-      const included = resolve(cwd, target);
-      if (chain.includes(included)) {
-        throw new WorkflowError(
-          "include-recursion",
-          `include cycle: ${[...chain, included].join(" -> ")}`,
-          target,
-        );
-      }
-      return [target, await compileFile(included, [...chain, included], cwd)] as const;
-    }),
-  );
-  return new Map(compiled);
+const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
+  const dir = findStageDir(ref, cwd);
+  const stage = await loadSkill(dir);
+  if (!stage.ok) throw new WorkflowError("missing-stage", `stage ${ref}: ${stage.error}`, ref);
+  return {
+    ref,
+    name: stage.value.name,
+    skill: join(dir, "SKILL.md"),
+    consumes: stage.value.consumes ?? [],
+    produces: stage.value.produces ?? [],
+  };
 };
 
-const sizeOf = (
-  nodes: readonly WorkflowNode[],
-  includes: ReadonlyMap<string, WorkflowPlan>,
-): number =>
-  walkNodes(nodes).reduce(
-    (total, n) => total + 1 + (n.type === "include" ? (includes.get(n.workflow)?.size ?? 0) : 0),
+// Where compile is: the chain of workflow files that led here, for include cycles and depth, and
+// the ids of the containers around the nodes being compiled.
+type Compiling = Readonly<{ chain: readonly string[]; cwd: string; parents: readonly string[] }>;
+
+const compileInclude = async (node: IncludeNode, at: Compiling): Promise<WorkflowPlan> => {
+  if (at.chain.length > MAX_INCLUDE_DEPTH) {
+    const chain = at.chain.join(" -> ");
+    throw new WorkflowError(
+      "include-limit",
+      `includes nest deeper than ${MAX_INCLUDE_DEPTH}: ${chain}`,
+    );
+  }
+  const included = resolve(at.cwd, node.workflow);
+  if (at.chain.includes(included)) {
+    const cycle = [...at.chain, included].join(" -> ");
+    throw new WorkflowError("include-recursion", `include cycle: ${cycle}`, node.workflow);
+  }
+  const parents = [...at.parents, node.id];
+  return compileFile(included, { ...at, chain: [...at.chain, included], parents });
+};
+
+const compileNodes = (nodes: readonly WorkflowNode[], at: Compiling): Promise<PlanNode[]> =>
+  Promise.all(nodes.map((node) => compileNode(node, at)));
+
+// Turns a checked node into the node the engine runs: stages and includes are loaded into it.
+async function compileNode(node: WorkflowNode, at: Compiling): Promise<PlanNode> {
+  const { parents } = at;
+  const inside: Compiling = { ...at, parents: [...parents, node.id] };
+  if (node.type === "include") return { ...node, parents, plan: await compileInclude(node, at) };
+  if (node.type === "loop") {
+    return { ...node, parents, nodes: await compileNodes(node.nodes, inside) };
+  }
+  if (node.type === "agent") {
+    const { stage, ...rest } = node;
+    if (stage === undefined) return { ...rest, parents };
+    return { ...rest, parents, stage: await loadStage(stage, at.cwd) };
+  }
+  if (node.type !== "switch") return { ...node, parents };
+  const { cases, default: fallback, ...rest } = node;
+  const compiled = await Promise.all(
+    cases.map(async (c) => ({ ...c, nodes: await compileNodes(c.nodes, inside) })),
+  );
+  if (fallback === undefined) return { ...rest, parents, cases: compiled };
+  return { ...rest, parents, cases: compiled, default: await compileNodes(fallback, inside) };
+}
+
+// The lists of nodes a compiled node holds. Every case of a switch counts: compile cannot know
+// which one runs.
+const listChildren = (node: PlanNode): readonly (readonly PlanNode[])[] => {
+  if (node.type === "loop") return [node.nodes];
+  if (node.type === "include") return [node.plan.nodes];
+  if (node.type !== "switch") return [];
+  return [...node.cases.map((c) => c.nodes), ...(node.default === undefined ? [] : [node.default])];
+};
+
+// The nodes a workflow runs, counting those of the workflows it includes.
+const countNodes = (nodes: readonly PlanNode[]): number =>
+  nodes.reduce(
+    (total, node) =>
+      total +
+      1 +
+      listChildren(node)
+        .map(countNodes)
+        .reduce((a, b) => a + b, 0),
     0,
   );
 
-async function compileFile(
-  path: string,
-  chain: readonly string[],
-  cwd: string,
-): Promise<WorkflowPlan> {
-  const source = await readWorkflow(path);
-  const workflow = parseWorkflow(source);
-  const nodes = validateScope(workflow.nodes, "");
-  const includes = await compileIncludes(nodes, chain, cwd);
-  const size = sizeOf(nodes, includes);
+async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
+  const workflow = parseWorkflow(await readWorkflow(path));
+  const nodes = await compileNodes(validateScope(workflow.nodes, ""), at);
+  const size = countNodes(nodes);
   if (size > MAX_EXPANDED_NODES) {
     throw new WorkflowError("include-limit", `${path} expands to ${size} nodes`, path);
   }
-  const includeHashes = [...includes.entries()]
-    .map(([name, plan]) => `${name}:${plan.hash}`)
-    .sort();
-  return Object.freeze({
-    name: workflow.name,
-    inputs: workflow.inputs,
-    maxConcurrency: workflow.maxConcurrency,
-    nodes,
-    includes,
-    size,
-    hash: createHash("sha256").update(source).update(includeHashes.join("\n")).digest("hex"),
-  });
+  return Object.freeze({ name: workflow.name, inputs: workflow.inputs, nodes });
 }
 
+// The artifacts written once `node` has ended: its own stage's, and those of every node inside it.
+const listProducedArtifacts = (node: PlanNode): readonly string[] => [
+  ...(node.type === "agent" ? (node.stage?.produces ?? []) : []).map((p) => p.artifact),
+  ...listChildren(node).flatMap((nodes) => nodes.flatMap(listProducedArtifacts)),
+];
+
+// A stage may start only once every artifact it needs is written, so each one must come from a
+// node it depends on, directly or through a chain, or from a node its container depends on.
+const checkArtifacts = (
+  nodes: readonly PlanNode[],
+  written: ReadonlySet<string>,
+  scope: string,
+): void => {
+  const ancestors = ancestorsOf(nodes);
+  for (const node of nodes) {
+    const deps = nodes.filter((candidate) => ancestors.get(node.id)?.has(candidate.id));
+    const before = new Set([...written, ...deps.flatMap(listProducedArtifacts)]);
+    const stage = node.type === "agent" ? node.stage : undefined;
+    const missing = stage?.consumes.find((c) => !c.optional && !before.has(c.artifact));
+    if (missing !== undefined) {
+      const makers = nodes.filter((n) => listProducedArtifacts(n).includes(missing.artifact));
+      const fix =
+        makers.length === 0
+          ? "no node in this scope produces it"
+          : `add dependsOn: [${makers.map((n) => n.id).join(", ")}]`;
+      throw new WorkflowError(
+        "missing-artifact",
+        `${scope}${node.id} needs artifact "${missing.artifact}", but no node it depends on produces it; ${fix}`,
+        scope + node.id,
+      );
+    }
+    for (const children of listChildren(node)) {
+      checkArtifacts(children, before, `${scope}${node.id}.`);
+    }
+  }
+};
+
+// cwd is the project root: relative workflow paths and stage paths resolve against it.
 export type CompileOptions = Readonly<{ cwd?: string }>;
 
-export const compileWorkflow = (
+export const compileWorkflow = async (
   path: string,
   options: CompileOptions = {},
 ): Promise<WorkflowPlan> => {
   const cwd = resolve(options.cwd ?? process.cwd());
   const absolute = resolve(cwd, path);
-  return compileFile(absolute, [absolute], cwd);
+  const plan = await compileFile(absolute, { chain: [absolute], cwd, parents: [] });
+  checkArtifacts(plan.nodes, new Set(), "");
+  return plan;
 };
