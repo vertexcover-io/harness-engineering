@@ -1,12 +1,12 @@
-import { existsSync, realpathSync, statSync } from "node:fs";
-import { copyFile, mkdir, rm } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { access, copyFile, mkdir, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import {
   type ArtifactRef,
   appendRunEvent,
   appendRunEventIf,
   type Config,
   createState,
+  type DoneStatus,
   type EmitInput,
   type EventHandlerRefs,
   emitRunEvent,
@@ -15,6 +15,7 @@ import {
   type IGit,
   type ILogger,
   type JsonValue,
+  jsonlEventStore,
   loadConfigOrDefault,
   type NodeRun,
   orchestrateCommand,
@@ -32,12 +33,19 @@ import {
   type StepReport,
   stackOf,
   syncState,
+  type VerifierRun,
   type WorkflowRun,
 } from "@harness/sdk";
 import * as z from "zod";
 import corePackage from "../package.json";
 import { extensionPath } from "./stage.ts";
 import { compileWorkflow } from "./workflow/compile.ts";
+import {
+  type CompletionIssue,
+  CompletionIssueSchema,
+  findConsumedArtifacts,
+  findDefaultIssues,
+} from "./workflow/done.ts";
 import { runStepLeaf } from "./workflow/exec.ts";
 import {
   buildParentsField,
@@ -49,10 +57,11 @@ import {
 } from "./workflow/next.ts";
 import {
   type NodeRecord,
-  type PlanStage,
+  type PlanAgentNode,
   WorkflowError,
   type WorkflowPlan,
 } from "./workflow/types.ts";
+import { artifactPaths, issuesOf, runVerifiers } from "./workflow/verifiers.ts";
 
 export type InitOptions = Readonly<{
   registry: Registry;
@@ -106,7 +115,11 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
   if (run.name !== null) {
     return { ok: false, error: `run ${runId} is already initialized as ${run.name}` };
   }
-  if (existsSync(runDirOf(run.cwd, name))) {
+  const taken = await access(runDirOf(run.cwd, name)).then(
+    () => true,
+    () => false,
+  );
+  if (taken) {
     return { ok: false, error: `.harness/${name} already exists` };
   }
   if ((await git.repoRoot(run.cwd)) === null) {
@@ -198,47 +211,35 @@ const replyOf = (outcome: Result<unknown, string | DoneError> | Error): JsonValu
   return z.json().parse(outcome.value);
 };
 
+// What a done call did to its node, logged beside its reply.
+const doneStatusOf = (outcome: Result<StepReport, DoneError> | Error): DoneStatus => {
+  if (outcome instanceof Error) return "error";
+  if (outcome.ok) return outcome.value.status;
+  if (outcome.error.kind === "validation") return "rejected";
+  return outcome.error.kind === "verify-exhausted" ? "failed" : "error";
+};
+
 // Logs the call to event.jsonl with what it was given and what it replied, even when it threw,
 // so the log shows every step the skill took. The call's own result or error is passed on.
 const logCall = async <T, E extends string | DoneError = string>(
   run: RunRef,
   call: Call,
   pending: Promise<Result<T, E>>,
+  statusOf?: (outcome: Result<T, E> | Error) => DoneStatus,
 ): Promise<Result<T, E>> => {
   const outcome = await pending.catch((error: unknown) =>
     error instanceof Error ? error : new Error(String(error)),
   );
+  const status = statusOf === undefined ? {} : { status: statusOf(outcome) };
   const logged = await emitRunEvent(run, {
     type: `orchestrate.${call.command}`,
     source: "orchestrate",
-    payload: { input: call.input, output: replyOf(outcome) },
+    payload: { input: call.input, output: replyOf(outcome), ...status },
   });
   if (outcome instanceof Error) throw outcome;
   if (!logged.ok) throw new Error(`orchestrate.${call.command} was not stored: ${logged.error}`);
   return outcome;
 };
-export const CompletionIssueSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    kind: z.literal("output-schema"),
-    schema: z.string(),
-    path: z.string(),
-    message: z.string(),
-  }),
-  z.strictObject({ kind: z.literal("required-artifact"), name: z.string() }),
-  z.strictObject({
-    kind: z.literal("artifact-file"),
-    name: z.string(),
-    path: z.string(),
-    reason: z.enum(["missing", "not-file", "outside-run", "invalid-artifacts-dir"]),
-    message: z.string(),
-  }),
-  z.strictObject({
-    kind: z.literal("artifact-name"),
-    name: z.string(),
-    reason: z.enum(["duplicate", "undeclared"]),
-  }),
-]);
-
 export const DoneErrorSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("input"),
@@ -251,6 +252,13 @@ export const DoneErrorSchema = z.discriminatedUnion("kind", [
     retryable: z.literal(true),
     nodeRunId: z.string(),
     issues: z.array(CompletionIssueSchema).min(1),
+  }),
+  z.strictObject({
+    kind: z.literal("verify-exhausted"),
+    retryable: z.literal(false),
+    nodeRunId: z.string(),
+    issues: z.array(CompletionIssueSchema).min(1),
+    message: z.string(),
   }),
   z.strictObject({
     kind: z.literal("not-running"),
@@ -268,7 +276,6 @@ export const DoneErrorSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("storage"), retryable: z.literal(false), message: z.string() }),
 ]);
 
-export type CompletionIssue = z.infer<typeof CompletionIssueSchema>;
 export type DoneError = z.infer<typeof DoneErrorSchema>;
 
 const readRunState = async (runDir: string): Promise<State> => {
@@ -278,7 +285,9 @@ const readRunState = async (runDir: string): Promise<State> => {
   return state;
 };
 
-const compileWorkflowPlan = (run: RunRef): Promise<WorkflowPlan> =>
+type RunDirRef = Pick<RunRef, "cwd" | "name">;
+
+const compileWorkflowPlan = (run: RunDirRef): Promise<WorkflowPlan> =>
   compileWorkflow(join(runDirOf(run.cwd, run.name), "workflow.yaml"), { cwd: run.cwd });
 
 const buildLeafReply = (
@@ -399,89 +408,6 @@ const runExecStep = async (run: RunRef, nodeRunId: string): Promise<Result<StepR
 
 export const execStep = (run: RunRef, nodeRunId: string): Promise<Result<StepReport>> =>
   logCall(run, { command: "exec", input: { nodeRunId } }, runExecStep(run, nodeRunId));
-const verifyArtifacts = (
-  options: Readonly<{
-    runDir: string;
-    stage: PlanStage | undefined;
-    artifacts: readonly ArtifactRef[];
-  }>,
-): readonly CompletionIssue[] => {
-  const { runDir, stage, artifacts } = options;
-  const names = artifacts.map((artifact) => artifact.name);
-  const issues: CompletionIssue[] = [];
-  const seen = new Set<string>();
-  for (const name of names) {
-    if (seen.has(name)) issues.push({ kind: "artifact-name", name, reason: "duplicate" });
-    seen.add(name);
-  }
-  if (stage !== undefined) {
-    for (const artifact of artifacts) {
-      if (!stage.produces.some((produced) => produced.artifact === artifact.name)) {
-        issues.push({ kind: "artifact-name", name: artifact.name, reason: "undeclared" });
-      }
-    }
-    for (const produced of stage.produces) {
-      if (!produced.optional && !seen.has(produced.artifact)) {
-        issues.push({ kind: "required-artifact", name: produced.artifact });
-      }
-    }
-  }
-  const artifactsDirPath = join(runDir, "artifacts");
-  const invalidArtifactsDir: CompletionIssue = {
-    kind: "artifact-file",
-    name: "artifacts",
-    path: artifactsDirPath,
-    reason: "invalid-artifacts-dir",
-    message: `run artifacts/ must be a real directory inside ${runDir}`,
-  };
-  let artifactsDir: string;
-  try {
-    artifactsDir = realpathSync(artifactsDirPath);
-    if (artifactsDir !== join(realpathSync(runDir), "artifacts")) {
-      return [...issues, invalidArtifactsDir];
-    }
-  } catch {
-    return [...issues, invalidArtifactsDir];
-  }
-  for (const artifact of artifacts) {
-    const path = join(runDir, artifact.path);
-    if (!existsSync(path)) {
-      issues.push({
-        kind: "artifact-file",
-        name: artifact.name,
-        path,
-        reason: "missing",
-        message: `artifact ${artifact.name}: ${path} does not exist`,
-      });
-      continue;
-    }
-    try {
-      const actual = realpathSync(path);
-      const fromArtifacts = relative(artifactsDir, actual);
-      const outside =
-        isAbsolute(fromArtifacts) || fromArtifacts === ".." || fromArtifacts.startsWith("../");
-      if (outside || !statSync(actual).isFile()) {
-        issues.push({
-          kind: "artifact-file",
-          name: artifact.name,
-          path,
-          reason: outside ? "outside-run" : "not-file",
-          message: `artifact ${artifact.name}: ${path} must be a file inside artifacts/`,
-        });
-      }
-    } catch {
-      issues.push({
-        kind: "artifact-file",
-        name: artifact.name,
-        path,
-        reason: "missing",
-        message: `artifact ${artifact.name}: ${path} does not exist`,
-      });
-    }
-  }
-  return issues;
-};
-
 const isRunningNodeRun = (runs: Readonly<Record<string, NodeRun>>, nodeRunId: string): boolean =>
   Object.values(runs).some(
     (nodeRun) =>
@@ -528,7 +454,6 @@ const finishStepChecked = async (
   outcome: StepOutcome,
   artifacts: readonly ArtifactRef[],
 ): Promise<Result<StepReport, DoneError>> => {
-  const runDir = runDirOf(run.cwd, run.name);
   const step = await loadRunningLeaf(run, nodeRunId);
   if (!step.ok) {
     return {
@@ -550,24 +475,14 @@ const finishStepChecked = async (
     };
   }
   if (!("error" in outcome)) {
-    const artifactIssues = verifyArtifacts({ runDir, stage: node.stage, artifacts });
-    const schema = node.stage?.outputSchema ?? node.outputSchema ?? z.json();
-    const parsed = schema.safeParse(outcome.output);
-    const name = node.stage?.outputSchemaName ?? node.output?.zodSchema ?? "json";
-    const schemaIssues: CompletionIssue[] = parsed.success
-      ? []
-      : parsed.error.issues.map(
-          (issue): CompletionIssue => ({
-            kind: "output-schema",
-            schema: name,
-            path: issue.path.map(String).join("."),
-            message: issue.message,
-          }),
-        );
-    const issues = [...artifactIssues, ...schemaIssues];
-    if (issues.length > 0) {
-      return { ok: false, error: { kind: "validation", retryable: true, nodeRunId, issues } };
-    }
+    const { issues, rejected } = await checkCompletion(
+      run,
+      node,
+      nodeRunId,
+      outcome.output,
+      artifacts,
+    );
+    if (issues.length > 0) return rejectDone(run, step.value, issues, rejected);
   }
   const record: NodeRecord =
     "error" in outcome
@@ -586,9 +501,19 @@ const finishStepChecked = async (
           output: outcome.output,
         };
   const kept = record.status === "completed" ? artifacts : [];
+  return storeStepEnd(run, step.value, record, kept);
+};
+
+const storeStepEnd = async (
+  run: RunRef,
+  step: RunningLeaf,
+  record: NodeRecord,
+  artifacts: readonly ArtifactRef[],
+): Promise<Result<StepReport, DoneError>> => {
+  const nodeRunId = step.nodeRun.nodeRunId;
   const stored = await appendRunEventIf(
     run,
-    buildStepEndEvent(step.value, record, kept),
+    buildStepEndEvent(step, record, artifacts),
     (state) => state !== null && isRunningNodeRun(state.nodeRuns, nodeRunId),
   );
   if (!stored.ok && stored.error === "condition-failed") {
@@ -603,8 +528,101 @@ const finishStepChecked = async (
     };
   }
   return stored.ok
-    ? { ok: true, value: buildReport(step.value, record) }
+    ? { ok: true, value: buildReport(step, record) }
     : { ok: false, error: { kind: "storage", retryable: false, message: stored.error } };
+};
+
+// What rejects this done, and how many earlier dones were rejected. The log is only read when this
+// done could be rejected.
+const checkCompletion = async (
+  run: RunRef,
+  node: PlanAgentNode,
+  nodeRunId: string,
+  output: JsonValue,
+  artifacts: readonly ArtifactRef[],
+): Promise<Readonly<{ issues: readonly CompletionIssue[]; rejected: number }>> => {
+  const defaults = await findDefaultIssues(node, output, artifacts, runDirOf(run.cwd, run.name));
+  const verifiers = node.stage?.verifiers ?? [];
+  if (defaults.length === 0 && verifiers.length === 0) return { issues: [], rejected: 0 };
+  const rejected = await countRejectedDones(run, nodeRunId);
+  if (defaults.length > 0) return { issues: defaults, rejected };
+  const input = {
+    run: run.name,
+    nodeRunId,
+    output,
+    artifacts: artifactPaths(runDirOf(run.cwd, run.name), artifacts),
+  };
+  const runs = await runVerifiers(verifiers, input, run.cwd, rejected + 1);
+  await logVerifierRuns(run, node, nodeRunId, runs);
+  return { issues: issuesOf(runs), rejected };
+};
+
+// One orchestrate.verifier event per verifier, in the order the stage lists them.
+const logVerifierRuns = async (
+  run: RunRef,
+  node: PlanAgentNode,
+  nodeRunId: string,
+  runs: readonly VerifierRun[],
+): Promise<void> => {
+  for (const verifierRun of runs) {
+    const logged = await emitRunEvent(run, {
+      type: "orchestrate.verifier",
+      source: "orchestrate",
+      nodeId: node.id,
+      nodeRunId,
+      stage: node.stage?.name,
+      payload: z.json().parse(verifierRun),
+    });
+    if (!logged.ok) throw new Error(`orchestrate.verifier was not stored: ${logged.error}`);
+  }
+};
+
+const MAX_REJECTED_DONES = 3;
+
+const RejectedDoneEventSchema = z.object({
+  type: z.literal("orchestrate.done"),
+  payload: z.object({
+    input: z.object({ nodeRunId: z.string() }),
+    status: z.literal("rejected"),
+  }),
+});
+
+// Earlier rejected done calls for this node run, counted from the calls logCall keeps.
+const countRejectedDones = async (run: RunDirRef, nodeRunId: string): Promise<number> => {
+  const events = await jsonlEventStore(runDirOf(run.cwd, run.name)).read();
+  return events.filter((event) => {
+    const parsed = RejectedDoneEventSchema.safeParse(event);
+    return parsed.success && parsed.data.payload.input.nodeRunId === nodeRunId;
+  }).length;
+};
+
+const rejectDone = async (
+  run: RunRef,
+  step: RunningLeaf,
+  issues: readonly CompletionIssue[],
+  rejected: number,
+): Promise<Result<StepReport, DoneError>> => {
+  const nodeRunId = step.nodeRun.nodeRunId;
+  if (rejected + 1 < MAX_REJECTED_DONES) {
+    return {
+      ok: false,
+      error: { kind: "validation", retryable: true, nodeRunId, issues: [...issues] },
+    };
+  }
+  const message = `done was rejected ${MAX_REJECTED_DONES} times; the node is failed`;
+  const record: NodeRecord = {
+    path: nodeRunId,
+    type: step.node.type,
+    status: "failed",
+    attempts: MAX_REJECTED_DONES,
+    error: { kind: "exhausted", message },
+  };
+  const stored = await storeStepEnd(run, step, record, []);
+  if (!stored.ok) return stored;
+  return {
+    ok: false,
+    error: { kind: "verify-exhausted", retryable: false, nodeRunId, issues: [...issues], message },
+  };
 };
 
 export const finishStep = (
@@ -617,4 +635,45 @@ export const finishStep = (
     run,
     { command: "done", input: { nodeRunId, ...outcome, artifacts: [...artifacts] } },
     recordStepEnd(run, nodeRunId, outcome, artifacts),
+    doneStatusOf,
   );
+
+// Helpers for verifiers. A run is found by its name and the folder it was started in, which a
+// function verifier gets as context.cwd and a script verifier as its working directory.
+
+// Everything a verifier can ask about a node run, reading the workflow, state.json and the log once.
+export const getNodeFacts = async (run: string, nodeRunId: string, cwd: string) => {
+  const ref = { cwd, name: run };
+  const runDir = runDirOf(cwd, run);
+  const [plan, state, rejected] = await Promise.all([
+    compileWorkflowPlan(ref),
+    readRunState(runDir),
+    countRejectedDones(ref, nodeRunId),
+  ]);
+  const step = findRunningLeaf(plan.nodes, state.nodeRuns, nodeRunId);
+  if (step === undefined) throw new Error(`${nodeRunId} is not the step this run is running`);
+  const { node, nodeRun } = step;
+  const stage = node.type === "agent" ? node.stage : undefined;
+  const consumed = stage === undefined ? [] : findConsumedArtifacts(stage, state.nodeRuns);
+  return {
+    nodeRunId,
+    nodeId: node.id,
+    stage: stage?.name ?? null,
+    input: nodeRun.input ?? null,
+    attempt: rejected + 1,
+    consumed: artifactPaths(runDir, consumed),
+    runDir,
+    artifactsDir: join(runDir, "artifacts"),
+  };
+};
+
+export const getNodeRun = async (run: string, nodeRunId: string, cwd: string) => {
+  const { nodeId, stage, input, attempt } = await getNodeFacts(run, nodeRunId, cwd);
+  return { nodeId, stage, input, attempt };
+};
+
+export const getConsumed = async (
+  run: string,
+  nodeRunId: string,
+  cwd: string,
+): Promise<Readonly<Record<string, string>>> => (await getNodeFacts(run, nodeRunId, cwd)).consumed;

@@ -11,6 +11,7 @@ import {
 } from "@harness/sdk";
 import { z } from "zod";
 import { own } from "../stage.ts";
+import { findConsumedArtifacts } from "./done.ts";
 import {
   evaluateBoolean,
   evaluateScalar,
@@ -152,12 +153,7 @@ const buildContainerOutput = (
 
 // The artifacts a stage needs, did not mark optional, and no completed node has listed yet.
 const findMissingArtifacts = (stage: PlanStage, state: State): readonly string[] => {
-  const listed = (runs: Readonly<Record<string, NodeRun>>): readonly string[] =>
-    Object.values(runs).flatMap((run) => [
-      ...(run.status === "completed" ? run.artifacts.map((ref) => ref.name) : []),
-      ...listed(run.nodes ?? {}),
-    ]);
-  const written = new Set(listed(state.nodeRuns));
+  const written = new Set(findConsumedArtifacts(stage, state.nodeRuns).map((ref) => ref.name));
   return stage.consumes
     .filter((consumed) => !consumed.optional && !written.has(consumed.artifact))
     .map((consumed) => consumed.artifact);

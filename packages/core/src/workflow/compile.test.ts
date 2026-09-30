@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { compileWorkflow } from "./compile.ts";
 import { evaluateBoolean, resolveValue, type Scope } from "./evaluate.ts";
 import { DEMO_STAGES, writeStages } from "./test-stages.ts";
-import { NodeFailure, WorkflowError } from "./types.ts";
+import { NodeFailure, WorkflowError, type WorkflowErrorCode } from "./types.ts";
 
 let workflowCount = 0;
 const workflowDir = mkdtempSync(join(tmpdir(), "wf-yaml-"));
@@ -531,6 +531,40 @@ describe("compile with stages", () => {
       expect(error.code).toBe("missing-schema");
       expect(error.message).toContain("outputs.module");
     }
+  });
+
+  test.each<[string, string, WorkflowErrorCode]>([
+    ["a missing module", "{ id: v, module: ../nope.ts, functionName: pass }", "missing-module"],
+    [
+      "a missing function",
+      "{ id: v, module: ../verifiers.ts, functionName: nope }",
+      "missing-export",
+    ],
+  ])("a verifier with %s fails compile", async (_name, verifier, code) => {
+    const project = mkdtempSync(join(tmpdir(), "wf-verifier-"));
+    writeStages(join(project, "stages"), { producer: { verifiers: `[${verifier}]` } });
+    const path = join(project, "workflow.yml");
+    writeFileSync(path, workflow(stageNode("make", "stages/producer")));
+    const error = await compileWorkflow(path, { cwd: project }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(WorkflowError);
+    expect((error as WorkflowError).code).toBe(code);
+  });
+
+  test.each([
+    ["both", "{ id: v, module: ../verifiers.ts, functionName: pass, runtime: sh, script: ok }"],
+    ["neither", "{ id: v }"],
+    ["a module without a function", "{ id: v, module: ../verifiers.ts }"],
+    ["a runtime without a script", "{ id: v, runtime: sh }"],
+  ])("a verifier needs a function or a script, so %s fails compile", async (_name, verifier) => {
+    const project = mkdtempSync(join(tmpdir(), "wf-verifier-shape-"));
+    writeStages(join(project, "stages"), { producer: { verifiers: `[${verifier}]` } });
+    const path = join(project, "workflow.yml");
+    writeFileSync(path, workflow(stageNode("make", "stages/producer")));
+    const error = await compileWorkflow(path, { cwd: project }).catch((caught: unknown) => caught);
+    expect((error as WorkflowError).code).toBe("missing-stage");
+    expect((error as WorkflowError).message).toContain(
+      "runtime + script, or module + functionName",
+    );
   });
 
   test("a stage cannot override its own output schema in the workflow node", async () => {

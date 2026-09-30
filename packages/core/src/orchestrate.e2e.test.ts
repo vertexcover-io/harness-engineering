@@ -607,6 +607,271 @@ nodes:
     input: {}
 `;
 
+describe("stage verifiers", () => {
+  const verifiedRun = (verifiers: string | undefined, workflow = STAGES_WORKFLOW) => {
+    const skills = tempDir();
+    writeStages(skills, {
+      producer: { produces: DEMO_STAGES.producer.produces },
+      consumer: { consumes: DEMO_STAGES.consumer.consumes, ...(verifiers ? { verifiers } : {}) },
+    });
+    const run = startedRun(workflow);
+    const env = { HARNESS_SKILLS_DIR: skills };
+    const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args, env);
+    const artifactsDir = join(runDirOf(run.repo, "feat-x"), "artifacts");
+    const finishProducer = () => {
+      const make = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+      writeFileSync(join(artifactsDir, "plan.md"), "plan\n");
+      const done = step([
+        ...["done", make.nodeRunId, "--run", "feat-x", "--output", "{}"],
+        ...["--artifact", "plan=artifacts/plan.md"],
+      ]);
+      expect(done.code).toBe(0);
+      return JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    };
+    const finish = (nodeRunId: string) =>
+      step(["done", nodeRunId, "--run", "feat-x", "--output", '{"ok":true}']);
+    return { ...run, step, finishProducer, finish, artifactsDir };
+  };
+
+  const fn = (id: string, functionName: string, extra = "") =>
+    `{ id: ${id}, module: ../verifiers.ts, functionName: ${functionName}${extra} }`;
+  const script = (id: string, body: string) =>
+    `{ id: ${id}, runtime: sh, script: ${JSON.stringify(body)} }`;
+
+  const refusal = (stderr: string) => JSON.parse(stderr);
+
+  test("a stage with no verifiers completes as before", () => {
+    const { finishProducer, finish } = verifiedRun(undefined);
+    const use = finishProducer();
+    expect(finish(use.nodeRunId).code).toBe(0);
+  });
+
+  test("a passing function verifier lets the stage complete", () => {
+    const { repo, finishProducer, finish } = verifiedRun(`[${fn("ok", "pass")}]`);
+    const use = finishProducer();
+    expect(finish(use.nodeRunId).code).toBe(0);
+    expect(stateOf(repo).nodeRuns.use.status).toBe("completed");
+  });
+
+  test("pass: false returns a retryable validation with the findings and keeps the node open", () => {
+    const { repo, finishProducer, finish } = verifiedRun(`[${fn("lint", "fail")}]`);
+    const use = finishProducer();
+    const refused = finish(use.nodeRunId);
+    expect(refused.code).toBe(1);
+    expect(refusal(refused.stderr)).toEqual({
+      kind: "validation",
+      retryable: true,
+      nodeRunId: use.nodeRunId,
+      issues: [
+        {
+          kind: "verifier",
+          verifier: "lint",
+          findings: [{ message: "fail one", path: "a.ts", line: 3, hint: "fix a" }],
+        },
+      ],
+    });
+    expect(stateOf(repo).nodeRuns.use.status).toBe("running");
+  });
+
+  test.each([
+    ["throw", fn("v", "throws"), "threw", "boom"],
+    ["timeout", fn("v", "slow", ", timeoutMs: 100"), "timeout", "timed out after 100ms"],
+    ["bad result shape", fn("v", "badShape"), "bad-output", "finding"],
+    ["non-zero exit", script("v", "echo nope >&2; exit 3"), "exit", "exit 3: nope"],
+    ["bad JSON", script("v", "echo not-json"), "bad-output", "not JSON"],
+    ["no JSON", script("v", "true"), "bad-output", "not JSON"],
+  ])("a verifier error (%s) fails closed with its own reason", (_name, verifier, reason, text) => {
+    const { finishProducer, finish } = verifiedRun(`[${verifier}]`);
+    const use = finishProducer();
+    const refused = finish(use.nodeRunId);
+    expect(refused.code).toBe(1);
+    const { kind, retryable, issues } = refusal(refused.stderr);
+    expect([kind, retryable]).toEqual(["validation", true]);
+    expect(issues).toEqual([
+      { kind: "verifier-error", verifier: "v", reason, message: expect.stringContaining(text) },
+    ]);
+  });
+
+  test("a script verifier gets the input as JSON on stdin and runs in the run's cwd", () => {
+    const { repo, finishProducer, finish } = verifiedRun(
+      `[${script("s", 'cat > "$PWD/stdin.json"; printf \'{"pass":true}\'')}]`,
+    );
+    const use = finishProducer();
+    expect(finish(use.nodeRunId).code).toBe(0);
+    const seen = JSON.parse(readFileSync(join(repo, "stdin.json"), "utf8"));
+    expect(seen).toEqual({
+      run: "feat-x",
+      nodeRunId: use.nodeRunId,
+      output: { ok: true },
+      artifacts: {},
+      args: {},
+    });
+  });
+
+  test("failing default checks skip the verifiers", () => {
+    const marker = join(tempDir(), "ran");
+    const { finishProducer, step } = verifiedRun(
+      `[${script("s", `touch ${marker}; printf '{"pass":true}'`)}]`,
+    );
+    const use = finishProducer();
+    const refused = step(["done", use.nodeRunId, "--run", "feat-x", "--output", "[]"]);
+    expect(refusal(refused.stderr).issues).toMatchObject([{ kind: "output-schema" }]);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test("two failing verifiers are returned together", () => {
+    const { finishProducer, finish } = verifiedRun(`[${fn("a", "fail")}, ${fn("b", "failTwo")}]`);
+    const use = finishProducer();
+    const issues = refusal(finish(use.nodeRunId).stderr).issues;
+    expect(issues.map((issue: { verifier: string }) => issue.verifier)).toEqual(["a", "b"]);
+  });
+
+  test("each verifier run is logged as an orchestrate.verifier event", async () => {
+    const { repo, finishProducer, finish } = verifiedRun(
+      `[${fn("ok", "pass")}, ${fn("lint", "fail")}, ${fn("boom", "throws")}]`,
+    );
+    const use = finishProducer();
+    expect(finish(use.nodeRunId).code).toBe(1);
+    const logged = (await eventsOf(repo))
+      .filter((event) => event.type === "orchestrate.verifier")
+      .map(({ source, nodeId, nodeRunId, stage, payload }) => ({
+        source,
+        nodeId,
+        nodeRunId,
+        stage,
+        payload,
+      }));
+    const envelope = {
+      source: "orchestrate",
+      nodeId: "use",
+      nodeRunId: use.nodeRunId,
+      stage: "consumer",
+    };
+    const run = { attempt: 1, durationMs: expect.any(Number) };
+    expect(logged).toEqual([
+      { ...envelope, payload: { ...run, verifier: "ok", status: "passed", findings: [] } },
+      {
+        ...envelope,
+        payload: {
+          ...run,
+          verifier: "lint",
+          status: "failed",
+          findings: [{ message: "fail one", path: "a.ts", line: 3, hint: "fix a" }],
+        },
+      },
+      {
+        ...envelope,
+        payload: {
+          ...run,
+          verifier: "boom",
+          status: "error",
+          findings: [],
+          error: { reason: "threw", message: "boom" },
+        },
+      },
+    ]);
+  });
+
+  test("a function verifier receives its input, args and context, and the helpers answer", () => {
+    const file = join(tempDir(), "seen.json");
+    const args = `, args: { file: ${JSON.stringify(file)} }`;
+    const { repo, finishProducer, finish, artifactsDir } = verifiedRun(
+      `[${fn("rec", "record", args)}]`,
+    );
+    const use = finishProducer();
+    const refused = finish(use.nodeRunId);
+    expect(refused.code).toBe(0);
+    const seen = JSON.parse(readFileSync(file, "utf8"));
+    expect(seen.input).toEqual({
+      run: "feat-x",
+      nodeRunId: use.nodeRunId,
+      output: { ok: true },
+      artifacts: {},
+      args: { file },
+    });
+    expect(seen.cwd).toBe(repo);
+    expect(seen.attempt).toBe(1);
+    expect(seen.helpers).toEqual({
+      node: { nodeId: "use", stage: "consumer", input: {}, attempt: 1 },
+      consumed: { plan: join(artifactsDir, "plan.md") },
+    });
+  });
+
+  test("the third rejected done fails the node for good, whatever the rejections were, however long", async () => {
+    const file = join(tempDir(), "seen.json");
+    const record = fn("rec", "record", `, args: { file: ${JSON.stringify(file)} }`);
+    const { repo, finishProducer, finish, step } = verifiedRun(
+      `[${fn("lint", "failLong")}, ${record}]`,
+    );
+    const use = finishProducer();
+    const show = () =>
+      JSON.parse(step(["node", "show", "--run", "feat-x", "--node-run", use.nodeRunId]).stdout);
+    const schemaRefusal = step(["done", use.nodeRunId, "--run", "feat-x", "--output", "[]"]);
+    expect(refusal(schemaRefusal.stderr).retryable).toBe(true);
+    expect(show().attempt).toBe(2);
+
+    const second = finish(use.nodeRunId);
+    expect(second.stderr.length).toBeGreaterThan(500);
+    expect(refusal(second.stderr).retryable).toBe(true);
+    const seen = JSON.parse(readFileSync(file, "utf8"));
+    expect([seen.attempt, seen.helpers.node.attempt]).toEqual([2, 2]);
+
+    const last = finish(use.nodeRunId);
+    expect(last.code).toBe(1);
+    expect(refusal(last.stderr)).toMatchObject({
+      kind: "verify-exhausted",
+      retryable: false,
+      nodeRunId: use.nodeRunId,
+      issues: [{ kind: "verifier", verifier: "lint" }],
+    });
+    expect(stateOf(repo).nodeRuns.use.status).toBe("failed");
+    const again = finish(use.nodeRunId);
+    expect(refusal(again.stderr)).toMatchObject({ kind: "not-running", retryable: false });
+  });
+
+  test("when two nodes wrote a consumed artifact, the newer one is handed over", () => {
+    const twoMakers = STAGES_WORKFLOW.replace(
+      "  - id: use",
+      "  - id: remake\n    type: agent\n    stage: producer\n    dependsOn: [make]\n    input: {}\n  - id: use",
+    ).replace("dependsOn: [make]\n    input: {}\n`", "dependsOn: [remake]\n    input: {}\n`");
+    const { step, artifactsDir } = verifiedRun(undefined, twoMakers);
+    const produce = (file: string) => {
+      const node = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+      writeFileSync(join(artifactsDir, file), "plan\n");
+      const done = step([
+        ...["done", node.nodeRunId, "--run", "feat-x", "--output", "{}"],
+        ...["--artifact", `plan=artifacts/${file}`],
+      ]);
+      expect(done.code).toBe(0);
+    };
+    produce("first.md");
+    produce("second.md");
+    const use = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    expect(use).toMatchObject({ nodeId: "use" });
+    const shown = step(["node", "show", "--run", "feat-x", "--node-run", use.nodeRunId]);
+    expect(JSON.parse(shown.stdout).consumed).toEqual({ plan: join(artifactsDir, "second.md") });
+  });
+
+  test("node show prints the node run's facts as JSON", () => {
+    const { repo, finishProducer, step, artifactsDir } = verifiedRun(undefined);
+    const use = finishProducer();
+    const shown = step(["node", "show", "--run", "feat-x", "--node-run", use.nodeRunId]);
+    expect(shown.code).toBe(0);
+    expect(JSON.parse(shown.stdout)).toEqual({
+      nodeRunId: use.nodeRunId,
+      nodeId: "use",
+      stage: "consumer",
+      input: {},
+      attempt: 1,
+      consumed: { plan: join(artifactsDir, "plan.md") },
+      runDir: runDirOf(repo, "feat-x"),
+      artifactsDir,
+    });
+    const unknown = step(["node", "show", "--run", "feat-x", "--node-run", "nr-nope"]);
+    expect(unknown.code).toBe(1);
+  });
+});
+
 describe("orchestrate next and done with stages", () => {
   const stageRun = (produces?: string) => {
     const skills = stageSkills(produces);
@@ -695,6 +960,23 @@ describe("orchestrate next and done with stages", () => {
       output: { ok: true },
       artifacts: [{ name: "plan", path: "artifacts/plan.md" }],
     });
+  });
+
+  test("done records an artifact the stage never declared", () => {
+    const { repo, step } = stageRun();
+    const reply = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    const artifactsDir = join(runDirOf(repo, "feat-x"), "artifacts");
+    writeFileSync(join(artifactsDir, "plan.md"), "plan\n");
+    writeFileSync(join(artifactsDir, "notes.md"), "notes\n");
+    const recorded = step([
+      ...["done", reply.nodeRunId, "--run", "feat-x", "--output", '{"ok":true}'],
+      ...["--artifact", "plan=artifacts/plan.md", "--artifact", "notes=artifacts/notes.md"],
+    ]);
+    expect(recorded.code).toBe(0);
+    expect(stateOf(repo).nodeRuns.make.artifacts).toEqual([
+      { name: "plan", path: "artifacts/plan.md" },
+      { name: "notes", path: "artifacts/notes.md" },
+    ]);
   });
 
   test("a stage with invalid output stays running and can submit corrected output", async () => {
@@ -1103,10 +1385,10 @@ const callsOf = async (repo: string) =>
     .filter((event) => event.type.startsWith("orchestrate."))
     .map(({ type, source, payload }) => ({ type, source, payload }));
 
-const call = (type: string, input: JsonValue, output: JsonValue) => ({
+const call = (type: string, input: JsonValue, output: JsonValue, status?: string) => ({
   type: `orchestrate.${type}`,
   source: "orchestrate",
-  payload: { input, output },
+  payload: { input, output, ...(status === undefined ? {} : { status }) },
 });
 
 describe("orchestrate call log", () => {
@@ -1166,8 +1448,14 @@ describe("orchestrate call log", () => {
         "done",
         { nodeRunId: stage.nodeRunId, output: { ok: true }, artifacts },
         { kind: "error", message: refused.stderr.trim() },
+        "rejected",
       ),
-      call("done", { nodeRunId: stage.nodeRunId, output: { ok: true }, artifacts }, report),
+      call(
+        "done",
+        { nodeRunId: stage.nodeRunId, output: { ok: true }, artifacts },
+        report,
+        "completed",
+      ),
       call("next", {}, following),
     ]);
   });
@@ -1191,6 +1479,7 @@ describe("orchestrate call log", () => {
         "done",
         { nodeRunId: agent.nodeRunId, error: "could not", artifacts: [] },
         JSON.parse(failed.stdout),
+        "failed",
       ),
     ]);
   });

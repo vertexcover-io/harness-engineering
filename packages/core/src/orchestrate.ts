@@ -29,6 +29,7 @@ import {
   DoneErrorSchema,
   execStep,
   finishStep,
+  getNodeFacts,
   initializeRun,
   linkRunSession,
   nextStep,
@@ -294,6 +295,27 @@ const doneCommand = () =>
       if (report.ok && report.value.status !== "completed") process.exitCode = 1;
     });
 
+const nodeCommand = () => {
+  const node = new Command("node").description("Facts about a node run, for verifier scripts");
+  node
+    .command("show")
+    .description("Print the node run's id, stage, input, attempt, consumed artifacts and run dirs")
+    .requiredOption("--run <name>", RUN_HELP)
+    .requiredOption("--node-run <id>", "node run id from next")
+    .option("--root <dir>", ROOT_HELP)
+    .action(async (opts) =>
+      runWorkflowCommand(async () => {
+        const nodeRunId = opts.nodeRun;
+        if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
+        const target = await getWorkflowRun(opts.run, opts.root);
+        if (!target.ok) return fail(target.error);
+        const { cwd, name } = target.value.run;
+        printJson(await getNodeFacts(name, nodeRunId, cwd));
+      }).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error))),
+    );
+  return node;
+};
+
 const baselineCommand = () =>
   new Command("baseline")
     .description(
@@ -427,6 +449,7 @@ await new Command()
   .addCommand(nextCommand())
   .addCommand(execCommand())
   .addCommand(doneCommand())
+  .addCommand(nodeCommand())
   .addCommand(skillCommand())
   .addCommand(hookCommand())
   .parseAsync(process.argv)

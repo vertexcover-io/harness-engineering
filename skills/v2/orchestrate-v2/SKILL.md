@@ -68,7 +68,9 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      quote and lets the rest run as shell. If `done --output` exits non-zero, read its JSON error.
      When `retryable` is `true`, fix the command input or each issue in `issues` and retry `done`
      with the same `nodeRunId`; the node is still running. When `retryable` is `false`, stop and
-     report the error. Do not call `next` until `done` reports completed or you report an
+     report the error. An issue of kind `verifier` or `verifier-error` is a stage check that
+     failed: read its `findings` or `message`, fix the work, and call `done` again. The third
+     rejected `done` on a node fails it for good (`verify-exhausted`). Do not call `next` until `done` reports completed or you report an
      unrecoverable stage error with `done --error`. Log `✓` or `✗` from the printed JSON, then
      go back to 1.
    - `agent`: tell the user `▶ NODE_ID`. Do what `prompt` asks, with `input` as its data,

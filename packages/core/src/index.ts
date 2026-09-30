@@ -19,6 +19,7 @@ export {
   type LogBase,
   resolveLevel,
 } from "./logging.ts";
+export { getConsumed, getNodeFacts, getNodeRun } from "./runs.ts";
 export {
   type LoadedStage,
   loadStage,
@@ -28,3 +29,8 @@ export {
   StageSchema,
 } from "./stage.ts";
 export * from "./workflow/index.ts";
+export {
+  type VerifierInput,
+  type VerifierResult,
+  VerifierResultSchema,
+} from "./workflow/verifiers.ts";

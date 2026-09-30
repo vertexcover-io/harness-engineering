@@ -1,7 +1,31 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export type DemoStage = Readonly<{ consumes?: string; produces?: string }>;
+export type DemoStage = Readonly<{ consumes?: string; produces?: string; verifiers?: string }>;
+
+const CORE_INDEX = join(import.meta.dir, "..", "index.ts");
+
+// Functions the demo stages name as verifiers; `args.file` makes `record` write what it was given.
+const VERIFIERS_MODULE = `
+import { writeFileSync } from "node:fs";
+import { getConsumed, getNodeRun } from ${JSON.stringify(CORE_INDEX)};
+export const pass = () => ({ pass: true, findings: [] });
+export const fail = () => ({ pass: false, findings: [{ message: "fail one", path: "a.ts", line: 3, hint: "fix a" }] });
+export const failLong = () => ({ pass: false, findings: [{ message: "a long finding ".repeat(50) }] });
+export const failTwo = () => ({ pass: false, findings: [{ message: "fail two" }] });
+export const throws = () => { throw new Error("boom"); };
+export const slow = (input, context) => new Promise((resolve) => context.signal.addEventListener("abort", () => resolve({ pass: true })));
+export const badShape = () => ({ pass: false, findings: [] });
+export const record = async (input, context) => {
+  const { run, nodeRunId } = input;
+  const helpers = {
+    node: await getNodeRun(run, nodeRunId, context.cwd),
+    consumed: await getConsumed(run, nodeRunId, context.cwd),
+  };
+  writeFileSync(input.args.file, JSON.stringify({ input, helpers, cwd: context.cwd, attempt: context.attempt }));
+  return { pass: true, findings: [] };
+};
+`;
 
 // Writes DIR/NAME/SKILL.md for each demo stage, declaring the artifacts it consumes and produces.
 export const writeStages = (dir: string, stages: Readonly<Record<string, DemoStage>>): void => {
@@ -11,7 +35,8 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
     join(dir, "schemas.ts"),
     `import { z } from ${JSON.stringify(zodUrl)};\nexport const schemas = { "demo.output.v1": z.record(z.string(), z.json()) };\n`,
   );
-  for (const [name, { consumes, produces }] of Object.entries(stages)) {
+  writeFileSync(join(dir, "verifiers.ts"), VERIFIERS_MODULE);
+  for (const [name, { consumes, produces, verifiers }] of Object.entries(stages)) {
     mkdirSync(join(dir, name), { recursive: true });
     const lines = [
       "---",
@@ -24,6 +49,7 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
       "outputs: { description: out, schema: demo.output.v1, module: ../schemas.ts }",
       ...(consumes === undefined ? [] : [`consumes: ${consumes}`]),
       ...(produces === undefined ? [] : [`produces: ${produces}`]),
+      ...(verifiers === undefined ? [] : [`verifiers: ${verifiers}`]),
       "protocols: []",
       "scopes: []",
       "---",
