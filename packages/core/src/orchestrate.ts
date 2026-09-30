@@ -1,22 +1,26 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
-import { HOOK_AGENTS, stopHooks } from "@harness/agents";
+import { agentAdapters, HOOK_AGENTS } from "@harness/agents";
 import {
+  type AgentAdapter,
   AgentTypeSchema,
   type ArtifactRef,
   ArtifactRefSchema,
   createGit,
   createRegistry,
   emitRunEvent,
+  type HookDeps,
   type JsonValue,
   loadConfigOrDefault,
+  preToolUseHandlers,
   type Result,
   type RunRef,
   registryPath,
   resolveRoot,
   resolveRun,
   type StepOutcome,
+  stopHandlers,
   stopRunningOnSignal,
 } from "@harness/sdk";
 import { createLogger, resolveLevel } from "./logging.ts";
@@ -360,23 +364,54 @@ const skillCommand = () => {
   return skill;
 };
 
-const hookCommand = () => {
-  const hook = new Command("hook").description(
-    "Answer an agent's hook call with that agent's own hook function",
-  );
-  // Always exits 0 and prints only the agent's reply: an error here must never trap a session.
+type HookSpec<H> = Readonly<{
+  name: string;
+  description: string;
+  handlers: Readonly<Record<string, H>>;
+  answer: (
+    adapter: AgentAdapter,
+  ) => ((stdin: string, deps: HookDeps, handler: H) => Promise<string>) | undefined;
+}>;
+
+// Always exits 0 and prints only the agent's reply: an error here must never trap a session. An
+// agent without this hook, or a handler the harness does not know, prints nothing.
+const addHookCommand = <H>(hook: Command, spec: HookSpec<H>): void => {
   hook
-    .command("stop")
-    .description("Decide from the run's state.json whether the agent may end its turn")
+    .command(spec.name)
+    .description(spec.description)
     .addOption(
       new Option("--agent <type>", "agent that called the hook")
         .choices(HOOK_AGENTS)
         .makeOptionMandatory(),
     )
+    .requiredOption("--handler <name>", `one of: ${Object.keys(spec.handlers).join(", ")}`)
     .action(async (opts) => {
+      const answer = spec.answer(agentAdapters[opts.agent]);
+      const handler = Object.hasOwn(spec.handlers, opts.handler)
+        ? spec.handlers[opts.handler]
+        : undefined;
+      if (answer === undefined || handler === undefined) return;
       const deps = { registry: registry(), env: process.env, log };
-      process.stdout.write(await stopHooks[opts.agent](await Bun.stdin.text(), deps));
+      process.stdout.write(await answer(await Bun.stdin.text(), deps, handler));
     });
+};
+
+const hookCommand = () => {
+  const hook = new Command("hook").description(
+    "Answer an agent's hook call with the named handler, in that agent's own format",
+  );
+  addHookCommand(hook, {
+    name: "stop",
+    description: "Decide whether the agent may end its turn",
+    handlers: stopHandlers,
+    answer: (adapter) => adapter.stop,
+  });
+  addHookCommand(hook, {
+    name: "pre-tool-use",
+    description: "Decide whether the agent may make a tool call",
+    handlers: preToolUseHandlers,
+    answer: (adapter) => adapter.preToolUse,
+  });
   return hook;
 };
 

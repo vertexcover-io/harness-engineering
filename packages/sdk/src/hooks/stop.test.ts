@@ -2,13 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NodeRun, State } from "./contracts.ts";
-import { jsonlEventStore } from "./event-store.ts";
-import { type RunRef, runDirOf } from "./events.ts";
-import { decideStop, runStopHook, type StopInput, type TranscriptEntry } from "./hooks.ts";
-import { noopLogger } from "./logger.ts";
-import { createRegistry, registryPath } from "./registry.ts";
-import { readState } from "./state.ts";
+import type { NodeRun, State } from "../contracts.ts";
+import { jsonlEventStore } from "../event-store.ts";
+import { type RunRef, runDirOf } from "../events.ts";
+import { noopLogger } from "../logger.ts";
+import { createRegistry, registryPath } from "../registry.ts";
+import { emitRunEvent, readState } from "../state.ts";
+import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
+import { decideStop, runStopHook, type StopInput, type TranscriptEntry } from "./stop.ts";
 
 const seed: State = {
   schemaVersion: 1,
@@ -53,8 +54,18 @@ const nodeRun = (
 
 const planOpen = { plan: nodeRun("plan", "running") };
 
-const decide = (overrides: Partial<State>, touchedRun: boolean | undefined = true) =>
-  decideStop({ run: RUN, state: { ...seed, ...overrides }, touchedRun, maxBlocks: 1 });
+const decide = (
+  overrides: Partial<State>,
+  touchedRun: boolean | undefined = true,
+  progressSinceCheck = false,
+) =>
+  decideStop({
+    run: RUN,
+    state: { ...seed, ...overrides },
+    touchedRun,
+    progressSinceCheck,
+    maxBlocks: 1,
+  });
 
 describe("decideStop", () => {
   test("SC1 — a finished run lets the turn end", () => {
@@ -120,12 +131,12 @@ describe("decideStop", () => {
     expect(decision).toMatchObject({ reason: "max-blocks-reached", blockStreak: 1 });
   });
 
-  test("SC8 — new events since the last hook call restart the count", () => {
-    const decision = decide({
-      nodeRuns: planOpen,
-      stopHook: { blockStreak: 1, seq: 12 },
-      lastEventSeq: 14,
-    });
+  test("SC8 — progress since the last stop check restarts the count", () => {
+    const decision = decide(
+      { nodeRuns: planOpen, stopHook: { blockStreak: 1, seq: 12 }, lastEventSeq: 14 },
+      true,
+      true,
+    );
     expect(decision).toMatchObject({ reason: "node-not-done", blockStreak: 1 });
   });
 
@@ -252,6 +263,20 @@ describe("runStopHook", () => {
       expect.objectContaining({ decision: "allow", reason: "max-blocks-reached", blockStreak: 1 }),
     ]);
     expect((await readState(runDir))?.stopHook).toEqual({ blockStreak: 1, seq: 2 });
+  });
+
+  test("a tool call between two stops is not progress, and any other event is", async () => {
+    const { deps, runDir } = await setUp(planOpen);
+    const cwd = join(runDir, "..", "..");
+    const ls = { agent: "claude" as const, sessionId: "s1", toolName: "Bash", cwd };
+
+    expect(await runStopHook(input(undefined), deps)).toMatchObject({ kind: "continue" });
+    await runPreToolUse({ ...ls, call: { kind: "shell", command: "ls" } }, recordGuard, deps);
+    expect(await runStopHook(input(undefined), deps)).toEqual({ kind: "allow" });
+
+    const run = { id: "r-1", cwd, name: "feat-x" };
+    await emitRunEvent(run, { type: "custom.test.progress", source: "test", payload: {} });
+    expect(await runStopHook(input(undefined), deps)).toMatchObject({ kind: "continue" });
   });
 
   test("a block that cannot be logged lets the turn end, so an unsaved count can't trap the session", async () => {

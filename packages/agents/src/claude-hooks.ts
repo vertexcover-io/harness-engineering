@@ -1,17 +1,33 @@
 import { readFile } from "node:fs/promises";
 import {
+  type AgentAdapter,
+  bashAntipatterns,
+  continueWorkflow,
+  type HookDeps,
   type HookReply,
   NonEmptyStringSchema,
+  type PreToolUseHandler,
   parseJson,
   type Result,
-  runStopHook,
-  type StopHook,
-  type StopHookDeps,
+  recordGuard,
+  runPreToolUse,
+  runStop,
+  type StopHandler,
+  type ToolCall,
+  type ToolUse,
+  type ToolVerdict,
   type TranscriptEntry,
 } from "@harness/sdk";
 import * as z from "zod";
 
-const STOP_HOOK_TIMEOUT_S = 30;
+const HOOK_TIMEOUT_S = 30;
+// Claude's tools that write a file, and the input field that names it; Bash is parsed separately.
+const PATH_FIELDS: ReadonlyMap<string, string> = new Map([
+  ["Write", "file_path"],
+  ["Edit", "file_path"],
+  ["MultiEdit", "file_path"],
+  ["NotebookEdit", "notebook_path"],
+]);
 // Claude Code saves a Stop hook's block reason back into the transcript as a user line.
 const HOOK_FEEDBACK = "Stop hook feedback:";
 
@@ -19,7 +35,6 @@ const ClaudeStopInputSchema = z.looseObject({
   session_id: NonEmptyStringSchema,
   transcript_path: z.string().optional(),
 });
-type ClaudeStopInput = z.infer<typeof ClaudeStopInputSchema>;
 
 const ClaudeLineSchema = z.looseObject({
   type: z.string(),
@@ -95,10 +110,11 @@ export const readClaudeTranscript = async (
     .flatMap(toEntries);
 };
 
-const parseStopInput = (stdin: string): Result<ClaudeStopInput> => {
+// Claude's hook input, read from stdin against the event's schema.
+const parseStdin = <T>(stdin: string, schema: z.ZodType<T>): Result<T> => {
   const json = parseJson(stdin);
-  if (!json.ok) return { ok: false, error: `stop input: ${json.error}` };
-  const parsed = ClaudeStopInputSchema.safeParse(json.value);
+  if (!json.ok) return { ok: false, error: `hook input: ${json.error}` };
+  const parsed = schema.safeParse(json.value);
   return parsed.success
     ? { ok: true, value: parsed.data }
     : { ok: false, error: z.prettifyError(parsed.error) };
@@ -108,35 +124,107 @@ const parseStopInput = (stdin: string): Result<ClaudeStopInput> => {
 const claudeStopReply = (reply: HookReply): string =>
   reply.kind === "allow" ? "" : `${JSON.stringify({ decision: "block", reason: reply.message })}\n`;
 
-export const claudeStopHook: StopHook = async (stdin: string, deps: StopHookDeps) => {
-  const parsed = parseStopInput(stdin);
+const claudeStop = async (stdin: string, deps: HookDeps, handler: StopHandler): Promise<string> => {
+  const parsed = parseStdin(stdin, ClaudeStopInputSchema);
   if (!parsed.ok) {
     deps.log.warn({ error: parsed.error }, "stop allowed: hook input not understood");
     return "";
   }
   const { session_id: sessionId, transcript_path: transcriptPath } = parsed.value;
-  const reply = await runStopHook(
+  const reply = await runStop(
     { agent: "claude", sessionId, readTranscript: () => readClaudeTranscript(transcriptPath) },
+    handler,
     deps,
   );
   return claudeStopReply(reply);
 };
 
+const ClaudePreToolUseInputSchema = z.looseObject({
+  session_id: NonEmptyStringSchema,
+  tool_name: NonEmptyStringSchema,
+  tool_input: z.looseObject({}).default({}),
+  cwd: z.string().optional(),
+});
+
+const OTHER_TOOL: ToolCall = { kind: "other" };
+
+const toToolCall = (toolName: string, toolInput: Readonly<Record<string, unknown>>): ToolCall => {
+  const { command } = toolInput;
+  if (toolName === "Bash")
+    return typeof command === "string" ? { kind: "shell", command } : OTHER_TOOL;
+  const field = PATH_FIELDS.get(toolName);
+  const path = field === undefined ? undefined : toolInput[field];
+  return typeof path === "string" ? { kind: "file-write", path } : OTHER_TOOL;
+};
+
+// Claude runs its own permission prompt on empty output, so a call is never answered "allow".
+const claudePreToolUseReply = (verdict: ToolVerdict): string =>
+  verdict.kind === "allow"
+    ? ""
+    : `${JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: verdict.message,
+        },
+      })}\n`;
+
+const parsePreToolUseInput = (stdin: string): Result<ToolUse> => {
+  const parsed = parseStdin(stdin, ClaudePreToolUseInputSchema);
+  if (!parsed.ok) return parsed;
+  const { session_id: sessionId, tool_name: toolName, tool_input: toolInput, cwd } = parsed.value;
+  const call = toToolCall(toolName, toolInput);
+  return {
+    ok: true,
+    value: { agent: "claude", sessionId, toolName, cwd: cwd ?? process.cwd(), call },
+  };
+};
+
+const claudePreToolUse = async (
+  stdin: string,
+  deps: HookDeps,
+  handler: PreToolUseHandler,
+): Promise<string> => {
+  const use = parsePreToolUseInput(stdin);
+  if (!use.ok) {
+    deps.log.warn({ error: use.error }, "pre-tool-use allowed: hook input not understood");
+    return "";
+  }
+  return claudePreToolUseReply(await runPreToolUse(use.value, handler, deps));
+};
+
+// What Claude answers; both events are supported.
+export const claudeAdapter: AgentAdapter = { stop: claudeStop, preToolUse: claudePreToolUse };
+
+// The handlers Claude registers. Each handler gets its own command in its entry, and Claude runs
+// every matching command in parallel: a deny from any one refuses the call.
+const CLAUDE_HOOKS = {
+  Stop: [{ handlers: [continueWorkflow] }],
+  PreToolUse: [
+    { matcher: [...PATH_FIELDS.keys(), "Bash"].join("|"), handlers: [recordGuard] },
+    { matcher: "Bash", handlers: [bashAntipatterns] },
+  ],
+} as const;
+
 const shellQuote = (arg: string): string => `'${arg.replaceAll("'", `'\\''`)}'`;
 
-// Settings for `claude --settings`: a Stop hook that runs `orchestrate hook stop` for this session.
+const hookEntry = (hookCommand: readonly string[], event: string, handler: string) => ({
+  type: "command",
+  command: [...hookCommand, event, "--agent", "claude", "--handler", handler]
+    .map(shellQuote)
+    .join(" "),
+  timeout: HOOK_TIMEOUT_S,
+});
+
+// Settings for `claude --settings`: one command per registered handler, grouped by matcher.
 export const claudeHookSettings = (hookCommand: readonly string[]) => ({
   hooks: {
-    Stop: [
-      {
-        hooks: [
-          {
-            type: "command",
-            command: [...hookCommand, "stop", "--agent", "claude"].map(shellQuote).join(" "),
-            timeout: STOP_HOOK_TIMEOUT_S,
-          },
-        ],
-      },
-    ],
+    Stop: CLAUDE_HOOKS.Stop.map(({ handlers }) => ({
+      hooks: handlers.map((handler) => hookEntry(hookCommand, "stop", handler.name)),
+    })),
+    PreToolUse: CLAUDE_HOOKS.PreToolUse.map(({ matcher, handlers }) => ({
+      matcher,
+      hooks: handlers.map((handler) => hookEntry(hookCommand, "pre-tool-use", handler.name)),
+    })),
   },
 });

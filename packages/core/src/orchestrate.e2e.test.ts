@@ -1278,7 +1278,13 @@ describe("orchestrate hook stop", () => {
   };
 
   const stop = (run: Readonly<{ repo: string; home: string }>, input = STOP, env: Env = RUN_ENV) =>
-    orchestrate(run.repo, run.home, ["hook", "stop", "--agent", "claude"], env, input);
+    orchestrate(
+      run.repo,
+      run.home,
+      ["hook", "stop", "--agent", "claude", "--handler", "continue-workflow"],
+      env,
+      input,
+    );
 
   test("SC20 — the hook blocks a turn that left an agent node open, and logs the call", async () => {
     const run = openNodeRun();
@@ -1383,5 +1389,93 @@ describe("orchestrate hook stop", () => {
     writeFileSync(join(runDirOf(run.repo, "feat-x"), "state.json"), '{"schemaVersion":2}');
 
     expect(stop(run)).toMatchObject({ code: 0, stdout: "" });
+  });
+});
+
+describe("orchestrate hook pre-tool-use", () => {
+  const RUN_ENV = { HARNESS_RUN_ID: "r-1" };
+
+  const openNodeRun = () => {
+    const run = startedRun(ONE_AGENT);
+    const link = ["link-session", "--run", "feat-x", "--agent", "claude", "--session-id", "s1"];
+    expect(orchestrate(run.repo, run.home, link).code).toBe(0);
+    const next = JSON.parse(orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]).stdout);
+    expect(next).toMatchObject({ kind: "agent", nodeId: "plan" });
+    return run;
+  };
+
+  const preToolUse = (
+    run: Readonly<{ repo: string; home: string }>,
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    handler = "record-guard",
+  ) =>
+    orchestrate(
+      run.repo,
+      run.home,
+      ["hook", "pre-tool-use", "--agent", "claude", "--handler", handler],
+      RUN_ENV,
+      JSON.stringify({
+        session_id: "s1",
+        tool_name: toolName,
+        tool_input: toolInput,
+        cwd: run.repo,
+      }),
+    );
+
+  test("SC16 — the hook command refuses a shell write to state.json and logs it", async () => {
+    const run = openNodeRun();
+
+    const result = preToolUse(run, "Bash", {
+      command: "mv /tmp/s .harness/feat-x/state.json",
+    });
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).hookSpecificOutput).toMatchObject({
+      permissionDecision: "deny",
+      permissionDecisionReason: expect.stringContaining("bun run orchestrate next --run feat-x"),
+    });
+    expect((await eventsOf(run.repo)).at(-1)).toMatchObject({
+      type: "hooks.pre-tool-use.called",
+      payload: { handler: "record-guard", decision: "deny" },
+    });
+    expect(stateOf(run.repo).runName).toBe("feat-x");
+  });
+
+  test("an unknown handler prints nothing, so no agent is ever trapped", () => {
+    const run = openNodeRun();
+
+    const result = preToolUse(run, "Bash", { command: "rm .harness/feat-x/state.json" }, "nope");
+
+    expect(result).toMatchObject({ code: 0, stdout: "" });
+  });
+
+  test("SC17 — a read passes silently", () => {
+    const run = openNodeRun();
+
+    expect(preToolUse(run, "Read", { file_path: ".harness/feat-x/state.json" })).toMatchObject({
+      code: 0,
+      stdout: "",
+    });
+    expect(preToolUse(run, "Bash", { command: "jq . .harness/feat-x/state.json" })).toMatchObject({
+      code: 0,
+      stdout: "",
+    });
+  });
+
+  test("SC23 — the bash-antipatterns handler refuses an anti-pattern and logs its name", async () => {
+    const run = openNodeRun();
+
+    const result = preToolUse(run, "Bash", { command: "git add -A" }, "bash-antipatterns");
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).hookSpecificOutput).toMatchObject({
+      permissionDecision: "deny",
+      permissionDecisionReason: expect.stringContaining("git add -A"),
+    });
+    expect((await eventsOf(run.repo)).at(-1)).toMatchObject({
+      type: "hooks.pre-tool-use.called",
+      payload: { handler: "bash-antipatterns", decision: "deny" },
+    });
   });
 });

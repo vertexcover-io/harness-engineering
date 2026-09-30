@@ -204,6 +204,30 @@ describe("harness run", () => {
   );
 
   test(
+    "SC18 — the session harness run launches carries the PreToolUse hook",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+
+      expect(harness(repo, env, "run", "ok.yaml", "--prompt", "hi").code).toBe(0);
+      const isSession = (record: Record<string, unknown>) =>
+        Array.isArray(record.argv) && record.argv.includes("--session-id");
+      waitFor(() => readLines(fakeOut).some(isSession));
+      const argv = readLines(fakeOut).find(isSession)?.argv;
+      const args = Array.isArray(argv) ? argv.map(String) : [];
+      const settings = JSON.parse(args[args.indexOf("--settings") + 1] ?? "{}");
+
+      expect(settings.hooks.PreToolUse[0].matcher).toBe("Write|Edit|MultiEdit|NotebookEdit|Bash");
+      expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain(
+        "packages/core/src/orchestrate.ts' 'hook' 'pre-tool-use' '--agent' 'claude'",
+      );
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "SC12: starts a server, launches the fake agent, and server status shows a pid",
     () => {
       const repo = makeRepo();

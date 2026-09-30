@@ -120,6 +120,21 @@ export const StopCalledEvent = z.object({
   }),
 });
 
+export const PreToolUseCalledEvent = z.object({
+  payload: z.strictObject({
+    agent: AgentTypeSchema,
+    sessionId: NonEmptyStringSchema,
+    // the agent's own name for the tool, e.g. Bash or Write
+    tool: NonEmptyStringSchema,
+    // the registered handler that answered, e.g. record-guard or bash-antipatterns
+    handler: NonEmptyStringSchema,
+    decision: z.enum(["allow", "deny"]),
+    // the text the agent was refused with
+    message: z.string().optional(),
+    path: z.string().optional(),
+  }),
+});
+
 const workspaceEvent = <P extends z.ZodType>(payload: P) => z.object({ payload });
 
 const ShaSchema = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/, "Expected a full commit SHA");
@@ -253,6 +268,7 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "orchestrate.exec": OrchestrateExecEvent,
   "orchestrate.done": OrchestrateDoneEvent,
   "hooks.stop.called": StopCalledEvent,
+  "hooks.pre-tool-use.called": PreToolUseCalledEvent,
 };
 
 // An event before the emitter fills runId, ts and (when not given) id. Built from the shape,

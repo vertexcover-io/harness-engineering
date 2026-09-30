@@ -187,7 +187,7 @@ export const StateSchema = z.strictObject({
   notification: NotificationSchema.optional(),
   nodeRuns: z.record(NonEmptyStringSchema, NodeRunSchema),
   // The Stop hook's last check. blockStreak: times in a row it sent the agent back at this spot.
-  // seq: that check's own event, so the next check knows nothing happened if it is still the newest.
+  // seq: that check's own event; with no progress after it, the agent is still at that spot.
   stopHook: z
     .strictObject({ blockStreak: z.int().nonnegative(), seq: z.int().positive() })
     .optional(),
