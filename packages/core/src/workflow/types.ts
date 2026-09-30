@@ -221,8 +221,15 @@ export type FailureKind = z.infer<typeof FailureKindSchema>;
 export type WorkflowErrorCode = z.infer<typeof WorkflowErrorCodeSchema>;
 export type NodeRecord = z.infer<typeof NodeRecordSchema>;
 
+// A verifier as compile loads it: its function already imported, or the script to run.
+export type PlanVerifier = Readonly<{ id: string; args: JsonValue; timeoutMs: number }> &
+  (
+    | Readonly<{ kind: "function"; fn: WorkflowFunction }>
+    | Readonly<{ kind: "script"; runtime: "sh" | "bun"; script: string }>
+  );
+
 // A stage as compile loads it: the text the workflow wrote, the skill's name, where its SKILL.md
-// is, and the artifacts it needs and writes.
+// is, the artifacts it needs and writes, and its verifiers.
 export type PlanStage = Readonly<{
   ref: string;
   name: string;
@@ -231,6 +238,7 @@ export type PlanStage = Readonly<{
   produces: readonly ArtifactDeclaration[];
   outputSchemaName: string;
   outputSchema: z.ZodType;
+  verifiers: readonly PlanVerifier[];
 }>;
 
 // Compiled nodes carry what they need: the ids of the containers around them (the path to their

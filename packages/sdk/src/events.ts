@@ -241,10 +241,39 @@ const StepOutcomeSchema = z.union([OutputOutcomeSchema, ErrorOutcomeSchema]);
 export type StepOutcome = z.infer<typeof StepOutcomeSchema>;
 
 const doneInput = { nodeRunId: NonEmptyStringSchema, artifacts: z.array(ArtifactRefSchema) };
-const OrchestrateDoneEvent = callEvent(
-  z.union([OutputOutcomeSchema.extend(doneInput), ErrorOutcomeSchema.extend(doneInput)]),
-  reportOrError,
-);
+// What a done call did to its node: completed or failed it, rejected it and left it open for
+// another try, or broke before it could do either.
+export const DoneStatusSchema = z.enum(["completed", "failed", "rejected", "error"]);
+export type DoneStatus = z.infer<typeof DoneStatusSchema>;
+const OrchestrateDoneEvent = z.object({
+  payload: z.strictObject({
+    input: z.union([OutputOutcomeSchema.extend(doneInput), ErrorOutcomeSchema.extend(doneInput)]),
+    output: reportOrError,
+    status: DoneStatusSchema,
+  }),
+});
+
+export const FindingSchema = z.strictObject({
+  message: z.string().min(1),
+  path: z.string().optional(),
+  line: z.number().int().optional(),
+  hint: z.string().optional(),
+});
+export type Finding = z.infer<typeof FindingSchema>;
+
+export const VerifierErrorReasonSchema = z.enum(["threw", "timeout", "exit", "bad-output"]);
+
+// One verifier's run inside a done call: how it ended, what it found, and how long it took.
+export const VerifierRunSchema = z.strictObject({
+  verifier: NonEmptyStringSchema,
+  attempt: z.int().positive(),
+  durationMs: z.number().nonnegative(),
+  status: z.enum(["passed", "failed", "error"]),
+  findings: z.array(FindingSchema),
+  error: z.strictObject({ reason: VerifierErrorReasonSchema, message: z.string() }).optional(),
+});
+export type VerifierRun = z.infer<typeof VerifierRunSchema>;
+const OrchestrateVerifierEvent = z.object({ payload: VerifierRunSchema });
 
 const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.started": WorkflowStartedEvent,
@@ -267,6 +296,7 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "orchestrate.next": OrchestrateNextEvent,
   "orchestrate.exec": OrchestrateExecEvent,
   "orchestrate.done": OrchestrateDoneEvent,
+  "orchestrate.verifier": OrchestrateVerifierEvent,
   "hooks.stop.called": StopCalledEvent,
   "hooks.pre-tool-use.called": PreToolUseCalledEvent,
 };

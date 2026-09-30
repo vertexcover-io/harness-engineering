@@ -19,6 +19,7 @@ import {
   type WorkflowPlan,
   WorkflowSchema,
 } from "./types.ts";
+import { loadVerifiers } from "./verifiers.ts";
 
 const parseWorkflow = (source: string): Workflow => {
   const document = parseDocument(source);
@@ -241,6 +242,7 @@ const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
     produces: stage.value.produces ?? [],
     outputSchemaName: outputs.schema,
     outputSchema: schema,
+    verifiers: await loadVerifiers(stage.value.verifiers, dir),
   };
 };
 

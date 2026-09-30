@@ -87,11 +87,33 @@ describe("emitEvent", () => {
   test.each([
     ["orchestrate.exec", "without its input", { output: { kind: "error", message: "x" } }],
     [
+      "orchestrate.verifier",
+      "without its verifier",
+      { attempt: 1, durationMs: 3, status: "passed", findings: [] },
+    ],
+    [
       "orchestrate.done",
       "with a report missing its status",
       {
         input: { nodeRunId: "nr-1", output: {}, artifacts: [] },
         output: { nodeRunId: "nr-1", nodeId: "a", attempts: 1 },
+      },
+    ],
+    [
+      "orchestrate.done",
+      "without a status",
+      {
+        input: { nodeRunId: "nr-1", output: {}, artifacts: [] },
+        output: { nodeRunId: "nr-1", nodeId: "a", status: "completed", attempts: 1 },
+      },
+    ],
+    [
+      "orchestrate.done",
+      "with an unknown status",
+      {
+        input: { nodeRunId: "nr-1", output: {}, artifacts: [] },
+        output: { nodeRunId: "nr-1", nodeId: "a", status: "completed", attempts: 1 },
+        status: "refused",
       },
     ],
     [

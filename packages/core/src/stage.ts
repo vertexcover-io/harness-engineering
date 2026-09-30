@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { access } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import {
   type Config,
@@ -34,6 +34,29 @@ const ReferenceSchema = z.strictObject({
   description: NonEmptyStringSchema,
 });
 
+const verifierBase = {
+  id: SlugSchema,
+  args: z.json().default({}),
+  timeoutMs: z.number().int().positive().default(60_000),
+};
+
+export const VerifierSchema = z.union(
+  [
+    z.strictObject({
+      ...verifierBase,
+      module: NonEmptyStringSchema,
+      functionName: NonEmptyStringSchema,
+    }),
+    z.strictObject({
+      ...verifierBase,
+      runtime: z.enum(["sh", "bun"]),
+      script: NonEmptyStringSchema,
+    }),
+  ],
+  { error: "a verifier needs runtime + script, or module + functionName" },
+);
+export type Verifier = z.infer<typeof VerifierSchema>;
+
 export const StageSchema = z.strictObject({
   name: SlugSchema,
   description: NonEmptyStringSchema,
@@ -48,6 +71,13 @@ export const StageSchema = z.strictObject({
   protocols: UniqueSlugsSchema,
   scopes: UniqueSlugsSchema,
   references: z.record(SlugSchema, ReferenceSchema).default({}),
+  verifiers: z
+    .array(VerifierSchema)
+    .refine(
+      (list) => new Set(list.map((v) => v.id)).size === list.length,
+      "Verifier ids must be unique",
+    )
+    .default([]),
 });
 export type Stage = z.infer<typeof StageSchema>;
 export type ArtifactDeclaration = z.infer<typeof ArtifactDeclarationSchema>;
@@ -103,9 +133,16 @@ export const loadSkill = async (skillDir: string): Promise<Result<Stage>> => {
       error: `${path}: skill name "${stage.name}" must match its folder ${folder}`,
     };
   }
-  const missing = Object.values(stage.references).find(
-    (reference) => !existsSync(join(skillDir, reference.path)),
+  const references = Object.values(stage.references);
+  const found = await Promise.all(
+    references.map((reference) =>
+      access(join(skillDir, reference.path)).then(
+        () => true,
+        () => false,
+      ),
+    ),
   );
+  const missing = references.find((_, index) => !found[index]);
   if (missing !== undefined) {
     return { ok: false, error: `${path}: reference file ${missing.path} does not exist` };
   }
