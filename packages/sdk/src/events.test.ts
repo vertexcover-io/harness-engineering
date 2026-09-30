@@ -762,3 +762,35 @@ describe("hooks.stop.called", () => {
     expect(await store.read()).toEqual([]);
   });
 });
+
+describe("hooks.pre-tool-use.called", () => {
+  const event = (seq: number, type: string, payload: JsonValue) => ({
+    schemaVersion: 1 as const,
+    seq,
+    id: `evt-${seq}`,
+    ts: "2026-09-26T10:00:07Z",
+    type,
+    source: "hooks",
+    runId: "r-1",
+    payload,
+  });
+  const stop = event(5, "hooks.stop.called", {
+    agent: "claude",
+    sessionId: "s1",
+    touchedRun: null,
+    decision: "continue",
+    reason: "node-not-done",
+    blockStreak: 1,
+  });
+  const tool = (seq: number) =>
+    event(seq, "hooks.pre-tool-use.called", {
+      agent: "claude",
+      sessionId: "s1",
+      tool: "Bash",
+      decision: "allow",
+    });
+
+  test("SC13 — a tool-call event leaves the Stop hook's last check as it was", () => {
+    expect(project([stop, tool(6)]).stopHook).toEqual({ blockStreak: 1, seq: 5 });
+  });
+});

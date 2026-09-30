@@ -1,0 +1,181 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import type { AgentType } from "../agent.ts";
+import { jsonlEventStore } from "../event-store.ts";
+import { type EmitInput, emitEvent, runDirOf } from "../events.ts";
+import type { ILogger } from "../logger.ts";
+import { spawn } from "../process.ts";
+import { harnessHome, registryPath } from "../registry.ts";
+import { findSessionRun, type HookDeps } from "./common.ts";
+import { expandPath, type PathBase, shellWriteTargets } from "./write-targets.ts";
+
+// A tool call as any agent's adapter parses it: a file it writes, a shell command, or neither.
+export type ToolCall =
+  | { readonly kind: "file-write"; readonly path: string }
+  | { readonly kind: "shell"; readonly command: string }
+  | { readonly kind: "other" };
+
+export type ToolUse = Readonly<{
+  agent: AgentType;
+  sessionId: string;
+  // the agent's own name for the tool, e.g. Bash; only logged
+  toolName: string;
+  cwd: string;
+  call: ToolCall;
+}>;
+
+export type ToolVerdict =
+  | { readonly kind: "allow" }
+  | { readonly kind: "deny"; readonly message: string; readonly path?: string };
+
+export type PreToolUseContext = Readonly<{ cwd: string; env: HookDeps["env"]; log: ILogger }>;
+
+// One rule for a tool call, shared by every agent: it sees only the parsed call.
+export type PreToolUseHandler = Readonly<{
+  name: string;
+  run: (call: ToolCall, context: PreToolUseContext) => Promise<ToolVerdict>;
+}>;
+
+export type ProtectedRecord =
+  | Readonly<{ kind: "state" | "events"; runName: string; path: string }>
+  | Readonly<{ kind: "registry"; path: string }>;
+
+const ALLOW: ToolVerdict = { kind: "allow" };
+const LOG_WAIT_MS = 2_000;
+const RUN_RECORD = /[\\/]\.harness[\\/]([^\\/]+)[\\/](state\.json|event\.jsonl)$/;
+const BASH_ANTIPATTERNS = join(import.meta.dir, "..", "..", "vendor", "bash-antipatterns.sh");
+const BASH_ANTIPATTERNS_TIMEOUT_MS = 10_000;
+
+export const protectedRecordOf = (path: string, base: PathBase): ProtectedRecord | undefined => {
+  const abs = expandPath(path, base);
+  if (abs === undefined) return undefined;
+  if (abs === registryPath(base.harnessHome)) return { kind: "registry", path: abs };
+  const match = RUN_RECORD.exec(abs);
+  const runName = match?.[1];
+  if (runName === undefined) return undefined;
+  return { kind: match?.[2]?.startsWith("state") ? "state" : "events", runName, path: abs };
+};
+
+const recordMessage = (record: ProtectedRecord): string => {
+  if (record.kind === "registry") {
+    return (
+      `${record.path} is the harness registry, so this call was refused. It changes only ` +
+      "through `bun run orchestrate init NAME` and " +
+      "`bun run orchestrate link-session --run NAME --agent AGENT --session-id ID`. " +
+      "Reading it is fine."
+    );
+  }
+  const run = record.runName;
+  return (
+    `${record.path} is written only by the orchestrate script, so this call was refused. ` +
+    `Move the run with \`bun run orchestrate next --run ${run}\`, record a node with ` +
+    `\`bun run orchestrate exec|done NODE_RUN_ID --run ${run}\`, and add an event with ` +
+    `\`bun run orchestrate emit TYPE --run ${run} --source SKILL\`. Reading the file is fine.`
+  );
+};
+
+const callTargets = (call: ToolCall, base: PathBase): readonly string[] => {
+  if (call.kind === "file-write") return [call.path];
+  return call.kind === "shell" ? shellWriteTargets(call.command, base) : [];
+};
+
+// Refuses a call that writes, moves or deletes a run's state.json or event.jsonl, or the registry.
+export const recordGuard: PreToolUseHandler = {
+  name: "record-guard",
+  run: async (call, { cwd, env }) => {
+    const base = { cwd, home: homedir(), harnessHome: harnessHome(env) };
+    const record = callTargets(call, base)
+      .map((target) => protectedRecordOf(target, base))
+      .find((found) => found !== undefined);
+    return record === undefined
+      ? ALLOW
+      : { kind: "deny", message: recordMessage(record), path: record.path };
+  },
+};
+
+// The vendored script reads a Claude-shaped Bash payload and refuses with exit 2, so any agent's
+// shell command is handed to it in that shape. Any other failure allows the call, with a warning.
+export const bashAntipatterns: PreToolUseHandler = {
+  name: "bash-antipatterns",
+  run: async (call, { cwd, log }) => {
+    if (call.kind !== "shell") return ALLOW;
+    const input = JSON.stringify({ tool_name: "Bash", tool_input: { command: call.command } });
+    const result = await spawn("bash", [BASH_ANTIPATTERNS], {
+      cwd,
+      input,
+      timeoutMs: BASH_ANTIPATTERNS_TIMEOUT_MS,
+    });
+    if (result.code === 2 && result.stopped === null) {
+      return { kind: "deny", message: result.stderr.trim() || "Refused by bash-antipatterns.sh" };
+    }
+    if (result.code !== 0 || result.stopped !== null) {
+      const { code, stopped, stderr } = result;
+      log.warn(
+        { code, stopped, stderr: stderr.slice(0, 500) },
+        "bash-antipatterns.sh failed; allowed",
+      );
+    }
+    return ALLOW;
+  },
+};
+
+// The handlers an agent can register, by the name `orchestrate hook pre-tool-use --handler` takes.
+export const preToolUseHandlers: Readonly<Record<string, PreToolUseHandler>> = Object.fromEntries(
+  [recordGuard, bashAntipatterns].map((handler) => [handler.name, handler]),
+);
+
+const calledEvent = (use: ToolUse, handler: string, verdict: ToolVerdict): EmitInput => ({
+  type: "hooks.pre-tool-use.called",
+  source: "hooks",
+  payload: {
+    agent: use.agent,
+    sessionId: use.sessionId,
+    tool: use.toolName,
+    handler,
+    decision: verdict.kind,
+    ...(verdict.kind === "deny" ? { message: verdict.message } : {}),
+    ...(verdict.kind === "deny" && verdict.path !== undefined ? { path: verdict.path } : {}),
+  },
+});
+
+const logCall = async (
+  use: ToolUse,
+  handler: string,
+  verdict: ToolVerdict,
+  deps: HookDeps,
+): Promise<void> => {
+  try {
+    const run = await findSessionRun(use, deps);
+    if (run === undefined) return;
+    // A plain append: state.json folds the event in on the next orchestrate action, so each tool
+    // call costs one log write instead of a full re-projection under the state lock.
+    const store = jsonlEventStore(runDirOf(run.cwd, run.name));
+    const stored = await emitEvent(store, run.id, calledEvent(use, handler, verdict));
+    if (!stored.ok) deps.log.warn({ error: stored.error }, "pre-tool-use call not recorded");
+  } catch (error) {
+    deps.log.warn({ err: error }, "pre-tool-use call not recorded");
+  }
+};
+
+// Runs one handler on one tool call and logs it. It never throws: a handler that fails lets the
+// call through, or it could trap the session.
+export const runPreToolUse = async (
+  use: ToolUse,
+  handler: PreToolUseHandler,
+  deps: HookDeps,
+): Promise<ToolVerdict> => {
+  const verdict = await handler
+    .run(use.call, { cwd: use.cwd, env: deps.env, log: deps.log })
+    .catch((error: unknown): ToolVerdict => {
+      deps.log.error({ err: error }, `pre-tool-use allowed: ${handler.name} failed`);
+      return ALLOW;
+    });
+  // A slow log must not hold the answer past the agent's hook timeout; the write still finishes.
+  // The timer is cancelled once the log is written, or it would keep the hook process alive.
+  const timer = new AbortController();
+  const logged = logCall(use, handler.name, verdict, deps).finally(() => timer.abort());
+  const timeout = sleep(LOG_WAIT_MS, undefined, { signal: timer.signal }).catch(() => undefined);
+  await Promise.race([logged, timeout]);
+  return verdict;
+};
