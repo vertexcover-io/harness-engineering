@@ -25,10 +25,10 @@ import {
   CLAUDE_NOTHING_TO_COMPACT,
   isClaudeBusy,
   typeLine,
-} from "./claude.ts";
+} from "./agents/claude.ts";
+import { currentPane, type PaneTarget } from "./agents/tmux.ts";
 import { completeContextStep, findContextPlanNode } from "./runs.ts";
 import { ORCHESTRATE_SCRIPT } from "./stage.ts";
-import { currentPane, type PaneTarget } from "./tmux.ts";
 
 const IDLE_TIMEOUT_MS = 30_000;
 const IDLE_POLL_MS = 100;

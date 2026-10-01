@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type CheckContext, type Exec, execWithTimeout } from "@harness/sdk";
+import { captureLogger } from "../logging.ts";
 import { claudeProvider } from "./claude.ts";
-import { captureLogger } from "./logging.ts";
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
 import { tmuxTerminal } from "./tmux.ts";
 

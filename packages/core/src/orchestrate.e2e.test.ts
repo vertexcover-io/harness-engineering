@@ -2013,7 +2013,7 @@ nodes:
   - { id: second, type: agent, prompt: two, dependsOn: [fresh], input: {} }
 `;
 
-const FAKE_AGENT = join(import.meta.dir, "fixtures", "fake-agent.ts");
+const FAKE_AGENT = join(import.meta.dir, "agents", "fixtures", "fake-agent.ts");
 const RESUME = "/orchestrate-v2 --resume feat-x";
 
 // A run whose agent is the fake agent in a private tmux pane, driven to its context node.

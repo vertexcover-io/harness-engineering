@@ -22,8 +22,9 @@ import {
   stopRunningOnSignal,
 } from "@harness/sdk";
 import { createRegistry, type StepOutcome } from "@harness/sdk/internal";
-import { agentAdapters, HOOK_AGENTS } from "./agents.ts";
-import { claudeProvider } from "./claude.ts";
+import { claudeProvider } from "./agents/claude.ts";
+import { agentAdapters, HOOK_AGENTS } from "./agents/index.ts";
+import { currentPane, harnessTmux } from "./agents/tmux.ts";
 import { runContextStep } from "./context-step.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "./hooks/session-start.ts";
@@ -46,7 +47,6 @@ import {
   resolveReference,
 } from "./stage.ts";
 import { captureBaseline } from "./stages/baseline.ts";
-import { currentPane, harnessTmux } from "./tmux.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
