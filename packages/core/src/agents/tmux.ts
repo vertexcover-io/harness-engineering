@@ -84,11 +84,11 @@ const tmuxSocket = ({
 
 const asError = (stderr: string): string => stderr.trim() || "tmux command failed";
 
-// Arguments after the subcommand can carry a prompt, a system prompt or env values, so logs get
-// the subcommand and its session, never the rest.
 // "=name:" is how a pane is addressed by its session's exact name; logs show just the name.
 const labelOf = (target: string): string => target.replace(/^=/, "").replace(/:$/, "");
 
+// Arguments after the subcommand can carry a prompt, a system prompt or env values, so logs get
+// the subcommand and its session, never the rest.
 const targetOf = (args: readonly string[]): string | undefined => {
   const flag = args.findIndex((arg) => arg === "-t" || arg === "-s");
   const target = flag === -1 ? undefined : args[flag + 1];
