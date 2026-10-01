@@ -2,11 +2,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AgentType } from "../agent.ts";
-import { jsonlEventStore } from "../event-store.ts";
-import { type EmitInput, emitEvent, runDirOf } from "../events.ts";
+import type { EmitInput } from "../events.ts";
 import type { ILogger } from "../logger.ts";
 import { spawn } from "../process.ts";
 import { harnessHome, registryPath } from "../registry.ts";
+import { emitRunEvent } from "../state.ts";
 import { findSessionRun, type HookDeps } from "./common.ts";
 import { expandPath, type PathBase, shellWriteTargets } from "./write-targets.ts";
 
@@ -148,17 +148,14 @@ const logCall = async (
   try {
     const run = await findSessionRun(use, deps);
     if (run === undefined) return;
-    // A plain append: state.json folds the event in on the next orchestrate action, so each tool
-    // call costs one log write instead of a full re-projection under the state lock.
-    const store = jsonlEventStore(runDirOf(run.cwd, run.name));
-    const stored = await emitEvent(store, run.id, calledEvent(use, handler, verdict));
+    const stored = await emitRunEvent(run, calledEvent(use, handler, verdict));
     if (!stored.ok) deps.log.warn({ error: stored.error }, "pre-tool-use call not recorded");
   } catch (error) {
     deps.log.warn({ err: error }, "pre-tool-use call not recorded");
   }
 };
 
-// Runs one handler on one tool call and logs it. It never throws: a handler that fails lets the
+// Runs one handler on one tool call and logs a refusal. It never throws: a handler that fails lets the
 // call through, or it could trap the session.
 export const runPreToolUse = async (
   use: ToolUse,
@@ -171,6 +168,8 @@ export const runPreToolUse = async (
       deps.log.error({ err: error }, `pre-tool-use allowed: ${handler.name} failed`);
       return ALLOW;
     });
+  // Only a refusal is logged: an allowed call is one the handler left alone.
+  if (verdict.kind === "allow") return verdict;
   // A slow log must not hold the answer past the agent's hook timeout; the write still finishes.
   // The timer is cancelled once the log is written, or it would keep the hook process alive.
   const timer = new AbortController();

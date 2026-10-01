@@ -1772,11 +1772,21 @@ describe("orchestrate hook pre-tool-use", () => {
       permissionDecision: "deny",
       permissionDecisionReason: expect.stringContaining("bun run orchestrate next --run feat-x"),
     });
-    expect((await eventsOf(run.repo)).at(-1)).toMatchObject({
+    const events = await eventsOf(run.repo);
+    expect(events.at(-1)).toMatchObject({
       type: "hooks.pre-tool-use.called",
       payload: { handler: "record-guard", decision: "deny" },
     });
-    expect(stateOf(run.repo).runName).toBe("feat-x");
+    expect(stateOf(run.repo)).toMatchObject({ runName: "feat-x", lastEventSeq: events.length });
+  });
+
+  test("an allowed tool call is not logged", async () => {
+    const run = openNodeRun();
+    const before = (await eventsOf(run.repo)).length;
+
+    preToolUse(run, "Bash", { command: "echo hi > notes.md" });
+
+    expect(await eventsOf(run.repo)).toHaveLength(before);
   });
 
   test("an unknown handler prints nothing, so no agent is ever trapped", () => {
