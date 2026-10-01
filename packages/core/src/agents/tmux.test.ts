@@ -237,7 +237,26 @@ describe("tmuxHost against a real tmux", () => {
     const { host } = makeTerminal();
     await created(host, { name: "s-10", cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
     expect(await host.find("s-1").isAlive()).toBe(false);
+    expect((await host.find("s-1").sendText("x")).ok).toBe(false);
     expect(await host.find("s-10").isAlive()).toBe(true);
+  });
+
+  test("the attach command finds its session in tmux, by name and by the pane create returned", async () => {
+    const { host } = makeTerminal();
+    const name = `s-${randomUUID()}`;
+    const pane = await created(host, { name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
+    const attach = async (argv: readonly string[]) => {
+      const [command = "", ...args] = argv;
+      return (await exec(command, args, "/")).stderr;
+    };
+
+    // Without a terminal on stdin, attach gets past finding the session and stops there.
+    for (const argv of [host.find(name).attachCommand(), pane.attachCommand()]) {
+      const stderr = await attach(argv);
+      expect(stderr).toContain("not a terminal");
+      expect(stderr).not.toContain("can't find");
+    }
+    expect(await attach(host.find(`${name}-gone`).attachCommand())).toContain("can't find session");
   });
 
   test("SC4: list is [] when no tmux server is running on the socket", async () => {
