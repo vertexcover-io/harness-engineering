@@ -26,6 +26,7 @@ const baseFields = {
   id: NodeIdSchema,
   input: z.json(),
   dependsOn: z.array(NodeIdSchema).default([]),
+  allowFailure: z.boolean().default(false),
 };
 
 const guardedFields = { ...baseFields, when: ExpressionSchema.optional() };
