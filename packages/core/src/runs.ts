@@ -180,8 +180,7 @@ export const initializeRun = async (
 };
 
 export const linkRunSession = async (
-  options: Omit<RunLookup, "registry"> &
-    Readonly<{ registry: Registry; agent: string; sessionId: string }>,
+  options: RunLookup & Readonly<{ registry: Registry; agent: string; sessionId: string }>,
 ): Promise<Result<readonly SessionRef[]>> => {
   const session = SessionRefSchema.safeParse({
     agent: options.agent,
