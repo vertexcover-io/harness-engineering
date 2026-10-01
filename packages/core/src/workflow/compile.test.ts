@@ -841,6 +841,31 @@ nodes:
     if (sub?.type !== "include") throw new Error("sub is not an include");
     expect(sub.plan.nodes[0]?.parents).toEqual(["fix", "pick", "sub"]);
   });
+
+  test("a context node compiles with action new or compact; agent nodes take no context", async () => {
+    const plan = await compile(workflow("\n  - id: fresh\n    type: context\n    action: new"));
+    expect(plan.nodes[0]).toMatchObject({
+      id: "fresh",
+      type: "context",
+      action: "new",
+      input: null,
+    });
+    const badAction = await rejection(
+      workflow("\n  - id: fresh\n    type: context\n    action: clear"),
+    );
+    expect(badAction.message).toContain("action");
+    const steered = await compile(
+      workflow("\n  - id: slim\n    type: context\n    action: compact\n    prompt: keep the plan"),
+    );
+    expect(steered.nodes[0]).toMatchObject({ action: "compact", prompt: "keep the plan" });
+    const promptOnNew = await rejection(
+      workflow("\n  - id: fresh\n    type: context\n    action: new\n    prompt: x"),
+    );
+    expect(promptOnNew.message).toContain("prompt");
+    const agent =
+      "\n  - id: ask\n    type: agent\n    prompt: hi\n    input: null\n    context: clear";
+    expect((await rejection(workflow(agent))).message).toContain("context");
+  });
 });
 
 describe("the shipped task workflow", () => {

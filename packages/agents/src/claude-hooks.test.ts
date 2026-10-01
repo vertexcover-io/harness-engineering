@@ -65,6 +65,7 @@ describe("claudeAdapter.stop", () => {
       addRun: async () => {},
       removeRun: async () => {},
       initRun: async () => {},
+      setTerminal: async () => {},
       linkSession: async () => {},
     };
     const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
@@ -94,6 +95,7 @@ describe("claudeAdapter.preToolUse", () => {
     addRun: async () => {},
     removeRun: async () => {},
     initRun: async () => {},
+    setTerminal: async () => {},
     linkSession: async () => {},
   };
   const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
@@ -125,6 +127,27 @@ describe("claudeAdapter.preToolUse", () => {
     expect(await claudePreToolUse?.("not json", deps, recordGuard)).toBe("");
     const missingTool = JSON.stringify({ session_id: "s1", tool_input: {} });
     expect(await claudePreToolUse?.(missingTool, deps, recordGuard)).toBe("");
+  });
+});
+
+describe("claudeHookSettings SessionStart", () => {
+  test("SC13: SessionStart runs link-session with no matcher, and Stop and PreToolUse are unchanged", () => {
+    const settings = claudeHookSettings(["/usr/bin/bun", "/o.ts", "hook"]);
+
+    expect(settings.hooks.SessionStart).toEqual([
+      {
+        hooks: [
+          {
+            type: "command",
+            command:
+              "'/usr/bin/bun' '/o.ts' 'hook' 'session-start' '--agent' 'claude' '--handler' 'link-session'",
+            timeout: 30,
+          },
+        ],
+      },
+    ]);
+    expect(settings.hooks.Stop).toHaveLength(1);
+    expect(settings.hooks.PreToolUse).toHaveLength(2);
   });
 });
 

@@ -23,6 +23,8 @@ const fakeTerminal = (): ITerminal => ({
   sendKeys: () => Promise.resolve({ ok: true, value: undefined }),
   capture: () => Promise.resolve({ ok: true, value: "" }),
   isAlive: () => Promise.resolve(true),
+  rename: () => Promise.resolve({ ok: true, value: undefined }),
+  respawn: () => Promise.resolve({ ok: true, value: undefined }),
   kill: () => Promise.resolve({ ok: true, value: undefined }),
   list: () => Promise.resolve([]),
   attachCommand: (name) => ["tmux", "attach-session", "-t", name],
@@ -34,6 +36,7 @@ const fakeProvider = (
   type: "claude",
   checks: [],
   launch,
+  relaunch: () => Promise.resolve({ ok: true, value: undefined }),
   prompt: () => Promise.resolve({ ok: true, value: undefined }),
   stop: () => Promise.resolve({ ok: true, value: undefined }),
   run: () => Promise.resolve({ ok: false, error: new Error("not implemented") }),
@@ -102,10 +105,11 @@ describe("POST /runs", () => {
 
     expect(res.status).toBe(201);
     const json = (await res.json()) as {
-      run: { id: string; sessions: unknown[] };
+      run: { id: string; sessions: unknown[]; terminal: string | null };
       attach: string[];
     };
     expect(json.run.sessions).toEqual([{ agent: "claude", sessionId: "session-xyz" }]);
+    expect(json.run.terminal).toBe("session-xyz");
     expect(json.attach).toEqual(["tmux", "attach-session", "-t", "session-xyz"]);
 
     const [launchOptions] = seen;
@@ -115,7 +119,7 @@ describe("POST /runs", () => {
     );
     expect(launchOptions?.env?.HARNESS_RUN_ID).toBe(json.run.id);
 
-    expect(await deps.registry.findRun(json.run.id)).toBeDefined();
+    expect((await deps.registry.findRun(json.run.id))?.terminal).toBe("session-xyz");
   });
 
   test("the run is in the registry before its agent starts, so the agent's orchestrate init finds it", async () => {

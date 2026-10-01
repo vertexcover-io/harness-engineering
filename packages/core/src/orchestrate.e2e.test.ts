@@ -50,6 +50,7 @@ const savedRun = (cwd: string, overrides: Partial<WorkflowRun> = {}): WorkflowRu
     cwd,
     sessions: [],
     name: null,
+    terminal: null,
     createdAt: new Date().toISOString(),
     ...overrides,
   };
@@ -239,6 +240,28 @@ describe("orchestrate emit", () => {
 
     expect(emit.code).toBe(1);
     expect(emit.stderr).toContain("workflow.node.failed");
+    expect(await eventsOf(repo)).toEqual([]);
+  });
+
+  test("emit refuses a hook event, so an agent cannot fake a SessionStart", async () => {
+    const repo = tempRepo();
+    const home = tempDir();
+    initializedRun(home, repo);
+    const payload = JSON.stringify({ agent: "claude", sessionId: "forged", source: "clear" });
+
+    const emit = orchestrate(repo, home, [
+      "emit",
+      "hooks.session-start.called",
+      "--run",
+      "feat-x",
+      "--source",
+      "hooks",
+      "--payload",
+      payload,
+    ]);
+
+    expect(emit.code).toBe(1);
+    expect(emit.stderr).toContain("hooks.session-start.called");
     expect(await eventsOf(repo)).toEqual([]);
   });
 
@@ -1886,4 +1909,200 @@ describe("the task workflow's ticket-fetcher stage", () => {
 
     expect(workspace).toMatchObject({ nodeId: "create-workspace", input: { request: task } });
   });
+});
+
+describe("orchestrate hook session-start", () => {
+  const RUN_ENV = { HARNESS_RUN_ID: "r-1" };
+  const START = JSON.stringify({ session_id: "B", source: "clear", cwd: "/x" });
+
+  const sessionStart = (
+    run: Readonly<{ repo: string; home: string }>,
+    input = START,
+    env: Env = RUN_ENV,
+  ) =>
+    orchestrate(
+      run.repo,
+      run.home,
+      ["hook", "session-start", "--agent", "claude", "--handler", "link-session"],
+      env,
+      input,
+    );
+
+  test("SC10: a new session id after /clear is linked to its run and its Stop hook call is recognized", async () => {
+    const run = startedRun(ONE_AGENT);
+    const link = ["link-session", "--run", "feat-x", "--agent", "claude", "--session-id", "A"];
+    expect(orchestrate(run.repo, run.home, link).code).toBe(0);
+
+    const result = sessionStart(run);
+
+    expect(result).toMatchObject({ code: 0, stdout: "" });
+    expect(readRegistry(run.home).runs["r-1"]?.sessions).toEqual([
+      { agent: "claude", sessionId: "A" },
+      { agent: "claude", sessionId: "B" },
+    ]);
+    expect((await eventsOf(run.repo)).at(-1)).toMatchObject({
+      type: "hooks.session-start.called",
+      payload: { agent: "claude", sessionId: "B", source: "clear" },
+    });
+    const stop = orchestrate(
+      run.repo,
+      run.home,
+      ["hook", "stop", "--agent", "claude", "--handler", "continue-workflow"],
+      RUN_ENV,
+      JSON.stringify({ session_id: "B" }),
+    );
+    expect(stop.code).toBe(0);
+    expect((await eventsOf(run.repo)).at(-1)?.type).toBe("hooks.stop.called");
+  });
+
+  test("SC11: a session with no run, or a run with no name yet, is left alone", async () => {
+    const run = startedRun(ONE_AGENT);
+    const before = (await eventsOf(run.repo)).length;
+    const registryBefore = readRegistry(run.home);
+
+    expect(sessionStart(run, START, {})).toMatchObject({ code: 0, stdout: "" });
+    expect(sessionStart(run, START, { HARNESS_RUN_ID: "unknown" })).toMatchObject({
+      code: 0,
+      stdout: "",
+    });
+
+    expect(readRegistry(run.home)).toEqual(registryBefore);
+    expect(await eventsOf(run.repo)).toHaveLength(before);
+
+    const home = tempDir();
+    writeRegistry(home, [savedRun(run.repo)]);
+    expect(sessionStart({ repo: run.repo, home })).toMatchObject({ code: 0, stdout: "" });
+    expect(readRegistry(home).runs["r-1"]?.sessions).toEqual([]);
+  });
+
+  test("SC12: input that is not JSON prints nothing and exits 0", () => {
+    const run = startedRun(ONE_AGENT);
+
+    expect(sessionStart(run, "not json")).toMatchObject({ code: 0, stdout: "" });
+  });
+});
+
+const withContext = (node: string) => `name: context
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - { id: first, type: agent, prompt: one, input: {} }
+  - { id: fresh, type: context, ${node}, dependsOn: [first] }
+  - { id: second, type: agent, prompt: two, dependsOn: [fresh], input: {} }
+`;
+
+const FAKE_AGENT = join(import.meta.dir, "..", "..", "agents", "src", "fixtures", "fake-agent.ts");
+const RESUME = "/orchestrate-v2 --resume feat-x";
+
+// A run whose agent is the fake agent in a private tmux pane, driven to its context node.
+const runToContextNode = async (node: string, socket: string) => {
+  const run = startedRun(withContext(node));
+  const out = join(tempDir(), "agent.jsonl");
+  const tmux = (...args: string[]) =>
+    execFileSync("tmux", ["-L", socket, "-f", "/dev/null", ...args], { encoding: "utf8" });
+  tmux(
+    ...["new-session", "-d", "-s", "agent", "-x", "200", "-y", "50", "-c", run.repo],
+    ...["-e", `FAKE_AGENT_OUT=${out}`, "--", "bun", FAKE_AGENT],
+  );
+  const socketPath = tmux("display-message", "-p", "-t", "agent", "#{socket_path}").trim();
+  const pane = tmux("display-message", "-p", "-t", "agent", "#{pane_id}").trim();
+  const inPane = {
+    TMUX: `${socketPath},1,0`,
+    TMUX_PANE: pane,
+    HARNESS_CLAUDE_BIN: FAKE_AGENT,
+  };
+  const step = (args: readonly string[], env: Env = {}, input = "") =>
+    orchestrate(run.repo, run.home, args, { HARNESS_RUN_ID: "r-1", ...env }, input);
+  const next = () => JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+  const records = (): Array<Record<string, unknown>> =>
+    existsSync(out)
+      ? readFileSync(out, "utf8")
+          .split("\n")
+          .filter((line) => line !== "")
+          .map((line) => JSON.parse(line))
+      : [];
+  const typed = () =>
+    records()
+      .map((record) => record.line)
+      .filter((line): line is string => typeof line === "string");
+  const launches = () => records().filter((record) => Array.isArray(record.argv));
+
+  expect(
+    step(["link-session", "--run", "feat-x", "--agent", "claude", "--session-id", "A"]).code,
+  ).toBe(0);
+  await waitFor(() => launches().length === 1);
+  await Bun.sleep(300);
+  const first = next();
+  expect(step(["done", first.nodeRunId, "--run", "feat-x", "--output", "{}"]).code).toBe(0);
+  const context = next();
+  const stop = () =>
+    step(
+      ["hook", "stop", "--agent", "claude", "--handler", "continue-workflow"],
+      inPane,
+      JSON.stringify({ session_id: "A" }),
+    );
+  // What Claude does once a new session starts or a compact finishes: run its SessionStart hook.
+  const sessionStart = (sessionId: string, source: string) =>
+    step(
+      ["hook", "session-start", "--agent", "claude", "--handler", "link-session"],
+      inPane,
+      JSON.stringify({ session_id: sessionId, source }),
+    );
+  return { run, step, next, stop, sessionStart, typed, launches, context };
+};
+
+const contextOutput = async (repo: string) =>
+  (await eventsOf(repo)).find(
+    (event) => event.type === "workflow.node.completed" && event.nodeId === "fresh",
+  )?.payload;
+
+describe("context node through a real tmux pane", () => {
+  test("new: the helper restarts the agent in its pane on a new session, whose SessionStart completes the node", async () => {
+    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    try {
+      const flow = await runToContextNode("action: new", socket);
+      expect(flow.context).toMatchObject({ kind: "context", action: "new", nodeId: "fresh" });
+
+      expect(flow.stop()).toMatchObject({ code: 0, stdout: "" });
+      await waitFor(() => flow.launches().length === 2);
+
+      const argv = flow.launches()[1]?.argv as string[];
+      const sessionId = argv[argv.indexOf("--session-id") + 1] ?? "";
+      expect(argv.at(-1)).toBe(RESUME);
+      expect(await contextOutput(flow.run.repo)).toBeUndefined();
+      expect(flow.sessionStart(sessionId, "startup")).toMatchObject({ code: 0, stdout: "" });
+      expect(flow.launches()[1]?.runId).toBe("r-1");
+      expect(flow.typed()).toEqual([]);
+      expect(stateOf(flow.run.repo).activeSessions).toEqual([{ agent: "claude", sessionId }]);
+      expect(await contextOutput(flow.run.repo)).toMatchObject({
+        output: { action: "new", applied: true, sessionId },
+      });
+      expect(flow.next()).toMatchObject({ kind: "agent", nodeId: "second" });
+    } finally {
+      spawnSync("tmux", ["-L", socket, "kill-server"]);
+    }
+  }, 30_000);
+
+  test("compact: the helper types /compact; the compact's SessionStart completes the node and types the resume prompt", async () => {
+    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    try {
+      const flow = await runToContextNode('action: compact, prompt: "keep the plan"', socket);
+      expect(flow.context).toMatchObject({ kind: "context", action: "compact" });
+      const sessionsBefore = stateOf(flow.run.repo).activeSessions;
+
+      expect(flow.stop()).toMatchObject({ code: 0, stdout: "" });
+      await waitFor(() => flow.typed().includes("/compact keep the plan"));
+      expect(flow.sessionStart("A", "compact")).toMatchObject({ code: 0, stdout: "" });
+      await waitFor(() => flow.typed().includes(RESUME));
+
+      expect(flow.typed()).toEqual(["/compact keep the plan", RESUME]);
+      expect(stateOf(flow.run.repo).activeSessions).toEqual(sessionsBefore);
+      expect(await contextOutput(flow.run.repo)).toMatchObject({
+        output: { action: "compact", applied: true, sessionId: "A" },
+      });
+      expect(flow.next()).toMatchObject({ kind: "agent", nodeId: "second" });
+    } finally {
+      spawnSync("tmux", ["-L", socket, "kill-server"]);
+    }
+  }, 30_000);
 });

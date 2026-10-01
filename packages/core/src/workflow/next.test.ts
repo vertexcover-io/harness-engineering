@@ -54,6 +54,7 @@ const start = (input: JsonObject = {}): State => ({
     },
   },
   nodeRuns: {},
+  activeSessions: [],
   eventHandlers: {},
 });
 
@@ -752,5 +753,54 @@ nodes:${exec("toString", "\n    input: {}")}${exec("hasOwnProperty", "\n    depe
       output: {},
     });
     expect(expectLeaf((await advance(plan, afterFirst)).stop).node.id).toBe("hasOwnProperty");
+  });
+});
+
+const CONTEXT_FLOW = `name: t
+nodes:
+  - { id: first, type: agent, prompt: one, input: {} }
+  - { id: fresh, type: context, action: new, dependsOn: [first] }
+  - { id: second, type: agent, prompt: two, dependsOn: [fresh], input: {} }
+`;
+
+describe("context node", () => {
+  test("next hands out a context node as a step, then the node after it once it completes", async () => {
+    const plan = await compilePlan(CONTEXT_FLOW);
+    const first = await advance(plan, start());
+    const afterFirst = end(first.state, expectLeaf(first.stop).nodeRunId, "completed", {
+      output: {},
+    });
+
+    const context = expectLeaf((await advance(plan, afterFirst)).stop);
+    expect(context.node).toMatchObject({ id: "fresh", type: "context", action: "new" });
+
+    const handed = await advance(plan, afterFirst);
+    const afterContext = end(handed.state, expectLeaf(handed.stop).nodeRunId, "completed", {
+      output: { action: "new", sessionId: "B" },
+    });
+    expect(expectLeaf((await advance(plan, afterContext)).stop).node.id).toBe("second");
+  });
+
+  test("a context node in a loop is handed out again on every pass", async () => {
+    const plan = await compilePlan(`name: t
+nodes:
+  - id: fix
+    type: loop
+    until: "{{ iteration.index >= 2 }}"
+    maxIterations: 3
+    input: {}
+    nodes:
+      - { id: slim, type: context, action: compact }
+`);
+    const ids: string[] = [];
+    let state = start();
+    for (let pass = 0; pass < 2; pass++) {
+      const handed = await advance(plan, state);
+      const leaf = expectLeaf(handed.stop);
+      expect(leaf.node).toMatchObject({ id: "slim", action: "compact" });
+      ids.push(leaf.nodeRunId);
+      state = end(handed.state, leaf.nodeRunId, "completed", { output: {} });
+    }
+    expect(new Set(ids).size).toBe(2);
   });
 });

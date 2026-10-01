@@ -75,6 +75,27 @@ export const WaitNodeSchema = z.strictObject({
   durationMs: z.number().int().positive(),
 });
 
+// A step that gives the agent a fresh context: `new` replaces its session with a new one in the
+// same pane, `compact` compacts the session it has, steered by `prompt` when given. It takes no
+// input.
+export const ContextNodeSchema = z
+  .strictObject({
+    ...guardedFields,
+    input: z.json().default(null),
+    type: NodeTypeSchema.extract(["context"]),
+    action: z.enum(["new", "compact"]),
+    prompt: NonEmptyStringSchema.optional(),
+  })
+  .superRefine((node, ctx) => {
+    if (node.action === "new" && node.prompt !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["prompt"],
+        message: "prompt steers a compact; a new session takes none",
+      });
+    }
+  });
+
 const SwitchCaseFieldsSchema = z.strictObject({ id: NodeIdSchema, value: ScalarSchema });
 
 const SwitchNodeFieldsSchema = z.strictObject({
@@ -130,12 +151,20 @@ export const AgentNodeSchema = z
     }
   });
 
-export type WorkflowNode = ExecNode | AgentNode | SwitchNode | IncludeNode | LoopNode | WaitNode;
+export type WorkflowNode =
+  | ExecNode
+  | AgentNode
+  | ContextNode
+  | SwitchNode
+  | IncludeNode
+  | LoopNode
+  | WaitNode;
 
 export const NodeSchema: z.ZodType<WorkflowNode> = z.lazy(() =>
   z.discriminatedUnion("type", [
     ExecNodeSchema,
     AgentNodeSchema,
+    ContextNodeSchema,
     SwitchNodeSchema,
     IncludeNodeSchema,
     LoopNodeSchema,
@@ -234,6 +263,7 @@ export type ExecNode = z.infer<typeof ExecNodeSchema>;
 export type WaitNode = z.infer<typeof WaitNodeSchema>;
 export type IncludeNode = z.infer<typeof IncludeNodeSchema>;
 export type AgentNode = z.infer<typeof AgentNodeSchema>;
+export type ContextNode = z.infer<typeof ContextNodeSchema>;
 export type FailureKind = z.infer<typeof FailureKindSchema>;
 export type WorkflowErrorCode = z.infer<typeof WorkflowErrorCodeSchema>;
 export type NodeRecord = z.infer<typeof NodeRecordSchema>;
@@ -267,6 +297,7 @@ export type PlanExecNode = ExecNode & {
   outputSchema?: z.ZodType | undefined;
 };
 export type PlanWaitNode = WaitNode & { readonly parents: readonly string[] };
+export type PlanContextNode = ContextNode & { readonly parents: readonly string[] };
 export type PlanAgentNode = Omit<AgentNode, "stage"> & {
   readonly parents: readonly string[];
   stage?: PlanStage;
@@ -290,6 +321,7 @@ export type PlanNode =
   | PlanExecNode
   | PlanWaitNode
   | PlanAgentNode
+  | PlanContextNode
   | PlanIncludeNode
   | PlanLoopNode
   | PlanSwitchNode;

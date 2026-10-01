@@ -4,9 +4,10 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { claudeProvider } from "@harness/agents";
+
 import { captureLogger } from "@harness/core";
 import { type CheckContext, type Exec, execWithTimeout } from "@harness/sdk";
+import { claudeProvider } from "./claude.ts";
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
 import { tmuxTerminal } from "./tmux.ts";
 
@@ -297,5 +298,59 @@ describe("tmuxTerminal against a real tmux", () => {
       await exec("tmux", ["-L", socketName, "show-options", "-g", "status"], process.cwd())
     ).stdout;
     expect(status.trim()).toBe("status off");
+  });
+});
+
+describe("tmuxTerminal socketPath and rename", () => {
+  test("SC6: a terminal built with socketPath reaches the server a -L terminal made, and rename works on a pane id", async () => {
+    const { terminal, socketName, configPath } = makeTerminal();
+    const name = `s-${randomUUID()}`;
+    await terminal.create({ name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
+    const socket = (
+      await exec("tmux", ["-L", socketName, "display-message", "-p", "#{socket_path}"], "/")
+    ).stdout.trim();
+    const pane = (
+      await exec("tmux", ["-L", socketName, "list-panes", "-a", "-F", "#{pane_id}"], "/")
+    ).stdout.trim();
+
+    const bySocket = tmuxTerminal({ socketPath: socket, configPath });
+    expect(await bySocket.list()).toEqual([name]);
+    expect(bySocket.attachCommand(name)).toContain("-S");
+
+    const renamed = await bySocket.rename(pane, "claude-x-1234");
+    expect(renamed.ok).toBe(true);
+    expect(await terminal.list()).toEqual(["claude-x-1234"]);
+  });
+});
+
+describe("tmuxTerminal respawn", () => {
+  test("respawn replaces the program in a pane, keeping the pane id and the session name", async () => {
+    const { terminal, socketName } = makeTerminal();
+    const name = `s-${randomUUID()}`;
+    await terminal.create({ name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
+    const paneOf = async () =>
+      (
+        await exec(
+          "tmux",
+          ["-L", socketName, "list-panes", "-a", "-F", "#{pane_id} #{pane_pid}"],
+          "/",
+        )
+      ).stdout.trim();
+    const [pane, pidBefore] = (await paneOf()).split(" ");
+
+    const respawned = await terminal.respawn(pane as string, {
+      cwd: process.cwd(),
+      argv: ["sh", "-c", 'echo "hello $GREETING"; sleep 60'],
+      env: { GREETING: "world" },
+    });
+
+    expect(respawned.ok).toBe(true);
+    const [paneAfter, pidAfter] = (await paneOf()).split(" ");
+    expect(paneAfter).toBe(pane);
+    expect(pidAfter).not.toBe(pidBefore);
+    expect(await terminal.list()).toEqual([name]);
+    await sleep(300);
+    const screen = await terminal.capture(name);
+    expect(screen.ok ? screen.value : "").toContain("hello world");
   });
 });

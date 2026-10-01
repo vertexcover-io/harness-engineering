@@ -1,5 +1,6 @@
 import { access, copyFile, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { PaneTarget } from "@harness/agents";
 import {
   type ArtifactRef,
   appendRunEvent,
@@ -56,8 +57,10 @@ import {
   type RunningLeaf,
 } from "./workflow/next.ts";
 import {
+  type ContextNode,
   type NodeRecord,
   type PlanAgentNode,
+  type PlanContextNode,
   WorkflowError,
   type WorkflowPlan,
 } from "./workflow/types.ts";
@@ -69,7 +72,30 @@ export type InitOptions = Readonly<{
   name: string;
   git: IGit;
   log: ILogger;
+  // the agent's tmux pane, when init runs inside one
+  pane?: PaneTarget | undefined;
 }>;
+
+export const terminalName = (runName: string, runId: string): string =>
+  `claude-${runName}-${runId.slice(-4)}`;
+
+// A failed rename is only logged: the run works, its tmux session just keeps the old name.
+const renameTerminal = async (run: WorkflowRun, options: InitOptions): Promise<void> => {
+  const { pane: target, registry, name, log } = options;
+  if (target === undefined) return;
+  const { terminal: tmux, pane } = target;
+  const terminal = terminalName(name, run.id);
+  try {
+    const renamed = await tmux.rename(pane, terminal);
+    if (!renamed.ok) {
+      log.warn({ runId: run.id, pane, err: renamed.error }, "tmux session not renamed");
+      return;
+    }
+    await registry.setTerminal(run.id, terminal);
+  } catch (error) {
+    log.warn({ runId: run.id, pane, err: error }, "tmux session not renamed");
+  }
+};
 
 type CheckedInit = Readonly<{ run: WorkflowRun; eventHandlers: EventHandlerRefs }>;
 
@@ -94,7 +120,7 @@ const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<S
       id: "workflow-started",
       type: "workflow.started",
       source: "orchestrate",
-      payload: { workflow: run.workflow, inputs: run.inputs },
+      payload: { workflow: run.workflow, inputs: run.inputs, activeSessions: run.sessions },
     },
   );
   if (!appended.ok) throw new Error(appended.error);
@@ -143,6 +169,7 @@ export const initializeRun = async (
   try {
     const state = await fillRunDir(checked.value, options);
     await options.registry.initRun(run.id, options.name);
+    await renameTerminal(run, options);
     options.log.info({ runId: run.id, name: options.name, dir }, "run initialized");
     return { ok: true, value: { dir, state } };
   } catch (error) {
@@ -195,6 +222,7 @@ export type StepReply =
       input: JsonValue;
       done: string;
     }>
+  | Readonly<{ kind: "context"; nodeRunId: string; nodeId: string; action: ContextNode["action"] }>
   | Exclude<Decision, { kind: "leaf" }>;
 
 type NextOptions = Readonly<{ root: string; config: Config }>;
@@ -297,6 +325,9 @@ const buildLeafReply = (
   options: NextOptions,
 ): StepReply => {
   const { node, nodeRunId, input, variables } = decision;
+  if (node.type === "context") {
+    return { kind: "context", nodeRunId, nodeId: node.id, action: node.action };
+  }
   if (node.type !== "agent") {
     const mode = node.type === "exec" ? node.mode : "inline";
     return {
@@ -410,6 +441,48 @@ const runExecStep = async (run: RunRef, nodeRunId: string): Promise<Result<StepR
 
 export const execStep = (run: RunRef, nodeRunId: string): Promise<Result<StepReport>> =>
   logCall(run, { command: "exec", input: { nodeRunId } }, runExecStep(run, nodeRunId));
+type ContextLeaf = RunningLeaf & Readonly<{ node: PlanContextNode }>;
+
+const loadContextLeaf = async (run: RunRef, nodeRunId: string): Promise<Result<ContextLeaf>> => {
+  const step = await loadRunningLeaf(run, nodeRunId);
+  if (!step.ok) return step;
+  const { node, nodeRun } = step.value;
+  if (node.type !== "context") {
+    return { ok: false, error: `${nodeRunId} is a node of type ${node.type}, not a context node` };
+  }
+  return { ok: true, value: { node, nodeRun } };
+};
+
+// The open context node `nodeRunId` names: what it asks for (action, and prompt for a compact).
+export const findContextPlanNode = async (
+  run: RunRef,
+  nodeRunId: string,
+): Promise<Result<PlanContextNode>> => {
+  const leaf = await loadContextLeaf(run, nodeRunId);
+  return leaf.ok ? { ok: true, value: leaf.value.node } : leaf;
+};
+
+// A context node always completes: a new session or a compact that did not happen leaves the
+// agent with the context it had, which is no reason to skip the steps after it. Its output says
+// whether the action was applied.
+export const completeContextStep = async (
+  run: RunRef,
+  nodeRunId: string,
+  output: JsonValue,
+): Promise<Result<StepReport>> => {
+  const leaf = await loadContextLeaf(run, nodeRunId);
+  if (!leaf.ok) return leaf;
+  const record: NodeRecord = {
+    path: nodeRunId,
+    type: "context",
+    status: "completed",
+    attempts: 1,
+    output,
+  };
+  const stored = await emitRunEvent(run, buildStepEndEvent(leaf.value, record));
+  return stored.ok ? { ok: true, value: buildReport(leaf.value, record) } : stored;
+};
+
 const isRunningNodeRun = (runs: Readonly<Record<string, NodeRun>>, nodeRunId: string): boolean =>
   Object.values(runs).some(
     (nodeRun) =>

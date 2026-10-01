@@ -17,4 +17,3 @@ export {
   runtimeChecks,
   startServer,
 } from "./server.ts";
-export { type TmuxTerminalOptions, tmuxTerminal } from "./tmux.ts";

@@ -11,11 +11,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { currentPane } from "@harness/agents";
 import {
   createGit,
   createRegistry,
   emitRunEvent,
   findRoot,
+  type ITerminal,
   jsonlEventStore,
   noopLogger,
   resolveRun,
@@ -23,7 +25,7 @@ import {
   type WorkflowRun,
 } from "@harness/sdk";
 import corePackage from "../package.json";
-import { initializeRun, linkRunSession } from "./runs.ts";
+import { type InitOptions, initializeRun, linkRunSession, terminalName } from "./runs.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id: "r-1",
@@ -33,6 +35,7 @@ const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   cwd: "/repos/demo",
   sessions: [],
   name: null,
+  terminal: null,
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -67,8 +70,8 @@ const savedRun = async (overrides: Partial<WorkflowRun> = {}) => {
   const registry = createRegistry(join(tempDir(), "registry.json"));
   const run = makeRun({ cwd, workflowPath, ...overrides });
   await registry.addRun(run);
-  const init = (name: string, runId = run.id) =>
-    initializeRun({ registry, runId, name, git: createGit(), log: noopLogger });
+  const init = (name: string, runId = run.id, extra: Partial<InitOptions> = {}) =>
+    initializeRun({ registry, runId, name, git: createGit(), log: noopLogger, ...extra });
   return { cwd, workflowPath, registry, run, init };
 };
 
@@ -101,6 +104,18 @@ describe("initializeRun", () => {
       startedAt: events[0]?.ts,
     });
     expect((await registry.findRun(run.id))?.name).toBe("fix-login");
+  });
+
+  test("SC8: seeds activeSessions with the session harness run launched", async () => {
+    const session = { agent: "claude", sessionId: "s1" } as const;
+    const { init } = await savedRun({ sessions: [session] });
+
+    const result = await init("fix-login");
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.state.activeSessions).toEqual([session]);
+    const stored = JSON.parse(readFileSync(join(result.value.dir, "state.json"), "utf8"));
+    expect(stored.activeSessions).toEqual([session]);
   });
 
   test("SC20: a second init, a run folder that already exists, a bad name, and an unknown run are each refused", async () => {
@@ -262,5 +277,75 @@ describe("linkRunSession", () => {
     expect((await registry.findRun(run.id))?.sessions).toEqual([
       { agent: "codex", sessionId: "s2" },
     ]);
+  });
+});
+
+const tmux = (socket: string, ...args: string[]): string =>
+  execFileSync("tmux", ["-L", socket, ...args], { encoding: "utf8" }).trim();
+
+const privateTmux = () => {
+  const socket = `harness-init-${crypto.randomUUID()}`;
+  tmux(socket, "new-session", "-d", "-s", "old-name", "sleep", "60");
+  const path = tmux(socket, "display-message", "-p", "#{socket_path}");
+  const pane = tmux(socket, "list-panes", "-a", "-F", "#{pane_id}");
+  return { socket, pane: currentPane({ TMUX: `${path},1,0`, TMUX_PANE: pane }) };
+};
+
+describe("terminal naming", () => {
+  test("SC1: the name is claude-NAME- plus the last 4 characters of the run id", () => {
+    expect(terminalName("fix-login", "r-1a2b3c4d")).toBe("claude-fix-login-3c4d");
+  });
+
+  test("SC3: init renames the pane's tmux session and records the name", async () => {
+    const { socket, pane } = privateTmux();
+    try {
+      const { registry, run, init } = await savedRun({ id: "r-1a2b3c4d" });
+
+      const result = await init("fix-login", run.id, { pane });
+
+      expect(result.ok).toBe(true);
+      expect(tmux(socket, "list-sessions", "-F", "#{session_name}")).toBe("claude-fix-login-3c4d");
+      expect((await registry.findRun(run.id))?.terminal).toBe("claude-fix-login-3c4d");
+    } finally {
+      tmux(socket, "kill-server");
+    }
+  });
+
+  test("SC4: init outside tmux leaves the terminal alone and succeeds", async () => {
+    const { registry, run, init } = await savedRun({ terminal: "old" });
+
+    const result = await init("fix-login", run.id, {});
+
+    expect(result.ok).toBe(true);
+    expect((await registry.findRun(run.id))?.terminal).toBe("old");
+  });
+
+  test("SC5: a rename that fails does not fail init", async () => {
+    const failing: ITerminal = {
+      ...({} as ITerminal),
+      rename: () => Promise.resolve({ ok: false, error: "no such pane" }),
+    };
+    const { registry, run, init } = await savedRun({ terminal: "old" });
+
+    const result = await init("fix-login", run.id, {
+      pane: { terminal: failing, pane: "%99" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect((await registry.findRun(run.id))?.terminal).toBe("old");
+  });
+
+  test("SC5: a rename that throws does not fail init or delete the run folder", async () => {
+    const throwing: ITerminal = {
+      ...({} as ITerminal),
+      rename: () => Promise.reject(new Error("timed out after 10s")),
+    };
+    const { registry, run, init } = await savedRun({ terminal: "old" });
+
+    const result = await init("fix-login", run.id, { pane: { terminal: throwing, pane: "%99" } });
+
+    expect(result.ok).toBe(true);
+    expect(existsSync(result.ok ? result.value.dir : "")).toBe(true);
+    expect((await registry.findRun(run.id))?.terminal).toBe("old");
   });
 });

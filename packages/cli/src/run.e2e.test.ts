@@ -16,7 +16,7 @@ import { DoctorJsonSchema } from "@harness/core";
 
 const TIMEOUT_MS = 40_000;
 const CLI = join(import.meta.dir, "index.ts");
-const FAKE_AGENT = join(import.meta.dir, "..", "..", "server", "src", "fixtures", "fake-agent.ts");
+const FAKE_AGENT = join(import.meta.dir, "..", "..", "agents", "src", "fixtures", "fake-agent.ts");
 const ORCHESTRATE = join(import.meta.dir, "..", "..", "core", "src", "orchestrate.ts");
 
 const OK_WORKFLOW = [
@@ -237,7 +237,7 @@ describe("harness run", () => {
       expect(run.code).toBe(0);
       const [runId, attach] = run.stdout.trim().split("\n");
       expect(runId).toMatch(/^r-[0-9a-f]{8}$/);
-      expect(attach).toContain("attach-session");
+      expect(attach).toBe(`harness attach --run-id ${runId}`);
 
       const status = harness(repo, env, "server", "status");
       expect(status.code).toBe(0);

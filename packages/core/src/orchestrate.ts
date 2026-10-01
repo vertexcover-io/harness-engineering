@@ -1,7 +1,14 @@
 #!/usr/bin/env bun
-import { resolve } from "node:path";
+import { appendFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
-import { agentAdapters, HOOK_AGENTS } from "@harness/agents";
+import {
+  agentAdapters,
+  claudeProvider,
+  currentPane,
+  HOOK_AGENTS,
+  harnessTmux,
+} from "@harness/agents";
 import {
   type AgentAdapter,
   AgentTypeSchema,
@@ -11,6 +18,7 @@ import {
   createRegistry,
   emitRunEvent,
   type HookDeps,
+  harnessHome,
   type JsonValue,
   loadConfigOrDefault,
   preToolUseHandlers,
@@ -19,10 +27,14 @@ import {
   registryPath,
   resolveRoot,
   resolveRun,
+  runDirOf,
   type StepOutcome,
+  sessionStartHandlers,
+  spawnDetached,
   stopHandlers,
   stopRunningOnSignal,
 } from "@harness/sdk";
+import { completeContextOnSessionStart, runContextStep } from "./context-step.ts";
 import { createLogger, resolveLevel } from "./logging.ts";
 import {
   type DoneError,
@@ -34,7 +46,12 @@ import {
   linkRunSession,
   nextStep,
 } from "./runs.ts";
-import { harnessSkillsDir, resolveExtension, resolveReference } from "./stage.ts";
+import {
+  harnessSkillsDir,
+  orchestrateHookCommand,
+  resolveExtension,
+  resolveReference,
+} from "./stage.ts";
 import { captureBaseline } from "./stages/baseline.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
@@ -117,6 +134,7 @@ const initCommand = () =>
         name,
         git: createGit(),
         log,
+        pane: currentPane(),
       });
       printResult(result.ok ? { ok: true, value: { runId, dir: result.value.dir } } : result);
     });
@@ -167,6 +185,8 @@ const emitCommand = () =>
       if (type.startsWith("workflow.")) {
         return fail(`${type} is engine-owned; use next, exec, or done for workflow lifecycle`);
       }
+      // The reset helper trusts hooks.session-start.called, so only the hooks may write hook events.
+      if (type.startsWith("hooks.")) return fail(`${type} is written only by the agent's hooks`);
       const payload = parseJsonFlag(opts.payload, "--payload");
       if (!payload.ok) return fail(payload.error);
       const target = await getWorkflowRun(opts.run, opts.root);
@@ -386,6 +406,22 @@ const skillCommand = () => {
   return skill;
 };
 
+// Detached, because the Stop hook must return before Claude goes idle and the step can begin.
+const startContextStep = async (run: RunRef, sessionId: string, nodeRunId: string) => {
+  const args = [
+    import.meta.filename,
+    "context",
+    nodeRunId,
+    "--run",
+    run.name,
+    "--session-id",
+    sessionId,
+    "--root",
+    run.cwd,
+  ];
+  spawnDetached(process.execPath, args, { cwd: run.cwd, output: "ignore" });
+};
+
 type HookSpec<H> = Readonly<{
   name: string;
   description: string;
@@ -413,7 +449,13 @@ const addHookCommand = <H>(hook: Command, spec: HookSpec<H>): void => {
         ? spec.handlers[opts.handler]
         : undefined;
       if (answer === undefined || handler === undefined) return;
-      const deps = { registry: registry(), env: process.env, log };
+      const deps = {
+        registry: registry(),
+        env: process.env,
+        log,
+        startContextStep,
+        completeContextNode: completeContextOnSessionStart,
+      };
       process.stdout.write(await answer(await Bun.stdin.text(), deps, handler));
     });
 };
@@ -429,6 +471,12 @@ const hookCommand = () => {
     answer: (adapter) => adapter.stop,
   });
   addHookCommand(hook, {
+    name: "session-start",
+    description: "Link a newly started agent session to its run",
+    handlers: sessionStartHandlers,
+    answer: (adapter) => adapter.sessionStart,
+  });
+  addHookCommand(hook, {
     name: "pre-tool-use",
     description: "Decide whether the agent may make a tool call",
     handlers: preToolUseHandlers,
@@ -436,6 +484,49 @@ const hookCommand = () => {
   });
   return hook;
 };
+
+const contextCommand = () =>
+  new Command("context")
+    .description(
+      "Carry out an open context node: start a new session in the agent's pane, or compact it (started by the Stop hook)",
+    )
+    .argument("<nodeRunId>", "node run id of the open context node")
+    .requiredOption("--run <name>", RUN_HELP)
+    .requiredOption("--session-id <id>", "the agent session whose turn just ended")
+    .option("--root <dir>", ROOT_HELP)
+    .action(async (nodeRunId, opts) => {
+      const target = await getWorkflowRun(opts.run, opts.root);
+      if (!target.ok) return fail(target.error);
+      const { run } = target.value;
+      // stderr is detached, so this helper logs to the run's folder
+      const file = join(runDirOf(run.cwd, run.name), "context.log");
+      const helperLog = createLogger(
+        { service: "harness-context", run: run.name },
+        {
+          destination: { write: (chunk: string) => void appendFileSync(file, chunk) },
+          level: "debug",
+        },
+      );
+      const pane = currentPane(process.env, helperLog);
+      await runContextStep({
+        run,
+        nodeRunId,
+        oldSessionId: opts.sessionId,
+        paneTarget: pane,
+        registry: registry(),
+        provider: claudeProvider({
+          terminal: pane?.terminal ?? harnessTmux(),
+          binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
+          log: helperLog,
+        }),
+        launch: {
+          cwd: run.cwd,
+          env: { HARNESS_RUN_ID: run.id, HARNESS_HOME: harnessHome() },
+          hookCommand: orchestrateHookCommand(),
+        },
+        log: helperLog,
+      });
+    });
 
 stopRunningOnSignal();
 
@@ -452,5 +543,6 @@ await new Command()
   .addCommand(nodeCommand())
   .addCommand(skillCommand())
   .addCommand(hookCommand())
+  .addCommand(contextCommand())
   .parseAsync(process.argv)
   .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));

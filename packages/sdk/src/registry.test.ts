@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { createRegistry, RegistryFileSchema, type WorkflowRun } from "./registry.ts";
+import {
+  createRegistry,
+  findRunByIdOrName,
+  RegistryFileSchema,
+  type RunTarget,
+  type WorkflowRun,
+} from "./registry.ts";
 
 const run = (id: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id,
@@ -13,6 +19,7 @@ const run = (id: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => (
   cwd: "/abs/repo",
   sessions: [],
   name: null,
+  terminal: null,
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -89,5 +96,52 @@ describe("createRegistry", () => {
       "r-old",
     ]);
     expect(await registry.findRunsByName("missing")).toEqual([]);
+  });
+});
+
+describe("terminal", () => {
+  test("SC2: a registry file written before terminal existed loads with null, and setTerminal stores a name", async () => {
+    const path = tempRegistryPath();
+    const { terminal: _omitted, ...legacy } = run("r-old");
+    await writeFile(path, JSON.stringify({ version: 1, runs: { "r-old": legacy } }));
+    const registry = createRegistry(path);
+
+    expect((await registry.findRun("r-old"))?.terminal).toBeNull();
+    await registry.setTerminal("r-old", "claude-fix-login-r-old");
+
+    expect((await createRegistry(path).findRun("r-old"))?.terminal).toBe("claude-fix-login-r-old");
+  });
+});
+
+describe("findRunByIdOrName", () => {
+  const setUp = async () => {
+    const root = mkdtempSync(join(tmpdir(), "registry-root-"));
+    const registry = createRegistry(tempRegistryPath());
+    await registry.addRun(run("r-1a2b3c4d", { cwd: root, name: "fix-login", terminal: "t-1" }));
+    mkdirSync(join(root, ".harness", "fix-login"), { recursive: true });
+    return { root, registry };
+  };
+
+  test("finds a run by its id, or by its name in the given repo root", async () => {
+    const { root, registry } = await setUp();
+
+    const byId = await findRunByIdOrName(registry, { runId: "r-1a2b3c4d" });
+    const byName = await findRunByIdOrName(registry, { name: "fix-login", root });
+
+    expect(byId).toMatchObject({ ok: true, value: { id: "r-1a2b3c4d", terminal: "t-1" } });
+    expect(byName).toMatchObject({ ok: true, value: { id: "r-1a2b3c4d", terminal: "t-1" } });
+  });
+
+  test("an unknown id, an unknown name, or a name whose run folder is gone is an error", async () => {
+    const { root, registry } = await setUp();
+    const errorOf = async (target: RunTarget) => {
+      const found = await findRunByIdOrName(registry, target);
+      return found.ok ? "" : found.error;
+    };
+
+    expect(await errorOf({ runId: "r-00000000" })).toContain("r-00000000");
+    expect(await errorOf({ name: "nope", root })).toContain('no run named "nope"');
+    rmSync(join(root, ".harness", "fix-login"), { recursive: true });
+    expect(await errorOf({ name: "fix-login", root })).toContain("no longer exists");
   });
 });

@@ -25,10 +25,10 @@ beforeEach(async () => {
 });
 
 describe("jsonlEventStore", () => {
-  test("the first event gets seq 1 and only event.jsonl and artifacts/ appear in the run folder", async () => {
+  test("the first event gets seq 1 and only event.jsonl and locks/ appear in the run folder", async () => {
     const result = await log.append(draft("a"));
     expect(result).toEqual({ ok: true, value: { schemaVersion: 1, seq: 1, ...draft("a") } });
-    expect((await readdir(runDir)).sort()).toEqual(["artifacts", "event.jsonl"]);
+    expect((await readdir(runDir)).sort()).toEqual(["event.jsonl", "locks"]);
     expect(await log.read()).toEqual([{ schemaVersion: 1, seq: 1, ...draft("a") }]);
   });
 
@@ -53,7 +53,7 @@ for (let i = 0; i < 5; i++) {
     const events = await log.read();
     expect(events.map((event) => event.seq)).toEqual(Array.from({ length: 25 }, (_, i) => i + 1));
     expect(new Set(events.map((event) => event.id)).size).toBe(25);
-    expect(await readdir(join(runDir, "artifacts"))).toEqual([]);
+    expect(await readdir(join(runDir, "locks"))).toEqual([]);
   }, 20_000);
 
   test("re-submitting an existing id returns the stored event and appends nothing", async () => {
@@ -88,14 +88,14 @@ for (let i = 0; i < 5; i++) {
   });
 
   test("a lock left by a dead process fails with the lock path instead of being broken", async () => {
-    const lock = join(runDir, "artifacts", ".event-log.lock");
+    const lock = join(runDir, "locks", "event-log.lock");
     await mkdir(lock, { recursive: true });
     await writeFile(join(lock, "owner"), "999999999");
     await expect(log.append(draft("a"))).rejects.toThrow(lock);
   });
 
   test("a lock with no owner file fails with the lock path instead of waiting forever", async () => {
-    const lock = join(runDir, "artifacts", ".event-log.lock");
+    const lock = join(runDir, "locks", "event-log.lock");
     await mkdir(lock, { recursive: true });
     await writeFile(join(lock, "stray"), "");
     await expect(log.append(draft("a"))).rejects.toThrow(lock);

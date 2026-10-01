@@ -1,0 +1,63 @@
+# Test workflow for context nodes: a new session, then a compact with almost nothing to compact,
+# then a real compact steered by a prompt. Run it with `harness run`, so the agent sits in a tmux
+# pane. Expected run:
+#   remember        the first session is told the secret word BLUEBERRY
+#   fresh           Claude restarts in the same pane on a new session (output applied: true)
+#   early-compact   the session holds almost nothing: Claude may refuse with "Not enough messages
+#                   to compact." (applied: false, the run carries on) or compact anyway (applied:
+#                   true)
+#   forgot          replies NONE: the new session never heard BLUEBERRY
+#   build-up        reads a file and is told the code name KIWI
+#   slim            compacts, keeping the code name (applied: true)
+#   recall          replies KIWI: the compact kept it
+name: context-demo
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  # Plant a fact in the first session.
+  - id: remember
+    type: agent
+    prompt: "Remember the secret word BLUEBERRY. Reply with exactly: noted"
+    input: {}
+
+  # Fresh session: the secret word should be gone afterwards.
+  - id: fresh
+    type: context
+    action: new
+    dependsOn: [remember]
+
+  # Compact straight after the new session, while it holds almost nothing: Claude may answer
+  # "Not enough messages to compact." The node must still complete (applied: false) and the run
+  # carry on. If Claude compacts anyway, the node completes with applied: true.
+  - id: early-compact
+    type: context
+    action: compact
+    dependsOn: [fresh]
+
+  # Proves the new session: it should not know BLUEBERRY.
+  - id: forgot
+    type: agent
+    prompt: "Without reading any files or running any commands: what secret word were you told earlier in this conversation? Reply with only the word, or NONE."
+    dependsOn: [early-compact]
+    input: {}
+
+  # Give the session real content to compact, and a fact to keep.
+  - id: build-up
+    type: agent
+    prompt: "Read packages/core/src/workflow/next.ts if it exists, otherwise any file here, and summarise it in three bullets. Then remember the code name KIWI. Reply with the three bullets only."
+    dependsOn: [forgot]
+    input: {}
+
+  # A real compact, steered to keep the code name.
+  - id: slim
+    type: context
+    action: compact
+    prompt: "Keep the code name KIWI and the run name."
+    dependsOn: [build-up]
+
+  # Proves the compact kept what the prompt asked for.
+  - id: recall
+    type: agent
+    prompt: "Without reading any files or running any commands: what code name were you told earlier? Reply with only the word, or NONE."
+    dependsOn: [slim]
+    input: {}

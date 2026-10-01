@@ -34,6 +34,7 @@ export * from "./files.ts";
 export { createGit, type IGit, type WorktreeEntry } from "./git.ts";
 export * from "./hooks/common.ts";
 export * from "./hooks/pre-tool-use.ts";
+export * from "./hooks/session-start.ts";
 export * from "./hooks/stop.ts";
 export {
   type ILogger,

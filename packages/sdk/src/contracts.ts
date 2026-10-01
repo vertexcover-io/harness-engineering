@@ -1,7 +1,12 @@
 import { isAbsolute } from "node:path";
 import * as z from "zod";
+import { AgentTypeSchema } from "./agent.ts";
 
 export const NonEmptyStringSchema = z.string().min(1);
+export const SessionRefSchema = z.strictObject({
+  agent: AgentTypeSchema,
+  sessionId: NonEmptyStringSchema,
+});
 export const SlugSchema = z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 export const SkillNameSchema = z
   .string()
@@ -45,7 +50,15 @@ export const AgentStateSchema = z.strictObject({
 });
 
 export const LayoutSchema = z.enum(["mono", "multi"]);
-export const NodeTypeSchema = z.enum(["exec", "wait", "agent", "loop", "switch", "include"]);
+export const NodeTypeSchema = z.enum([
+  "exec",
+  "wait",
+  "agent",
+  "context",
+  "loop",
+  "switch",
+  "include",
+]);
 
 export const ERROR_MESSAGE_LIMIT = 500;
 export const ErrorSchema = z.strictObject({
@@ -191,6 +204,8 @@ export const StateSchema = z.strictObject({
   stopHook: z
     .strictObject({ blockStreak: z.int().nonnegative(), seq: z.int().positive() })
     .optional(),
+  // agent sessions working on the run now; a context node's new session replaces the old one
+  activeSessions: z.array(SessionRefSchema).default([]),
   custom: JsonObjectSchema.optional(),
   eventHandlers: EventHandlerRefsSchema.default({}),
 });

@@ -1,24 +1,17 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { claudeProvider } from "@harness/agents";
+import { claudeProvider, harnessTmux } from "@harness/agents";
 import { createLogger, resolveLevel } from "@harness/core";
 import type { Check, IAgentProvider, ILogger, ITerminal } from "@harness/sdk";
-import { createRegistry, harnessHome, noopLogger, registryPath } from "@harness/sdk";
+import { createRegistry, noopLogger, registryPath } from "@harness/sdk";
 import prettyFactory from "pino-pretty";
 import serverPackage from "../package.json";
 import { createApp } from "./app.ts";
 import { pidPath, socketPath } from "./protocol.ts";
-import { tmuxTerminal } from "./tmux.ts";
-
 export type Runtime = Readonly<{ terminal: ITerminal; provider: IAgentProvider }>;
 
 export const defaultRuntime = (log: ILogger = noopLogger): Runtime => {
-  const terminal = tmuxTerminal({
-    socketName: process.env.HARNESS_TMUX_SOCKET ?? "harness",
-    configPath: join(harnessHome(), "tmux.conf"),
-    log,
-  });
+  const terminal = harnessTmux(process.env, log);
   const provider = claudeProvider({
     terminal,
     binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
