@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import {
   ContextStartedEvent,
   type IAgentProvider,
@@ -27,6 +27,7 @@ import {
   typeLine,
 } from "./claude.ts";
 import { completeContextStep, findContextPlanNode } from "./runs.ts";
+import { ORCHESTRATE_SCRIPT } from "./stage.ts";
 import { currentPane, type PaneTarget } from "./tmux.ts";
 
 const IDLE_TIMEOUT_MS = 30_000;
@@ -42,7 +43,7 @@ export const startContextStep = async (
   nodeRunId: string,
 ): Promise<void> => {
   const args = [
-    join(import.meta.dir, "orchestrate.ts"),
+    ORCHESTRATE_SCRIPT,
     "context",
     nodeRunId,
     "--run",
