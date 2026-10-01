@@ -73,3 +73,10 @@ packages:
       lint: bunx biome check packages/plugins
       testAll: null
       testFile: null
+
+extensions:
+  ticket-fetcher:
+    references:
+      # Test provider for demo-workflows/ticket-demo.yaml.
+      demo:
+        add: demo-workflows/references/demo-tickets.md
