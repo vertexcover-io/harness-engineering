@@ -24,7 +24,7 @@ import {
 import { createRegistry, type StepOutcome } from "@harness/sdk/internal";
 import { claudeProvider } from "./agents/claude.ts";
 import { agentAdapters, HOOK_AGENTS } from "./agents/index.ts";
-import { currentPane, harnessTerminalHost } from "./agents/tmux.ts";
+import { currentTerminal, harnessTerminalHost } from "./agents/tmux.ts";
 import { runContextStep } from "./context-step.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "./hooks/session-start.ts";
@@ -128,7 +128,7 @@ const initCommand = () =>
         name,
         git: createGit(),
         log,
-        pane: currentPane(),
+        terminal: currentTerminal(),
       });
       printResult(result.ok ? { ok: true, value: { runId, dir: result.value.dir } } : result);
     });
@@ -478,7 +478,7 @@ const contextCommand = () =>
         run,
         nodeRunId,
         oldSessionId: opts.sessionId,
-        terminal: currentPane(process.env, helperLog),
+        terminal: currentTerminal(process.env, helperLog),
         registry: registry(),
         provider: claudeProvider({
           host: harnessTerminalHost(process.env, helperLog),

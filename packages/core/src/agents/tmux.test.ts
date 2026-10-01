@@ -8,7 +8,7 @@ import { type CheckContext, type Exec, execWithTimeout, type ITerminalHost } fro
 import { captureLogger } from "../logging.ts";
 import { claudeProvider } from "./claude.ts";
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
-import { currentPane, tmuxHost } from "./tmux.ts";
+import { currentTerminal, tmuxHost } from "./tmux.ts";
 
 const exec = execWithTimeout(10_000);
 const FAKE_AGENT = join(import.meta.dirname, "fixtures", "fake-agent.ts");
@@ -360,7 +360,7 @@ describe("tmuxHost against a real tmux", () => {
   });
 });
 
-describe("currentPane and rename", () => {
+describe("currentTerminal and rename", () => {
   test("SC6: the pane named by $TMUX and $TMUX_PANE reaches a session a -L host made, and renaming it keeps the pane reachable", async () => {
     const { host, socketName, configPath } = makeTerminal();
     const name = `s-${randomUUID()}`;
@@ -373,7 +373,7 @@ describe("currentPane and rename", () => {
     ).stdout.trim();
     const harnessHome = dirname(configPath);
 
-    const current = currentPane({
+    const current = currentTerminal({
       TMUX: `${socket},1,0`,
       TMUX_PANE: paneId,
       HARNESS_HOME: harnessHome,
@@ -388,7 +388,7 @@ describe("currentPane and rename", () => {
   });
 
   test("outside tmux there is no current pane", () => {
-    expect(currentPane({})).toBeUndefined();
+    expect(currentTerminal({})).toBeUndefined();
   });
 });
 
