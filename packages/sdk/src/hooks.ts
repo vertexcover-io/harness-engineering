@@ -1,5 +1,4 @@
 import type { AgentType } from "./agent.ts";
-import type { RunRef } from "./events.ts";
 import type { ILogger } from "./logger.ts";
 import type { Registry } from "./registry.ts";
 
@@ -8,10 +7,6 @@ export type HookDeps = Readonly<{
   registry: Registry;
   env: Readonly<Record<string, string | undefined>>;
   log: ILogger;
-  // starts the detached helper that carries out the open context node once the turn is over
-  startContextStep?: (run: RunRef, sessionId: string, nodeRunId: string) => Promise<void>;
-  // completes an open context node once a session start shows its action is done
-  completeContextNode?: (run: RunRef, sessionId: string, source: string) => Promise<void>;
 }>;
 
 // What one agent answers: each takes the agent's raw hook input and the handler it was registered

@@ -12,6 +12,7 @@ import {
   type TranscriptEntry,
 } from "@harness/sdk";
 import { appendRunEvent, jsonlEventStore, readState } from "@harness/sdk/internal";
+import { startContextStep } from "../context-step.ts";
 import { orchestrateCommand } from "../runs.ts";
 import { findSessionRun } from "./common.ts";
 
@@ -186,7 +187,7 @@ const startHelper = async (
   deps: HookDeps,
 ): Promise<void> => {
   try {
-    await deps.startContextStep?.(run, input.sessionId, nodeRunId);
+    await startContextStep(run, input.sessionId, nodeRunId);
   } catch (error) {
     deps.log.error({ err: error }, "context step helper not started");
   }

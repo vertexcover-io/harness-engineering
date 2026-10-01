@@ -19,13 +19,12 @@ import {
   resolveRoot,
   resolveRun,
   runDirOf,
-  spawnDetached,
   stopRunningOnSignal,
 } from "@harness/sdk";
 import { createRegistry, type StepOutcome } from "@harness/sdk/internal";
 import { agentAdapters, HOOK_AGENTS } from "./agents.ts";
 import { claudeProvider } from "./claude.ts";
-import { completeContextOnSessionStart, runContextStep } from "./context-step.ts";
+import { runContextStep } from "./context-step.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "./hooks/session-start.ts";
 import { stopHandlers } from "./hooks/stop.ts";
@@ -396,22 +395,6 @@ const skillCommand = () => {
   return skill;
 };
 
-// Detached, because the Stop hook must return before Claude goes idle and the step can begin.
-const startContextStep = async (run: RunRef, sessionId: string, nodeRunId: string) => {
-  const args = [
-    import.meta.filename,
-    "context",
-    nodeRunId,
-    "--run",
-    run.name,
-    "--session-id",
-    sessionId,
-    "--root",
-    run.cwd,
-  ];
-  spawnDetached(process.execPath, args, { cwd: run.cwd, output: "ignore" });
-};
-
 type HookSpec<H> = Readonly<{
   name: string;
   description: string;
@@ -439,13 +422,7 @@ const addHookCommand = <H>(hook: Command, spec: HookSpec<H>): void => {
         ? spec.handlers[opts.handler]
         : undefined;
       if (answer === undefined || handler === undefined) return;
-      const deps = {
-        registry: registry(),
-        env: process.env,
-        log,
-        startContextStep,
-        completeContextNode: completeContextOnSessionStart,
-      };
+      const deps = { registry: registry(), env: process.env, log };
       process.stdout.write(await answer(await Bun.stdin.text(), deps, handler));
     });
 };
