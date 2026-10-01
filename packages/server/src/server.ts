@@ -1,28 +1,28 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { claudeProvider, createLogger, harnessTmux, resolveLevel } from "@harness/core";
-import type { Check, IAgentProvider, ILogger, ITerminal } from "@harness/sdk";
+import type { Check, IAgentProvider, ILogger, ITerminalHost } from "@harness/sdk";
 import { noopLogger, registryPath } from "@harness/sdk";
 import { createRegistry } from "@harness/sdk/internal";
 import prettyFactory from "pino-pretty";
 import serverPackage from "../package.json";
 import { createApp } from "./app.ts";
 import { pidPath, socketPath } from "./protocol.ts";
-export type Runtime = Readonly<{ terminal: ITerminal; provider: IAgentProvider }>;
+export type Runtime = Readonly<{ host: ITerminalHost; provider: IAgentProvider }>;
 
 export const defaultRuntime = (log: ILogger = noopLogger): Runtime => {
-  const terminal = harnessTmux(process.env, log);
+  const host = harnessTmux(process.env, log);
   const provider = claudeProvider({
-    terminal,
+    host,
     binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
     log,
   });
-  return { terminal, provider };
+  return { host, provider };
 };
 
 export const runtimeChecks = (): readonly Check[] => {
-  const { terminal, provider } = defaultRuntime();
-  return [...terminal.checks, ...provider.checks];
+  const { host, provider } = defaultRuntime();
+  return [...host.checks, ...provider.checks];
 };
 
 // Callers check /health first: this always starts, and replaces any socket file it finds.
@@ -51,13 +51,13 @@ export const startServer = async ({ home }: { home: string }): Promise<void> => 
     serverLog.info({ socket }, "removed a socket file left by a server that is no longer running");
   }
 
-  const { terminal, provider } = defaultRuntime(log);
+  const { host, provider } = defaultRuntime(log);
   const registry = createRegistry(registryPath(home), log);
   const version = String(serverPackage.version);
   const app = createApp({
     registry,
     provider,
-    terminal,
+    host,
     log,
     home,
     pid: process.pid,

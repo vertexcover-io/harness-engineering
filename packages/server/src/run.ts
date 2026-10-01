@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { orchestrateHookCommand } from "@harness/core";
-import type { IAgentProvider, ITerminal, WorkflowRun } from "@harness/sdk";
+import type { IAgentProvider, ITerminalHost, WorkflowRun } from "@harness/sdk";
 import type { Registry } from "@harness/sdk/internal";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -11,7 +11,7 @@ import { type StartRunBody, StartRunBodySchema } from "./protocol.ts";
 export type RunDeps = Readonly<{
   registry: Registry;
   provider: IAgentProvider;
-  terminal: ITerminal;
+  host: ITerminalHost;
   home: string;
 }>;
 
@@ -71,7 +71,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     terminal: sessionId,
   };
   runLog.info({ workflow, cwd, agent: deps.provider.type, sessionId }, "run started");
-  return c.json({ run, attach: [...deps.terminal.attachCommand(sessionId)] }, 201);
+  return c.json({ run, attach: [...deps.host.find(sessionId).attachCommand()] }, 201);
 };
 
 // Mounted at /runs by app.ts. Chained, so each route's input and output types reach AppType.

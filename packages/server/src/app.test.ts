@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureLogger } from "@harness/core";
-import type { IAgentProvider, ITerminal, LaunchOptions, Result } from "@harness/sdk";
+import type { IAgentProvider, ITerminal, ITerminalHost, LaunchOptions, Result } from "@harness/sdk";
 import { noopLogger } from "@harness/sdk";
 import { createRegistry } from "@harness/sdk/internal";
 import { createApp } from "./app.ts";
@@ -17,18 +17,24 @@ const tempWorkspace = (): { workflowPath: string; cwd: string } => {
   return { workflowPath, cwd };
 };
 
-const fakeTerminal = (): ITerminal => ({
-  checks: [],
-  create: () => Promise.resolve({ ok: true, value: undefined }),
-  sendText: () => Promise.resolve({ ok: true, value: undefined }),
-  sendKeys: () => Promise.resolve({ ok: true, value: undefined }),
+const done = () => Promise.resolve({ ok: true as const, value: undefined });
+
+const fakePane = (name: string): ITerminal => ({
+  sendText: done,
+  sendKeys: done,
   capture: () => Promise.resolve({ ok: true, value: "" }),
   isAlive: () => Promise.resolve(true),
-  rename: () => Promise.resolve({ ok: true, value: undefined }),
-  respawn: () => Promise.resolve({ ok: true, value: undefined }),
-  kill: () => Promise.resolve({ ok: true, value: undefined }),
+  rename: done,
+  respawn: done,
+  kill: done,
+  attachCommand: () => ["tmux", "attach-session", "-t", name],
+});
+
+const fakeHost = (): ITerminalHost => ({
+  checks: [],
+  create: (spec) => Promise.resolve({ ok: true, value: fakePane(spec.name) }),
+  find: fakePane,
   list: () => Promise.resolve([]),
-  attachCommand: (name) => ["tmux", "attach-session", "-t", name],
 });
 
 const fakeProvider = (
@@ -53,7 +59,7 @@ const buildDeps = async (
     registryPath,
     registry,
     provider: fakeProvider(launch),
-    terminal: fakeTerminal(),
+    host: fakeHost(),
     log,
     home: "/home/.harness",
     pid: 4242,

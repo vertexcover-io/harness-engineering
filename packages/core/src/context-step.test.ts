@@ -96,13 +96,11 @@ const fakeTerminal = (
   let captures = 0;
   const done = async () => ({ ok: true as const, value: undefined });
   const terminal: ITerminal = {
-    checks: [],
-    create: done,
-    sendText: async (_name, text) => {
+    sendText: async (text) => {
       typed.push(text);
       return done();
     },
-    sendKeys: async (_name, keys) => {
+    sendKeys: async (keys) => {
       typed.push(keys);
       const text = typed.at(-2);
       if (keys[0] === "Enter" && typeof text === "string") await onSubmit(text);
@@ -113,13 +111,12 @@ const fakeTerminal = (
     kill: done,
     rename: done,
     respawn: done,
-    list: async () => [],
     attachCommand: () => [],
   };
   return { terminal, typed, captureCount: () => captures };
 };
 
-type Relaunch = Readonly<{ target: string; sessionId: string; options: LaunchOptions }>;
+type Relaunch = Readonly<{ terminal: ITerminal; sessionId: string; options: LaunchOptions }>;
 
 const fakeProvider = (relaunchOk = true) => {
   const relaunches: Relaunch[] = [];
@@ -127,8 +124,8 @@ const fakeProvider = (relaunchOk = true) => {
     type: "claude",
     checks: [],
     launch: async () => ({ ok: true, value: { sessionId: "unused" } }),
-    relaunch: async (target, sessionId, options) => {
-      relaunches.push({ target, sessionId, options });
+    relaunch: async (terminal, sessionId, options) => {
+      relaunches.push({ terminal, sessionId, options });
       return relaunchOk ? { ok: true, value: undefined } : { ok: false, error: "no pane" };
     },
     prompt: async () => ({ ok: true, value: undefined }),
@@ -167,7 +164,7 @@ const helper = async (
     run: context.run,
     nodeRunId: "nr-1",
     oldSessionId: "A",
-    paneTarget: terminal === undefined ? undefined : { terminal, pane: "%3" },
+    terminal,
     registry: context.registry,
     provider,
     launch: LAUNCH,
@@ -186,8 +183,8 @@ const startingProvider = (context: Context) => {
   const fake = fakeProvider();
   const provider: IAgentProvider = {
     ...fake.provider,
-    relaunch: async (target, sessionId, options) => {
-      const relaunched = await fake.provider.relaunch(target, sessionId, options);
+    relaunch: async (terminal, sessionId, options) => {
+      const relaunched = await fake.provider.relaunch(terminal, sessionId, options);
       await completeContextOnSessionStart(context.run, sessionId, "startup", undefined);
       return relaunched;
     },
@@ -204,10 +201,10 @@ describe("runContextStep: new", () => {
     const starting = startingProvider(context);
     const watched: IAgentProvider = {
       ...starting.provider,
-      relaunch: async (target, sessionId, options) => {
+      relaunch: async (terminal, sessionId, options) => {
         capturesAtRelaunch = fake.captureCount();
         typesAtRelaunch = await typesIn(context.runDir);
-        return starting.provider.relaunch(target, sessionId, options);
+        return starting.provider.relaunch(terminal, sessionId, options);
       },
     };
 
@@ -216,7 +213,8 @@ describe("runContextStep: new", () => {
     expect(capturesAtRelaunch).toBe(3);
     expect(typesAtRelaunch).toEqual(["workflow.session.replaced", "workflow.context.started"]);
     const [relaunch] = starting.relaunches;
-    expect(relaunch).toMatchObject({ target: "%3", options: { ...LAUNCH, prompt: RESUME } });
+    expect(relaunch?.terminal).toBe(fake.terminal);
+    expect(relaunch).toMatchObject({ options: { ...LAUNCH, prompt: RESUME } });
     const sessionId = relaunch?.sessionId ?? "";
     expect(fake.typed).toEqual([]);
     expect((await context.registry.findRun("r-1"))?.sessions).toContainEqual({
@@ -269,8 +267,7 @@ describe("runContextStep: compact", () => {
       () => IDLE,
       async (text) => {
         if (!text.startsWith("/compact")) return;
-        const paneTarget = { terminal: fake.terminal, pane: "%3" };
-        await completeContextOnSessionStart(context.run, "A", "compact", paneTarget);
+        await completeContextOnSessionStart(context.run, "A", "compact", fake.terminal);
       },
     );
 
@@ -324,17 +321,16 @@ describe("completeContextOnSessionStart", () => {
   test("only a session start that matches the started action completes the node", async () => {
     const context = await setUp("type: context, action: new");
     const typed = fakeTerminal(() => IDLE);
-    const paneTarget = { terminal: typed.terminal, pane: "%3" };
 
-    await completeContextOnSessionStart(context.run, "s-new", "startup", paneTarget);
+    await completeContextOnSessionStart(context.run, "s-new", "startup", typed.terminal);
     expect(await stepOutput(context.runDir)).toBeUndefined();
 
     await started(context, "new", "s-new");
-    await completeContextOnSessionStart(context.run, "s-other", "startup", paneTarget);
-    await completeContextOnSessionStart(context.run, "s-new", "compact", paneTarget);
+    await completeContextOnSessionStart(context.run, "s-other", "startup", typed.terminal);
+    await completeContextOnSessionStart(context.run, "s-new", "compact", typed.terminal);
     expect(await stepOutput(context.runDir)).toBeUndefined();
 
-    await completeContextOnSessionStart(context.run, "s-new", "startup", paneTarget);
+    await completeContextOnSessionStart(context.run, "s-new", "startup", typed.terminal);
     expect(await stepOutput(context.runDir)).toMatchObject({
       output: { action: "new", applied: true, sessionId: "s-new" },
     });
@@ -355,7 +351,7 @@ describe("runContextStep: guards", () => {
       // a real 50ms pause: Bun.sleep is faked in these tests
       const capture = async () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
-        return terminal.capture("%3");
+        return terminal.capture();
       };
       return { ...terminal, capture };
     };
@@ -391,10 +387,10 @@ describe("runContextStep: guards", () => {
     let captures = 0;
     const terminal: ITerminal = {
       ...fake.terminal,
-      capture: (name, lines) => {
+      capture: (lines) => {
         captures += 1;
         if (captures === 1) return Promise.reject(new Error("tmux timed out after 10s"));
-        return fake.terminal.capture(name, lines);
+        return fake.terminal.capture(lines);
       },
     };
 

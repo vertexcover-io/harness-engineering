@@ -5,6 +5,7 @@ import {
   ContextStartedEvent,
   type IAgentProvider,
   type ILogger,
+  type ITerminal,
   type JsonValue,
   type LaunchOptions,
   type NodeRun,
@@ -26,7 +27,7 @@ import {
   isClaudeBusy,
   typeLine,
 } from "./agents/claude.ts";
-import { currentPane, type PaneTarget } from "./agents/tmux.ts";
+import { currentPane } from "./agents/tmux.ts";
 import { completeContextStep, findContextPlanNode } from "./runs.ts";
 import { ORCHESTRATE_SCRIPT } from "./stage.ts";
 
@@ -62,7 +63,7 @@ export type ContextStepOptions = Readonly<{
   // the session whose turn just ended, which a new session replaces
   oldSessionId: string;
   // undefined when the helper was not started inside a tmux pane
-  paneTarget: PaneTarget | undefined;
+  terminal: ITerminal | undefined;
   registry: Registry;
   provider: IAgentProvider;
   // how the agent was launched; relaunching adds the resume prompt
@@ -89,17 +90,15 @@ const pollUntil = async <T>(
   }
 };
 
-const waitForIdle = ({ terminal, pane }: PaneTarget): Promise<Result<true>> =>
+const waitForIdle = (terminal: ITerminal): Promise<Result<true>> =>
   pollUntil(
     { everyMs: IDLE_POLL_MS, timeoutMs: IDLE_TIMEOUT_MS, timeoutError: "Claude did not go idle" },
     async () => {
-      const screen = await terminal.capture(pane);
+      const screen = await terminal.capture();
       if (!screen.ok) return screen;
       return { ok: true, value: isClaudeBusy(screen.value) ? undefined : true };
     },
   );
-
-const typeInto = ({ terminal, pane }: PaneTarget, text: string) => typeLine(terminal, pane, text);
 
 const resumePrompt = (run: RunRef): string => `/orchestrate-v2 --resume ${run.name}`;
 
@@ -156,7 +155,7 @@ const recordStarted = (
 // for failure: no SessionStart in time, or a compact Claude refuses.
 const watchForFailure = (
   { run, nodeRunId }: ContextStepOptions,
-  paneTarget: PaneTarget,
+  terminal: ITerminal,
   action: keyof typeof DONE_TIMEOUT_MS,
 ): Promise<Result<true>> =>
   pollUntil(
@@ -168,7 +167,7 @@ const watchForFailure = (
     async (): Promise<Result<true | undefined>> => {
       if (!(await findContextPlanNode(run, nodeRunId)).ok) return { ok: true, value: true };
       if (action !== "compact") return { ok: true, value: undefined };
-      const screen = await paneTarget.terminal.capture(paneTarget.pane);
+      const screen = await terminal.capture();
       if (screen.ok && screen.value.includes(CLAUDE_NOTHING_TO_COMPACT)) {
         return { ok: false, error: CLAUDE_NOTHING_TO_COMPACT };
       }
@@ -181,23 +180,23 @@ const watchForFailure = (
 // undone and the step fails, which resumes the old session.
 const startNewSession = async (
   options: ContextStepOptions,
-  paneTarget: PaneTarget,
+  terminal: ITerminal,
 ): Promise<Result<void>> => {
   const { run, registry, provider, oldSessionId, log } = options;
-  const idle = await waitForIdle(paneTarget);
+  const idle = await waitForIdle(terminal);
   if (!idle.ok) return idle;
   const sessionId = randomUUID();
   await registry.linkSession(run.id, { agent: "claude", sessionId });
   await replaceSession(options, oldSessionId, sessionId);
   await recordStarted(options, "new", sessionId);
   const launch = { ...options.launch, prompt: resumePrompt(run) };
-  const relaunched = await catchThrow(log, provider.relaunch(paneTarget.pane, sessionId, launch));
+  const relaunched = await catchThrow(log, provider.relaunch(terminal, sessionId, launch));
   if (!relaunched.ok) {
     await replaceSession(options, sessionId, oldSessionId);
     return relaunched;
   }
   log.info({ sessionId }, "Claude relaunched on a new session");
-  const done = await watchForFailure(options, paneTarget, "new");
+  const done = await watchForFailure(options, terminal, "new");
   if (!done.ok) return done;
   log.info({ sessionId }, "node completed by the new session's SessionStart");
   return { ok: true, value: undefined };
@@ -205,18 +204,18 @@ const startNewSession = async (
 
 const compact = async (
   options: ContextStepOptions,
-  paneTarget: PaneTarget,
+  terminal: ITerminal,
   prompt: string | undefined,
 ): Promise<Result<void>> => {
   const { oldSessionId, log } = options;
-  const idle = await waitForIdle(paneTarget);
+  const idle = await waitForIdle(terminal);
   if (!idle.ok) return idle;
   await recordStarted(options, "compact", oldSessionId);
   const command = prompt === undefined ? "/compact" : `/compact ${prompt}`;
-  const typed = await typeInto(paneTarget, command);
+  const typed = await typeLine(terminal, command);
   if (!typed.ok) return typed;
   log.info({ command }, "compact typed");
-  const done = await watchForFailure(options, paneTarget, "compact");
+  const done = await watchForFailure(options, terminal, "compact");
   if (!done.ok) return done;
   log.info({}, "node completed by the compact's SessionStart");
   return { ok: true, value: undefined };
@@ -251,7 +250,7 @@ export const completeContextOnSessionStart = async (
   run: RunRef,
   sessionId: string,
   source: string,
-  paneTarget: PaneTarget | undefined = currentPane(),
+  terminal: ITerminal | undefined = currentPane(),
 ): Promise<void> => {
   const runDir = runDirOf(run.cwd, run.name);
   const state = await readState(runDir);
@@ -265,15 +264,15 @@ export const completeContextOnSessionStart = async (
   if (!matches) return;
   const output = { action: started.action, applied: true, sessionId };
   const completed = await completeContextStep(run, open.nodeRunId, output);
-  if (!completed.ok || started.action !== "compact" || paneTarget === undefined) return;
-  await typeLine(paneTarget.terminal, paneTarget.pane, resumePrompt(run));
+  if (!completed.ok || started.action !== "compact" || terminal === undefined) return;
+  await typeLine(terminal, resumePrompt(run));
 };
 
 // A step that did not happen still completes, and the old session carries on: the input box is
 // emptied (a cancelled /compact stays in it and would swallow the prompt) and the run resumed.
 const recover = async (
   options: ContextStepOptions,
-  paneTarget: PaneTarget,
+  terminal: ITerminal,
   action: string,
   reason: string,
 ): Promise<void> => {
@@ -281,28 +280,25 @@ const recover = async (
   log.error({ action, reason }, "context step not applied");
   const completed = await catchThrow(log, complete(options, { action, applied: false, reason }));
   if (!completed.ok) log.error({ err: completed.error }, "context node not completed");
-  const emptied = await catchThrow(
-    log,
-    paneTarget.terminal.sendKeys(paneTarget.pane, [CLAUDE_CLEAR_INPUT_KEY]),
-  );
+  const emptied = await catchThrow(log, terminal.sendKeys([CLAUDE_CLEAR_INPUT_KEY]));
   if (!emptied.ok) log.warn({ err: emptied.error }, "input box not emptied");
-  const idle = await catchThrow(log, waitForIdle(paneTarget));
+  const idle = await catchThrow(log, waitForIdle(terminal));
   if (!idle.ok)
     log.warn({ err: idle.error }, "typing the resume prompt although Claude looks busy");
-  const typed = await catchThrow(log, typeInto(paneTarget, resumePrompt(run)));
+  const typed = await catchThrow(log, typeLine(terminal, resumePrompt(run)));
   if (!typed.ok) log.error({ err: typed.error }, "resume prompt not typed");
 };
 
 // Runs after the Stop hook that found a context node open: starts a new session in the agent's
 // pane, or compacts the one it has, then lets the run carry on.
 export const runContextStep = async (options: ContextStepOptions): Promise<void> => {
-  const { run, nodeRunId, paneTarget, log } = options;
+  const { run, nodeRunId, terminal, log } = options;
   if (!(await claimNode(options))) return log.info({ nodeRunId }, "another helper has this node");
   const planNode = await findContextPlanNode(run, nodeRunId);
   if (!planNode.ok) return log.info({ nodeRunId, reason: planNode.error }, "no open context node");
   const { action, prompt } = planNode.value;
   log.info({ nodeRunId, action }, "context step started");
-  if (paneTarget === undefined) {
+  if (terminal === undefined) {
     const completed = await complete(options, {
       action,
       applied: false,
@@ -313,7 +309,7 @@ export const runContextStep = async (options: ContextStepOptions): Promise<void>
   }
   const outcome = await catchThrow(
     log,
-    action === "new" ? startNewSession(options, paneTarget) : compact(options, paneTarget, prompt),
+    action === "new" ? startNewSession(options, terminal) : compact(options, terminal, prompt),
   );
-  if (!outcome.ok) await recover(options, paneTarget, action, outcome.error);
+  if (!outcome.ok) await recover(options, terminal, action, outcome.error);
 };

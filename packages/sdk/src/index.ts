@@ -6,6 +6,7 @@ export {
   EffortSchema,
   type IAgentProvider,
   type ITerminal,
+  type ITerminalHost,
   type LaunchOptions,
   type PermissionMode,
   PermissionModeSchema,

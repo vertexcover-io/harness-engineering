@@ -2,13 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type CheckContext, type Exec, execWithTimeout } from "@harness/sdk";
+import { type CheckContext, type Exec, execWithTimeout, type ITerminalHost } from "@harness/sdk";
 import { captureLogger } from "../logging.ts";
 import { claudeProvider } from "./claude.ts";
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
-import { tmuxTerminal } from "./tmux.ts";
+import { currentPane, tmuxHost } from "./tmux.ts";
 
 const exec = execWithTimeout(10_000);
 const FAKE_AGENT = join(import.meta.dirname, "fixtures", "fake-agent.ts");
@@ -31,7 +31,7 @@ const makeSocket = (): { socketName: string; configPath: string } => {
 const makeTerminal = (customExec: Exec = exec) => {
   const { socketName, configPath } = makeSocket();
   return {
-    terminal: tmuxTerminal({ socketName, configPath, exec: customExec }),
+    host: tmuxHost({ socketName, configPath, exec: customExec }),
     socketName,
     configPath,
   };
@@ -81,14 +81,14 @@ describe("tmuxTerminal.sendText logging", () => {
   test("SC38: the debug line has the text's length, not the text", async () => {
     const { log, lines } = captureLogger();
     const fakeExec: Exec = () => Promise.resolve({ code: 0, stdout: "", stderr: "" });
-    const terminal = tmuxTerminal({
+    const host = tmuxHost({
       socketName: "unused",
       configPath: "/tmp/unused.conf",
       exec: fakeExec,
       log,
     });
 
-    await terminal.sendText("s1", "SECRET_TEXT");
+    await host.find("s1").sendText("SECRET_TEXT");
 
     const serialized = JSON.stringify(lines);
     expect(serialized).not.toContain("SECRET_TEXT");
@@ -104,13 +104,13 @@ describe("tmuxTerminal.sendText logging", () => {
           ? { code: 1, stdout: "", stderr: "boom" }
           : { code: 0, stdout: "", stderr: "" },
       );
-    const terminal = tmuxTerminal({
+    const host = tmuxHost({
       socketName: "unused",
       configPath: join(mkdtempSync(join(tmpdir(), "harness-tmux-")), "tmux.conf"),
       exec: failingExec,
       log,
     });
-    const provider = claudeProvider({ terminal, log, newId: () => "s1" });
+    const provider = claudeProvider({ host, log, newId: () => "s1" });
 
     await provider.launch({
       cwd: "/repo",
@@ -133,8 +133,8 @@ describe("tmux check", () => {
     root: "/repo",
     exec: () => Promise.resolve({ ...result, stderr: "" }),
   });
-  const { terminal } = makeTerminal();
-  const tmuxCheck = terminal.checks.find((check) => check.name === "tmux");
+  const { host } = makeTerminal();
+  const tmuxCheck = host.checks.find((check) => check.name === "tmux");
   if (!tmuxCheck) throw new Error("tmux check missing");
 
   test.each([
@@ -151,52 +151,55 @@ describe("tmux check", () => {
   });
 });
 
-describe("tmuxTerminal against a real tmux", () => {
+const created = async (host: ITerminalHost, spec: Parameters<ITerminalHost["create"]>[0]) => {
+  const result = await host.create(spec);
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+};
+
+describe("tmuxHost against a real tmux", () => {
   test("SC2: create passes argv and env through to the child untouched", async () => {
-    const { terminal } = makeTerminal();
+    const { host } = makeTerminal();
     const outFile = join(mkdtempSync(join(tmpdir(), "fake-out-")), "out.jsonl");
-    const name = `s-${randomUUID()}`;
     const weird = 'a "b" $c;d';
 
-    const result = await terminal.create({
-      name,
+    const pane = await created(host, {
+      name: `s-${randomUUID()}`,
       cwd: process.cwd(),
       argv: [FAKE_AGENT, weird],
       env: { FAKE_AGENT_OUT: outFile, K: "V" },
     });
 
-    expect(result.ok).toBe(true);
     await waitFor(() => existsSync(outFile));
     const [record] = readLines(outFile);
     expect(record?.argv).toEqual([weird]);
     expect((record?.env as Record<string, string> | undefined)?.K).toBe("V");
-    await terminal.kill(name);
+    await pane.kill();
   });
 
   test("SC3: sendText then sendKeys(['Enter']) submits one line, keeping the word Enter literal", async () => {
-    const { terminal } = makeTerminal();
+    const { host } = makeTerminal();
     const outFile = join(mkdtempSync(join(tmpdir(), "fake-out-")), "out.jsonl");
-    const name = `s-${randomUUID()}`;
-    await terminal.create({
-      name,
+    const pane = await created(host, {
+      name: `s-${randomUUID()}`,
       cwd: process.cwd(),
       argv: [FAKE_AGENT],
       env: { FAKE_AGENT_OUT: outFile },
     });
     await waitFor(() => existsSync(outFile));
 
-    await terminal.sendText(name, "Enter hello");
-    await terminal.sendKeys(name, ["Enter"]);
+    await pane.sendText("Enter hello");
+    await pane.sendKeys(["Enter"]);
 
     await waitFor(() => readLines(outFile).some((record) => record.line === "Enter hello"));
-    await terminal.kill(name);
+    await pane.kill();
   });
 
-  test("SC4: a killed session is no longer alive or listed", async () => {
-    const { terminal } = makeTerminal();
+  test("SC4: a killed session is no longer alive or listed, whether reached by its pane or its name", async () => {
+    const { host } = makeTerminal();
     const outFile = join(mkdtempSync(join(tmpdir(), "fake-out-")), "out.jsonl");
     const name = `s-${randomUUID()}`;
-    await terminal.create({
+    const pane = await created(host, {
       name,
       cwd: process.cwd(),
       argv: [FAKE_AGENT],
@@ -204,24 +207,36 @@ describe("tmuxTerminal against a real tmux", () => {
     });
     await waitFor(() => existsSync(outFile));
 
-    expect(await terminal.isAlive(name)).toBe(true);
-    expect(await terminal.list()).toContain(name);
+    expect(await pane.isAlive()).toBe(true);
+    expect(await host.find(name).isAlive()).toBe(true);
+    expect(await host.list()).toContain(name);
 
-    const killed = await terminal.kill(name);
+    const killed = await host.find(name).kill();
     expect(killed.ok).toBe(true);
-    expect(await terminal.isAlive(name)).toBe(false);
-    expect(await terminal.list()).not.toContain(name);
+    expect(await pane.isAlive()).toBe(false);
+    expect(await host.list()).not.toContain(name);
+  });
+
+  test("SC4: find matches the exact name, so s-1 never reaches the session s-10", async () => {
+    const { host } = makeTerminal();
+    await created(host, { name: "s-10", cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
+    expect(await host.find("s-1").isAlive()).toBe(false);
+    expect(await host.find("s-10").isAlive()).toBe(true);
   });
 
   test("SC4: list is [] when no tmux server is running on the socket", async () => {
-    const { terminal } = makeTerminal();
-    expect(await terminal.list()).toEqual([]);
+    const { host } = makeTerminal();
+    expect(await host.list()).toEqual([]);
   });
 
   test("SC7b: the written config disables the prefix and status bar, and binds C-\\ to detach", async () => {
-    const { terminal, socketName } = makeTerminal();
-    const name = `s-${randomUUID()}`;
-    await terminal.create({ name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
+    const { host, socketName } = makeTerminal();
+    const pane = await created(host, {
+      name: `s-${randomUUID()}`,
+      cwd: process.cwd(),
+      argv: ["sleep", "60"],
+      env: {},
+    });
 
     const show = async (option: string): Promise<string> =>
       (
@@ -235,7 +250,7 @@ describe("tmuxTerminal against a real tmux", () => {
       await exec("tmux", ["-L", socketName, "list-keys", "-T", "root"], process.cwd())
     ).stdout;
     expect(rootKeys).toContain("detach-client");
-    await terminal.kill(name);
+    await pane.kill();
   });
 
   test("SC7c: an older harness tmux gets its config rewritten and reloaded once, before the first create", async () => {
@@ -250,20 +265,11 @@ describe("tmuxTerminal against a real tmux", () => {
     );
 
     const { exec: wrapped, sourceFileCalls } = countingExec(exec);
-    const terminal = tmuxTerminal({ socketName, configPath, exec: wrapped });
+    const host = tmuxHost({ socketName, configPath, exec: wrapped });
+    const spec = { cwd: process.cwd(), argv: ["sleep", "60"], env: {} };
 
-    const first = await terminal.create({
-      name: `a-${randomUUID()}`,
-      cwd: process.cwd(),
-      argv: ["sleep", "60"],
-      env: {},
-    });
-    const second = await terminal.create({
-      name: `b-${randomUUID()}`,
-      cwd: process.cwd(),
-      argv: ["sleep", "60"],
-      env: {},
-    });
+    const first = await host.create({ name: `a-${randomUUID()}`, ...spec });
+    const second = await host.create({ name: `b-${randomUUID()}`, ...spec });
 
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
@@ -279,11 +285,10 @@ describe("tmuxTerminal against a real tmux", () => {
   test("SC7d: no harness tmux running yet: the config is written, never reloaded, and the fresh server has it", async () => {
     const { socketName, configPath } = makeSocket();
     const { exec: wrapped, sourceFileCalls } = countingExec(exec);
-    const terminal = tmuxTerminal({ socketName, configPath, exec: wrapped });
+    const host = tmuxHost({ socketName, configPath, exec: wrapped });
 
-    const name = `s-${randomUUID()}`;
-    const result = await terminal.create({
-      name,
+    const result = await host.create({
+      name: `s-${randomUUID()}`,
       cwd: process.cwd(),
       argv: ["sleep", "60"],
       env: {},
@@ -300,33 +305,43 @@ describe("tmuxTerminal against a real tmux", () => {
   });
 });
 
-describe("tmuxTerminal socketPath and rename", () => {
-  test("SC6: a terminal built with socketPath reaches the server a -L terminal made, and rename works on a pane id", async () => {
-    const { terminal, socketName, configPath } = makeTerminal();
+describe("currentPane and rename", () => {
+  test("SC6: the pane named by $TMUX and $TMUX_PANE reaches a session a -L host made, and renaming it keeps the pane reachable", async () => {
+    const { host, socketName, configPath } = makeTerminal();
     const name = `s-${randomUUID()}`;
-    await terminal.create({ name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
+    const pane = await created(host, { name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
     const socket = (
       await exec("tmux", ["-L", socketName, "display-message", "-p", "#{socket_path}"], "/")
     ).stdout.trim();
-    const pane = (
+    const paneId = (
       await exec("tmux", ["-L", socketName, "list-panes", "-a", "-F", "#{pane_id}"], "/")
     ).stdout.trim();
+    const harnessHome = dirname(configPath);
 
-    const bySocket = tmuxTerminal({ socketPath: socket, configPath });
-    expect(await bySocket.list()).toEqual([name]);
-    expect(bySocket.attachCommand(name)).toContain("-S");
+    const current = currentPane({
+      TMUX: `${socket},1,0`,
+      TMUX_PANE: paneId,
+      HARNESS_HOME: harnessHome,
+    });
+    if (current === undefined) throw new Error("no current pane");
+    expect(current.attachCommand()).toContain("-S");
 
-    const renamed = await bySocket.rename(pane, "claude-x-1234");
+    const renamed = await current.rename("claude-x-1234");
     expect(renamed.ok).toBe(true);
-    expect(await terminal.list()).toEqual(["claude-x-1234"]);
+    expect(await host.list()).toEqual(["claude-x-1234"]);
+    expect(await pane.isAlive()).toBe(true);
+  });
+
+  test("outside tmux there is no current pane", () => {
+    expect(currentPane({})).toBeUndefined();
   });
 });
 
-describe("tmuxTerminal respawn", () => {
+describe("tmux pane respawn", () => {
   test("respawn replaces the program in a pane, keeping the pane id and the session name", async () => {
-    const { terminal, socketName } = makeTerminal();
+    const { host, socketName } = makeTerminal();
     const name = `s-${randomUUID()}`;
-    await terminal.create({ name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
+    const pane = await created(host, { name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
     const paneOf = async () =>
       (
         await exec(
@@ -335,9 +350,9 @@ describe("tmuxTerminal respawn", () => {
           "/",
         )
       ).stdout.trim();
-    const [pane, pidBefore] = (await paneOf()).split(" ");
+    const [paneId, pidBefore] = (await paneOf()).split(" ");
 
-    const respawned = await terminal.respawn(pane as string, {
+    const respawned = await pane.respawn({
       cwd: process.cwd(),
       argv: ["sh", "-c", 'echo "hello $GREETING"; sleep 60'],
       env: { GREETING: "world" },
@@ -345,11 +360,11 @@ describe("tmuxTerminal respawn", () => {
 
     expect(respawned.ok).toBe(true);
     const [paneAfter, pidAfter] = (await paneOf()).split(" ");
-    expect(paneAfter).toBe(pane);
+    expect(paneAfter).toBe(paneId);
     expect(pidAfter).not.toBe(pidBefore);
-    expect(await terminal.list()).toEqual([name]);
+    expect(await host.list()).toEqual([name]);
     await sleep(300);
-    const screen = await terminal.capture(name);
+    const screen = await host.find(name).capture();
     expect(screen.ok ? screen.value : "").toContain("hello world");
   });
 });
