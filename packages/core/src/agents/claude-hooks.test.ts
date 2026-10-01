@@ -3,9 +3,9 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { noopLogger, type RegistryReader } from "@harness/sdk";
+import { preToolUseHandlers, recordGuard } from "../hooks/pre-tool-use.ts";
+import { continueWorkflow, stopHandlers } from "../hooks/stop.ts";
 import { claudeAdapter, claudeHookSettings, readClaudeTranscript } from "./claude-hooks.ts";
-import { preToolUseHandlers, recordGuard } from "./hooks/pre-tool-use.ts";
-import { continueWorkflow, stopHandlers } from "./hooks/stop.ts";
 
 const claudeStop = claudeAdapter.stop;
 const claudePreToolUse = claudeAdapter.preToolUse;

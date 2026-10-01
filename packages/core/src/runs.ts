@@ -38,8 +38,8 @@ import {
 } from "@harness/sdk/internal";
 import * as z from "zod";
 import corePackage from "../package.json";
+import type { PaneTarget } from "./agents/tmux.ts";
 import { extensionPath } from "./stage.ts";
-import type { PaneTarget } from "./tmux.ts";
 import { compileWorkflow } from "./workflow/compile.ts";
 import {
   type CompletionIssue,

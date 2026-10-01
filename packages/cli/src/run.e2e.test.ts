@@ -16,7 +16,16 @@ import { DoctorJsonSchema } from "@harness/core";
 
 const TIMEOUT_MS = 40_000;
 const CLI = join(import.meta.dir, "index.ts");
-const FAKE_AGENT = join(import.meta.dir, "..", "..", "core", "src", "fixtures", "fake-agent.ts");
+const FAKE_AGENT = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "core",
+  "src",
+  "agents",
+  "fixtures",
+  "fake-agent.ts",
+);
 const ORCHESTRATE = join(import.meta.dir, "..", "..", "core", "src", "orchestrate.ts");
 
 const OK_WORKFLOW = [

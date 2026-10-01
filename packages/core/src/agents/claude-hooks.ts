@@ -15,9 +15,9 @@ import {
   type TranscriptEntry,
 } from "@harness/sdk";
 import * as z from "zod";
-import { bashAntipatterns, recordGuard, runPreToolUse } from "./hooks/pre-tool-use.ts";
-import { sessionStartHandlers } from "./hooks/session-start.ts";
-import { continueWorkflow, runStop } from "./hooks/stop.ts";
+import { bashAntipatterns, recordGuard, runPreToolUse } from "../hooks/pre-tool-use.ts";
+import { sessionStartHandlers } from "../hooks/session-start.ts";
+import { continueWorkflow, runStop } from "../hooks/stop.ts";
 
 const HOOK_TIMEOUT_S = 30;
 // Claude's tools that write a file, and the input field that names it; Bash is parsed separately.

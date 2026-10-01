@@ -23,8 +23,8 @@ import {
 } from "@harness/sdk";
 import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
 import corePackage from "../package.json";
+import { currentPane } from "./agents/tmux.ts";
 import { type InitOptions, initializeRun, linkRunSession, terminalName } from "./runs.ts";
-import { currentPane } from "./tmux.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id: "r-1",
