@@ -152,8 +152,9 @@ const tmuxPane = (socket: TmuxSocket, target: string): ITerminal => ({
   },
   isAlive: async () => (await runTmux(socket, ["has-session", "-t", target], true)).ok,
   kill: async () => {
-    const result = await runTmux(socket, ["kill-session", "-t", target]);
-    if (result.ok) socket.log.info({ session: labelOf(target) }, "tmux session killed");
+    // tmux ends the session with its last pane.
+    const result = await runTmux(socket, ["kill-pane", "-t", target]);
+    if (result.ok) socket.log.info({ pane: labelOf(target) }, "tmux pane killed");
     return done(result);
   },
   rename: async (name) => done(await runTmux(socket, ["rename-session", "-t", target, name])),

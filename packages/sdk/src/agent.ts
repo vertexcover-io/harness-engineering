@@ -46,7 +46,7 @@ export interface ITerminal {
 export interface ITerminalHost {
   readonly checks: readonly Check[];
   create(spec: TerminalSpec): Promise<Result<ITerminal>>;
-  // the pane named `name`, whether or not it is running yet
+  // the active pane of the session named exactly `name`, whether or not it is running yet
   find(name: string): ITerminal;
   list(): Promise<readonly string[]>;
 }
