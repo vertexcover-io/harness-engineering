@@ -89,11 +89,12 @@ export interface IAgentProvider {
   readonly type: AgentType;
   readonly checks: readonly Check[];
   // interactive sessions never return a result
-  launch(options: LaunchOptions): Promise<Result<{ sessionId: string }>>;
+  // the new session and the pane it runs in
+  launch(options: LaunchOptions): Promise<Result<{ sessionId: string; terminal: ITerminal }>>;
   // replaces the agent running in `terminal` with a new session on `sessionId`, in the same pane
   relaunch(terminal: ITerminal, sessionId: string, options: LaunchOptions): Promise<Result<void>>;
-  prompt(sessionId: string, text: string): Promise<Result<void>>;
-  stop(sessionId: string): Promise<Result<void>>;
+  prompt(terminal: ITerminal, text: string): Promise<Result<void>>;
+  stop(terminal: ITerminal): Promise<Result<void>>;
   // headless: waits for the answer
   run<T = string>(request: RunRequest<T>): Promise<AgentResult<T>>;
 }

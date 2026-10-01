@@ -130,9 +130,9 @@ describe("claudeProvider.prompt", () => {
     const host = fakeHost({ alive: false });
     const provider = claudeProvider({ host, newId: () => "s1" });
 
-    const result = await provider.prompt("s1", "hello");
+    const result = await provider.prompt(host.find("s1"), "hello");
 
-    expect(result).toEqual({ ok: false, error: "session s1 is not running" });
+    expect(result).toEqual({ ok: false, error: "the agent's terminal is not running" });
     expect(host.calls).toHaveLength(0);
   });
 
@@ -140,7 +140,7 @@ describe("claudeProvider.prompt", () => {
     const host = fakeHost({ alive: true });
     const provider = claudeProvider({ host, newId: () => "s1" });
 
-    const result = await provider.prompt("s1", "hello");
+    const result = await provider.prompt(host.find("s1"), "hello");
 
     expect(result).toEqual({ ok: true, value: undefined });
     expect(host.calls.map((c) => c.method)).toEqual(["sendText", "sendKeys"]);
@@ -159,6 +159,24 @@ describe("claudeProvider.launch", () => {
     });
 
     expect(await provider.launch({ cwd: "/repo" })).toEqual({ ok: false, error: "boom" });
+  });
+
+  test("returns the pane it created, so a later prompt and stop reach it without a name lookup", async () => {
+    const host = fakeHost();
+    const provider = claudeProvider({ host, newId: () => "s1" });
+
+    const launched = await provider.launch({ cwd: "/repo" });
+    if (!launched.ok) throw new Error(launched.error);
+    await provider.prompt(launched.value.terminal, "hello");
+    await provider.stop(launched.value.terminal);
+
+    expect(launched.value.sessionId).toBe("s1");
+    expect(host.calls.map((c) => [c.method, "pane" in c ? c.pane : c.spec.name])).toEqual([
+      ["create", "s1"],
+      ["sendText", "s1"],
+      ["sendKeys", "s1"],
+      ["kill", "s1"],
+    ]);
   });
 });
 

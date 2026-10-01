@@ -123,7 +123,7 @@ const fakeProvider = (relaunchOk = true) => {
   const provider: IAgentProvider = {
     type: "claude",
     checks: [],
-    launch: async () => ({ ok: true, value: { sessionId: "unused" } }),
+    launch: async () => ({ ok: true, value: { sessionId: "unused", terminal: fakeTerminal(() => IDLE).terminal } }),
     relaunch: async (terminal, sessionId, options) => {
       relaunches.push({ terminal, sessionId, options });
       return relaunchOk ? { ok: true, value: undefined } : { ok: false, error: "no pane" };
