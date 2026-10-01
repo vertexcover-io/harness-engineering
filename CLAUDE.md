@@ -21,7 +21,7 @@
 ## Style
 - Prefer small, focused functions
 - Use early returns over nested conditionals
-- No closure factories (partial application through a closure): don't write `makeX(a, b)` that returns `{ run(c) }` with `a` and `b` captured. Write one plain function that takes every argument: `runX(a, b, c)`
+- No closure factories (partial application through a closure): don't write `makeX(a, b)` that returns `{ run(c) }` with `a` and `b` captured. Write one plain function that takes every argument: `runX(a, b, c)`. An interface implementation (an object that fulfils an interface such as `ITerminal` or `IAgentProvider`) may capture its config; the rule is about partial-application helpers.
 
 ## Architecture
 - There are two command-line entry points, split by who calls them:
