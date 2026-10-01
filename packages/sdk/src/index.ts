@@ -95,8 +95,6 @@ export {
   EmitInputSchema,
   type EventError,
   eventError,
-  type Finding,
-  FindingSchema,
   NodeIteratedEvent,
   NodeStartedEvent,
   PreToolUseCalledEvent,
@@ -110,12 +108,6 @@ export {
   type StopReason,
   StopReasonSchema,
   stackOf,
-  VerifierErrorReasonSchema,
-  type VerifierInput,
-  type VerifierResult,
-  VerifierResultSchema,
-  type VerifierRun,
-  VerifierRunSchema,
   WorkflowEndedEvent,
   WorkflowStartedEvent,
   WorkspaceCreatedEvent,
@@ -184,3 +176,13 @@ export {
 } from "./registry.ts";
 export { findRoot, type RunLookup, resolveRoot, resolveRun } from "./runs.ts";
 export { type EventHandler, emitRunEvent, toRepoId } from "./state.ts";
+export {
+  type Finding,
+  FindingSchema,
+  VerifierErrorReasonSchema,
+  type VerifierInput,
+  type VerifierResult,
+  VerifierResultSchema,
+  type VerifierRun,
+  VerifierRunSchema,
+} from "./verifier.ts";
