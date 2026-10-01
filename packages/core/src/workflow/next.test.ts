@@ -223,6 +223,16 @@ nodes:${exec("a", "\n    allowFailure: true\n    input: {}")}${exec("b", '\n    
     expect(findRun(done.state, "a")?.status).toBe("failed");
   });
 
+  test("an allowed failure does not hide an ordinary failure after it: the run still ends failed", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${exec("a", "\n    allowFailure: true\n    input: {}")}${exec("b", "\n    input: {}")}${exec("c", "\n    input: {}")}
+`);
+    const { state } = await runLeaves(plan, start(), ["failed", "failed"]);
+    const done = await advance(plan, state);
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
+    expect(findRun(done.state, "c")).toBeUndefined();
+  });
+
   test("IW4 — while background a runs, nothing else starts, not even independent c; then b and c follow one at a time", async () => {
     const plan = await compilePlan(`name: t
 nodes:${exec("a", "\n    mode: background\n    input: {}")}${exec("b", "\n    dependsOn: [a]\n    input: {}")}${exec("c", "\n    input: {}")}
@@ -616,6 +626,18 @@ nodes:
     expect(done.stop).toEqual({ kind: "finished", status: "completed" });
     expect(findRun(done.state, "fix")?.status).toBe("completed");
     expect(findRun(done.state, "fix", "test")?.status).toBe("failed");
+  });
+
+  test("an allowed failure in a loop body does not hide an ordinary failure after it: the loop fails", async () => {
+    const source = loop("{{ iteration.index >= 1 }}", 3).replace(
+      'script: "true", input: "pass {{ iteration.index }}" }',
+      'script: "true", allowFailure: true, input: {} }\n      - { id: check, type: exec, runtime: sh, script: "true", input: {} }',
+    );
+    const plan = await compilePlan(source);
+    const { state } = await runLeaves(plan, start(), ["failed", "failed"]);
+    const done = await advance(plan, state);
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
+    expect(findRun(done.state, "fix")?.status).toBe("failed");
   });
 
   test("a container with allowFailure ends failed when a child fails, and the run goes on and completes", async () => {
