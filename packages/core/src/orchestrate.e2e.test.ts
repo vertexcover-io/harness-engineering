@@ -851,6 +851,23 @@ describe("stage verifiers", () => {
     expect(stateOf(repo).nodeRuns.use.status).toBe("failed");
     const again = finish(use.nodeRunId);
     expect(refusal(again.stderr)).toMatchObject({ kind: "not-running", retryable: false });
+    const next = step(["next", "--run", "feat-x"]);
+    expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", status: "failed" });
+  });
+
+  test("a node with allowFailure whose done is rejected for good lets the run end completed", () => {
+    const workflow = STAGES_WORKFLOW.replace(
+      "    dependsOn: [make]\n",
+      "    dependsOn: [make]\n    allowFailure: true\n",
+    );
+    const { repo, finishProducer, finish, step } = verifiedRun(`[${fn("lint", "fail")}]`, workflow);
+    const use = finishProducer();
+    finish(use.nodeRunId);
+    finish(use.nodeRunId);
+    expect(refusal(finish(use.nodeRunId).stderr)).toMatchObject({ kind: "verify-exhausted" });
+    const next = step(["next", "--run", "feat-x"]);
+    expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", status: "completed" });
+    expect(stateOf(repo).nodeRuns.use.status).toBe("failed");
   });
 
   test("when two nodes wrote a consumed artifact, the newer one is handed over", () => {
