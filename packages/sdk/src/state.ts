@@ -270,18 +270,18 @@ export const appendRunEvent = (
 ): Promise<Result<Readonly<{ event: Event; state: State | null }>>> =>
   appendRunEventIf(run, input, () => true);
 
-// workflow.* events move the run's nodes and hooks.* events are trusted as the agent's own
-// (a context node completes on hooks.session-start.called), so only the engine writes either.
+// The event families the engine writes and then trusts: workflow.* moves the run's nodes,
+// orchestrate.done counts a node's rejected attempts, and a context node completes on
+// hooks.session-start.called. Extension code may record anything else.
+const ENGINE_OWNED: readonly (readonly [prefix: string, reason: string])[] = [
+  ["workflow.", "is engine-owned; use next, exec, or done for workflow lifecycle"],
+  ["orchestrate.", "is written only by the orchestrate script"],
+  ["hooks.", "is written only by the agent's hooks"],
+];
+
 export const emitRunEvent = async (run: RunRef, input: EmitInput): Promise<Result<Event>> => {
-  if (input.type.startsWith("workflow.")) {
-    return {
-      ok: false,
-      error: `${input.type} is engine-owned; use next, exec, or done for workflow lifecycle`,
-    };
-  }
-  if (input.type.startsWith("hooks.")) {
-    return { ok: false, error: `${input.type} is written only by the agent's hooks` };
-  }
+  const owned = ENGINE_OWNED.find(([prefix]) => input.type.startsWith(prefix));
+  if (owned !== undefined) return { ok: false, error: `${input.type} ${owned[1]}` };
   const appended = await appendRunEvent(run, input);
   return appended.ok ? { ok: true, value: appended.value.event } : appended;
 };
