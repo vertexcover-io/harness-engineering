@@ -179,20 +179,6 @@ const readTouchedRun = async (input: StopInput, state: State): Promise<boolean |
     ? touchedRunSinceLastPrompt(await input.readTranscript())
     : undefined;
 
-// A helper that cannot start is logged, and the stop is still allowed: a hook must not trap the session.
-const startHelper = async (
-  run: RunRef,
-  input: StopInput,
-  nodeRunId: string,
-  deps: HookDeps,
-): Promise<void> => {
-  try {
-    await startContextStep(run, input.sessionId, nodeRunId);
-  } catch (error) {
-    deps.log.error({ err: error }, "context step helper not started");
-  }
-};
-
 // Decides whether the agent may end its turn and logs the call as hooks.stop.called. It never
 // throws: a hook that fails must let the turn end, or it could trap the session.
 export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<HookReply> => {
@@ -218,7 +204,7 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
       return ALLOW;
     }
     if (decision.reason === "context-node") {
-      await startHelper(run, input, decision.nodeRunId, deps);
+      await startContextStep(run, input.sessionId, decision.nodeRunId);
     }
     return replyOf(decision);
   } catch (error) {
