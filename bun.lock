@@ -9,14 +9,6 @@
         "typescript": "^7.0.2",
       },
     },
-    "packages/agents": {
-      "name": "@harness/agents",
-      "version": "0.0.0",
-      "dependencies": {
-        "@harness/sdk": "workspace:*",
-        "zod": "^4",
-      },
-    },
     "packages/cli": {
       "name": "@harness/cli",
       "version": "0.0.0",
@@ -36,7 +28,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@commander-js/extra-typings": "^15.0.0",
-        "@harness/agents": "workspace:*",
         "@harness/sdk": "workspace:*",
         "commander": "^15.0.0",
         "pino": "^9",
@@ -63,7 +54,6 @@
       "name": "@harness/server",
       "version": "0.0.0",
       "dependencies": {
-        "@harness/agents": "workspace:*",
         "@harness/core": "workspace:*",
         "@harness/sdk": "workspace:*",
         "@hono/zod-validator": "^0.9.1",
@@ -93,8 +83,6 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.14", "", { "os": "win32", "cpu": "x64" }, "sha512-oJWmBhoHsnhUKIke+0gXDX0mltJrWHA1UyHsrTlXwX0TL64ilVZAo+TYZm97baecV0esBdpzy3k96q+09JaZUQ=="],
 
     "@commander-js/extra-typings": ["@commander-js/extra-typings@15.0.0", "", { "peerDependencies": { "commander": "~15.0.0" } }, "sha512-yeJlba62xqmkgELUsn7356MEnzLLu/fw2x4lofFqGnXh6YysRdEs2BaLeLtg1+KU0AXvMeqQvTTp+3hBEBK+EA=="],
-
-    "@harness/agents": ["@harness/agents@workspace:packages/agents"],
 
     "@harness/cli": ["@harness/cli@workspace:packages/cli"],
 

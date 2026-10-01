@@ -1,5 +1,5 @@
 import { Command } from "@commander-js/extra-typings";
-import { harnessTmux } from "@harness/agents";
+import { harnessTmux } from "@harness/core";
 import {
   createRegistry,
   findRunByIdOrName,

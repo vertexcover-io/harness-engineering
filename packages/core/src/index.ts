@@ -1,3 +1,4 @@
+export { type ClaudeProviderOptions, claudeProvider } from "./claude.ts";
 export {
   DOCTOR_TIMEOUT_MS,
   type DoctorJson,
@@ -29,6 +30,7 @@ export {
   type Stage,
   StageSchema,
 } from "./stage.ts";
+export { harnessTmux } from "./tmux.ts";
 export * from "./workflow/index.ts";
 export {
   type VerifierInput,

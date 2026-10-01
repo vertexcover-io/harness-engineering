@@ -1,19 +1,5 @@
-import type { AgentType } from "../agent.ts";
-import { emitRunEvent } from "../state.ts";
-import { findEnvRun, type HookDeps } from "./common.ts";
-
-export type SessionStartInput = Readonly<{
-  agent: AgentType;
-  sessionId: string;
-  // why the session started: startup, clear, compact or resume
-  source: string;
-}>;
-
-// One rule for a session starting, shared by every agent: it sees only the parsed input.
-export type SessionStartHandler = Readonly<{
-  name: string;
-  run: (input: SessionStartInput, deps: HookDeps) => Promise<void>;
-}>;
+import { emitRunEvent, type SessionStartHandler } from "@harness/sdk";
+import { findEnvRun } from "./common.ts";
 
 // A new session has a new id, so the run's other hooks would stop recognizing it until it is
 // linked. This cannot use findSessionRun: the new id is not linked yet. A session starting is

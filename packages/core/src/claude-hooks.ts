@@ -1,26 +1,23 @@
 import { readFile } from "node:fs/promises";
 import {
   type AgentAdapter,
-  bashAntipatterns,
-  continueWorkflow,
   type HookDeps,
   type HookReply,
   NonEmptyStringSchema,
   type PreToolUseHandler,
   parseJson,
   type Result,
-  recordGuard,
-  runPreToolUse,
-  runStop,
   type SessionStartHandler,
   type StopHandler,
-  sessionStartHandlers,
   type ToolCall,
   type ToolUse,
   type ToolVerdict,
   type TranscriptEntry,
 } from "@harness/sdk";
 import * as z from "zod";
+import { bashAntipatterns, recordGuard, runPreToolUse } from "./hooks/pre-tool-use.ts";
+import { sessionStartHandlers } from "./hooks/session-start.ts";
+import { continueWorkflow, runStop } from "./hooks/stop.ts";
 
 const HOOK_TIMEOUT_S = 30;
 // Claude's tools that write a file, and the input field that names it; Bash is parsed separately.

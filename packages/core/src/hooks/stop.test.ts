@@ -2,15 +2,23 @@ import { describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NodeRun, State } from "../contracts.ts";
-import { jsonlEventStore } from "../event-store.ts";
-import { type RunRef, runDirOf } from "../events.ts";
-import { noopLogger } from "../logger.ts";
-import { createRegistry, registryPath } from "../registry.ts";
-import { emitRunEvent, readState } from "../state.ts";
-import type { HookDeps } from "./common.ts";
+import {
+  createRegistry,
+  emitRunEvent,
+  type HookDeps,
+  jsonlEventStore,
+  type NodeRun,
+  noopLogger,
+  type RunRef,
+  readState,
+  registryPath,
+  runDirOf,
+  type State,
+  type StopInput,
+  type TranscriptEntry,
+} from "@harness/sdk";
 import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
-import { decideStop, runStopHook, type StopInput, type TranscriptEntry } from "./stop.ts";
+import { decideStop, runStopHook } from "./stop.ts";
 
 const seed: State = {
   schemaVersion: 1,

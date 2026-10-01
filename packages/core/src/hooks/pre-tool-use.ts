@@ -1,40 +1,19 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentType } from "../agent.ts";
-import type { EmitInput } from "../events.ts";
-import type { ILogger } from "../logger.ts";
-import { spawn } from "../process.ts";
-import { harnessHome, registryPath } from "../registry.ts";
-import { emitRunEvent } from "../state.ts";
-import { findSessionRun, type HookDeps } from "./common.ts";
+import {
+  type EmitInput,
+  emitRunEvent,
+  type HookDeps,
+  harnessHome,
+  type PreToolUseHandler,
+  registryPath,
+  spawn,
+  type ToolCall,
+  type ToolUse,
+  type ToolVerdict,
+} from "@harness/sdk";
+import { findSessionRun } from "./common.ts";
 import { expandPath, type PathBase, shellWriteTargets } from "./write-targets.ts";
-
-// A tool call as any agent's adapter parses it: a file it writes, a shell command, or neither.
-export type ToolCall =
-  | { readonly kind: "file-write"; readonly path: string }
-  | { readonly kind: "shell"; readonly command: string }
-  | { readonly kind: "other" };
-
-export type ToolUse = Readonly<{
-  agent: AgentType;
-  sessionId: string;
-  // the agent's own name for the tool, e.g. Bash; only logged
-  toolName: string;
-  cwd: string;
-  call: ToolCall;
-}>;
-
-export type ToolVerdict =
-  | { readonly kind: "allow" }
-  | { readonly kind: "deny"; readonly message: string; readonly path?: string };
-
-export type PreToolUseContext = Readonly<{ cwd: string; env: HookDeps["env"]; log: ILogger }>;
-
-// One rule for a tool call, shared by every agent: it sees only the parsed call.
-export type PreToolUseHandler = Readonly<{
-  name: string;
-  run: (call: ToolCall, context: PreToolUseContext) => Promise<ToolVerdict>;
-}>;
 
 export type ProtectedRecord =
   | Readonly<{ kind: "state" | "events"; runName: string; path: string }>

@@ -1,6 +1,5 @@
 import { access, copyFile, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { PaneTarget } from "@harness/agents";
 import {
   type ArtifactRef,
   appendRunEvent,
@@ -19,7 +18,6 @@ import {
   jsonlEventStore,
   loadConfigOrDefault,
   type NodeRun,
-  orchestrateCommand,
   type Registry,
   type Result,
   type RunLookup,
@@ -40,6 +38,7 @@ import {
 import * as z from "zod";
 import corePackage from "../package.json";
 import { extensionPath } from "./stage.ts";
+import type { PaneTarget } from "./tmux.ts";
 import { compileWorkflow } from "./workflow/compile.ts";
 import {
   type CompletionIssue,
@@ -752,3 +751,17 @@ export const getConsumed = async (
   nodeRunId: string,
   cwd: string,
 ): Promise<Readonly<Record<string, string>>> => (await getNodeFacts(run, nodeRunId, cwd)).consumed;
+
+// The command an agent runs to act on a run; step replies and hook messages both name it this way.
+export const orchestrateCommand = ({
+  verb,
+  run,
+  nodeRunId,
+}: Readonly<{ verb: "next" | "exec" | "done"; run: RunRef; nodeRunId?: string }>): string =>
+  [
+    "bun run orchestrate",
+    verb,
+    ...(nodeRunId === undefined ? [] : [nodeRunId]),
+    "--run",
+    run.name,
+  ].join(" ");

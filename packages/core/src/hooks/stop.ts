@@ -1,38 +1,28 @@
-import type { AgentType } from "../agent.ts";
-import type { NodeRun, State } from "../contracts.ts";
-import { jsonlEventStore } from "../event-store.ts";
-import { type EmitInput, type RunRef, runDirOf, type StopReason } from "../events.ts";
+import {
+  type EmitInput,
+  emitRunEvent,
+  type HookDeps,
+  type HookReply,
+  jsonlEventStore,
+  type NodeRun,
+  type RunRef,
+  readState,
+  runDirOf,
+  type State,
+  type StopHandler,
+  type StopInput,
+  type StopReason,
+  type TranscriptEntry,
+} from "@harness/sdk";
 import { orchestrateCommand } from "../runs.ts";
-import { emitRunEvent, readState } from "../state.ts";
-import { findSessionRun, type HookDeps } from "./common.ts";
+import { findSessionRun } from "./common.ts";
 
 export const DEFAULT_STOP_MAX_BLOCKS = 1;
 // `bun run orchestrate next` or `bun …/orchestrate.ts done`, but not a path like orchestrate-v2/SKILL.md
 const ORCHESTRATE = /\borchestrate(?:\.ts)?\s+(?:init|link-session|emit|baseline|next|exec|done)\b/;
 const ASK_RULE = "If you need the user's input, ask with AskUserQuestion.";
 
-export type HookReply =
-  | { readonly kind: "allow" }
-  | { readonly kind: "continue"; readonly message: string };
 const ALLOW: HookReply = { kind: "allow" };
-
-// One step of a session, in order: a message the user typed, or a shell command the agent ran.
-export type TranscriptEntry =
-  | { readonly kind: "prompt"; readonly text: string }
-  | { readonly kind: "command"; readonly command: string };
-
-export type StopInput = Readonly<{
-  agent: AgentType;
-  sessionId: string;
-  // undefined when the transcript is missing or cannot be read
-  readTranscript: () => Promise<readonly TranscriptEntry[] | undefined>;
-}>;
-
-// One rule for the end of a turn, shared by every agent: it sees only the parsed input.
-export type StopHandler = Readonly<{
-  name: string;
-  run: (input: StopInput, deps: HookDeps) => Promise<HookReply>;
-}>;
 
 type ActiveLeaf = Readonly<{ nodeId: string; nodeRunId: string; nodeType: NodeRun["nodeType"] }>;
 
