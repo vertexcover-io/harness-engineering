@@ -397,7 +397,7 @@ async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
 
 const guaranteedInScope = (
   nodes: readonly PlanNode[],
-  requiredOnly: boolean,
+  guaranteedOnly: boolean,
 ): readonly string[] => {
   const completed = new Set<string>();
   const artifacts = new Set<string>();
@@ -408,18 +408,18 @@ const guaranteedInScope = (
       (node.type === "switch" && node.default === undefined);
     if (canSkip) continue;
     completed.add(node.id);
-    for (const artifact of listProducedArtifacts(node, requiredOnly)) artifacts.add(artifact);
+    for (const artifact of listProducedArtifacts(node, guaranteedOnly)) artifacts.add(artifact);
   }
   return [...artifacts];
 };
 
 // Artifacts guaranteed when a node completes, even if it contains conditional children. A node
 // that allows failure guarantees none.
-function listProducedArtifacts(node: PlanNode, requiredOnly = false): readonly string[] {
-  if (requiredOnly && node.allowFailure) return [];
+function listProducedArtifacts(node: PlanNode, guaranteedOnly = false): readonly string[] {
+  if (guaranteedOnly && node.allowFailure) return [];
   if (node.type === "agent") {
     return (node.stage?.produces ?? [])
-      .filter((produced) => !requiredOnly || !produced.optional)
+      .filter((produced) => !guaranteedOnly || !produced.optional)
       .map((produced) => produced.artifact);
   }
   if (node.type === "switch") {
@@ -427,11 +427,11 @@ function listProducedArtifacts(node: PlanNode, requiredOnly = false): readonly s
       ...node.cases.map((branch) => branch.nodes),
       ...(node.default === undefined ? [] : [node.default]),
     ];
-    const [first, ...rest] = branches.map((branch) => guaranteedInScope(branch, requiredOnly));
+    const [first, ...rest] = branches.map((branch) => guaranteedInScope(branch, guaranteedOnly));
     return first?.filter((artifact) => rest.every((branch) => branch.includes(artifact))) ?? [];
   }
-  if (node.type === "include") return guaranteedInScope(node.plan.nodes, requiredOnly);
-  if (node.type === "loop") return guaranteedInScope(node.nodes, requiredOnly);
+  if (node.type === "include") return guaranteedInScope(node.plan.nodes, guaranteedOnly);
+  if (node.type === "loop") return guaranteedInScope(node.nodes, guaranteedOnly);
   return [];
 }
 
