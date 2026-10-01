@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { noopLogger } from "@harness/sdk";
-import type { Registry } from "@harness/sdk/internal";
+import { noopLogger, type RegistryReader } from "@harness/sdk";
 import { claudeAdapter, claudeHookSettings, readClaudeTranscript } from "./claude-hooks.ts";
 import { preToolUseHandlers, recordGuard } from "./hooks/pre-tool-use.ts";
 import { continueWorkflow, stopHandlers } from "./hooks/stop.ts";
@@ -59,17 +58,12 @@ describe("readClaudeTranscript", () => {
 describe("claudeAdapter.stop", () => {
   test("SC16 — input Claude's hook cannot read lets the turn end without looking up a run", async () => {
     let lookups = 0;
-    const registry: Registry = {
+    const registry: RegistryReader = {
       findRun: async () => {
         lookups += 1;
         throw new Error("findRun must not be called");
       },
       findRunsByName: async () => [],
-      addRun: async () => {},
-      removeRun: async () => {},
-      initRun: async () => {},
-      setTerminal: async () => {},
-      linkSession: async () => {},
     };
     const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
 
@@ -92,14 +86,9 @@ describe("claudeHookSettings", () => {
 });
 
 describe("claudeAdapter.preToolUse", () => {
-  const registry: Registry = {
+  const registry: RegistryReader = {
     findRun: async () => undefined,
     findRunsByName: async () => [],
-    addRun: async () => {},
-    removeRun: async () => {},
-    initRun: async () => {},
-    setTerminal: async () => {},
-    linkSession: async () => {},
   };
   const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
   const stdin = (tool_name: string, tool_input: Record<string, unknown>) =>

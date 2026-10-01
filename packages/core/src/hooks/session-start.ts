@@ -1,5 +1,5 @@
-import type { SessionStartHandler } from "@harness/sdk";
-import { appendRunEvent } from "@harness/sdk/internal";
+import { harnessHome, registryPath, type SessionStartHandler } from "@harness/sdk";
+import { appendRunEvent, createRegistry } from "@harness/sdk/internal";
 import { completeContextOnSessionStart } from "../context-step.ts";
 import { findEnvRun } from "./common.ts";
 
@@ -12,7 +12,9 @@ export const linkSession: SessionStartHandler = {
     const run = await findEnvRun(deps);
     if (run === undefined) return;
     const { agent, sessionId, source } = input;
-    await deps.registry.linkSession(run.ref.id, { agent, sessionId });
+    // HookDeps only reads the registry; linking a session is this hook's own write.
+    const registry = createRegistry(registryPath(harnessHome(deps.env)), deps.log);
+    await registry.linkSession(run.ref.id, { agent, sessionId });
     await appendRunEvent(run.ref, {
       type: "hooks.session-start.called",
       source: "hooks",
