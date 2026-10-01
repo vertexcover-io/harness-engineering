@@ -80,6 +80,7 @@ const seed: State = {
     },
   },
   nodeRuns: {},
+  activeSessions: [],
   eventHandlers: {},
 };
 
@@ -216,10 +217,14 @@ describe("syncState", () => {
   test("writing state.json leaves no temp files behind and adds no run-folder entries", async () => {
     await append("a", "a.ts");
     await syncState(runDir);
-    expect((await readdir(runDir)).sort()).toEqual(["artifacts", "event.jsonl", "state.json"]);
-    expect((await readdir(join(runDir, "artifacts"))).filter((f) => f.includes("state"))).toEqual(
-      [],
-    );
+    expect((await readdir(runDir)).sort()).toEqual([
+      "artifacts",
+      "event.jsonl",
+      "locks",
+      "state.json",
+    ]);
+    expect(await readdir(join(runDir, "artifacts"))).toEqual([]);
+    expect(await readdir(join(runDir, "locks"))).toEqual([]);
   });
 
   test("a truncated event line is surfaced as an error, not skipped", async () => {
@@ -464,4 +469,14 @@ test.each([
   ["___", "repo"],
 ])("WS16 — toRepoId(%s) is %s", (name, id) => {
   expect(toRepoId(name)).toBe(id);
+});
+
+describe("state files written before activeSessions", () => {
+  test("SC9: a state without activeSessions loads with it empty and every other field unchanged", () => {
+    const { activeSessions: _omitted, ...legacy } = seed;
+
+    const parsed = StateSchema.parse(legacy);
+
+    expect(parsed).toEqual(seed);
+  });
 });

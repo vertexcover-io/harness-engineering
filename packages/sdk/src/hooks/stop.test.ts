@@ -8,6 +8,7 @@ import { type RunRef, runDirOf } from "../events.ts";
 import { noopLogger } from "../logger.ts";
 import { createRegistry, registryPath } from "../registry.ts";
 import { emitRunEvent, readState } from "../state.ts";
+import type { HookDeps } from "./common.ts";
 import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 import { decideStop, runStopHook, type StopInput, type TranscriptEntry } from "./stop.ts";
 
@@ -32,6 +33,7 @@ const seed: State = {
     },
   },
   nodeRuns: {},
+  activeSessions: [],
   eventHandlers: {},
 };
 
@@ -158,12 +160,13 @@ const setUp = async (nodeRuns: State["nodeRuns"]) => {
     cwd,
     sessions: [{ agent: "claude", sessionId: "s1" }],
     name: "feat-x",
+    terminal: null,
     createdAt: "2026-09-26T10:00:00Z",
   });
   const runDir = runDirOf(cwd, "feat-x");
   await mkdir(runDir, { recursive: true });
   await writeFile(join(runDir, "state.json"), JSON.stringify({ ...seed, nodeRuns }));
-  return { runDir, deps: { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger } };
+  return { runDir, cwd, deps: { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger } };
 };
 
 const input = (entries: readonly TranscriptEntry[] | undefined): StopInput => ({
@@ -295,5 +298,48 @@ describe("runStopHook", () => {
     expect(await runStopHook(other, deps)).toEqual({ kind: "allow" });
     expect(await runStopHook(input(undefined), { ...deps, env: {} })).toEqual({ kind: "allow" });
     expect(await jsonlEventStore(runDir).read()).toEqual([]);
+  });
+});
+
+describe("an open context node", () => {
+  const contextOpen = { fresh: nodeRun("nr-1", "running", "context") };
+
+  const withHelper = async (
+    nodeRuns: State["nodeRuns"],
+    startContextStep?: HookDeps["startContextStep"],
+  ) => {
+    const { deps, runDir, cwd } = await setUp(nodeRuns);
+    const calls: Array<readonly [RunRef, string, string]> = [];
+    const start =
+      startContextStep ??
+      (async (run, sessionId, nodeRunId) => void calls.push([run, sessionId, nodeRunId]));
+    return { calls, runDir, cwd, deps: { ...deps, startContextStep: start } };
+  };
+
+  test("lets the turn end, records context-node and starts the helper for that node", async () => {
+    const { deps, calls, runDir, cwd } = await withHelper(contextOpen);
+
+    expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toEqual({ kind: "allow" });
+
+    expect(calls).toEqual([[{ id: "r-1", cwd, name: "feat-x" }, "s1", "nr-1"]]);
+    expect((await jsonlEventStore(runDir).read()).map((e) => e.payload)).toEqual([
+      expect.objectContaining({ decision: "allow", reason: "context-node", nodeRunId: "nr-1" }),
+    ]);
+  });
+
+  test("an open agent node still blocks and starts no helper", async () => {
+    const { deps, calls } = await withHelper(planOpen);
+    expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toMatchObject({
+      kind: "continue",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  test("a helper that cannot start still lets the stop through", async () => {
+    const { deps } = await withHelper(contextOpen, async () => {
+      throw new Error("spawn failed");
+    });
+
+    expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toEqual({ kind: "allow" });
   });
 });

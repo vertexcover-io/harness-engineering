@@ -48,6 +48,7 @@ const initializedRun = (home: string, cwd: string): void => {
     cwd,
     sessions: [],
     name: "feat-x",
+    terminal: null,
     createdAt: new Date().toISOString(),
   };
   mkdirSync(home, { recursive: true });

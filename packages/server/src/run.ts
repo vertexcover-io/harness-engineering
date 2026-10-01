@@ -33,6 +33,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     cwd,
     sessions: [],
     name: null,
+    terminal: null,
     createdAt: new Date().toISOString(),
   };
   await deps.registry.addRun(pending);
@@ -61,7 +62,12 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
   const { sessionId } = launched.value;
   const session = { agent: deps.provider.type, sessionId };
   await deps.registry.linkSession(id, session);
-  const run = (await deps.registry.findRun(id)) ?? { ...pending, sessions: [session] };
+  await deps.registry.setTerminal(id, sessionId);
+  const run = (await deps.registry.findRun(id)) ?? {
+    ...pending,
+    sessions: [session],
+    terminal: sessionId,
+  };
   runLog.info({ workflow, cwd, agent: deps.provider.type, sessionId }, "run started");
   return c.json({ run, attach: [...deps.terminal.attachCommand(sessionId)] }, 201);
 };

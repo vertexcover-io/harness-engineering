@@ -23,6 +23,7 @@ import {
   type InputDeclarations,
   NodeFailure,
   type PlanAgentNode,
+  type PlanContextNode,
   type PlanExecNode,
   type PlanIncludeNode,
   type PlanLoopNode,
@@ -34,7 +35,7 @@ import {
   type WorkflowPlan,
 } from "./types.ts";
 
-export type Leaf = PlanExecNode | PlanWaitNode | PlanAgentNode;
+export type Leaf = PlanExecNode | PlanWaitNode | PlanAgentNode | PlanContextNode;
 
 // What `next` replies. The events it recorded on the way are already saved.
 export type Decision =
@@ -73,8 +74,8 @@ const createNodeRunId = (): string => `nr-${randomBytes(8).toString("hex")}`;
 
 type Container = Exclude<PlanNode, Leaf>;
 
-const isLeaf = (node: PlanNode): node is Leaf =>
-  node.type === "exec" || node.type === "wait" || node.type === "agent";
+const LEAF_TYPES: ReadonlySet<PlanNode["type"]> = new Set(["exec", "wait", "agent", "context"]);
+const isLeaf = (node: PlanNode): node is Leaf => LEAF_TYPES.has(node.type);
 
 const findNodeRun = (state: State, node: PlanNode): NodeRun | undefined =>
   own(findNodeRuns(state.nodeRuns, node.parents), node.id);
@@ -302,7 +303,7 @@ const endContainer = async (
   return { state: await emitNodeEvent(walk, state, node, event), step: CONTINUE };
 };
 
-// An exec, wait or agent node: handed to the skill once it can start, then waited on.
+// A leaf node (exec, wait, agent or context): handed to the skill once it can start, then waited on.
 const executeLeaf = async (
   node: Leaf,
   nodeRun: NodeRun | undefined,

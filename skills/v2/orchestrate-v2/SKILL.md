@@ -13,7 +13,10 @@ environment, then sends this skill as the first message.
 
 ## Arguments
 
-`--workflow PATH --inputs JSON`
+`--workflow PATH --inputs JSON`, or `--resume NAME`
+
+With `--resume NAME`, skip Step 1 (no `init`): tell the user the run is resuming, and go straight
+to Step 2's loop with that `NAME`.
 
 ## Step 1: initialize the run
 
@@ -76,6 +79,11 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      go back to 1.
    - `agent`: tell the user `▶ NODE_ID`. Do what `prompt` asks, with `input` as its data,
      then finish it with the reply's `done` command the same way as a stage.
+   - `context`: tell the user `↻ NODE_ID: ACTION` (the reply's `nodeId` and `action`, e.g.
+     `↻ fresh: new`), then end the turn at once, without running any other command. The work
+     starts once the turn is over: for `new` the harness replaces this session with a fresh one,
+     and for `compact` it compacts this session. Either way the session then receives
+     `/orchestrate-v2 --resume NAME` and carries on.
    - `blocked`: the stage `stage` needs artifacts in `missing` that no finished node wrote.
      Tell the user which, and stop.
    - `waiting`: a step is still running, and only one step runs at a time. Wait for your

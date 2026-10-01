@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ITerminal, jsonLogger, type Result, type TerminalSpec } from "@harness/sdk";
 import * as z from "zod";
-import { claudeArgs, claudeProvider, claudeRunArgs, interpretOutput } from "./claude.ts";
+import {
+  claudeArgs,
+  claudeProvider,
+  claudeRunArgs,
+  interpretOutput,
+  isClaudeBusy,
+} from "./claude.ts";
 import { claudeHookSettings } from "./claude-hooks.ts";
 
 describe("claudeArgs", () => {
@@ -58,7 +64,13 @@ type Call =
       readonly keys: readonly string[];
       readonly at: number;
     }
-  | { readonly method: "kill"; readonly name: string; readonly at: number };
+  | { readonly method: "kill"; readonly name: string; readonly at: number }
+  | {
+      readonly method: "respawn";
+      readonly target: string;
+      readonly spec: Omit<TerminalSpec, "name">;
+      readonly at: number;
+    };
 
 const fakeTerminal = (
   options: { alive?: boolean; createOk?: boolean } = {},
@@ -87,6 +99,11 @@ const fakeTerminal = (
       return Promise.resolve(ok);
     },
     capture: () => Promise.resolve({ ok: true, value: "" }),
+    rename: () => Promise.resolve({ ok: true, value: undefined }),
+    respawn: (target, spec) => {
+      calls.push({ method: "respawn", target, spec, at: Date.now() });
+      return Promise.resolve(ok);
+    },
     isAlive: () => Promise.resolve(options.alive ?? true),
     list: () => Promise.resolve([]),
     attachCommand: (name) => ["tmux", "attach-session", "-t", name],
@@ -127,6 +144,30 @@ describe("claudeProvider.launch", () => {
     });
 
     expect(await provider.launch({ cwd: "/repo" })).toEqual({ ok: false, error: "boom" });
+  });
+});
+
+describe("claudeProvider.relaunch", () => {
+  test("replaces the program in the pane with claude on the given session id and first prompt", async () => {
+    const terminal = fakeTerminal();
+    const provider = claudeProvider({ terminal, binary: "/bin/claude", newId: () => "unused" });
+
+    const result = await provider.relaunch("%3", "s-new", {
+      cwd: "/repo",
+      prompt: "/orchestrate-v2 --resume feat-x",
+      env: { HARNESS_RUN_ID: "r-1" },
+      hookCommand: ["/usr/bin/bun", "/o.ts", "hook"],
+    });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    const [call] = terminal.calls;
+    expect(call).toMatchObject({ method: "respawn", target: "%3" });
+    const spec = call?.method === "respawn" ? call.spec : undefined;
+    expect(spec?.cwd).toBe("/repo");
+    expect(spec?.env).toEqual({ HARNESS_RUN_ID: "r-1" });
+    expect(spec?.argv.slice(0, 3)).toEqual(["/bin/claude", "--session-id", "s-new"]);
+    expect(spec?.argv).toContain("--settings");
+    expect(spec?.argv.at(-1)).toBe("/orchestrate-v2 --resume feat-x");
   });
 });
 
@@ -311,5 +352,17 @@ describe("claudeProvider.run", () => {
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.sessionId).toBe("s3");
+  });
+});
+
+describe("isClaudeBusy", () => {
+  test.each([
+    ["· Vibing… (3s · ↓ 136 tokens)", true],
+    ["✢ Compacting conversation… (15s · ↓ 637 tokens)", true],
+    ["  Press up to edit queued messages\n❯ ", true],
+    ["✻ Churned for 8s · done 4:40 PM\n❯ ", false],
+    ["❯ ", false],
+  ])("SC22: %j is busy: %p", (screen, busy) => {
+    expect(isClaudeBusy(screen)).toBe(busy);
   });
 });

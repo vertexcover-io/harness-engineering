@@ -12,7 +12,9 @@ import {
   recordGuard,
   runPreToolUse,
   runStop,
+  type SessionStartHandler,
   type StopHandler,
+  sessionStartHandlers,
   type ToolCall,
   type ToolUse,
   type ToolVerdict,
@@ -34,6 +36,11 @@ const HOOK_FEEDBACK = "Stop hook feedback:";
 const ClaudeStopInputSchema = z.looseObject({
   session_id: NonEmptyStringSchema,
   transcript_path: z.string().optional(),
+});
+
+const ClaudeSessionStartInputSchema = z.looseObject({
+  session_id: NonEmptyStringSchema,
+  source: NonEmptyStringSchema,
 });
 
 const ClaudeLineSchema = z.looseObject({
@@ -139,6 +146,25 @@ const claudeStop = async (stdin: string, deps: HookDeps, handler: StopHandler): 
   return claudeStopReply(reply);
 };
 
+// SessionStart output is added to Claude's context, so this always prints nothing.
+const claudeSessionStart = async (
+  stdin: string,
+  deps: HookDeps,
+  handler: SessionStartHandler,
+): Promise<string> => {
+  const parsed = parseStdin(stdin, ClaudeSessionStartInputSchema);
+  if (!parsed.ok) {
+    deps.log.warn({ error: parsed.error }, "session-start ignored: hook input not understood");
+    return "";
+  }
+  const { session_id: sessionId, source } = parsed.value;
+  // a failing handler is only logged: it must never break the session
+  await handler.run({ agent: "claude", sessionId, source }, deps).catch((error: unknown) => {
+    deps.log.error({ err: error }, `session-start: ${handler.name} failed`);
+  });
+  return "";
+};
+
 const ClaudePreToolUseInputSchema = z.looseObject({
   session_id: NonEmptyStringSchema,
   tool_name: NonEmptyStringSchema,
@@ -193,12 +219,17 @@ const claudePreToolUse = async (
   return claudePreToolUseReply(await runPreToolUse(use.value, handler, deps));
 };
 
-// What Claude answers; both events are supported.
-export const claudeAdapter: AgentAdapter = { stop: claudeStop, preToolUse: claudePreToolUse };
+// What Claude answers; all three events are supported.
+export const claudeAdapter: AgentAdapter = {
+  stop: claudeStop,
+  preToolUse: claudePreToolUse,
+  sessionStart: claudeSessionStart,
+};
 
 // The handlers Claude registers. Each handler gets its own command in its entry, and Claude runs
 // every matching command in parallel: a deny from any one refuses the call.
 const CLAUDE_HOOKS = {
+  SessionStart: [{ handlers: Object.values(sessionStartHandlers) }],
   Stop: [{ handlers: [continueWorkflow] }],
   PreToolUse: [
     { matcher: [...PATH_FIELDS.keys(), "Bash"].join("|"), handlers: [recordGuard] },
@@ -219,6 +250,9 @@ const hookEntry = (hookCommand: readonly string[], event: string, handler: strin
 // Settings for `claude --settings`: one command per registered handler, grouped by matcher.
 export const claudeHookSettings = (hookCommand: readonly string[]) => ({
   hooks: {
+    SessionStart: CLAUDE_HOOKS.SessionStart.map(({ handlers }) => ({
+      hooks: handlers.map((handler) => hookEntry(hookCommand, "session-start", handler.name)),
+    })),
     Stop: CLAUDE_HOOKS.Stop.map(({ handlers }) => ({
       hooks: handlers.map((handler) => hookEntry(hookCommand, "stop", handler.name)),
     })),

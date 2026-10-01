@@ -14,7 +14,7 @@ import {
 } from "./contracts.ts";
 import { type IEventStore, jsonlEventStore } from "./event-store.ts";
 import { builtInHandlers, type EmitInput, emitEvent, type RunRef, runDirOf } from "./events.ts";
-import { loadFunction, parseYaml, readIfExists, readText, withLock } from "./files.ts";
+import { loadFunction, parseYaml, readIfExists, readText, runLockPath, withLock } from "./files.ts";
 import { createGit } from "./git.ts";
 
 export type EventHandler = (state: State, event: Event) => State;
@@ -59,7 +59,7 @@ const writeStateAtomically = async (runDir: string, state: State): Promise<void>
   await rename(tempPath, join(runDir, "state.json"));
 };
 
-const lockOf = (runDir: string): string => join(runDir, "artifacts", ".state.lock");
+const lockOf = (runDir: string): string => runLockPath(runDir, "state");
 
 const git = createGit();
 
@@ -129,6 +129,7 @@ export const createState = async ({
       repositories: { [toRepoId(basename(cwd))]: { path: cwd, git: await readGit(cwd) } },
     },
     nodeRuns: {},
+    activeSessions: [],
     eventHandlers,
   };
   await withLock(lockOf(runDir), () => writeStateAtomically(runDir, state));

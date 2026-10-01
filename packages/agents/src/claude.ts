@@ -19,7 +19,30 @@ import * as z from "zod";
 import { claudeHookSettings } from "./claude-hooks.ts";
 
 // Claude never returns while it is waiting for Enter to submit; the spike found 150ms reliable.
-export const SUBMIT_DELAY_MS = 150;
+const SUBMIT_DELAY_MS = 150;
+
+// What Claude Code 2.1.285 shows in its pane. While it works, a spinner line (`✻ Compacting…`)
+// or the hint under a queued prompt is on screen.
+const SPINNER = /^[·✢✳✶✻✽*] \S.*…/;
+export const CLAUDE_NOTHING_TO_COMPACT = "Not enough messages to compact.";
+// Empties the input line; C-c would exit Claude when the box is already empty.
+export const CLAUDE_CLEAR_INPUT_KEY = "C-u";
+
+export const isClaudeBusy = (screen: string): boolean =>
+  screen.includes("queued messages") || screen.split("\n").some((line) => SPINNER.test(line));
+
+// Types `text` into a Claude pane or session and submits it with Enter.
+export const typeLine = async (
+  terminal: ITerminal,
+  target: string,
+  text: string,
+  wait: (ms: number) => Promise<unknown> = sleep,
+): Promise<Result<void>> => {
+  const typed = await terminal.sendText(target, text);
+  if (!typed.ok) return typed;
+  await wait(SUBMIT_DELAY_MS);
+  return terminal.sendKeys(target, ["Enter"]);
+};
 
 export type ClaudeArgOptions = Readonly<{
   model?: string;
@@ -169,21 +192,31 @@ export const claudeProvider = ({
     return { ok: true, value: { sessionId } };
   };
 
+  const relaunch = async (
+    target: string,
+    sessionId: string,
+    options: LaunchOptions,
+  ): Promise<Result<void>> => {
+    const respawned = await terminal.respawn(target, {
+      cwd: options.cwd,
+      argv: [binary, ...claudeArgs(sessionId, options)],
+      env: options.env ?? {},
+    });
+    const sessionLog = log.child({ sessionId });
+    if (respawned.ok) sessionLog.info({ pane: target }, "claude relaunched in its pane");
+    else sessionLog.error({ err: respawned.error, pane: target }, "claude not relaunched");
+    return respawned;
+  };
+
   const prompt = async (sessionId: string, text: string): Promise<Result<void>> => {
     const sessionLog = log.child({ sessionId });
     if (!(await terminal.isAlive(sessionId))) {
       sessionLog.error({}, "prompt not sent: the session is not running");
       return { ok: false, error: `session ${sessionId} is not running` };
     }
-    const sent = await terminal.sendText(sessionId, text);
-    if (!sent.ok) {
-      sessionLog.error({ err: sent.error }, "prompt not sent: typing into the session failed");
-      return sent;
-    }
-    await sleep(SUBMIT_DELAY_MS);
-    const submitted = await terminal.sendKeys(sessionId, ["Enter"]);
+    const submitted = await typeLine(terminal, sessionId, text);
     if (!submitted.ok) {
-      sessionLog.error({ err: submitted.error }, "prompt typed but not submitted: Enter failed");
+      sessionLog.error({ err: submitted.error }, "prompt not sent");
       return submitted;
     }
     sessionLog.info({ chars: text.length }, "prompt sent");
@@ -234,6 +267,7 @@ export const claudeProvider = ({
       },
     ],
     launch,
+    relaunch,
     prompt,
     stop,
     run,

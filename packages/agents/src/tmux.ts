@@ -1,12 +1,13 @@
 /// <reference path="./tmux-conf.d.ts" />
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type Check,
   type CheckContext,
   type Exec,
   execWithTimeout,
   fail,
+  harnessHome,
   type ILogger,
   type ITerminal,
   noopLogger,
@@ -55,6 +56,7 @@ const TMUX_CHECKS: readonly Check[] = [
 
 export type TmuxTerminalOptions = Readonly<{
   socketName?: string;
+  socketPath?: string;
   configPath: string;
   exec?: Exec;
   log?: ILogger;
@@ -74,12 +76,17 @@ const done = (result: Result<string>): Result<void> =>
 
 export const tmuxTerminal = ({
   socketName = "harness",
+  socketPath,
   configPath,
   exec = execWithTimeout(10_000),
   log: parentLog = noopLogger,
 }: TmuxTerminalOptions): ITerminal => {
-  const log = parentLog.child({ component: "tmux", socket: socketName });
-  const baseArgs = ["-L", socketName, "-f", configPath];
+  const log = parentLog.child({ component: "tmux", socket: socketPath ?? socketName });
+  const baseArgs = [
+    ...(socketPath === undefined ? ["-L", socketName] : ["-S", socketPath]),
+    "-f",
+    configPath,
+  ];
 
   // `expected` marks a call whose failure is an ordinary answer, such as "no server yet" from
   // list-sessions, so it is not logged as an error.
@@ -154,6 +161,26 @@ export const tmuxTerminal = ({
     return done(result);
   };
 
+  const respawn = async (
+    target: string,
+    spec: Omit<TerminalSpec, "name">,
+  ): Promise<Result<void>> => {
+    const envArgs = Object.entries(spec.env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
+    const result = await run([
+      "respawn-pane",
+      "-k",
+      "-t",
+      target,
+      "-c",
+      spec.cwd,
+      ...envArgs,
+      "--",
+      ...spec.argv,
+    ]);
+    if (result.ok) log.info({ pane: target, cwd: spec.cwd }, "tmux pane respawned");
+    return done(result);
+  };
+
   const sendText = async (name: string, text: string): Promise<Result<void>> => {
     const result = await run(["send-keys", "-t", name, "-l", "--", text]);
     if (result.ok) log.debug({ session: name, chars: text.length }, "text typed into the session");
@@ -167,6 +194,9 @@ export const tmuxTerminal = ({
     const result = await run(["capture-pane", "-p", "-J", "-t", name, "-S", `-${lines}`]);
     return result.ok ? { ok: true, value: result.value.replace(/\s+$/, "") } : result;
   };
+
+  const rename = async (target: string, name: string): Promise<Result<void>> =>
+    done(await run(["rename-session", "-t", target, name]));
 
   const isAlive = async (name: string): Promise<boolean> =>
     (await run(["has-session", "-t", `=${name}`], true)).ok;
@@ -193,7 +223,33 @@ export const tmuxTerminal = ({
     capture,
     isAlive,
     kill,
+    rename,
+    respawn,
     list,
     attachCommand,
   };
+};
+
+const configPathFor = (env: NodeJS.ProcessEnv): string => join(harnessHome(env), "tmux.conf");
+
+// The tmux server `harness run` starts sessions on: HARNESS_TMUX_SOCKET, or `harness`.
+export const harnessTmux = (env: NodeJS.ProcessEnv = process.env, log?: ILogger): ITerminal =>
+  tmuxTerminal({
+    socketName: env.HARNESS_TMUX_SOCKET ?? "harness",
+    configPath: configPathFor(env),
+    ...(log === undefined ? {} : { log }),
+  });
+
+export type PaneTarget = Readonly<{ terminal: ITerminal; pane: string }>;
+
+// Inside a tmux pane, $TMUX starts with the server's socket path and $TMUX_PANE names the pane.
+export const currentPane = (
+  env: NodeJS.ProcessEnv = process.env,
+  log?: ILogger,
+): PaneTarget | undefined => {
+  const socketPath = env.TMUX?.split(",")[0];
+  const pane = env.TMUX_PANE;
+  if (!socketPath || !pane) return undefined;
+  const options = { socketPath, configPath: configPathFor(env) };
+  return { terminal: tmuxTerminal(log === undefined ? options : { ...options, log }), pane };
 };

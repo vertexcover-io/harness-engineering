@@ -52,6 +52,7 @@ export type StopDecision =
       reason: Extract<StopReason, "run-finished" | "user-chat" | "max-blocks-reached">;
       blockStreak: number;
     }>
+  | Readonly<{ reason: "context-node"; blockStreak: number; nodeRunId: string }>
   | Readonly<{ reason: "next-not-run"; blockStreak: number; message: string }>
   | Readonly<{ reason: "node-not-done"; blockStreak: number; message: string; nodeRunId: string }>;
 
@@ -142,6 +143,10 @@ export const decideStop = ({
   const prior = priorBlocks(state, progressSinceCheck);
   const position = positionOf(state);
   if (position.kind === "finished") return { reason: "run-finished", blockStreak: prior };
+  // A context node's work starts once the turn is over, so the stop is the cue, not a lapse.
+  if (position.kind === "open-node" && position.leaf.nodeType === "context") {
+    return { reason: "context-node", blockStreak: prior, nodeRunId: position.leaf.nodeRunId };
+  }
   if (position.kind === "between-nodes" && touchedRun === false)
     return { reason: "user-chat", blockStreak: prior };
   if (prior >= maxBlocks) return { reason: "max-blocks-reached", blockStreak: prior };
@@ -185,6 +190,20 @@ const readTouchedRun = async (input: StopInput, state: State): Promise<boolean |
     ? touchedRunSinceLastPrompt(await input.readTranscript())
     : undefined;
 
+// A helper that cannot start is logged, and the stop is still allowed: a hook must not trap the session.
+const startHelper = async (
+  run: RunRef,
+  input: StopInput,
+  nodeRunId: string,
+  deps: HookDeps,
+): Promise<void> => {
+  try {
+    await deps.startContextStep?.(run, input.sessionId, nodeRunId);
+  } catch (error) {
+    deps.log.error({ err: error }, "context step helper not started");
+  }
+};
+
 // Decides whether the agent may end its turn and logs the call as hooks.stop.called. It never
 // throws: a hook that fails must let the turn end, or it could trap the session.
 export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<HookReply> => {
@@ -208,6 +227,9 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
       // An unrecorded block would reset the count, so it could block forever.
       deps.log.warn({ error: stored.error }, "stop allowed: the hook call was not recorded");
       return ALLOW;
+    }
+    if (decision.reason === "context-node") {
+      await startHelper(run, input, decision.nodeRunId, deps);
     }
     return replyOf(decision);
   } catch (error) {

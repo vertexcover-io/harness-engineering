@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from "@commander-js/extra-typings";
+import { attachCommand } from "./attach.ts";
 import { fail } from "./client.ts";
 import { doctorCommand } from "./doctor.ts";
 import { runCommand } from "./run.ts";
@@ -9,6 +10,7 @@ import { verifyCommand } from "./verify.ts";
 await new Command()
   .name("harness")
   .description("Harness engineering CLI")
+  .addCommand(attachCommand())
   .addCommand(doctorCommand())
   .addCommand(runCommand())
   .addCommand(serverCommand())

@@ -3,21 +3,21 @@ import { rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import * as z from "zod";
-import { AgentTypeSchema } from "./agent.ts";
-import { JsonObjectSchema, NonEmptyStringSchema, SlugSchema } from "./contracts.ts";
+import {
+  JsonObjectSchema,
+  NonEmptyStringSchema,
+  type Result,
+  SessionRefSchema,
+  SlugSchema,
+} from "./contracts.ts";
 import { readIfExists, withLock } from "./files.ts";
 import { type ILogger, noopLogger } from "./logger.ts";
+import { resolveRun } from "./runs.ts";
 
 export const harnessHome = (env: NodeJS.ProcessEnv = process.env): string =>
   env.HARNESS_HOME ?? join(homedir(), ".harness");
 
 export const registryPath = (home: string = harnessHome()): string => join(home, "registry.json");
-
-export const SessionRefSchema = z.strictObject({
-  agent: AgentTypeSchema,
-  // also the tmux session name
-  sessionId: NonEmptyStringSchema,
-});
 
 export const WorkflowRunSchema = z.strictObject({
   id: NonEmptyStringSchema,
@@ -29,6 +29,8 @@ export const WorkflowRunSchema = z.strictObject({
   sessions: z.array(SessionRefSchema),
   // Set by init; the run's folder is CWD/.harness/NAME.
   name: SlugSchema.nullable(),
+  // tmux session the run's agent lives in; null until the server launches it
+  terminal: NonEmptyStringSchema.nullable().default(null),
   createdAt: z.iso.datetime(),
 });
 export type WorkflowRun = z.infer<typeof WorkflowRunSchema>;
@@ -71,6 +73,13 @@ const initRun =
     return run === undefined ? registry : withRun(registry, { ...run, name });
   };
 
+const setTerminal =
+  (runId: string, terminal: string): Change =>
+  (registry) => {
+    const run = registry.runs[runId];
+    return run === undefined ? registry : withRun(registry, { ...run, terminal });
+  };
+
 const linkSession =
   (runId: string, session: SessionRef): Change =>
   (registry) => {
@@ -94,8 +103,30 @@ export type Registry = Readonly<{
   addRun: (run: WorkflowRun) => Promise<void>;
   removeRun: (runId: string) => Promise<void>;
   initRun: (runId: string, name: string) => Promise<void>;
+  setTerminal: (runId: string, terminal: string) => Promise<void>;
   linkSession: (runId: string, session: SessionRef) => Promise<void>;
 }>;
+
+// A run id is unique everywhere; a run name only within a repo, so it comes with that repo's root.
+export type RunTarget = Readonly<{ runId: string } | { name: string; root: string }>;
+
+const findRunById = async (registry: Registry, runId: string): Promise<Result<WorkflowRun>> => {
+  const run = await registry.findRun(runId);
+  return run === undefined
+    ? { ok: false, error: `no run with id "${runId}"` }
+    : { ok: true, value: run };
+};
+
+// A name resolves the way orchestrate resolves it (resolveRun), so a run started in a linked
+// worktree or a sub-repo of `root` is found too.
+export const findRunByIdOrName = async (
+  registry: Registry,
+  target: RunTarget,
+): Promise<Result<WorkflowRun>> => {
+  if ("runId" in target) return findRunById(registry, target.runId);
+  const found = await resolveRun({ registry, root: target.root, name: target.name });
+  return found.ok ? findRunById(registry, found.value.id) : found;
+};
 
 export const createRegistry = (path: string, parentLog: ILogger = noopLogger): Registry => {
   const log = parentLog.child({ component: "registry", path });
@@ -131,6 +162,9 @@ export const createRegistry = (path: string, parentLog: ILogger = noopLogger): R
     },
     initRun: async (runId, name) => {
       await update(initRun(runId, name));
+    },
+    setTerminal: async (runId, terminal) => {
+      await update(setTerminal(runId, terminal));
     },
     linkSession: async (runId, session) => {
       await update(linkSession(runId, session));

@@ -36,6 +36,9 @@ export interface ITerminal {
   capture(name: string, lines?: number): Promise<Result<string>>;
   isAlive(name: string): Promise<boolean>;
   kill(name: string): Promise<Result<void>>;
+  rename(target: string, name: string): Promise<Result<void>>;
+  // stops the program in a pane and starts another in the same pane; target may be a pane id
+  respawn(target: string, spec: Omit<TerminalSpec, "name">): Promise<Result<void>>;
   list(): Promise<readonly string[]>;
   attachCommand(name: string): readonly string[];
 }
@@ -79,6 +82,8 @@ export interface IAgentProvider {
   readonly checks: readonly Check[];
   // interactive sessions never return a result
   launch(options: LaunchOptions): Promise<Result<{ sessionId: string }>>;
+  // replaces the agent running in `target` with a new session on `sessionId`, in the same pane
+  relaunch(target: string, sessionId: string, options: LaunchOptions): Promise<Result<void>>;
   prompt(sessionId: string, text: string): Promise<Result<void>>;
   stop(sessionId: string): Promise<Result<void>>;
   // headless: waits for the answer

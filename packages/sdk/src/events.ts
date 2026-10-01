@@ -15,6 +15,7 @@ import {
   NodeTypeSchema,
   NonEmptyStringSchema,
   type Result,
+  SessionRefSchema,
   SkipOutputSchema,
   SlugSchema,
   type State,
@@ -88,7 +89,11 @@ export const NodeIteratedEvent = nodeEvent(
 );
 
 export const WorkflowStartedEvent = z.object({
-  payload: z.strictObject({ workflow: SlugSchema, inputs: JsonObjectSchema }),
+  payload: z.strictObject({
+    workflow: SlugSchema,
+    inputs: JsonObjectSchema,
+    activeSessions: z.array(SessionRefSchema).optional(),
+  }),
 });
 
 export const WorkflowEndedEvent = z.object({ payload: z.strictObject({}) });
@@ -101,6 +106,7 @@ export const StopReasonSchema = z.enum([
   "max-blocks-reached",
   "node-not-done",
   "next-not-run",
+  "context-node",
 ]);
 export type StopReason = z.infer<typeof StopReasonSchema>;
 
@@ -120,6 +126,15 @@ export const StopCalledEvent = z.object({
   }),
 });
 
+export const SessionStartCalledEvent = z.object({
+  payload: z.strictObject({
+    agent: AgentTypeSchema,
+    sessionId: NonEmptyStringSchema,
+    // why the session started: startup, clear, compact or resume
+    source: NonEmptyStringSchema,
+  }),
+});
+
 export const PreToolUseCalledEvent = z.object({
   payload: z.strictObject({
     agent: AgentTypeSchema,
@@ -132,6 +147,25 @@ export const PreToolUseCalledEvent = z.object({
     // the text the agent was refused with
     message: z.string().optional(),
     path: z.string().optional(),
+  }),
+});
+
+// The helper began a context node's action: for `new`, the session id it is starting; for
+// `compact`, the session it is compacting. The SessionStart hook matches against it.
+export const ContextStartedEvent = z.object({
+  payload: z.strictObject({
+    nodeRunId: NonEmptyStringSchema,
+    action: z.enum(["new", "compact"]),
+    sessionId: NonEmptyStringSchema,
+  }),
+});
+
+// A context node's new session took over from the old one, so it replaces it in activeSessions.
+export const SessionReplacedEvent = z.object({
+  payload: z.strictObject({
+    agent: AgentTypeSchema,
+    previousSessionId: NonEmptyStringSchema,
+    sessionId: NonEmptyStringSchema,
   }),
 });
 
@@ -285,6 +319,8 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.node.cancelled": nodeEndedEvents.cancelled,
   "workflow.node.failed": nodeEndedEvents.failed,
   "workflow.node.iterated": NodeIteratedEvent,
+  "workflow.session.replaced": SessionReplacedEvent,
+  "workflow.context.started": ContextStartedEvent,
   "workspace.created": WorkspaceCreatedEvent,
   "workspace.create-failed": WorkspaceCreateFailedEvent,
   "workspace.repository.added": WorkspaceRepositoryAddedEvent,
@@ -299,6 +335,7 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "orchestrate.verifier": OrchestrateVerifierEvent,
   "hooks.stop.called": StopCalledEvent,
   "hooks.pre-tool-use.called": PreToolUseCalledEvent,
+  "hooks.session-start.called": SessionStartCalledEvent,
 };
 
 // An event before the emitter fills runId, ts and (when not given) id. Built from the shape,
@@ -514,7 +551,13 @@ const onRepositoryRemoved: EventHandler = (state, event) => {
 const onWorkflowStarted: EventHandler = (state, event) => {
   const parsed = WorkflowStartedEvent.safeParse(event);
   if (!parsed.success) return { ...state, startedAt: event.ts };
-  return { ...state, startedAt: event.ts, input: parsed.data.payload.inputs };
+  const { inputs, activeSessions } = parsed.data.payload;
+  return {
+    ...state,
+    startedAt: event.ts,
+    input: inputs,
+    ...(activeSessions === undefined ? {} : { activeSessions }),
+  };
 };
 
 const onWorkflowEnded = (status: "completed" | "failed", state: State, event: Event): State => ({
@@ -527,6 +570,18 @@ const onStopCalled: EventHandler = (state, event) => {
   const parsed = StopCalledEvent.safeParse(event);
   if (!parsed.success) return state;
   return { ...state, stopHook: { blockStreak: parsed.data.payload.blockStreak, seq: event.seq } };
+};
+
+const onSessionReplaced: EventHandler = (state, event) => {
+  const parsed = SessionReplacedEvent.safeParse(event);
+  if (!parsed.success) return state;
+  const { agent, previousSessionId, sessionId } = parsed.data.payload;
+  const fresh = { agent, sessionId };
+  const known = state.activeSessions.some((s) => s.sessionId === previousSessionId);
+  const activeSessions = known
+    ? state.activeSessions.map((s) => (s.sessionId === previousSessionId ? fresh : s))
+    : [...state.activeSessions, fresh];
+  return { ...state, activeSessions };
 };
 
 export const builtInHandlers: EventHandlers = {
@@ -543,4 +598,5 @@ export const builtInHandlers: EventHandlers = {
   "workspace.repository.added": onRepositoryAdded,
   "workspace.repository.removed": onRepositoryRemoved,
   "hooks.stop.called": onStopCalled,
+  "workflow.session.replaced": onSessionReplaced,
 };

@@ -2,7 +2,7 @@ import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import { type Event, EventSchema, type Result } from "./contracts.ts";
-import { readIfExists, withLock } from "./files.ts";
+import { readIfExists, runLockPath, withLock } from "./files.ts";
 
 export type EventDraft = Omit<z.input<typeof EventSchema>, "schemaVersion" | "seq">;
 
@@ -57,7 +57,7 @@ const appendOnce = async (options: {
 };
 
 const appendJsonl = (runDir: string, draft: EventDraft): Promise<Result<Event>> =>
-  withLock(join(runDir, "artifacts", ".event-log.lock"), async () =>
+  withLock(runLockPath(runDir, "event-log"), async () =>
     appendOnce({
       events: await readJsonl(runDir),
       draft,

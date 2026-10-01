@@ -300,6 +300,7 @@ const seed: State = {
     },
   },
   nodeRuns: {},
+  activeSessions: [],
   eventHandlers: {},
 };
 
@@ -327,6 +328,29 @@ const build = { nodeId: "build", nodeRunId: "build" };
 const skip = { reason: "when-false", proof: { expression: "inputs.quick", value: false } };
 
 describe("builtInHandlers", () => {
+  test("workflow.session.replaced swaps the old session for the new one in activeSessions", () => {
+    const replaced = (seq: number, previousSessionId: string, sessionId: string): Event => ({
+      schemaVersion: 1,
+      seq,
+      id: `evt-${seq}`,
+      ts: "2026-09-27T09:00:00Z",
+      type: "workflow.session.replaced",
+      source: "orchestrate",
+      runId: "r-1",
+      payload: { agent: "claude", previousSessionId, sessionId },
+    });
+    const state = projectEvents({
+      state: { ...seed, activeSessions: [{ agent: "claude", sessionId: "A" }] },
+      events: [replaced(1, "A", "B"), replaced(2, "gone", "C")],
+      handlers: builtInHandlers,
+    });
+
+    expect(state.activeSessions).toEqual([
+      { agent: "claude", sessionId: "B" },
+      { agent: "claude", sessionId: "C" },
+    ]);
+  });
+
   test("workflow.started sets the run's startedAt to the event's time", () => {
     const state = project([
       {
