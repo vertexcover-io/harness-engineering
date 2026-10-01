@@ -170,7 +170,9 @@ export const claudeProvider = ({
 }: ClaudeProviderOptions): IAgentProvider => {
   const log = parentLog.child({ component: "claude" });
 
-  const launch = async (options: LaunchOptions): Promise<Result<{ sessionId: string }>> => {
+  const launch = async (
+    options: LaunchOptions,
+  ): Promise<Result<{ sessionId: string; terminal: ITerminal }>> => {
     const sessionId = newId();
     const sessionLog = log.child({ sessionId });
     const settings = {
@@ -189,7 +191,7 @@ export const claudeProvider = ({
       return created;
     }
     sessionLog.info(settings, "claude session started");
-    return { ok: true, value: { sessionId } };
+    return { ok: true, value: { sessionId, terminal: created.value } };
   };
 
   const relaunch = async (
@@ -208,27 +210,24 @@ export const claudeProvider = ({
     return respawned;
   };
 
-  const prompt = async (sessionId: string, text: string): Promise<Result<void>> => {
-    const sessionLog = log.child({ sessionId });
-    const terminal = host.find(sessionId);
+  const prompt = async (terminal: ITerminal, text: string): Promise<Result<void>> => {
     if (!(await terminal.isAlive())) {
-      sessionLog.error({}, "prompt not sent: the session is not running");
-      return { ok: false, error: `session ${sessionId} is not running` };
+      log.error({}, "prompt not sent: the session is not running");
+      return { ok: false, error: "the agent's terminal is not running" };
     }
     const submitted = await typeLine(terminal, text);
     if (!submitted.ok) {
-      sessionLog.error({ err: submitted.error }, "prompt not sent");
+      log.error({ err: submitted.error }, "prompt not sent");
       return submitted;
     }
-    sessionLog.info({ chars: text.length }, "prompt sent");
+    log.info({ chars: text.length }, "prompt sent");
     return submitted;
   };
 
-  const stop = async (sessionId: string): Promise<Result<void>> => {
-    const sessionLog = log.child({ sessionId });
-    const result = await host.find(sessionId).kill();
-    if (result.ok) sessionLog.info({}, "claude session stopped");
-    else sessionLog.error({ err: result.error }, "claude session not stopped");
+  const stop = async (terminal: ITerminal): Promise<Result<void>> => {
+    const result = await terminal.kill();
+    if (result.ok) log.info({}, "claude session stopped");
+    else log.error({ err: result.error }, "claude session not stopped");
     return result;
   };
 

@@ -57,7 +57,6 @@ export const startServer = async ({ home }: { home: string }): Promise<void> => 
   const app = createApp({
     registry,
     provider,
-    host,
     log,
     home,
     pid: process.pid,

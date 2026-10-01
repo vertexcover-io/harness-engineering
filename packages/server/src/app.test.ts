@@ -30,15 +30,9 @@ const fakePane = (name: string): ITerminal => ({
   attachCommand: () => ["tmux", "attach-session", "-t", name],
 });
 
-const fakeHost = (): ITerminalHost => ({
-  checks: [],
-  create: (spec) => Promise.resolve({ ok: true, value: fakePane(spec.name) }),
-  find: fakePane,
-  list: () => Promise.resolve([]),
-});
 
 const fakeProvider = (
-  launch: (options: LaunchOptions) => Promise<Result<{ sessionId: string }>>,
+  launch: (options: LaunchOptions) => Promise<Result<{ sessionId: string; terminal: ITerminal }>>,
 ): IAgentProvider => ({
   type: "claude",
   checks: [],
@@ -50,7 +44,7 @@ const fakeProvider = (
 });
 
 const buildDeps = async (
-  launch: (options: LaunchOptions) => Promise<Result<{ sessionId: string }>>,
+  launch: (options: LaunchOptions) => Promise<Result<{ sessionId: string; terminal: ITerminal }>>,
   log = noopLogger,
 ) => {
   const registryPath = join(mkdtempSync(join(tmpdir(), "harness-registry-")), "registry.json");
@@ -59,7 +53,6 @@ const buildDeps = async (
     registryPath,
     registry,
     provider: fakeProvider(launch),
-    host: fakeHost(),
     log,
     home: "/home/.harness",
     pid: 4242,
@@ -81,7 +74,7 @@ describe("POST /runs", () => {
 
   test("SC9: a relative workflowPath is 400 bad-request", async () => {
     const { cwd } = tempWorkspace();
-    const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1" } }));
+    const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }));
     const app = createApp(deps);
 
     const res = await app.request("/runs", {
@@ -100,7 +93,10 @@ describe("POST /runs", () => {
     const seen: LaunchOptions[] = [];
     const deps = await buildDeps((options) => {
       seen.push(options);
-      return Promise.resolve({ ok: true, value: { sessionId: "session-xyz" } });
+      return Promise.resolve({
+        ok: true,
+        value: { sessionId: "session-xyz", terminal: fakePane("%7") },
+      });
     });
     const app = createApp(deps);
 
@@ -117,7 +113,8 @@ describe("POST /runs", () => {
     };
     expect(json.run.sessions).toEqual([{ agent: "claude", sessionId: "session-xyz" }]);
     expect(json.run.terminal).toBe("session-xyz");
-    expect(json.attach).toEqual(["tmux", "attach-session", "-t", "session-xyz"]);
+    // The pane id, not the session name, so the attach survives init renaming the session.
+    expect(json.attach).toEqual(["tmux", "attach-session", "-t", "%7"]);
 
     const [launchOptions] = seen;
     expect(launchOptions?.cwd).toBe(cwd);
@@ -134,7 +131,7 @@ describe("POST /runs", () => {
     let prompt: string | undefined;
     const deps = await buildDeps((options) => {
       prompt = options.prompt;
-      return Promise.resolve({ ok: true, value: { sessionId: "s1" } });
+      return Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } });
     });
 
     const res = await createApp(deps).request("/runs", {
@@ -160,7 +157,7 @@ describe("POST /runs", () => {
     let launched = false;
     const deps = await buildDeps(() => {
       launched = true;
-      return Promise.resolve({ ok: true, value: { sessionId: "s1" } });
+      return Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } });
     });
 
     const res = await createApp(deps).request("/runs", {
@@ -178,7 +175,7 @@ describe("POST /runs", () => {
     let savedAtLaunch: unknown;
     const deps = await buildDeps(async (options) => {
       savedAtLaunch = await deps.registry.findRun(String(options.env?.HARNESS_RUN_ID));
-      return { ok: true, value: { sessionId: "s1" } };
+      return { ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } };
     });
     const app = createApp(deps);
 
@@ -238,7 +235,7 @@ describe("POST /runs logging", () => {
     const { workflowPath, cwd } = tempWorkspace();
     const { log, lines, at } = captureLogger();
     const deps = await buildDeps(
-      () => Promise.resolve({ ok: true, value: { sessionId: "s1" } }),
+      () => Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }),
       log,
     );
     const app = createApp(deps);
@@ -286,7 +283,7 @@ describe("createHarnessClient", () => {
 
   test("calls the real routes over the socket and returns their typed bodies", async () => {
     const { workflowPath, cwd } = tempWorkspace();
-    const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1" } }));
+    const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }));
     const { home, server } = serveOn(createApp(deps).fetch);
     try {
       const client = createHarnessClient({ home });

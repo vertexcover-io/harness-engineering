@@ -61,7 +61,6 @@ export const runCommand = () =>
       log.info({ runId: run.id, workflow: run.workflow, cwd: run.cwd, sessionId }, "run started");
 
       console.log(run.id);
-      // init renames the tmux session, so the raw attach argv stops working within seconds
       console.log(`harness attach --run-id ${run.id}`);
 
       if (opts.attach === true) {
