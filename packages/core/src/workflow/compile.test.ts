@@ -660,6 +660,16 @@ describe("compile with stages", () => {
     }
   });
 
+  test("a required consumed artifact cannot depend only on a producer that may fail", async () => {
+    const error = await stagesRejection(
+      workflow(
+        `${stageNode("make", "stages/producer", ", allowFailure: true")}${stageNode("use", "stages/consumer", ", dependsOn: [make]")}`,
+      ),
+    );
+    expect(error.code).toBe("missing-artifact");
+    expect(error.message).toContain("allowFailure");
+  });
+
   test("a consumer cannot rely on an artifact produced by only one switch case", async () => {
     const source = workflow(`
   - id: choice

@@ -158,6 +158,13 @@ const buildContainerOutput = (
   return result?.status === "completed" ? (result.output ?? null) : null;
 };
 
+// The first of `nodes` that failed and does not allow failure; only such a failure stops its scope.
+const findBlockingFailure = (
+  nodes: readonly PlanNode[],
+  nodeRuns: Readonly<Record<string, NodeRun>>,
+): string | undefined =>
+  nodes.find((node) => !node.allowFailure && own(nodeRuns, node.id)?.status === "failed")?.id;
+
 // The artifacts a stage needs, did not mark optional, and no completed node has listed yet.
 const findMissingArtifacts = (stage: PlanStage, state: State): readonly string[] => {
   const written = new Set(findConsumedArtifacts(stage, state.nodeRuns).map((ref) => ref.name));
@@ -278,7 +285,8 @@ const recordStart = async (
   return { state: started, nodeRun };
 };
 
-// Ends a container: failed with `failure` or, without one, with its first failed child;
+// Ends a container: failed with `failure` or, without one, with its first failed child that does
+// not allow failure;
 // otherwise completed with its output.
 const endContainer = async (
   node: Container,
@@ -288,7 +296,7 @@ const endContainer = async (
   ending: Readonly<{ attempts: number; failure?: NodeFailure }> = { attempts: 1 },
 ): Promise<Walked> => {
   const results = findNodeRuns(state.nodeRuns, [...node.parents, node.id]);
-  const failedChild = Object.keys(results).find((id) => results[id]?.status === "failed");
+  const failedChild = findBlockingFailure(pickChildren(node, nodeRun), results);
   const failure =
     ending.failure ??
     (failedChild === undefined
@@ -394,7 +402,7 @@ const executeLoop = async (
   if (walked.step.kind !== "continue") return walked;
   const results = findNodeRuns(walked.state.nodeRuns, [...node.parents, node.id]);
   const ending = { attempts: index };
-  if (Object.values(results).some((result) => result.status === "failed")) {
+  if (findBlockingFailure(node.nodes, results) !== undefined) {
     return endContainer(node, nodeRun, walk, walked.state, ending);
   }
   try {
@@ -422,12 +430,13 @@ const executeLoop = async (
 };
 
 // Walks nodes in dependency order until one needs the skill. Once a node in this scope has
-// failed nothing more starts: the container around it sees the failure and ends failed.
+// failed nothing more starts, unless it allows failure: the container around it sees the failure
+// and ends failed.
 async function executeNodes(nodes: readonly PlanNode[], walk: Walk, state: State): Promise<Walked> {
   let current = state;
   for (const node of nodes) {
-    const nodeRuns = Object.values(findNodeRuns(current.nodeRuns, node.parents));
-    if (nodeRuns.some((run) => run.status === "failed")) break;
+    const siblings = findNodeRuns(current.nodeRuns, node.parents);
+    if (findBlockingFailure(nodes, siblings) !== undefined) break;
     const nodeRun = findNodeRun(current, node);
     if (nodeRun !== undefined && nodeRun.status !== "running") continue;
     let walked: Walked;
@@ -463,9 +472,8 @@ export const decideNext = async (
   const inputs = resolveWorkflowInputs(plan.inputs, state.input);
   const walked = await executeNodes(plan.nodes, { emit, inputs, loop: undefined }, state);
   if (walked.step.kind !== "continue") return { state: walked.state, decision: walked.step };
-  const status = Object.values(walked.state.nodeRuns).some((run) => run.status === "failed")
-    ? "failed"
-    : "completed";
+  const status =
+    findBlockingFailure(plan.nodes, walked.state.nodeRuns) === undefined ? "completed" : "failed";
   const event = { type: `workflow.${status}`, source: "workflow", payload: {} };
   return { state: await emit(walked.state, event), decision: { kind: "finished", status } };
 };

@@ -413,8 +413,10 @@ const guaranteedInScope = (
   return [...artifacts];
 };
 
-// Artifacts guaranteed when a node completes, even if it contains conditional children.
+// Artifacts guaranteed when a node completes, even if it contains conditional children. A node
+// that allows failure guarantees none.
 function listProducedArtifacts(node: PlanNode, requiredOnly = false): readonly string[] {
+  if (requiredOnly && node.allowFailure) return [];
   if (node.type === "agent") {
     return (node.stage?.produces ?? [])
       .filter((produced) => !requiredOnly || !produced.optional)
@@ -455,7 +457,7 @@ const checkArtifacts = (
         makers.length === 0
           ? "no node in this scope produces it"
           : makers.every((maker) => !listProducedArtifacts(maker, true).includes(missing.artifact))
-            ? "all producers declare it optional; mark the consume optional or require production"
+            ? "every producer declares it optional or sets allowFailure; mark the consume optional or require production"
             : `add dependsOn: [${makers.map((n) => n.id).join(", ")}]`;
       throw new WorkflowError(
         "missing-artifact",
