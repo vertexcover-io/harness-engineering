@@ -224,15 +224,18 @@ export const claudeAdapter: AgentAdapter = {
 };
 
 // The handlers Claude registers. Each handler gets its own command in its entry, and Claude runs
-// every matching command in parallel: a deny from any one refuses the call.
-const CLAUDE_HOOKS = {
-  SessionStart: [{ handlers: Object.values(sessionStartHandlers) }],
-  Stop: [{ handlers: [continueWorkflow] }],
-  PreToolUse: [
-    { matcher: [...PATH_FIELDS.keys(), "Bash"].join("|"), handlers: [recordGuard] },
-    { matcher: "Bash", handlers: [bashAntipatterns] },
-  ],
-} as const;
+// every matching command in parallel: a deny from any one refuses the call. Built on call, not at
+// load: the stop hook imports context-step, which imports claude.ts and so this file, so whichever
+// of them loads first, the handlers are not defined yet while this module evaluates.
+const claudeHooks = () =>
+  ({
+    SessionStart: [{ handlers: Object.values(sessionStartHandlers) }],
+    Stop: [{ handlers: [continueWorkflow] }],
+    PreToolUse: [
+      { matcher: [...PATH_FIELDS.keys(), "Bash"].join("|"), handlers: [recordGuard] },
+      { matcher: "Bash", handlers: [bashAntipatterns] },
+    ],
+  }) as const;
 
 const shellQuote = (arg: string): string => `'${arg.replaceAll("'", `'\\''`)}'`;
 
@@ -245,17 +248,20 @@ const hookEntry = (hookCommand: readonly string[], event: string, handler: strin
 });
 
 // Settings for `claude --settings`: one command per registered handler, grouped by matcher.
-export const claudeHookSettings = (hookCommand: readonly string[]) => ({
-  hooks: {
-    SessionStart: CLAUDE_HOOKS.SessionStart.map(({ handlers }) => ({
-      hooks: handlers.map((handler) => hookEntry(hookCommand, "session-start", handler.name)),
-    })),
-    Stop: CLAUDE_HOOKS.Stop.map(({ handlers }) => ({
-      hooks: handlers.map((handler) => hookEntry(hookCommand, "stop", handler.name)),
-    })),
-    PreToolUse: CLAUDE_HOOKS.PreToolUse.map(({ matcher, handlers }) => ({
-      matcher,
-      hooks: handlers.map((handler) => hookEntry(hookCommand, "pre-tool-use", handler.name)),
-    })),
-  },
-});
+export const claudeHookSettings = (hookCommand: readonly string[]) => {
+  const registered = claudeHooks();
+  return {
+    hooks: {
+      SessionStart: registered.SessionStart.map(({ handlers }) => ({
+        hooks: handlers.map((handler) => hookEntry(hookCommand, "session-start", handler.name)),
+      })),
+      Stop: registered.Stop.map(({ handlers }) => ({
+        hooks: handlers.map((handler) => hookEntry(hookCommand, "stop", handler.name)),
+      })),
+      PreToolUse: registered.PreToolUse.map(({ matcher, handlers }) => ({
+        matcher,
+        hooks: handlers.map((handler) => hookEntry(hookCommand, "pre-tool-use", handler.name)),
+      })),
+    },
+  };
+};
