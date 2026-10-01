@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { claudeProvider, createLogger, harnessTmux, resolveLevel } from "@harness/core";
+import { claudeProvider, createLogger, harnessTerminalHost, resolveLevel } from "@harness/core";
 import type { Check, IAgentProvider, ILogger, ITerminalHost } from "@harness/sdk";
 import { noopLogger, registryPath } from "@harness/sdk";
 import { createRegistry } from "@harness/sdk/internal";
@@ -11,7 +11,7 @@ import { pidPath, socketPath } from "./protocol.ts";
 export type Runtime = Readonly<{ host: ITerminalHost; provider: IAgentProvider }>;
 
 export const defaultRuntime = (log: ILogger = noopLogger): Runtime => {
-  const host = harnessTmux(process.env, log);
+  const host = harnessTerminalHost(process.env, log);
   const provider = claudeProvider({
     host,
     binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
@@ -51,7 +51,7 @@ export const startServer = async ({ home }: { home: string }): Promise<void> => 
     serverLog.info({ socket }, "removed a socket file left by a server that is no longer running");
   }
 
-  const { host, provider } = defaultRuntime(log);
+  const { provider } = defaultRuntime(log);
   const registry = createRegistry(registryPath(home), log);
   const version = String(serverPackage.version);
   const app = createApp({

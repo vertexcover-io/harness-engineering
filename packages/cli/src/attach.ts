@@ -1,5 +1,5 @@
 import { Command } from "@commander-js/extra-typings";
-import { harnessTmux } from "@harness/core";
+import { harnessTerminalHost } from "@harness/core";
 import { type Result, registryPath, resolveRoot, spawnInteractive } from "@harness/sdk";
 import {
   createRegistry,
@@ -30,7 +30,7 @@ const attachArgv = async (
   if (!run.ok) return run;
   const { id, terminal } = run.value;
   if (terminal === null) return { ok: false, error: `run ${id} has no terminal yet` };
-  return { ok: true, value: harnessTmux().find(terminal).attachCommand() };
+  return { ok: true, value: harnessTerminalHost().find(terminal).attachCommand() };
 };
 
 export const attachCommand = () =>
