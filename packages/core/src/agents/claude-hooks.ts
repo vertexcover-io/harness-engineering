@@ -8,6 +8,7 @@ import {
   parseJson,
   type Result,
   type SessionStartHandler,
+  type StopFailureHandler,
   type StopHandler,
   type ToolCall,
   type ToolUse,
@@ -18,6 +19,7 @@ import * as z from "zod";
 import { bashAntipatterns, recordGuard, runPreToolUse } from "../hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "../hooks/session-start.ts";
 import { continueWorkflow, runStop } from "../hooks/stop.ts";
+import { resumeAfterLimit } from "../hooks/stop-failure.ts";
 
 const HOOK_TIMEOUT_S = 30;
 // Claude's tools that write a file, and the input field that names it; Bash is parsed separately.
@@ -143,24 +145,78 @@ const claudeStop = async (stdin: string, deps: HookDeps, handler: StopHandler): 
   return claudeStopReply(reply);
 };
 
-// SessionStart output is added to Claude's context, so this always prints nothing.
-const claudeSessionStart = async (
-  stdin: string,
-  deps: HookDeps,
-  handler: SessionStartHandler,
+type NoReplyHook<ClaudeInput, HandlerInput> = Readonly<{
+  stdin: string;
+  deps: HookDeps;
+  // the hook's name in log lines
+  event: string;
+  schema: z.ZodType<ClaudeInput>;
+  toHandlerInput: (parsed: ClaudeInput) => HandlerInput;
+  handler: Readonly<{ name: string; run: (input: HandlerInput, deps: HookDeps) => Promise<void> }>;
+}>;
+
+// For hooks that send Claude no reply (SessionStart, StopFailure). Bad input or a failing handler
+// is only logged: a hook that throws could break the session.
+const runNoReplyHook = async <ClaudeInput, HandlerInput>(
+  hook: NoReplyHook<ClaudeInput, HandlerInput>,
 ): Promise<string> => {
-  const parsed = parseStdin(stdin, ClaudeSessionStartInputSchema);
+  const { deps, event, handler } = hook;
+  const parsed = parseStdin(hook.stdin, hook.schema);
   if (!parsed.ok) {
-    deps.log.warn({ error: parsed.error }, "session-start ignored: hook input not understood");
+    deps.log.warn({ error: parsed.error }, `${event} ignored: hook input not understood`);
     return "";
   }
-  const { session_id: sessionId, source } = parsed.value;
-  // a failing handler is only logged: it must never break the session
-  await handler.run({ agent: "claude", sessionId, source }, deps).catch((error: unknown) => {
-    deps.log.error({ err: error }, `session-start: ${handler.name} failed`);
+  await handler.run(hook.toHandlerInput(parsed.value), deps).catch((error: unknown) => {
+    deps.log.error({ err: error }, `${event}: ${handler.name} failed`);
   });
   return "";
 };
+
+const claudeSessionStart = (
+  stdin: string,
+  deps: HookDeps,
+  handler: SessionStartHandler,
+): Promise<string> =>
+  runNoReplyHook({
+    stdin,
+    deps,
+    handler,
+    event: "session-start",
+    schema: ClaudeSessionStartInputSchema,
+    toHandlerInput: ({ session_id: sessionId, source }) => ({
+      agent: "claude" as const,
+      sessionId,
+      source,
+    }),
+  });
+
+// last_assistant_message holds the error's text, e.g. "You've hit your limit · resets 3pm (UTC)".
+const ClaudeStopFailureInputSchema = z.looseObject({
+  session_id: NonEmptyStringSchema,
+  error: NonEmptyStringSchema.default("unknown"),
+  last_assistant_message: z.string().optional(),
+});
+
+const claudeStopFailure = (
+  stdin: string,
+  deps: HookDeps,
+  handler: StopFailureHandler,
+): Promise<string> =>
+  runNoReplyHook({
+    stdin,
+    deps,
+    handler,
+    event: "stop-failure",
+    schema: ClaudeStopFailureInputSchema,
+    toHandlerInput: ({ session_id: sessionId, error, last_assistant_message: message }) => ({
+      agent: "claude" as const,
+      sessionId,
+      error,
+      // Claude reports a plan's session or weekly limit as rate_limit.
+      usageLimit: error === "rate_limit",
+      message,
+    }),
+  });
 
 const ClaudePreToolUseInputSchema = z.looseObject({
   session_id: NonEmptyStringSchema,
@@ -216,11 +272,12 @@ const claudePreToolUse = async (
   return claudePreToolUseReply(await runPreToolUse(use.value, handler, deps));
 };
 
-// What Claude answers; all three events are supported.
+// What Claude answers; every event is supported.
 export const claudeAdapter: AgentAdapter = {
   stop: claudeStop,
   preToolUse: claudePreToolUse,
   sessionStart: claudeSessionStart,
+  stopFailure: claudeStopFailure,
 };
 
 // The handlers Claude registers. Each handler gets its own command in its entry, and Claude runs
@@ -231,6 +288,8 @@ const claudeHooks = () =>
   ({
     SessionStart: [{ handlers: Object.values(sessionStartHandlers) }],
     Stop: [{ handlers: [continueWorkflow] }],
+    // Claude ends a turn with rate_limit when the plan's usage limit is hit.
+    StopFailure: [{ matcher: "rate_limit", handlers: [resumeAfterLimit] }],
     PreToolUse: [
       { matcher: [...PATH_FIELDS.keys(), "Bash"].join("|"), handlers: [recordGuard] },
       { matcher: "Bash", handlers: [bashAntipatterns] },
@@ -257,6 +316,10 @@ export const claudeHookSettings = (hookCommand: readonly string[]) => {
       })),
       Stop: registered.Stop.map(({ handlers }) => ({
         hooks: handlers.map((handler) => hookEntry(hookCommand, "stop", handler.name)),
+      })),
+      StopFailure: registered.StopFailure.map(({ matcher, handlers }) => ({
+        matcher,
+        hooks: handlers.map((handler) => hookEntry(hookCommand, "stop-failure", handler.name)),
       })),
       PreToolUse: registered.PreToolUse.map(({ matcher, handlers }) => ({
         matcher,

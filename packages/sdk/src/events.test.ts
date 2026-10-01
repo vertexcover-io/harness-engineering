@@ -840,3 +840,19 @@ describe("hooks.pre-tool-use.called", () => {
     expect(project([stop, tool(6)]).stopHook).toEqual({ blockStreak: 1, seq: 5 });
   });
 });
+
+describe("usage-limit events", () => {
+  test.each([
+    ["agent.limit.reached", { agent: "claude", sessionId: "s1" }],
+    ["agent.limit.waiting", { sessionId: "s1", limitEventId: "e-1", resumeAt: "soon" }],
+    ["agent.limit.resumed", { sessionId: "s1" }],
+  ])(
+    "%s with a bad payload is refused, naming the type, and nothing is stored",
+    async (type, payload) => {
+      const store = memoryEventStore();
+      const result = await emitEvent(store, "r-1", { type, source: "hooks", payload });
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining(type) });
+      expect(await store.read()).toEqual([]);
+    },
+  );
+});

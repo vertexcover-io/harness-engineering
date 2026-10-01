@@ -13,7 +13,6 @@ import {
   type RunRef,
   readState,
   runDirOf,
-  spawnDetached,
 } from "@harness/sdk";
 import { appendRunEvent, jsonlEventStore, type Registry, runLockPath } from "@harness/sdk/internal";
 import {
@@ -24,7 +23,7 @@ import {
 } from "./agents/claude.ts";
 import { currentTerminal } from "./agents/tmux.ts";
 import { completeContextStep, findContextPlanNode } from "./runs.ts";
-import { ORCHESTRATE_SCRIPT } from "./stage.ts";
+import { spawnOrchestrateHelper } from "./stage.ts";
 
 const IDLE_TIMEOUT_MS = 30_000;
 const IDLE_POLL_MS = 100;
@@ -32,25 +31,11 @@ const DONE_POLL_MS = 250;
 // how long a new session may take to start, and a compact to finish, before the step fails
 const DONE_TIMEOUT_MS = { new: 60_000, compact: 180_000 } as const;
 
-// Detached, because the Stop hook must return before Claude goes idle and the step can begin.
 export const startContextStep = async (
   run: RunRef,
   sessionId: string,
   nodeRunId: string,
-): Promise<void> => {
-  const args = [
-    ORCHESTRATE_SCRIPT,
-    "context",
-    nodeRunId,
-    "--run",
-    run.name,
-    "--session-id",
-    sessionId,
-    "--root",
-    run.cwd,
-  ];
-  spawnDetached(process.execPath, args, { cwd: run.cwd, output: "ignore" });
-};
+): Promise<void> => spawnOrchestrateHelper({ command: "context", id: nodeRunId, run, sessionId });
 
 export type ContextStepOptions = Readonly<{
   run: RunRef;

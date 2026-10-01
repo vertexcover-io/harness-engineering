@@ -40,6 +40,8 @@ const fakeProvider = (
   prompt: () => Promise.resolve({ ok: true, value: undefined }),
   stop: () => Promise.resolve({ ok: true, value: undefined }),
   run: () => Promise.resolve({ ok: false, error: new Error("not implemented") }),
+  limitResetWait: () => Promise.resolve(null),
+  promptWhenReady: () => Promise.resolve({ ok: true, value: "not-ready" }),
 });
 
 const buildDeps = async (

@@ -14,6 +14,7 @@ export type AgentAdapter = Readonly<{
   stop?: (stdin: string, deps: HookDeps, handler: StopHandler) => Promise<string>;
   sessionStart?: (stdin: string, deps: HookDeps, handler: SessionStartHandler) => Promise<string>;
   preToolUse?: (stdin: string, deps: HookDeps, handler: PreToolUseHandler) => Promise<string>;
+  stopFailure?: (stdin: string, deps: HookDeps, handler: StopFailureHandler) => Promise<string>;
 }>;
 
 export type HookReply =
@@ -75,4 +76,19 @@ export type SessionStartInput = Readonly<{
 export type SessionStartHandler = Readonly<{
   name: string;
   run: (input: SessionStartInput, deps: HookDeps) => Promise<void>;
+}>;
+
+export type StopFailureInput = Readonly<{
+  agent: AgentType;
+  sessionId: string;
+  error: string;
+  // set by the agent's adapter, which knows its own error names
+  usageLimit: boolean;
+  message: string | undefined;
+}>;
+
+// The agent ignores this hook's answer, so a handler only observes.
+export type StopFailureHandler = Readonly<{
+  name: string;
+  run: (input: StopFailureInput, deps: HookDeps) => Promise<void>;
 }>;

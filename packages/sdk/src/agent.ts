@@ -51,6 +51,8 @@ export interface ITerminalHost {
   list(): Promise<readonly string[]>;
 }
 
+export type ResetWait = Readonly<{ ms: number; from: "message" | "screen" }>;
+
 export const AgentTypeSchema = z.enum(["claude", "codex", "pi", "opencode"]);
 export type AgentType = z.infer<typeof AgentTypeSchema>;
 
@@ -94,6 +96,12 @@ export interface IAgentProvider {
   // replaces the agent running in `terminal` with a new session on `sessionId`, in the same pane
   relaunch(terminal: ITerminal, sessionId: string, options: LaunchOptions): Promise<Result<void>>;
   prompt(terminal: ITerminal, text: string): Promise<Result<void>>;
+  // how long until the usage limit that stopped the agent in `terminal` resets, read from its
+  // error message or else its screen; null when neither names a time
+  limitResetWait(terminal: ITerminal, message: string, now: Date): Promise<ResetWait | null>;
+  // types `text` and submits it only at an empty input: a usage-limit menu is answered with
+  // "wait" first, and Enter is never pressed into any other menu or dialog
+  promptWhenReady(terminal: ITerminal, text: string): Promise<Result<"sent" | "not-ready">>;
   stop(terminal: ITerminal): Promise<Result<void>>;
   // headless: waits for the answer
   run<T = string>(request: RunRequest<T>): Promise<AgentResult<T>>;

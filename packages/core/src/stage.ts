@@ -6,8 +6,10 @@ import {
   NonEmptyStringSchema,
   parseFrontmatter,
   type Result,
+  type RunRef,
   readText,
   SlugSchema,
+  spawnDetached,
 } from "@harness/sdk";
 import * as z from "zod";
 
@@ -111,6 +113,18 @@ export const harnessSkillsDir = (): string =>
 // Agent hooks and the detached context helper run outside this repo's package.json, so they call
 // bun and the script by absolute path.
 export const ORCHESTRATE_SCRIPT = join(import.meta.dir, "orchestrate.ts");
+
+// Re-runs the orchestrate script as a detached helper for a run's session, such as `context` or
+// `limit-wait`: the hook that starts it must return before the agent goes idle.
+export const spawnOrchestrateHelper = ({
+  command,
+  id,
+  run,
+  sessionId,
+}: Readonly<{ command: string; id: string; run: RunRef; sessionId: string }>): void => {
+  const args = [ORCHESTRATE_SCRIPT, command, id, "--run", run.name, "--session-id", sessionId];
+  spawnDetached(process.execPath, [...args, "--root", run.cwd], { cwd: run.cwd, output: "ignore" });
+};
 
 // The server that asks for this runs under bun, so execPath is bun.
 export const orchestrateHookCommand = (): readonly string[] => [
