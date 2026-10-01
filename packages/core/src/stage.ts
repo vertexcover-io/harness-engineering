@@ -108,11 +108,14 @@ export const own = <T>(record: Readonly<Record<string, T>>, key: string): T | un
 export const harnessSkillsDir = (): string =>
   process.env.HARNESS_SKILLS_DIR || join(import.meta.dir, "..", "..", "..", "skills");
 
-// Agent hooks run outside this repo's package.json, so they call bun and the script by
-// absolute path. The server that asks for this runs under bun, so execPath is bun.
+// Agent hooks and the detached context helper run outside this repo's package.json, so they call
+// bun and the script by absolute path.
+export const ORCHESTRATE_SCRIPT = join(import.meta.dir, "orchestrate.ts");
+
+// The server that asks for this runs under bun, so execPath is bun.
 export const orchestrateHookCommand = (): readonly string[] => [
   process.execPath,
-  join(import.meta.dir, "orchestrate.ts"),
+  ORCHESTRATE_SCRIPT,
   "hook",
 ];
 
