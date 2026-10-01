@@ -3,20 +3,22 @@ import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   ContextStartedEvent,
-  emitRunEvent,
   type IAgentProvider,
   type ILogger,
   type JsonValue,
-  jsonlEventStore,
   type LaunchOptions,
   type NodeRun,
-  type Registry,
   type Result,
   type RunRef,
-  readState,
   runDirOf,
-  runLockPath,
 } from "@harness/sdk";
+import {
+  appendRunEvent,
+  jsonlEventStore,
+  type Registry,
+  readState,
+  runLockPath,
+} from "@harness/sdk/internal";
 import {
   CLAUDE_CLEAR_INPUT_KEY,
   CLAUDE_NOTHING_TO_COMPACT,
@@ -111,7 +113,7 @@ const replaceSession = (
   previousSessionId: string,
   sessionId: string,
 ): Promise<unknown> =>
-  emitRunEvent(run, {
+  appendRunEvent(run, {
     type: "workflow.session.replaced",
     source: "orchestrate",
     payload: { agent: "claude", previousSessionId, sessionId },
@@ -122,7 +124,7 @@ const recordStarted = (
   action: "new" | "compact",
   sessionId: string,
 ): Promise<unknown> =>
-  emitRunEvent(run, {
+  appendRunEvent(run, {
     type: "workflow.context.started",
     source: "orchestrate",
     payload: { nodeRunId, action, sessionId },

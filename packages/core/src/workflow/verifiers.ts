@@ -1,30 +1,16 @@
 import { join } from "node:path";
 import {
   FindingSchema,
-  type JsonValue,
   VerifierErrorReasonSchema,
+  type VerifierInput,
+  type VerifierResult,
+  VerifierResultSchema,
   type VerifierRun,
 } from "@harness/sdk";
 import { z } from "zod";
 import type { Verifier } from "../stage.ts";
 import { callFunction, loadFunction, runScript } from "./executors.ts";
 import { NodeFailure, type PlanVerifier } from "./types.ts";
-
-export const VerifierResultSchema = z
-  .strictObject({ pass: z.boolean(), findings: z.array(FindingSchema).default([]) })
-  .refine((result) => result.pass || result.findings.length > 0, {
-    path: ["findings"],
-    message: "a failing result needs at least one finding",
-  });
-export type VerifierResult = z.infer<typeof VerifierResultSchema>;
-
-export type VerifierInput = Readonly<{
-  run: string;
-  nodeRunId: string;
-  output: JsonValue;
-  artifacts: Readonly<Record<string, string>>;
-  args: JsonValue;
-}>;
 
 export const VerifierIssueSchema = z.discriminatedUnion("kind", [
   z.strictObject({

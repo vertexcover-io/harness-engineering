@@ -13,16 +13,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createGit,
-  createRegistry,
   emitRunEvent,
   findRoot,
   type ITerminal,
-  jsonlEventStore,
   noopLogger,
   resolveRun,
   StateSchema,
   type WorkflowRun,
 } from "@harness/sdk";
+import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
 import corePackage from "../package.json";
 import { type InitOptions, initializeRun, linkRunSession, terminalName } from "./runs.ts";
 import { currentPane } from "./tmux.ts";

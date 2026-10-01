@@ -13,13 +13,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  type JsonValue,
-  jsonlEventStore,
-  RegistryFileSchema,
-  runDirOf,
-  type WorkflowRun,
-} from "@harness/sdk";
+import { type JsonValue, runDirOf, type WorkflowRun } from "@harness/sdk";
+import { jsonlEventStore, RegistryFileSchema } from "@harness/sdk/internal";
 import { validateTicketDir } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
@@ -263,6 +258,36 @@ describe("orchestrate emit", () => {
     expect(emit.code).toBe(1);
     expect(emit.stderr).toContain("hooks.session-start.called");
     expect(await eventsOf(repo)).toEqual([]);
+  });
+
+  test("SC12: emit refuses workflow.* with the engine-owned message and still records other events", async () => {
+    const repo = tempRepo();
+    const home = tempDir();
+    initializedRun(home, repo);
+
+    const refused = orchestrate(repo, home, [
+      "emit",
+      "workflow.started",
+      "--run",
+      "feat-x",
+      "--source",
+      "test",
+    ]);
+    const stored = orchestrate(repo, home, [
+      "emit",
+      "custom.ext.note",
+      "--run",
+      "feat-x",
+      "--source",
+      "test",
+    ]);
+
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toContain(
+      "workflow.started is engine-owned; use next, exec, or done for workflow lifecycle",
+    );
+    expect(stored.code).toBe(0);
+    expect(JSON.parse(stored.stdout)).toMatchObject({ type: "custom.ext.note", source: "test" });
   });
 
   test("emit cannot bypass stage completion verification with a lifecycle event", async () => {
@@ -2018,7 +2043,7 @@ nodes:
   - { id: second, type: agent, prompt: two, dependsOn: [fresh], input: {} }
 `;
 
-const FAKE_AGENT = join(import.meta.dir, "..", "..", "agents", "src", "fixtures", "fake-agent.ts");
+const FAKE_AGENT = join(import.meta.dir, "fixtures", "fake-agent.ts");
 const RESUME = "/orchestrate-v2 --resume feat-x";
 
 // A run whose agent is the fake agent in a private tmux pane, driven to its context node.

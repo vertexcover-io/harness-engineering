@@ -1,15 +1,12 @@
 import { Command } from "@commander-js/extra-typings";
 import { harnessTmux } from "@harness/core";
+import { type Result, registryPath, resolveRoot, spawnInteractive } from "@harness/sdk";
 import {
   createRegistry,
   findRunByIdOrName,
   type Registry,
-  type Result,
   type RunTarget,
-  registryPath,
-  resolveRoot,
-  spawnInteractive,
-} from "@harness/sdk";
+} from "@harness/sdk/internal";
 import { commandLog, fail } from "./client.ts";
 
 // A name is looked up in the repo the command runs in; an id needs no repo.

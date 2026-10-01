@@ -32,8 +32,3 @@ export {
 } from "./stage.ts";
 export { harnessTmux } from "./tmux.ts";
 export * from "./workflow/index.ts";
-export {
-  type VerifierInput,
-  type VerifierResult,
-  VerifierResultSchema,
-} from "./workflow/verifiers.ts";

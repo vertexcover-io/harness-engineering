@@ -10,7 +10,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ERROR_MESSAGE_LIMIT, jsonlEventStore, type RunRef, runDirOf } from "@harness/sdk";
+import { ERROR_MESSAGE_LIMIT, type RunRef, runDirOf } from "@harness/sdk";
+import { jsonlEventStore } from "@harness/sdk/internal";
 import {
   addRepositories,
   CreateWorkspaceInputSchema,

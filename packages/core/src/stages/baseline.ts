@@ -10,12 +10,12 @@ import {
   NonEmptyStringSchema,
   type Result,
   type RunRef,
-  readState,
   runDirOf,
   type SpawnResult,
   spawn,
   unknownPackage,
 } from "@harness/sdk";
+import { readState } from "@harness/sdk/internal";
 import * as z from "zod";
 import { MAX_OUTPUT_BYTES } from "../workflow/executors.ts";
 

@@ -270,7 +270,18 @@ export const appendRunEvent = (
 ): Promise<Result<Readonly<{ event: Event; state: State | null }>>> =>
   appendRunEventIf(run, input, () => true);
 
+// workflow.* events move the run's nodes and hooks.* events are trusted as the agent's own
+// (a context node completes on hooks.session-start.called), so only the engine writes either.
 export const emitRunEvent = async (run: RunRef, input: EmitInput): Promise<Result<Event>> => {
+  if (input.type.startsWith("workflow.")) {
+    return {
+      ok: false,
+      error: `${input.type} is engine-owned; use next, exec, or done for workflow lifecycle`,
+    };
+  }
+  if (input.type.startsWith("hooks.")) {
+    return { ok: false, error: `${input.type} is written only by the agent's hooks` };
+  }
   const appended = await appendRunEvent(run, input);
   return appended.ok ? { ok: true, value: appended.value.event } : appended;
 };

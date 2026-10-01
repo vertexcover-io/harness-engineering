@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { orchestrateHookCommand } from "@harness/core";
-import type { IAgentProvider, ITerminal, Registry, WorkflowRun } from "@harness/sdk";
+import type { IAgentProvider, ITerminal, WorkflowRun } from "@harness/sdk";
+import type { Registry } from "@harness/sdk/internal";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { errorResponse, jsonBody, type Vars } from "./api.ts";

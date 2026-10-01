@@ -3,8 +3,6 @@ import { mkdir, mkdtemp, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  createRegistry,
-  jsonlEventStore,
   noopLogger,
   type PreToolUseHandler,
   registryPath,
@@ -12,6 +10,7 @@ import {
   type ToolCall,
   type ToolUse,
 } from "@harness/sdk";
+import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
 import { bashAntipatterns, protectedRecordOf, recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 
 describe("protectedRecordOf", () => {

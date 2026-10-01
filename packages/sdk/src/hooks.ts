@@ -4,6 +4,7 @@ import type { ILogger } from "./logger.ts";
 import type { Registry } from "./registry.ts";
 
 export type HookDeps = Readonly<{
+  // the full registry: the link-session hook adds the new session to the run
   registry: Registry;
   env: Readonly<Record<string, string | undefined>>;
   log: ILogger;

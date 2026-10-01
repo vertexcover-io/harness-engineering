@@ -16,6 +16,105 @@ const filesContaining = (
   return matches.sort();
 };
 
+const PUBLIC_RUNTIME_NAMES = [
+  "AbsolutePathSchema",
+  "AgentStateSchema",
+  "AgentTypeSchema",
+  "ArtifactRefSchema",
+  "CheckStatusSchema",
+  "ConfigSchema",
+  "ContextStartedEvent",
+  "ERROR_MESSAGE_LIMIT",
+  "EffortSchema",
+  "EmitInputSchema",
+  "ErrorSchema",
+  "EventHandlerRefSchema",
+  "EventHandlerRefsSchema",
+  "EventSchema",
+  "EventTypeSchema",
+  "FindingSchema",
+  "GitStateSchema",
+  "JsonObjectSchema",
+  "LayoutSchema",
+  "LogLevelSchema",
+  "NOT_FOUND",
+  "NameSchema",
+  "NodeIteratedEvent",
+  "NodeRunSchema",
+  "NodeStartedEvent",
+  "NodeTypeSchema",
+  "NonEmptyStringSchema",
+  "NotificationSchema",
+  "PermissionModeSchema",
+  "PreToolUseCalledEvent",
+  "ProcessRecordSchema",
+  "PullRequestSchema",
+  "RepositorySchema",
+  "SessionRefSchema",
+  "SessionReplacedEvent",
+  "SessionStartCalledEvent",
+  "SkillNameSchema",
+  "SkipOutputSchema",
+  "SlugSchema",
+  "StateSchema",
+  "StopCalledEvent",
+  "StopReasonSchema",
+  "TicketSchema",
+  "TokenUsageSchema",
+  "VerifierErrorReasonSchema",
+  "VerifierResultSchema",
+  "VerifierRunSchema",
+  "WorkflowEndedEvent",
+  "WorkflowRefSchema",
+  "WorkflowRunSchema",
+  "WorkflowStartedEvent",
+  "WorkspaceCreateFailedEvent",
+  "WorkspaceCreatedEvent",
+  "WorkspaceRemoveFailedEvent",
+  "WorkspaceRemovedEvent",
+  "WorkspaceRepositoryAddFailedEvent",
+  "WorkspaceRepositoryAddedEvent",
+  "WorkspaceRepositoryRemoveFailedEvent",
+  "WorkspaceRepositoryRemovedEvent",
+  "WorkspaceSchema",
+  "checkBinary",
+  "createGit",
+  "createRegistryReader",
+  "emitRunEvent",
+  "eventError",
+  "execWithTimeout",
+  "fail",
+  "findRoot",
+  "harnessHome",
+  "isNormalizedRelativePath",
+  "jsonLogger",
+  "killRunning",
+  "loadConfig",
+  "loadConfigFile",
+  "loadConfigOrDefault",
+  "noopLogger",
+  "ok",
+  "parseFrontmatter",
+  "parseJson",
+  "parseYaml",
+  "readIfExists",
+  "readProjectEnv",
+  "readText",
+  "registryPath",
+  "resolveRoot",
+  "resolveRun",
+  "runDirOf",
+  "spawn",
+  "spawnDetached",
+  "spawnInteractive",
+  "stackOf",
+  "stopRunningOnSignal",
+  "toRepoId",
+  "unknownPackage",
+  "warn",
+  "withLock",
+];
+
 describe("source boundaries", () => {
   test('SC33: only packages/sdk/src/git.ts calls exec("git"', () => {
     expect(filesContaining("packages/*/src/**/*.ts", 'exec("git"', { excludeTests: true })).toEqual(
@@ -58,5 +157,46 @@ describe("source boundaries", () => {
 
   test("EH12 — no skill script imports @harness/core; skills act on a run through the orchestrate script or the sdk", () => {
     expect(filesContaining("skills/**/*.{ts,mts,js,mjs}", /["']@harness\/core["'/]/)).toEqual([]);
+  });
+
+  test("SC5: @harness/sdk exports exactly the agreed runtime names", async () => {
+    const names = Object.keys(await import("@harness/sdk")).sort();
+    expect(names).toEqual(PUBLIC_RUNTIME_NAMES);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "emitRunEvent",
+        "createRegistryReader",
+        "resolveRun",
+        "VerifierResultSchema",
+      ]),
+    );
+    for (const hidden of [
+      "createRegistry",
+      "syncState",
+      "createState",
+      "appendRunEvent",
+      "builtInHandlers",
+      "jsonlEventStore",
+      "continueWorkflow",
+      "recordGuard",
+    ]) {
+      expect(names).not.toContain(hidden);
+    }
+  });
+
+  test("SC6: the public index and the internal entry name every export", () => {
+    const star = ["export", "*"].join(" ");
+    expect(
+      ["packages/sdk/src/index.ts", "packages/sdk/src/internal.ts"].filter((file) =>
+        readFileSync(file, "utf8").includes(star),
+      ),
+    ).toEqual([]);
+  });
+
+  test("SC7: no skill script imports the sdk's internal entry", () => {
+    const internalImport = ["@harness/sdk", "internal"].join("/");
+    expect(
+      filesContaining("skills/**/*.{ts,mts,js,mjs}", internalImport, { excludeTests: true }),
+    ).toEqual([]);
   });
 });

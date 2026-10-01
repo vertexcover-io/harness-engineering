@@ -3,7 +3,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRegistry, registryPath, type WorkflowRun } from "@harness/sdk";
+import { registryPath, type WorkflowRun } from "@harness/sdk";
+import { createRegistry } from "@harness/sdk/internal";
 
 const CLI = join(import.meta.dir, "index.ts");
 
