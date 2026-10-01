@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { AgentType } from "../agent.ts";
 import type { EmitInput } from "../events.ts";
 import type { ILogger } from "../logger.ts";
@@ -42,7 +41,6 @@ export type ProtectedRecord =
   | Readonly<{ kind: "registry"; path: string }>;
 
 const ALLOW: ToolVerdict = { kind: "allow" };
-const LOG_WAIT_MS = 2_000;
 const RUN_RECORD = /[\\/]\.harness[\\/]([^\\/]+)[\\/](state\.json|event\.jsonl)$/;
 const BASH_ANTIPATTERNS = join(import.meta.dir, "..", "..", "vendor", "bash-antipatterns.sh");
 const BASH_ANTIPATTERNS_TIMEOUT_MS = 10_000;
@@ -155,8 +153,7 @@ const logCall = async (
   }
 };
 
-// Runs one handler on one tool call and logs a refusal. It never throws: a handler that fails lets the
-// call through, or it could trap the session.
+// A handler that fails lets the call through, or it could trap the session.
 export const runPreToolUse = async (
   use: ToolUse,
   handler: PreToolUseHandler,
@@ -168,13 +165,7 @@ export const runPreToolUse = async (
       deps.log.error({ err: error }, `pre-tool-use allowed: ${handler.name} failed`);
       return ALLOW;
     });
-  // Only a refusal is logged: an allowed call is one the handler left alone.
   if (verdict.kind === "allow") return verdict;
-  // A slow log must not hold the answer past the agent's hook timeout; the write still finishes.
-  // The timer is cancelled once the log is written, or it would keep the hook process alive.
-  const timer = new AbortController();
-  const logged = logCall(use, handler.name, verdict, deps).finally(() => timer.abort());
-  const timeout = sleep(LOG_WAIT_MS, undefined, { signal: timer.signal }).catch(() => undefined);
-  await Promise.race([logged, timeout]);
+  await logCall(use, handler.name, verdict, deps);
   return verdict;
 };
