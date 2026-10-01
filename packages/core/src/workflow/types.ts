@@ -6,7 +6,7 @@ import {
   ProcessRecordSchema,
 } from "@harness/sdk";
 import { z } from "zod";
-import type { ArtifactDeclaration } from "../stage.ts";
+import type { ArtifactDeclaration, Stage } from "../stage.ts";
 
 export const NodeIdSchema = z
   .string()
@@ -111,6 +111,7 @@ export const AgentNodeSchema = z
     stage: NonEmptyStringSchema.optional(),
     prompt: NonEmptyStringSchema.optional(),
     output: OutputSchemaRefSchema.optional(),
+    variables: z.record(z.string(), z.string()).optional(),
   })
   .superRefine((node, ctx) => {
     if (node.stage === undefined && node.prompt === undefined) {
@@ -118,6 +119,13 @@ export const AgentNodeSchema = z
         code: "custom",
         path: ["prompt"],
         message: "agent needs a prompt when it has no stage",
+      });
+    }
+    if (node.stage === undefined && node.variables !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["variables"],
+        message: "only a stage node sets variables",
       });
     }
   });
@@ -150,9 +158,17 @@ const InputDeclarationSchema = z.strictObject({
   default: z.json().optional(),
 });
 
+// Advice for the user, never a command the doctor runs.
+export const DoctorDeclarationSchema = z.strictObject({
+  check: z.enum(["env", "binary", "package", "file"]),
+  key: NonEmptyStringSchema,
+  fix: NonEmptyStringSchema,
+});
+
 export const WorkflowSchema = z.strictObject({
   name: NonEmptyStringSchema,
   version: z.union([z.string(), z.number()]).optional(),
+  doctor: z.array(DoctorDeclarationSchema).default([]),
   inputs: z.record(NodeIdSchema, InputDeclarationSchema).default({}),
   nodes: z.array(NodeSchema).min(1),
 });
@@ -212,6 +228,7 @@ export const NodeRecordSchema = z.object({
 });
 
 export type Workflow = z.infer<typeof WorkflowSchema>;
+export type DoctorDeclaration = z.infer<typeof DoctorDeclarationSchema>;
 export type InputDeclarations = Workflow["inputs"];
 export type ExecNode = z.infer<typeof ExecNodeSchema>;
 export type WaitNode = z.infer<typeof WaitNodeSchema>;
@@ -229,13 +246,14 @@ export type PlanVerifier = Readonly<{ id: string; args: JsonValue; timeoutMs: nu
   );
 
 // A stage as compile loads it: the text the workflow wrote, the skill's name, where its SKILL.md
-// is, the artifacts it needs and writes, and its verifiers.
+// is, the artifacts it needs and writes, its verifiers, and the variables it takes.
 export type PlanStage = Readonly<{
   ref: string;
   name: string;
   skill: string;
   consumes: readonly ArtifactDeclaration[];
   produces: readonly ArtifactDeclaration[];
+  variables: Stage["variables"];
   outputSchemaName: string;
   outputSchema: z.ZodType;
   verifiers: readonly PlanVerifier[];
@@ -279,6 +297,7 @@ export type PlanNode =
 export type WorkflowPlan = Readonly<{
   name: string;
   inputs: InputDeclarations;
+  doctor: readonly DoctorDeclaration[];
   nodes: readonly PlanNode[];
 }>;
 

@@ -3,12 +3,26 @@ inputs:
   prompt:
     type: string
     required: true
+doctor:
+  - check: env
+    key: LINEAR_API_KEY
+    fix: Set LINEAR_API_KEY in .env
+  - check: binary
+    key: bun
+    fix: Install Bun
 nodes:
+  - id: ticket-fetcher
+    type: agent
+    stage: ticket-fetcher
+    input:
+      request: "{{ inputs.prompt }}"
+
   - id: create-workspace
     type: agent
     stage: create-workspace
+    dependsOn: [ticket-fetcher]
     input:
-      request: "{{ inputs.prompt }}"
+      request: "{{ nodes.ticket-fetcher.output.task }}"
 
   - id: baseline
     type: exec

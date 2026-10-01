@@ -57,6 +57,12 @@ export const VerifierSchema = z.union(
 );
 export type Verifier = z.infer<typeof VerifierSchema>;
 
+// A value the workflow's stage node sets through its `variables`; `next` hands it to the skill.
+const VariableSchema = z.strictObject({
+  description: NonEmptyStringSchema,
+  default: z.string().optional(),
+});
+
 export const StageSchema = z.strictObject({
   name: SlugSchema,
   description: NonEmptyStringSchema,
@@ -78,6 +84,7 @@ export const StageSchema = z.strictObject({
       "Verifier ids must be unique",
     )
     .default([]),
+  variables: z.record(SlugSchema, VariableSchema).default({}),
 });
 export type Stage = z.infer<typeof StageSchema>;
 export type ArtifactDeclaration = z.infer<typeof ArtifactDeclarationSchema>;
@@ -181,23 +188,32 @@ export const resolveReference = async (
   const loaded = await loadSkill(skillDir);
   if (!loaded.ok) return loaded;
   const { name, references } = loaded.value;
-  const reference = own(references, ref);
-  if (reference === undefined) {
-    const known = Object.keys(references).join(", ");
-    return { ok: false, error: `unknown reference "${ref}"; ${skill} has: ${known}` };
-  }
   const extensions = own(options.config.extensions, name)?.references ?? {};
-  const stray = Object.keys(extensions).find((key) => own(references, key) === undefined);
-  if (stray !== undefined) {
-    const error = `extensions.${name}.references.${stray}: ${skill} has no reference ${stray}`;
-    return { ok: false, error };
+  // An add must name a key the skill lacks; replace and extend must name one it has.
+  const misfit = Object.entries(extensions).find(
+    ([key, extension]) => "add" in extension === (own(references, key) !== undefined),
+  );
+  if (misfit !== undefined) {
+    const [key, extension] = misfit;
+    const problem =
+      "add" in extension
+        ? `already has reference ${key}; use replace or extend`
+        : `has no reference ${key}`;
+    return { ok: false, error: `extensions.${name}.references.${key}: ${skill} ${problem}` };
   }
   const extension = own(extensions, ref);
+  if (extension !== undefined && "add" in extension) return readText(join(root, extension.add));
+  const reference = own(references, ref);
+  if (reference === undefined) {
+    const added = Object.keys(extensions).filter((key) => own(references, key) === undefined);
+    const known = [...Object.keys(references), ...added].join(", ");
+    return { ok: false, error: `unknown reference "${ref}"; ${skill} has: ${known}` };
+  }
   if (extension !== undefined && "replace" in extension) {
     return readText(join(root, extension.replace));
   }
   const base = await readText(join(skillDir, reference.path));
-  if (!base.ok || extension === undefined) return base;
+  if (!base.ok || extension === undefined || !("extend" in extension)) return base;
   const extra = await readText(join(root, extension.extend));
   if (!extra.ok) return extra;
   return { ok: true, value: `${base.value.trimEnd()}\n\n${extra.value}` };

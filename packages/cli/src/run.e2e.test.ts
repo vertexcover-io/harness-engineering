@@ -289,6 +289,32 @@ describe("harness run", () => {
   );
 
   test(
+    "a workflow's env check for an unset key blocks the run before any agent launches",
+    () => {
+      const repo = makeRepo();
+      const { env, home, fakeOut } = makeEnv();
+      const doctor = [
+        "doctor:",
+        "  - check: env",
+        "    key: HARNESS_E2E_UNSET_KEY",
+        "    fix: Set HARNESS_E2E_UNSET_KEY in .env",
+      ];
+      writeFileSync(join(repo, "needs-key.yaml"), [...doctor, OK_WORKFLOW].join("\n"));
+      const { HARNESS_E2E_UNSET_KEY: _, ...withoutKey } = env;
+
+      const run = harness(repo, withoutKey, "run", "needs-key.yaml", "--prompt", "x");
+      expect(run.code).toBe(1);
+      expect(run.stderr).toContain("BLOCKED env:HARNESS_E2E_UNSET_KEY");
+      const launches = readLines(fakeOut).filter(
+        (record) => Array.isArray(record.argv) && record.argv.includes("--session-id"),
+      );
+      expect(launches).toEqual([]);
+      expect(existsSync(join(home, "registry.json"))).toBe(false);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "SC13: a cyclic workflow fails to compile and records no run",
     () => {
       const repo = makeRepo();
@@ -296,7 +322,7 @@ describe("harness run", () => {
 
       const run = harness(repo, env, "run", "bad.yaml", "--prompt", "x");
       expect(run.code).toBe(1);
-      expect(run.stderr.toLowerCase()).toContain("cycle");
+      expect(run.stderr).toContain("cycle: dependency cycle among");
       expect(existsSync(join(home, "registry.json"))).toBe(false);
     },
     TIMEOUT_MS,
@@ -321,6 +347,7 @@ describe("harness run", () => {
         "x",
       );
       expect(debug.stderr).toContain("    at ");
+      expect(debug.stderr).toContain("compile.ts");
     },
     TIMEOUT_MS,
   );

@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Check, checkBinary, type Exec, execWithTimeout, fail } from "@harness/sdk";
-import { evaluate, runDoctor, summarize, verdict } from "./doctor.ts";
+import { evaluate, runDoctor, summarize, verdict, workflowChecks } from "./doctor.ts";
+
+const V2 = JSON.stringify({ version: 2 });
 
 const key = (command: string, args: readonly string[]): string => `${command} ${args.join(" ")}`;
 
@@ -26,7 +28,7 @@ let cleanRoot: string;
 
 beforeAll(async () => {
   cleanRoot = await mkdtemp(join(tmpdir(), "doctor-clean-"));
-  await writeFile(join(cleanRoot, "orchestrate.config.json"), "{}");
+  await writeFile(join(cleanRoot, "orchestrate.config.json"), V2);
 });
 
 afterAll(async () => {
@@ -260,7 +262,7 @@ describe("runDoctor (integration)", () => {
     });
     expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
       status: "fail",
-      detail: "orchestrate.config.json not found",
+      detail: expect.stringContaining("has no orchestrate.config.yaml"),
     });
   });
 
@@ -268,7 +270,7 @@ describe("runDoctor (integration)", () => {
     const dir = await makeDir("doctor-clean-repo-");
     await exec("git", ["init"], dir);
     await writeFile(join(dir, ".gitignore"), ".harness/\n");
-    await writeFile(join(dir, "orchestrate.config.json"), "{}");
+    await writeFile(join(dir, "orchestrate.config.json"), V2);
 
     const report = await runDoctor({ cwd: dir, exec });
     expect(report.results.find((row) => row.name === "git-repo")).toMatchObject({ status: "ok" });
@@ -281,6 +283,43 @@ describe("runDoctor (integration)", () => {
     expect(report.results.find((row) => row.name === "project-doctor")).toBeUndefined();
   });
 
+  test("a YAML config passes the config check and names its file", async () => {
+    const dir = await makeDir("doctor-yaml-config-");
+    await exec("git", ["init"], dir);
+    await writeFile(join(dir, "orchestrate.config.yaml"), "version: 2\n");
+
+    const report = await runDoctor({ cwd: dir, exec });
+    expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
+      status: "ok",
+      detail: expect.stringMatching(/orchestrate\.config\.yaml$/),
+    });
+  });
+
+  test("a v1 YAML config beside the v2 JSON one: the row names the JSON file it loaded", async () => {
+    const dir = await makeDir("doctor-v1-beside-v2-");
+    await exec("git", ["init"], dir);
+    await writeFile(join(dir, "orchestrate.config.yaml"), "stages: {}\n");
+    await writeFile(join(dir, "orchestrate.config.json"), V2);
+
+    const report = await runDoctor({ cwd: dir, exec });
+    expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
+      status: "ok",
+      detail: expect.stringMatching(/orchestrate\.config\.json$/),
+    });
+  });
+
+  test("a config without version 2 fails the config check", async () => {
+    const dir = await makeDir("doctor-v1-config-");
+    await exec("git", ["init"], dir);
+    await writeFile(join(dir, "orchestrate.config.json"), "{}");
+
+    const report = await runDoctor({ cwd: dir, exec });
+    expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
+      status: "fail",
+      detail: expect.stringContaining("version: 2"),
+    });
+  });
+
   test("SC18: a config file that is not JSON fails the config check and runs no project doctor", async () => {
     const dir = await makeDir("doctor-bad-config-");
     await exec("git", ["init"], dir);
@@ -289,7 +328,7 @@ describe("runDoctor (integration)", () => {
     const report = await runDoctor({ cwd: dir, exec });
     expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
       status: "fail",
-      detail: "orchestrate.config.json is not valid JSON",
+      detail: expect.stringContaining("invalid YAML"),
     });
     expect(report.results.find((row) => row.name === "project-doctor")).toBeUndefined();
   });
@@ -302,14 +341,17 @@ describe("runDoctor (integration)", () => {
     const report = await runDoctor({ cwd: dir, exec });
     const row = report.results.find((r) => r.name === "orchestrate-config");
     expect(row?.status).toBe("fail");
-    expect(row?.detail).toStartWith("orchestrate.config.json cannot be read:");
+    expect(row?.detail).toContain("cannot be read");
     expect(report.results.find((r) => r.name === "project-doctor")).toBeUndefined();
   });
 
   test("a doctor key that is not a string fails the config check instead of vanishing", async () => {
     const dir = await makeDir("doctor-bad-doctor-key-");
     await exec("git", ["init"], dir);
-    await writeFile(join(dir, "orchestrate.config.json"), JSON.stringify({ doctor: 42 }));
+    await writeFile(
+      join(dir, "orchestrate.config.json"),
+      JSON.stringify({ version: 2, doctor: 42 }),
+    );
 
     const report = await runDoctor({ cwd: dir, exec });
     const row = report.results.find((r) => r.name === "orchestrate-config");
@@ -321,7 +363,7 @@ describe("runDoctor (integration)", () => {
   test("inside a repository that does not ignore .harness/, harness-gitignored fails", async () => {
     const dir = await makeDir("doctor-not-ignored-");
     await exec("git", ["init"], dir);
-    await writeFile(join(dir, "orchestrate.config.json"), "{}");
+    await writeFile(join(dir, "orchestrate.config.json"), V2);
 
     const report = await runDoctor({ cwd: dir, exec });
     expect(report.results.find((row) => row.name === "git-repo")).toMatchObject({ status: "ok" });
@@ -338,7 +380,7 @@ describe("runDoctor (integration)", () => {
     await writeFile(script, ["#!/bin/sh", 'echo "all good"', ""].join("\n"));
     await writeFile(
       join(dir, "orchestrate.config.json"),
-      JSON.stringify({ doctor: `sh ${script}` }),
+      JSON.stringify({ version: 2, doctor: `sh ${script}` }),
     );
 
     const report = await runDoctor({ cwd: dir, exec });
@@ -367,7 +409,7 @@ describe("runDoctor (integration)", () => {
     );
     await writeFile(
       join(dir, "orchestrate.config.json"),
-      JSON.stringify({ doctor: `sh ${script}` }),
+      JSON.stringify({ version: 2, doctor: `sh ${script}` }),
     );
 
     const report = await runDoctor({ cwd: dir, exec });
@@ -391,7 +433,7 @@ describe("runDoctor (integration)", () => {
     );
     await writeFile(
       join(dir, "orchestrate.config.json"),
-      JSON.stringify({ doctor: `sh ${script}` }),
+      JSON.stringify({ version: 2, doctor: `sh ${script}` }),
     );
 
     const report = await runDoctor({ cwd: dir, exec });
@@ -407,14 +449,14 @@ describe("runDoctor (integration)", () => {
     await exec("git", ["init"], dir);
     await writeFile(
       join(dir, "orchestrate.config.json"),
-      JSON.stringify({ doctor: "no-such-doctor-cmd" }),
+      JSON.stringify({ version: 2, doctor: "no-such-doctor-cmd" }),
     );
 
     const report = await runDoctor({ cwd: dir, exec });
     expect(report.results.find((row) => row.name === "project-doctor")).toMatchObject({
       status: "fail",
       detail: "command not found: no-such-doctor-cmd",
-      fix: ['fix the "doctor" entry in orchestrate.config.json'],
+      fix: ['fix the "doctor" entry in the orchestrate config'],
     });
   });
 
@@ -425,7 +467,7 @@ describe("runDoctor (integration)", () => {
     // for the inner shell instead of an argument to `sleep`, which would otherwise error out.
     await writeFile(
       join(dir, "orchestrate.config.json"),
-      JSON.stringify({ doctor: "sh -c 'sleep 30'" }),
+      JSON.stringify({ version: 2, doctor: "sh -c 'sleep 30'" }),
     );
 
     const started = Date.now();
@@ -435,5 +477,105 @@ describe("runDoctor (integration)", () => {
       status: "fail",
       detail: "timed out after 0.3s",
     });
+  });
+});
+
+describe("workflowChecks", () => {
+  const dirs: string[] = [];
+  afterAll(async () => {
+    await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  const makeRoot = async (): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), "doctor-declared-"));
+    dirs.push(dir);
+    return dir;
+  };
+
+  const run = async (
+    declaration: { check: "env" | "binary" | "package" | "file"; key: string },
+    root: string,
+    workflowDir = root,
+  ) => {
+    const [check] = workflowChecks([{ ...declaration, fix: "do the fix" }], workflowDir);
+    if (check === undefined) throw new Error("no check built");
+    return { check, row: await evaluate(check, { root, exec: fakeExec({}) }) };
+  };
+
+  test("a declaration becomes a required check named CHECK:KEY with the declared fix", async () => {
+    const root = await makeRoot();
+    const { check, row } = await run({ check: "env", key: "DOCTOR_TEST_MISSING" }, root);
+    expect(check.optional).toBeUndefined();
+    expect(row).toMatchObject({
+      name: "env:DOCTOR_TEST_MISSING",
+      optional: false,
+      status: "fail",
+      fix: ["do the fix"],
+    });
+  });
+
+  test("env is ok from .env, never prints the value, and a .env value beats the process", async () => {
+    const root = await makeRoot();
+    process.env.DOCTOR_TEST_KEY = "from-process";
+    await writeFile(join(root, ".env"), "DOCTOR_TEST_KEY=secret-value\n");
+    const fromFile = await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root);
+    expect(fromFile.row.status).toBe("ok");
+    expect(fromFile.row.detail).not.toContain("secret-value");
+
+    await writeFile(join(root, ".env"), "DOCTOR_TEST_KEY=\n");
+    expect((await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root)).row.status).toBe("fail");
+    delete process.env.DOCTOR_TEST_KEY;
+  });
+
+  test("env from a linked worktree reads .env in the main checkout, where linear.ts reads it", async () => {
+    const main = await makeRoot();
+    const git = (cwd: string, ...args: string[]) =>
+      Bun.spawnSync(["git", "-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd });
+    git(main, "init", "-q");
+    git(main, "commit", "-q", "--allow-empty", "-m", "init");
+    const worktree = join(main, "linked");
+    git(main, "worktree", "add", "-q", worktree);
+    await writeFile(join(main, ".env"), "DOCTOR_TEST_WORKTREE_KEY=set\n");
+    expect(
+      (await run({ check: "env", key: "DOCTOR_TEST_WORKTREE_KEY" }, worktree)).row.status,
+    ).toBe("ok");
+  });
+
+  test("env falls back to the process environment", async () => {
+    const root = await makeRoot();
+    process.env.DOCTOR_TEST_KEY = "from-process";
+    expect((await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root)).row.status).toBe("ok");
+    delete process.env.DOCTOR_TEST_KEY;
+  });
+
+  test("binary is ok for an executable on PATH and fails for an absent one", async () => {
+    const root = await makeRoot();
+    expect((await run({ check: "binary", key: "sh" }, root)).row.status).toBe("ok");
+    expect((await run({ check: "binary", key: "no-such-binary-xyz" }, root)).row.status).toBe(
+      "fail",
+    );
+  });
+
+  test("package resolves from the workflow directory", async () => {
+    const root = await makeRoot();
+    const pkg = join(root, "node_modules", "declared-pkg");
+    await mkdir(pkg, { recursive: true });
+    await writeFile(join(pkg, "package.json"), '{"name":"declared-pkg","main":"index.js"}');
+    await writeFile(join(pkg, "index.js"), "module.exports = 1;");
+    expect((await run({ check: "package", key: "declared-pkg" }, root)).row.status).toBe("ok");
+    const elsewhere = await makeRoot();
+    expect((await run({ check: "package", key: "declared-pkg" }, root, elsewhere)).row.status).toBe(
+      "fail",
+    );
+  });
+
+  test("file resolves relative to the root or absolute, and fails when missing", async () => {
+    const root = await makeRoot();
+    await writeFile(join(root, "present.txt"), "x");
+    expect((await run({ check: "file", key: "present.txt" }, root)).row.status).toBe("ok");
+    expect((await run({ check: "file", key: join(root, "present.txt") }, root)).row.status).toBe(
+      "ok",
+    );
+    expect((await run({ check: "file", key: "absent.txt" }, root)).row.status).toBe("fail");
   });
 });

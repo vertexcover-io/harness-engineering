@@ -89,10 +89,11 @@ const WorkspaceConfigSchema = z.strictObject({
   teardown: NonEmptyStringSchema.optional(),
 });
 
-// replace uses the project's file instead of the skill's; extend appends it after the skill's.
+// replace uses the project's file instead of the skill's; extend appends it after the skill's; add names a reference the skill does not have.
 const ReferenceExtensionSchema = z.union([
   z.strictObject({ replace: RepoPathSchema }),
   z.strictObject({ extend: RepoPathSchema }),
+  z.strictObject({ add: RepoPathSchema }),
 ]);
 
 const ExtensionSchema = z.strictObject({
@@ -167,7 +168,11 @@ const declaresVersion2 = (file: ConfigFile): boolean => {
 const contenders = (files: readonly ConfigFile[]): readonly ConfigFile[] =>
   files.length > 1 ? files.filter(declaresVersion2) : files;
 
-export const loadConfig = async (repoRoot: string): Promise<Result<Config, ConfigError>> => {
+export type LoadedConfig = Readonly<{ config: Config; path: string }>;
+
+export const loadConfigFile = async (
+  repoRoot: string,
+): Promise<Result<LoadedConfig, ConfigError>> => {
   const files = await findConfigFiles(repoRoot);
   if (files.length === 0) {
     return {
@@ -195,7 +200,12 @@ export const loadConfig = async (repoRoot: string): Promise<Result<Config, Confi
   if (!versioned.ok) return versioned;
   const parsed = ConfigSchema.safeParse(versioned.value);
   if (!parsed.success) return invalid(`${file.path}: ${z.prettifyError(parsed.error)}`);
-  return { ok: true, value: parsed.data };
+  return { ok: true, value: { config: parsed.data, path: file.path } };
+};
+
+export const loadConfig = async (repoRoot: string): Promise<Result<Config, ConfigError>> => {
+  const loaded = await loadConfigFile(repoRoot);
+  return loaded.ok ? { ok: true, value: loaded.value.config } : loaded;
 };
 
 // A repo with no config file still gets plain worktrees; any other config problem stops the command.

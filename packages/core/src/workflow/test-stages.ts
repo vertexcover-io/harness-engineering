@@ -1,7 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export type DemoStage = Readonly<{ consumes?: string; produces?: string; verifiers?: string }>;
+export type DemoStage = Readonly<{
+  consumes?: string;
+  produces?: string;
+  verifiers?: string;
+  variables?: string;
+}>;
 
 const CORE_INDEX = join(import.meta.dir, "..", "index.ts");
 
@@ -27,7 +32,8 @@ export const record = async (input, context) => {
 };
 `;
 
-// Writes DIR/NAME/SKILL.md for each demo stage, declaring the artifacts it consumes and produces.
+// Writes DIR/NAME/SKILL.md for each demo stage, declaring the artifacts it consumes and produces
+// and the variables it takes.
 export const writeStages = (dir: string, stages: Readonly<Record<string, DemoStage>>): void => {
   mkdirSync(dir, { recursive: true });
   const zodUrl = import.meta.resolve("zod");
@@ -36,7 +42,7 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
     `import { z } from ${JSON.stringify(zodUrl)};\nexport const schemas = { "demo.output.v1": z.record(z.string(), z.json()) };\n`,
   );
   writeFileSync(join(dir, "verifiers.ts"), VERIFIERS_MODULE);
-  for (const [name, { consumes, produces, verifiers }] of Object.entries(stages)) {
+  for (const [name, { consumes, produces, verifiers, variables }] of Object.entries(stages)) {
     mkdirSync(join(dir, name), { recursive: true });
     const lines = [
       "---",
@@ -50,6 +56,7 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
       ...(consumes === undefined ? [] : [`consumes: ${consumes}`]),
       ...(produces === undefined ? [] : [`produces: ${produces}`]),
       ...(verifiers === undefined ? [] : [`verifiers: ${verifiers}`]),
+      ...(variables === undefined ? [] : [`variables: ${variables}`]),
       "protocols: []",
       "scopes: []",
       "---",
@@ -63,4 +70,8 @@ export const DEMO_STAGES = {
   producer: { produces: "[{ artifact: plan }]" },
   consumer: { consumes: "[{ artifact: plan }]" },
   reader: { consumes: "[{ artifact: plan, optional: true }]" },
+  tuned: {
+    variables:
+      "{ tone: { description: How to write, default: plain }, audience: { description: Who reads it } }",
+  },
 } satisfies Record<string, DemoStage>;

@@ -9,7 +9,9 @@ import {
   CreateWorkspaceInputSchema,
   CreateWorkspaceOutputSchema,
 } from "../../../skills/create-workspace/scripts/workspace.ts";
+import { schemas as ticketSchemas } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import { loadStage, resolveExtension, resolveReference, StageSchema } from "./stage.ts";
+import { compileWorkflow } from "./workflow/compile.ts";
 
 const validStage = {
   name: "planning",
@@ -30,6 +32,24 @@ describe("StageSchema", () => {
   test("a full stage parses and produce entries default optional to false", () => {
     const stage = StageSchema.parse(validStage);
     expect(stage.produces).toEqual([{ artifact: "plan", optional: false }]);
+  });
+
+  test("variables default to none, and each declares a description and an optional string default", () => {
+    expect(StageSchema.parse(validStage).variables).toEqual({});
+    const variables = {
+      provider: { description: "Ticket provider", default: "linear" },
+      team: { description: "Team key" },
+    };
+    expect(StageSchema.parse({ ...validStage, variables }).variables).toEqual(variables);
+  });
+
+  test.each([
+    ["an empty description", { provider: { description: "" } }],
+    ["a non-string default", { provider: { description: "d", default: 3 } }],
+    ["an unknown field", { provider: { description: "d", required: true } }],
+    ["a key that is not a slug", { Provider: { description: "d" } }],
+  ])("variables reject %s", (_label, variables) => {
+    expect(StageSchema.safeParse({ ...validStage, variables }).success).toBe(false);
   });
 });
 
@@ -219,11 +239,35 @@ describe("resolveReference", () => {
       "notes",
       "ext/missing.md",
     ],
+    [
+      "an add on a key the skill declares",
+      { demo: { references: { notes: { add: "ext/notes.md" } } } },
+      "notes",
+      "already has reference notes",
+    ],
+    [
+      "an unknown reference, listing added keys",
+      { demo: { references: { extra: { add: "ext/notes.md" } } } },
+      "ghost",
+      "notes, extra",
+    ],
   ])("WS30 — %s is an error", async (_label, extensions, ref, message) => {
     const options = await setupResolve(extensions);
     const result = await resolveReference({ ...options, ref });
     if (result.ok) throw new Error("expected a failure");
     expect(result.error).toContain(message);
+  });
+});
+
+describe("resolveReference add", () => {
+  test("WS36 — an add on an undeclared key resolves to the project file", async () => {
+    const options = await setupResolve({
+      demo: { references: { extra: { add: "ext/notes.md" } } },
+    });
+    expect(await resolveReference({ ...options, ref: "extra" })).toEqual({
+      ok: true,
+      value: "extension text\n",
+    });
   });
 });
 
@@ -266,5 +310,28 @@ describe("the real create-workspace skill", () => {
     const selectRepos = result.value.stage.references["select-repos"];
     expect(selectRepos?.path).toBe("references/select-repos.md");
     expect(existsSync(join(skillDir, selectRepos?.path ?? ""))).toBe(true);
+  });
+});
+
+describe("the real ticket-fetcher skill", () => {
+  const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "ticket-fetcher");
+
+  test("SC24: loads through loadStage with its own schemas, an optional ticket artifact, a linear reference and a provider variable defaulting to linear", async () => {
+    const result = await loadStage(skillDir, ticketSchemas);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.stage.produces).toEqual([{ artifact: "ticket", optional: true }]);
+    expect(result.value.stage.references.linear?.path).toBe("references/linear.md");
+    expect(result.value.stage.variables.provider?.default).toBe("linear");
+  });
+
+  test("SC25: a workflow that uses it compiles", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ticket-wf-"));
+    const path = join(dir, "wf.yaml");
+    await writeFile(
+      path,
+      'name: t\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n  - id: fetch\n    type: agent\n    stage: ticket-fetcher\n    input:\n      request: "{{ inputs.prompt }}"\n',
+    );
+    const plan = await compileWorkflow(path, { cwd: dir });
+    expect(plan.nodes.map((node) => node.id)).toEqual(["fetch"]);
   });
 });

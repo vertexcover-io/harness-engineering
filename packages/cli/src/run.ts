@@ -1,9 +1,17 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
-import { compileWorkflow, runDoctor, verdict } from "@harness/core";
+import { runDoctor, verdict, workflowChecks } from "@harness/core";
 import { createGit, type JsonObject, spawnInteractive } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
-import { apiErrorText, cliLog, commandLog, ensureServer, fail, harnessClient } from "./client.ts";
+import {
+  apiErrorText,
+  cliLog,
+  commandLog,
+  compileOrFail,
+  ensureServer,
+  fail,
+  harnessClient,
+} from "./client.ts";
 
 const collectInput = (pair: string, acc: Record<string, string>): Record<string, string> => {
   const index = pair.indexOf("=");
@@ -22,16 +30,13 @@ export const runCommand = () =>
       const cwd = process.cwd();
       const workflowPath = resolve(cwd, workflowArg);
 
-      const plan = await compileWorkflow(workflowPath).catch((error: unknown) => {
-        fail(error instanceof Error ? error : String(error));
-        return null;
-      });
+      const plan = await compileOrFail(workflowPath, cwd);
       if (plan === null) return;
       log.debug({ workflow: plan.name, path: workflowPath }, "workflow compiled");
 
       const report = await runDoctor({
         cwd,
-        extraChecks: runtimeChecks(),
+        extraChecks: [...runtimeChecks(), ...workflowChecks(plan.doctor, dirname(workflowPath))],
         log: cliLog(),
       });
       const doctorVerdict = verdict(report);

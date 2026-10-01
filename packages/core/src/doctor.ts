@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { access, constants } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import {
   type Check,
   type CheckContext,
@@ -9,17 +10,21 @@ import {
   type Exec,
   execWithTimeout,
   fail,
+  findRoot,
   type ILogger,
+  type LoadedConfig,
+  loadConfigFile,
   NOT_FOUND,
   NonEmptyStringSchema,
   noopLogger,
   type Outcome,
   ok,
   type Result,
-  readIfExists,
+  readProjectEnv,
   warn,
 } from "@harness/sdk";
 import * as z from "zod";
+import type { DoctorDeclaration } from "./workflow/types.ts";
 
 export const DoctorRowSchema = z.object({
   name: NonEmptyStringSchema,
@@ -53,7 +58,6 @@ const ProjectRowSchema = z.object({
 const ProjectReportSchema = z.object({ results: z.array(ProjectRowSchema) });
 
 export const DOCTOR_TIMEOUT_MS = 30_000;
-const CONFIG_FILE = "orchestrate.config.json";
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -74,30 +78,19 @@ const checkHarnessIgnored = async ({ root, exec }: CheckContext): Promise<Outcom
   return ignored ? ok(".harness/ is gitignored") : fail(".harness/ is not gitignored");
 };
 
-const ConfigSchema = z.object({ doctor: NonEmptyStringSchema.optional() });
-type Config = z.infer<typeof ConfigSchema>;
-
-// null when the file is absent. The config check and the project doctor both read through here,
-// so they agree on what a broken config is, and neither can crash the run on one.
-const readConfig = async (root: string): Promise<Result<Config> | null> => {
+// A config that cannot be read at all (a directory in its place) throws; it is a broken config like any other.
+const readConfig = async (root: string): Promise<Result<LoadedConfig>> => {
   try {
-    const text = await readIfExists(join(root, CONFIG_FILE));
-    if (text === null) return null;
-    const json = parseJson(text);
-    if (!json.ok) return { ok: false, error: `${CONFIG_FILE} is not valid JSON` };
-    const parsed = ConfigSchema.safeParse(json.value);
-    if (!parsed.success)
-      return { ok: false, error: `${CONFIG_FILE}: ${z.prettifyError(parsed.error)}` };
-    return { ok: true, value: parsed.data };
+    const loaded = await loadConfigFile(root);
+    return loaded.ok ? loaded : { ok: false, error: loaded.error.message };
   } catch (error) {
-    return { ok: false, error: `${CONFIG_FILE} cannot be read: ${errorMessage(error)}` };
+    return { ok: false, error: `orchestrate config cannot be read: ${errorMessage(error)}` };
   }
 };
 
 const checkOrchestrateConfig = async ({ root }: CheckContext): Promise<Outcome> => {
   const config = await readConfig(root);
-  if (config === null) return fail(`${CONFIG_FILE} not found`);
-  return config.ok ? ok(join(root, CONFIG_FILE)) : fail(config.error);
+  return config.ok ? ok(config.value.path) : fail(config.error);
 };
 
 const checkGhAuth = async (context: CheckContext): Promise<Outcome> => {
@@ -137,8 +130,8 @@ export const CHECKS: readonly Check[] = [
   {
     name: "orchestrate-config",
     fix: [
-      "run /setup-harness to generate it",
-      "or copy skills/orchestrate/references/orchestrate.config.example.json",
+      "run /setup-harness to write orchestrate.config.yaml",
+      "or keep exactly one v2 config file (version: 2) at the repository root",
     ],
     run: checkOrchestrateConfig,
   },
@@ -217,7 +210,7 @@ export const verdict = (report: DoctorReport): string => {
 
 const readDoctorCommand = async (root: string): Promise<string | null> => {
   const config = await readConfig(root);
-  return config?.ok ? (config.value.doctor ?? null) : null;
+  return config.ok ? (config.value.config.doctor ?? null) : null;
 };
 
 const parseReport = (stdout: string): readonly DoctorRow[] | null => {
@@ -248,7 +241,7 @@ export const projectDoctor = async (root: string, exec: Exec): Promise<readonly 
         projectRow(
           "fail",
           `command not found: ${command}`,
-          `fix the "doctor" entry in ${CONFIG_FILE}`,
+          `fix the "doctor" entry in the orchestrate config`,
         ),
       ];
     }
@@ -288,3 +281,50 @@ export const runDoctor = async ({
   ]);
   return summarize([...rows, ...projectRows]);
 };
+
+const isReadable = (path: string): Promise<boolean> =>
+  access(path, constants.R_OK).then(
+    () => true,
+    () => false,
+  );
+
+const isResolvable = (id: string, from: string): boolean => {
+  try {
+    Bun.resolveSync(id, from);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const runDeclared = async (
+  { check, key }: DoctorDeclaration,
+  root: string,
+  workflowDir: string,
+): Promise<Outcome> => {
+  if (check === "env") {
+    // The same main-checkout .env the skill scripts read through resolveRoot, even from a worktree.
+    const main = await findRoot(root);
+    return (await readProjectEnv(main.ok ? main.value : root, key)) ? ok("set") : fail("missing");
+  }
+  if (check === "binary") {
+    const path = Bun.which(key);
+    return path === null ? fail("not on PATH") : ok(path);
+  }
+  if (check === "package") {
+    return isResolvable(key, workflowDir) ? ok("resolvable") : fail("cannot be resolved");
+  }
+  const path = resolve(root, key);
+  return (await isReadable(path)) ? ok(path) : fail("missing or unreadable");
+};
+
+// The workflow's own required checks. Their fix is the workflow author's advice for the user.
+export const workflowChecks = (
+  declarations: readonly DoctorDeclaration[],
+  workflowDir: string,
+): readonly Check[] =>
+  declarations.map((declaration) => ({
+    name: `${declaration.check}:${declaration.key}`,
+    fix: [declaration.fix],
+    run: ({ root }) => runDeclared(declaration, root, workflowDir),
+  }));

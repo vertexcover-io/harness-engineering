@@ -184,6 +184,7 @@ export type StepReply =
       extension: string | null;
       prompt?: string;
       input: JsonValue;
+      variables: Readonly<Record<string, string>>;
       done: string;
     }>
   | Readonly<{
@@ -295,7 +296,7 @@ const buildLeafReply = (
   run: RunRef,
   options: NextOptions,
 ): StepReply => {
-  const { node, nodeRunId, input } = decision;
+  const { node, nodeRunId, input, variables } = decision;
   if (node.type !== "agent") {
     const mode = node.type === "exec" ? node.mode : "inline";
     return {
@@ -320,6 +321,7 @@ const buildLeafReply = (
     extension: extension === undefined ? null : join(options.root, extension),
     ...(node.prompt === undefined ? {} : { prompt: node.prompt }),
     input,
+    variables,
     done,
   };
 };

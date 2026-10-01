@@ -38,7 +38,13 @@ export type Leaf = PlanExecNode | PlanWaitNode | PlanAgentNode;
 
 // What `next` replies. The events it recorded on the way are already saved.
 export type Decision =
-  | Readonly<{ kind: "leaf"; node: Leaf; nodeRunId: string; input: JsonValue }>
+  | Readonly<{
+      kind: "leaf";
+      node: Leaf;
+      nodeRunId: string;
+      input: JsonValue;
+      variables: Readonly<Record<string, string>>;
+    }>
   | Readonly<{ kind: "waiting"; nodeRunId: string }>
   | Readonly<{ kind: "blocked"; nodeId: string; stage: string; missing: readonly string[] }>
   | Readonly<{ kind: "finished"; status: Exclude<State["status"], "running"> }>;
@@ -163,11 +169,35 @@ const findMissingArtifacts = (stage: PlanStage, state: State): readonly string[]
 type Ending = SkipOutput | NodeFailure;
 type Start =
   | Readonly<{ kind: "end"; ending: Ending }>
-  | Readonly<{ kind: "start"; input: JsonValue; scope: Scope }>;
+  | Readonly<{
+      kind: "start";
+      input: JsonValue;
+      variables: Readonly<Record<string, string>>;
+      scope: Scope;
+    }>;
+
+// A stage's variables: its skill's defaults under the node's own values, worked out like its
+// input. A variable is text, so a value that works out to anything else fails the node.
+const resolveVariables = (node: PlanNode, scope: Scope): Record<string, string> => {
+  if (node.type !== "agent" || node.stage === undefined) return {};
+  const defaults = Object.entries(node.stage.variables).flatMap(([name, variable]) =>
+    variable.default === undefined ? [] : [[name, variable.default]],
+  );
+  const set = Object.entries(node.variables ?? {}).map(([name, text]) => {
+    const value = resolveValue(text, scope);
+    if (typeof value === "string") return [name, value];
+    const got = JSON.stringify(value);
+    throw new NodeFailure(
+      "resolution",
+      `${node.id}: variable ${name} must be a string, got ${got}`,
+    );
+  });
+  return Object.fromEntries([...defaults, ...set]);
+};
 
 // Whether an unstarted node runs: skipped when a dependency was skipped or its `when` is false,
-// failed when its input cannot be worked out. Nodes are walked in dependency order, so its
-// dependencies have ended.
+// failed when its input or variables cannot be worked out. Nodes are walked in dependency order,
+// so its dependencies have ended.
 const decideStart = (node: PlanNode, walk: Walk, state: State): Start => {
   const results = findNodeRuns(state.nodeRuns, node.parents);
   const skipped = node.dependsOn.filter((id) => own(results, id)?.status === "skipped");
@@ -188,7 +218,8 @@ const decideStart = (node: PlanNode, walk: Walk, state: State): Start => {
       };
       return { kind: "end", ending };
     }
-    return { kind: "start", input: resolveValue(node.input, scope), scope };
+    const input = resolveValue(node.input, scope);
+    return { kind: "start", input, variables: resolveVariables(node, scope), scope };
   } catch (error) {
     if (error instanceof NodeFailure) return { kind: "end", ending: error };
     throw error;
@@ -289,10 +320,10 @@ const executeLeaf = async (
       return { state, step: { kind: "blocked", nodeId: node.id, stage: node.stage.ref, missing } };
     }
   }
-  const { input } = start;
+  const { input, variables } = start;
   const started = await recordStart(node, { input }, walk, state);
   const { nodeRunId } = started.nodeRun;
-  return { state: started.state, step: { kind: "leaf", node, nodeRunId, input } };
+  return { state: started.state, step: { kind: "leaf", node, nodeRunId, input, variables } };
 };
 
 // A switch: starts on the case whose value matches (or its default), walks that case's nodes,

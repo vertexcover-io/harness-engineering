@@ -10,6 +10,7 @@ export {
   runDoctor,
   summarize,
   verdict,
+  workflowChecks,
 } from "./doctor.ts";
 export {
   type CapturedLine,
