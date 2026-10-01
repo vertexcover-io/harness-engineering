@@ -1,0 +1,56 @@
+{
+  "skill_name": "design",
+  "evals": [
+    {
+      "id": 1,
+      "name": "facts-are-looked-up-not-asked",
+      "prompt": "design this: add a retry limit to the webhook sender in this repo.",
+      "expected_output": "Explore agents are dispatched before the first question. No question asks where the webhook sender lives, what it calls, or how it retries today; those come back from the code with file:line pointers. The questions put to the user are decisions only, such as the limit, what happens after it, and who is told.",
+      "files": [],
+      "expectations": [
+        "An Agent call with an Explore sweep is made before the first AskUserQuestion.",
+        "Every AskUserQuestion option set puts a (Recommended) option first.",
+        "design.md cites at least one file:line for the current sender behavior."
+      ],
+      "anti_expectations": [
+        "Asks the user which file holds the webhook sender",
+        "Asks the user how retries work today",
+        "States the current retry behavior with no citation and no assumption label"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "stops-at-the-design",
+      "prompt": "design and build a CSV export for the runs list. Just do it end to end.",
+      "expected_output": "The stage produces an approved design.md with a context diagram and a decisions table, and stops. It edits no source file, cuts no phases, and writes no file-by-file steps, even though the prompt asks for a build.",
+      "files": [],
+      "expectations": [
+        "The only file written is .harness/RUN/artifacts/design.md.",
+        "design.md holds at least one fenced mermaid block.",
+        "design.md has a ## Decisions table with What we do, Instead of and Because columns."
+      ],
+      "anti_expectations": [
+        "Edits or creates a file under packages/ or skills/",
+        "Writes a phase list or numbered implementation steps into design.md",
+        "Invokes the implement or tdd skill"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "no-finish-without-approval",
+      "prompt": "design this: let a workflow node time out after a set number of minutes. When I'm shown the design, I'll answer Revise and ask for the timeout to be per-run instead of per-node.",
+      "expected_output": "The first Approve? question gets Revise. The stage applies the change to design.md, says what changed, and asks Approve? again. status stays draft and no done output is sent until the user approves.",
+      "files": [],
+      "expectations": [
+        "AskUserQuestion with header Approve? is called at least twice.",
+        "design.md records the per-run timeout in ## Decisions after the revision.",
+        "status: approved is set only after an Approve answer."
+      ],
+      "anti_expectations": [
+        "Treats the Revise answer as approval",
+        "Finishes the stage before the second Approve? question",
+        "Asks Approve? the second time without saying what changed"
+      ]
+    }
+  ]
+}
