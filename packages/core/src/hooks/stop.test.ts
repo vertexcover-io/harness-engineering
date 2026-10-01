@@ -1,7 +1,17 @@
-import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as sdk from "@harness/sdk";
 import {
   emitRunEvent,
   type NodeRun,
@@ -14,7 +24,7 @@ import {
   type TranscriptEntry,
 } from "@harness/sdk";
 import { createRegistry, jsonlEventStore, readState } from "@harness/sdk/internal";
-import * as contextStep from "../context-step.ts";
+import { ORCHESTRATE_SCRIPT } from "../stage.ts";
 import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 import { decideStop, runStopHook } from "./stop.ts";
 
@@ -310,43 +320,53 @@ describe("runStopHook", () => {
 describe("an open context node", () => {
   const contextOpen = { fresh: nodeRun("nr-1", "running", "context") };
 
-  type StartContextStep = typeof contextStep.startContextStep;
-  // The real helper spawns a detached orchestrate process; these tests only check it is asked to.
-  const start = spyOn(contextStep, "startContextStep");
-  afterEach(() => start.mockReset());
-  afterAll(() => start.mockRestore());
-
-  const withHelper = async (nodeRuns: State["nodeRuns"], startContextStep?: StartContextStep) => {
-    const { deps, runDir, cwd } = await setUp(nodeRuns);
-    const calls: Array<readonly [RunRef, string, string]> = [];
-    start.mockImplementation(
-      startContextStep ??
-        (async (run, sessionId, nodeRunId) => void calls.push([run, sessionId, nodeRunId])),
-    );
-    return { calls, runDir, cwd, deps };
-  };
+  // The helper is a detached orchestrate process, so the spawn is the boundary these tests stop at.
+  let spawn: ReturnType<typeof spyOn<typeof sdk, "spawnDetached">>;
+  beforeAll(() => {
+    spawn = spyOn(sdk, "spawnDetached");
+  });
+  beforeEach(() => spawn.mockImplementation(() => 0));
+  afterEach(() => spawn.mockReset());
+  afterAll(() => spawn.mockRestore());
 
   test("lets the turn end, records context-node and starts the helper for that node", async () => {
-    const { deps, calls, runDir, cwd } = await withHelper(contextOpen);
+    const { deps, runDir, cwd } = await setUp(contextOpen);
 
     expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toEqual({ kind: "allow" });
 
-    expect(calls).toEqual([[{ id: "r-1", cwd, name: "feat-x" }, "s1", "nr-1"]]);
+    expect(spawn.mock.calls).toEqual([
+      [
+        process.execPath,
+        [
+          ORCHESTRATE_SCRIPT,
+          "context",
+          "nr-1",
+          "--run",
+          "feat-x",
+          "--session-id",
+          "s1",
+          "--root",
+          cwd,
+        ],
+        { cwd, output: "ignore" },
+      ],
+    ]);
     expect((await jsonlEventStore(runDir).read()).map((e) => e.payload)).toEqual([
       expect.objectContaining({ decision: "allow", reason: "context-node", nodeRunId: "nr-1" }),
     ]);
   });
 
   test("an open agent node still blocks and starts no helper", async () => {
-    const { deps, calls } = await withHelper(planOpen);
+    const { deps } = await setUp(planOpen);
     expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toMatchObject({
       kind: "continue",
     });
-    expect(calls).toEqual([]);
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   test("a helper that cannot start still lets the stop through", async () => {
-    const { deps } = await withHelper(contextOpen, async () => {
+    const { deps } = await setUp(contextOpen);
+    spawn.mockImplementation(() => {
       throw new Error("spawn failed");
     });
 
