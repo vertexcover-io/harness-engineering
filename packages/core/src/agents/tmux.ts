@@ -242,7 +242,7 @@ export const harnessTerminalHost = (
   });
 
 // Inside a tmux pane, $TMUX starts with the server's socket path and $TMUX_PANE names the pane.
-export const currentPane = (
+export const currentTerminal = (
   env: NodeJS.ProcessEnv = process.env,
   log?: ILogger,
 ): ITerminal | undefined => {

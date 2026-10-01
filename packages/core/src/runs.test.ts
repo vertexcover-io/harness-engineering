@@ -23,7 +23,7 @@ import {
 } from "@harness/sdk";
 import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
 import corePackage from "../package.json";
-import { currentPane } from "./agents/tmux.ts";
+import { currentTerminal } from "./agents/tmux.ts";
 import { type InitOptions, initializeRun, linkRunSession, terminalName } from "./runs.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
@@ -287,7 +287,7 @@ const privateTmux = () => {
   tmux(socket, "new-session", "-d", "-s", "old-name", "sleep", "60");
   const path = tmux(socket, "display-message", "-p", "#{socket_path}");
   const pane = tmux(socket, "list-panes", "-a", "-F", "#{pane_id}");
-  return { socket, pane: currentPane({ TMUX: `${path},1,0`, TMUX_PANE: pane }) };
+  return { socket, terminal: currentTerminal({ TMUX: `${path},1,0`, TMUX_PANE: pane }) };
 };
 
 describe("terminal naming", () => {
@@ -296,11 +296,11 @@ describe("terminal naming", () => {
   });
 
   test("SC3: init renames the pane's tmux session and records the name", async () => {
-    const { socket, pane } = privateTmux();
+    const { socket, terminal } = privateTmux();
     try {
       const { registry, run, init } = await savedRun({ id: "r-1a2b3c4d" });
 
-      const result = await init("fix-login", run.id, { pane });
+      const result = await init("fix-login", run.id, { terminal });
 
       expect(result.ok).toBe(true);
       expect(tmux(socket, "list-sessions", "-F", "#{session_name}")).toBe("claude-fix-login-3c4d");
@@ -327,7 +327,7 @@ describe("terminal naming", () => {
     const { registry, run, init } = await savedRun({ terminal: "old" });
 
     const result = await init("fix-login", run.id, {
-      pane: failing,
+      terminal: failing,
     });
 
     expect(result.ok).toBe(true);
@@ -341,7 +341,7 @@ describe("terminal naming", () => {
     };
     const { registry, run, init } = await savedRun({ terminal: "old" });
 
-    const result = await init("fix-login", run.id, { pane: throwing });
+    const result = await init("fix-login", run.id, { terminal: throwing });
 
     expect(result.ok).toBe(true);
     expect(existsSync(result.ok ? result.value.dir : "")).toBe(true);

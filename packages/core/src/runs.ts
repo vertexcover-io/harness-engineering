@@ -73,8 +73,8 @@ export type InitOptions = Readonly<{
   name: string;
   git: IGit;
   log: ILogger;
-  // the agent's tmux pane, when init runs inside one
-  pane?: ITerminal | undefined;
+  // the agent's terminal, when init runs inside one
+  terminal?: ITerminal | undefined;
 }>;
 
 export const terminalName = (runName: string, runId: string): string =>
@@ -82,16 +82,16 @@ export const terminalName = (runName: string, runId: string): string =>
 
 // A failed rename is only logged: the run works, its tmux session just keeps the old name.
 const renameTerminal = async (run: WorkflowRun, options: InitOptions): Promise<void> => {
-  const { pane, registry, name, log } = options;
-  if (pane === undefined) return;
-  const terminal = terminalName(name, run.id);
+  const { terminal, registry, name, log } = options;
+  if (terminal === undefined) return;
+  const sessionName = terminalName(name, run.id);
   try {
-    const renamed = await pane.rename(terminal);
+    const renamed = await terminal.rename(sessionName);
     if (!renamed.ok) {
       log.warn({ runId: run.id, err: renamed.error }, "tmux session not renamed");
       return;
     }
-    await registry.setTerminal(run.id, terminal);
+    await registry.setTerminal(run.id, sessionName);
   } catch (error) {
     log.warn({ runId: run.id, err: error }, "tmux session not renamed");
   }

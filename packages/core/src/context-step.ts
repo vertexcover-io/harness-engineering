@@ -22,7 +22,7 @@ import {
   isClaudeBusy,
   typeLine,
 } from "./agents/claude.ts";
-import { currentPane } from "./agents/tmux.ts";
+import { currentTerminal } from "./agents/tmux.ts";
 import { completeContextStep, findContextPlanNode } from "./runs.ts";
 import { ORCHESTRATE_SCRIPT } from "./stage.ts";
 
@@ -245,7 +245,7 @@ export const completeContextOnSessionStart = async (
   run: RunRef,
   sessionId: string,
   source: string,
-  terminal: ITerminal | undefined = currentPane(),
+  terminal: ITerminal | undefined = currentTerminal(),
 ): Promise<void> => {
   const runDir = runDirOf(run.cwd, run.name);
   const state = await readState(runDir);
