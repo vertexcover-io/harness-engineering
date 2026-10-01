@@ -23,6 +23,7 @@ export const runCommand = () =>
   new Command("run")
     .argument("<workflow>", "workflow file to compile and run")
     .requiredOption("--prompt <text>", "first message sent to the agent")
+    .option("--name <name>", "run name (default: derived from the prompt)")
     .option("--input <key=value>", "extra input, repeatable", collectInput, {})
     .option("--attach", "attach to the session's terminal once it starts")
     .action(async (workflowArg, opts) => {
@@ -52,6 +53,7 @@ export const runCommand = () =>
         workflowPath,
         inputs: { prompt: opts.prompt, ...opts.input } satisfies JsonObject,
         cwd: repoRoot,
+        ...(opts.name === undefined ? {} : { name: opts.name }),
       });
       if (!result.ok) return fail(apiErrorText(result.error));
       const { run } = result.value;

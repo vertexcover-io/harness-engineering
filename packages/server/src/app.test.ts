@@ -122,6 +122,50 @@ describe("POST /runs", () => {
     expect((await deps.registry.findRun(json.run.id))?.terminal).toBe("session-xyz");
   });
 
+  test("a supplied name reaches the agent as the run name", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    let prompt: string | undefined;
+    const deps = await buildDeps((options) => {
+      prompt = options.prompt;
+      return Promise.resolve({ ok: true, value: { sessionId: "s1" } });
+    });
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workflow: "ok",
+        workflowPath,
+        inputs: { prompt: "different" },
+        cwd,
+        name: "fix-login",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(prompt).toBe(
+      `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify({ prompt: "different" })} --name fix-login`,
+    );
+  });
+
+  test("an invalid supplied name is rejected before launching an agent", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    let launched = false;
+    const deps = await buildDeps(() => {
+      launched = true;
+      return Promise.resolve({ ok: true, value: { sessionId: "s1" } });
+    });
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, name: "Bad/Name" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(launched).toBe(false);
+  });
+
   test("the run is in the registry before its agent starts, so the agent's orchestrate init finds it", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     let savedAtLaunch: unknown;
