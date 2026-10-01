@@ -3,6 +3,7 @@ dot-not-commit
 .worktrees/
 docs/*
 !docs/learnings/
+!docs/adr/
 orchestrate-workspace
 code-review-workspace
 dev-docs
