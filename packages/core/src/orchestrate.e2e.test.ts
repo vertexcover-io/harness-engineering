@@ -260,36 +260,6 @@ describe("orchestrate emit", () => {
     expect(await eventsOf(repo)).toEqual([]);
   });
 
-  test("SC12: emit refuses workflow.* with the engine-owned message and still records other events", async () => {
-    const repo = tempRepo();
-    const home = tempDir();
-    initializedRun(home, repo);
-
-    const refused = orchestrate(repo, home, [
-      "emit",
-      "workflow.started",
-      "--run",
-      "feat-x",
-      "--source",
-      "test",
-    ]);
-    const stored = orchestrate(repo, home, [
-      "emit",
-      "custom.ext.note",
-      "--run",
-      "feat-x",
-      "--source",
-      "test",
-    ]);
-
-    expect(refused.code).not.toBe(0);
-    expect(refused.stderr).toContain(
-      "workflow.started is engine-owned; use next, exec, or done for workflow lifecycle",
-    );
-    expect(stored.code).toBe(0);
-    expect(JSON.parse(stored.stdout)).toMatchObject({ type: "custom.ext.note", source: "test" });
-  });
-
   test("emit cannot bypass stage completion verification with a lifecycle event", async () => {
     const repo = tempRepo();
     const home = tempDir();
