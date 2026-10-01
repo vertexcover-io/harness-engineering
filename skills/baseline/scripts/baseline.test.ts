@@ -10,9 +10,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type RunRef, runDirOf } from "@harness/sdk";
+import { noopLogger, type RunRef, runDirOf } from "@harness/sdk";
 import { createState, jsonlEventStore } from "@harness/sdk/internal";
-import { captureLogger } from "../logging.ts";
 import { type Baseline, captureBaseline } from "./baseline.ts";
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "baseline-")));
@@ -37,7 +36,7 @@ const setup = async (config: object, { state = true } = {}): Promise<Setup> => {
 const capture = (
   { root, run }: Setup,
   options: { packages?: readonly string[]; dir?: string } = {},
-  log = captureLogger().log,
+  log = noopLogger,
 ) =>
   captureBaseline({
     root,

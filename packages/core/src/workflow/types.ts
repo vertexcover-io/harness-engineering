@@ -285,8 +285,8 @@ export type PlanStage = Readonly<{
   consumes: readonly ArtifactDeclaration[];
   produces: readonly ArtifactDeclaration[];
   variables: Stage["variables"];
-  outputSchemaName: string;
-  outputSchema: z.ZodType;
+  // The schema the stage's SKILL.md names for its output; without one, its output is plain text.
+  output?: Readonly<{ name: string; schema: z.ZodType }>;
   verifiers: readonly PlanVerifier[];
 }>;
 

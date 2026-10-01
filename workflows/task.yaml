@@ -25,11 +25,7 @@ nodes:
       request: "{{ nodes.ticket-fetcher.output.task }}"
 
   - id: baseline
-    type: exec
-    mode: background
-    runtime: sh
-    script: bun run orchestrate baseline --run "$(jq -r .run)"
-    output: { zodSchema: Json }
+    type: agent
+    stage: baseline
     dependsOn: [create-workspace]
-    input:
-      run: "{{ nodes.create-workspace.output.branch }}"
+    input: {}

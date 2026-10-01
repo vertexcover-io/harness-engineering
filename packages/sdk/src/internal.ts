@@ -33,6 +33,5 @@ export {
   type ExtensionHandlers,
   projectEvents,
   readGit,
-  readState,
   syncState,
 } from "./state.ts";

@@ -99,6 +99,7 @@ const PUBLIC_RUNTIME_NAMES = [
   "parseYaml",
   "readIfExists",
   "readProjectEnv",
+  "readState",
   "readText",
   "registryPath",
   "resolveRoot",
@@ -146,7 +147,7 @@ describe("source boundaries", () => {
   });
 
   // A write can name the file through a variable or helper, so the check is on the path itself:
-  // only state.ts may build a path to state.json at all.
+  // only state.ts may build a path to state.json at all. Others read it through readState.
   test("EH11 — only packages/sdk/src/state.ts builds a path to state.json, so every write goes through its lock", () => {
     const statePath = /[/"'`]state\.json["'`]/;
     const sources = ["packages/*/src/**/*.ts", "skills/**/*.{ts,mts,js,mjs}"].flatMap((pattern) =>
@@ -167,6 +168,7 @@ describe("source boundaries", () => {
         "emitRunEvent",
         "createRegistryReader",
         "resolveRun",
+        "readState",
         "VerifierResultSchema",
       ]),
     );

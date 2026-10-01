@@ -1,5 +1,8 @@
 version: 2
 
+# Typecheck, lint and test over the whole repo, printed as one JSON summary.
+baseline: bun run check
+
 workspace:
   layout: mono
   path: .worktrees/{{ branch }}

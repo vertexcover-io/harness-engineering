@@ -574,6 +574,21 @@ const stagesRejection = async (source: string): Promise<WorkflowError> => {
 };
 
 describe("compile with stages", () => {
+  test("a stage with no outputs compiles with no output schema, so its output is plain text", async () => {
+    const project = mkdtempSync(join(tmpdir(), "wf-stage-no-outputs-"));
+    writeStages(join(project, "stages"), DEMO_STAGES);
+    const skill = join(project, "stages", "producer", "SKILL.md");
+    const source = await Bun.file(skill).text();
+    writeFileSync(skill, source.replace(/^(inputs|outputs): .*\n/gm, ""));
+    const path = join(project, "workflow.yml");
+    writeFileSync(path, workflow(stageNode("make", "stages/producer")));
+
+    const plan = await compileWorkflow(path, { cwd: project });
+    const make = plan.nodes.find((node) => node.id === "make");
+    if (make?.type !== "agent" || make.stage === undefined) throw new Error("expected a stage");
+    expect(make.stage.output).toBeUndefined();
+  });
+
   test("a stage without a resolvable output schema is rejected before execution", async () => {
     const project = mkdtempSync(join(tmpdir(), "wf-stage-schema-"));
     writeStages(join(project, "stages"), DEMO_STAGES);

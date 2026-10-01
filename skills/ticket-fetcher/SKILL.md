@@ -50,7 +50,7 @@ this skill and the provider's reference list.
 1. Decide what the request is. It is a ticket request when it holds a tracker URL, an issue key
    like `ENG-123`, or asks to work on a ticket. Otherwise it is a plain task: reply
    `{ "task": REQUEST }` with no artifact, and stop.
-2. Read the provider's reference with `bun run orchestrate skill ref ticket-fetcher PROVIDER`,
+2. Read the provider's reference with `bun run orchestrate skill ref ticket-fetcher.PROVIDER`,
    where PROVIDER is the `provider` variable. If it fails, stop and report its message. A project
    adds a provider with a reference file registered as
    `extensions.ticket-fetcher.references.NAME: { add: PATH }` in `orchestrate.config.yaml`, and

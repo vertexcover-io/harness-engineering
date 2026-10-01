@@ -70,8 +70,8 @@ export const StageSchema = z.strictObject({
   tags: UniqueSlugsSchema.optional(),
   "allowed-tools": z.array(NonEmptyStringSchema),
   tier: NonEmptyStringSchema,
-  inputs: StagePortSchema,
-  outputs: StagePortSchema.extend({ module: NonEmptyStringSchema.optional() }),
+  inputs: StagePortSchema.optional(),
+  outputs: StagePortSchema.extend({ module: NonEmptyStringSchema.optional() }).optional(),
   consumes: z.array(ArtifactDeclarationSchema).optional(),
   produces: z.array(ArtifactDeclarationSchema).optional(),
   protocols: UniqueSlugsSchema,
@@ -167,10 +167,11 @@ export const loadStage = async (
   if (!loaded.ok) return loaded;
   const stage = loaded.value;
   const path = join(skillDir, "SKILL.md");
-  const inputSchema = registry[stage.inputs.schema];
-  const outputSchema = registry[stage.outputs.schema];
-  if (!inputSchema) return { ok: false, error: `${path}: unknown schema ${stage.inputs.schema}` };
-  if (!outputSchema) return { ok: false, error: `${path}: unknown schema ${stage.outputs.schema}` };
+  const inputSchema = stage.inputs === undefined ? z.json() : registry[stage.inputs.schema];
+  const outputSchema = stage.outputs === undefined ? z.string() : registry[stage.outputs.schema];
+  if (!inputSchema) return { ok: false, error: `${path}: unknown schema ${stage.inputs?.schema}` };
+  if (!outputSchema)
+    return { ok: false, error: `${path}: unknown schema ${stage.outputs?.schema}` };
   return { ok: true, value: { stage, inputSchema, outputSchema } };
 };
 
@@ -183,9 +184,15 @@ export const resolveExtension = async (options: ResolveOptions): Promise<Result<
   return doc === undefined ? { ok: true, value: "" } : readText(join(options.root, doc));
 };
 
-export const resolveReference = async (
+// Where a reference's text comes from once the project's extension for it is applied.
+type Located = Readonly<
+  | { kind: "skill" | "replace" | "add"; skill: string; path: string }
+  | { kind: "extend"; skill: string; path: string; extra: string }
+>;
+
+const locateReference = async (
   options: ResolveOptions & Readonly<{ ref: string }>,
-): Promise<Result<string>> => {
+): Promise<Result<Located>> => {
   const { skill, ref, root } = options;
   const skillDir = findStageDir(skill, root, options.skillsDir);
   const loaded = await loadSkill(skillDir);
@@ -205,7 +212,9 @@ export const resolveReference = async (
     return { ok: false, error: `extensions.${name}.references.${key}: ${skill} ${problem}` };
   }
   const extension = own(extensions, ref);
-  if (extension !== undefined && "add" in extension) return readText(join(root, extension.add));
+  if (extension !== undefined && "add" in extension) {
+    return { ok: true, value: { kind: "add", skill: name, path: join(root, extension.add) } };
+  }
   const reference = own(references, ref);
   if (reference === undefined) {
     const added = Object.keys(extensions).filter((key) => own(references, key) === undefined);
@@ -213,11 +222,47 @@ export const resolveReference = async (
     return { ok: false, error: `unknown reference "${ref}"; ${skill} has: ${known}` };
   }
   if (extension !== undefined && "replace" in extension) {
-    return readText(join(root, extension.replace));
+    return {
+      ok: true,
+      value: { kind: "replace", skill: name, path: join(root, extension.replace) },
+    };
   }
-  const base = await readText(join(skillDir, reference.path));
-  if (!base.ok || extension === undefined || !("extend" in extension)) return base;
-  const extra = await readText(join(root, extension.extend));
+  const path = join(skillDir, reference.path);
+  if (extension === undefined) return { ok: true, value: { kind: "skill", skill: name, path } };
+  const extra = join(root, extension.extend);
+  return { ok: true, value: { kind: "extend", skill: name, path, extra } };
+};
+
+export const resolveReference = async (
+  options: ResolveOptions & Readonly<{ ref: string }>,
+): Promise<Result<string>> => {
+  const located = await locateReference(options);
+  if (!located.ok) return located;
+  const base = await readText(located.value.path);
+  if (!base.ok || located.value.kind !== "extend") return base;
+  const extra = await readText(located.value.extra);
   if (!extra.ok) return extra;
   return { ok: true, value: `${base.value.trimEnd()}\n\n${extra.value}` };
+};
+
+// The file a reference reads, for a reference that is run rather than read, such as a script.
+// An extend appends text to the skill's file, so it has no single file to run.
+export const resolveReferencePath = async (
+  options: ResolveOptions & Readonly<{ ref: string }>,
+): Promise<Result<string>> => {
+  const located = await locateReference(options);
+  if (!located.ok) return located;
+  const { kind, skill, path } = located.value;
+  if (kind === "extend") {
+    const key = `extensions.${skill}.references.${options.ref}`;
+    return {
+      ok: false,
+      error: `${key}: a reference used by path can only be replaced, not extended`,
+    };
+  }
+  const found = await access(path).then(
+    () => true,
+    () => false,
+  );
+  return found ? { ok: true, value: path } : { ok: false, error: `${path} does not exist` };
 };

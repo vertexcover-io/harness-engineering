@@ -17,13 +17,14 @@ import {
   type NodeRun,
   noopLogger,
   type RunRef,
+  readState,
   registryPath,
   runDirOf,
   type State,
   type StopInput,
   type TranscriptEntry,
 } from "@harness/sdk";
-import { createRegistry, jsonlEventStore, readState } from "@harness/sdk/internal";
+import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
 import { ORCHESTRATE_SCRIPT } from "../stage.ts";
 import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 import { decideStop, runStopHook } from "./stop.ts";

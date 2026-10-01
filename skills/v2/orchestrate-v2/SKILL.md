@@ -55,20 +55,22 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      extension wins. Follow the skill with the reply's `input` as its input, `variables` as the
      values of the variables the skill names, and `prompt` as extra instructions when present.
      When the skill needs one of its references, run
-     `bun run orchestrate skill ref STAGE REF`, without `--run`, since references do not
+     `bun run orchestrate skill ref STAGE.REF`, without `--run`, since references do not
      belong to a run; never open a reference file by its path, since
      that skips the project's changes to it. When the skill is done, run the reply's `done`
      command with `--output -`, plus `--artifact NAME=artifacts/PATH` for each artifact the
-     skill wrote under `.harness/NAME/`, and pass the output JSON on stdin in a quoted heredoc:
+     skill wrote under `.harness/NAME/`, and pass the output on stdin in a quoted heredoc. The
+     output is JSON when the skill declares `outputs` (or the node an `output` schema), and plain
+     text otherwise:
 
      ```bash
-     bun run orchestrate done NODE_RUN_ID --run NAME --output - <<'JSON'
+     bun run orchestrate done NODE_RUN_ID --run NAME --output - <<'OUT'
      { "the": "skill's output" }
-     JSON
+     OUT
      ```
 
      If the skill could not finish, pass `--error -` instead, with the reason in the heredoc.
-     Always use the quoted heredoc (`<<'JSON'`), never text inside `'…'` on the command line:
+     Always use the quoted heredoc (`<<'OUT'`), never text inside `'…'` on the command line:
      the shell leaves a quoted heredoc alone, while a single apostrophe in quoted text ends the
      quote and lets the rest run as shell. If `done --output` exits non-zero, read its JSON error.
      When `retryable` is `true`, fix the command input or each issue in `issues` and retry `done`

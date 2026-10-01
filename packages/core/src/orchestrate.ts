@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
 import {
   type AgentAdapter,
@@ -45,8 +45,8 @@ import {
   orchestrateHookCommand,
   resolveExtension,
   resolveReference,
+  resolveReferencePath,
 } from "./stage.ts";
-import { captureBaseline } from "./stages/baseline.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
@@ -99,12 +99,6 @@ const printResult = (result: Result<unknown>): void =>
   result.ok ? printJson(result.value) : fail(result.error);
 
 const registry = () => createRegistry(registryPath(), log);
-
-const splitList = (value: string): string[] =>
-  value
-    .split(",")
-    .map((name) => name.trim())
-    .filter((name) => name !== "");
 
 const parseJsonFlag = (text: string, flag: string): Result<JsonValue> => {
   try {
@@ -253,8 +247,7 @@ const parseOutcome = async (
   }
   if (flags.error !== undefined)
     return { ok: true, value: { error: await readValue(flags.error) } };
-  const output = parseJsonFlag(await readValue(flags.output ?? ""), "--output");
-  return output.ok ? { ok: true, value: { output: output.value } } : output;
+  return { ok: true, value: { output: await readValue(flags.output ?? "") } };
 };
 
 const doneCommand = () =>
@@ -262,7 +255,10 @@ const doneCommand = () =>
     .description("Finish an agent or stage node that next handed out, with its output or error")
     .argument("<nodeRunId>", "node run id from next")
     .requiredOption("--run <name>", RUN_HELP)
-    .option("--output <json>", "the node's output as JSON, or - to read it from stdin")
+    .option(
+      "--output <text>",
+      "the node's output: plain text, or JSON when the node names an output schema; - reads stdin",
+    )
     .option("--error <message>", "why the node failed, or - to read it from stdin")
     .option(
       "--artifact <name=path>",
@@ -325,41 +321,6 @@ const nodeCommand = () => {
   return node;
 };
 
-const baselineCommand = () =>
-  new Command("baseline")
-    .description(
-      "Run the config's baseline scripts and write their output to the run's artifacts/baseline.json",
-    )
-    .requiredOption("--run <name>", RUN_HELP)
-    .option(
-      "--dir <path>",
-      "folder the scripts run in (default: the run's workspace.path in state.json)",
-      (value: string) => resolve(value),
-    )
-    .option("--packages <names>", "comma-separated packages to run (default: all)", splitList)
-    .option("--root <dir>", ROOT_HELP)
-    .action(async (opts) => {
-      const target = await getWorkflowRun(opts.run, opts.root);
-      if (!target.ok) return fail(target.error);
-      const result = await captureBaseline({
-        root: target.value.root,
-        run: target.value.run,
-        dir: opts.dir,
-        packages: opts.packages ?? [],
-        log,
-      });
-      if (!result.ok) return fail(result.error.message);
-      if (result.value === null) return printJson({ path: null, workspace: null, packages: {} });
-      // The scripts' output is in baseline.json; a skill reading stdout needs only the exit codes.
-      const { path, baseline } = result.value;
-      const exitCodes = Object.entries(baseline.packages).map(([name, { exitCode }]) => [
-        name,
-        exitCode,
-      ]);
-      const workspace = baseline.workspace?.exitCode ?? null;
-      printJson({ path, workspace, packages: Object.fromEntries(exitCodes) });
-    });
-
 const printResolved = async (
   skill: string,
   flags: { root?: string },
@@ -381,12 +342,21 @@ const skillCommand = () => {
   );
   skill
     .command("ref")
-    .argument("<skill>", "skill name")
-    .argument("<ref>", "reference name from the skill's frontmatter")
+    .argument("<SKILL.REF>", "skill name, a dot, and a reference from its frontmatter")
+    .option("--path", "print where the reference's file is instead of its text, to run it")
     .option("--root <dir>", ROOT_HELP)
-    .action((name, ref, flags) =>
-      printResolved(name, flags, (options) => resolveReference({ ...options, ref })),
-    );
+    .action((target: string, flags) => {
+      const dot = target.lastIndexOf(".");
+      if (dot <= 0 || dot === target.length - 1) {
+        return fail(`expected SKILL.REF, such as baseline.script; got "${target}"`);
+      }
+      const ref = target.slice(dot + 1);
+      return printResolved(target.slice(0, dot), flags, (options) =>
+        flags.path
+          ? resolveReferencePath({ ...options, ref })
+          : resolveReference({ ...options, ref }),
+      );
+    });
   skill
     .command("extension")
     .argument("<skill>", "skill name")
@@ -503,7 +473,6 @@ await new Command()
   .addCommand(initCommand())
   .addCommand(linkSessionCommand())
   .addCommand(emitCommand())
-  .addCommand(baselineCommand())
   .addCommand(nextCommand())
   .addCommand(execCommand())
   .addCommand(doneCommand())

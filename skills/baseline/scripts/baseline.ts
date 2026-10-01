@@ -1,23 +1,30 @@
 import { statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import {
   type Config,
+  createRegistryReader,
   type ILogger,
+  jsonLogger,
+  LogLevelSchema,
   loadConfig,
   NameSchema,
   NOT_FOUND,
   NonEmptyStringSchema,
   type Result,
   type RunRef,
+  readState,
+  registryPath,
+  resolveRoot,
+  resolveRun,
   runDirOf,
   type SpawnResult,
   spawn,
+  stopRunningOnSignal,
   unknownPackage,
 } from "@harness/sdk";
-import { readState } from "@harness/sdk/internal";
 import * as z from "zod";
-import { MAX_OUTPUT_BYTES } from "../workflow/executors.ts";
 
 const BaselineEntrySchema = z.strictObject({
   command: NonEmptyStringSchema,
@@ -68,6 +75,8 @@ type Script = Readonly<{
 }>;
 
 const WORKSPACE_TIMEOUT_SECONDS = 1200;
+// The same cap exec nodes keep on a script's output.
+const MAX_OUTPUT_BYTES = 1_048_576;
 const TIMED_OUT = 124;
 const LAUNCH_FAILURE =
   /command not found|Missing script|is not recognized|Script not found|No packages matched/i;
@@ -242,3 +251,70 @@ export const captureBaseline = async (
   await writeFile(path, `${JSON.stringify(baseline.value, null, 2)}\n`);
   return { ok: true, value: { path, baseline: baseline.value } };
 };
+
+// stdout carries only the report, so failures are logged to stderr, at warn unless LOG_LEVEL says otherwise.
+const log = jsonLogger({ level: LogLevelSchema.catch("warn").parse(process.env.LOG_LEVEL) });
+
+const USAGE = `usage: baseline.ts --run NAME [--packages A,B] [--dir DIR] [--root DIR]
+
+Runs the config's baseline scripts in the run's workspace (--dir, else state.json's
+workspace.path), writes artifacts/baseline.json and prints { path, workspace, packages }.
+`;
+
+const FLAGS = {
+  run: { type: "string" },
+  packages: { type: "string" },
+  dir: { type: "string" },
+  root: { type: "string" },
+} as const;
+
+const fail = (error: string): void => {
+  console.error(error);
+  process.exitCode = 1;
+};
+
+const splitList = (value: string): string[] =>
+  value
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+
+const main = async (argv: readonly string[]): Promise<void> => {
+  if (argv.includes("--help") || argv.includes("-h")) return void process.stdout.write(USAGE);
+  // parseArgs throws on an unknown flag; main's caller prints that error.
+  const flags = parseArgs({ args: [...argv], options: FLAGS }).values;
+  const { run: name, packages, dir } = flags;
+  if (name === undefined) return fail(`--run is required\n\n${USAGE}`);
+  const root = await resolveRoot(flags.root);
+  if (!root.ok) return fail(root.error);
+  const run = await resolveRun({
+    registry: createRegistryReader(registryPath()),
+    root: root.value,
+    name,
+  });
+  if (!run.ok) return fail(run.error);
+  const result = await captureBaseline({
+    root: root.value,
+    run: run.value,
+    dir: dir === undefined ? undefined : resolve(dir),
+    packages: packages === undefined ? [] : splitList(packages),
+    log,
+  });
+  if (!result.ok) return fail(`${result.error.code}: ${result.error.message}`);
+  if (result.value === null) {
+    return void console.log(JSON.stringify({ path: null, workspace: null, packages: {} }, null, 2));
+  }
+  // The scripts' output is in baseline.json; the report carries only the exit codes.
+  const { path, baseline } = result.value;
+  const codes = Object.entries(baseline.packages).map(([pkg, { exitCode }]) => [pkg, exitCode]);
+  const workspace = baseline.workspace?.exitCode ?? null;
+  console.log(JSON.stringify({ path, workspace, packages: Object.fromEntries(codes) }, null, 2));
+};
+
+if (import.meta.main) {
+  stopRunningOnSignal();
+  await main(process.argv.slice(2)).catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

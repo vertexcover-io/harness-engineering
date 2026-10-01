@@ -42,7 +42,7 @@ If either script is not found, stop and report that; do not create worktrees by 
 2. Choose the repos:
    - The input has `repos`: use them as given, and skip `select-repos`.
    - `layout` is `mono`: skip this step. The workspace is the one repo.
-   - `layout` is `multi`: run `bun run orchestrate skill ref create-workspace select-repos` and
+   - `layout` is `multi`: run `bun run orchestrate skill ref create-workspace.select-repos` and
      follow what it prints to pick repo names from `packages`.
 3. Run the script's `create`, adding `--base BASE_BRANCH` when the input has `baseBranch`, and
    `--repos NAME1,NAME2` in multi layout:

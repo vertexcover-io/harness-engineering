@@ -300,26 +300,6 @@ describe("orchestrate emit", () => {
   });
 });
 
-const BASELINE_ARGS = ["baseline", "--run", "feat-x"];
-
-const baselineRun = (baseline: string | undefined): { repo: string; home: string } => {
-  const repo = tempRepo();
-  const home = tempDir();
-  writeRegistry(home, [savedRun(repo)]);
-  writeFileSync(join(repo, "orchestrate.config.json"), JSON.stringify({ version: 2, baseline }));
-  expect(orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"]).code).toBe(0);
-  return { repo, home };
-};
-
-const isAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const waitFor = async (condition: () => boolean, timeoutMs = 10_000): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
@@ -327,52 +307,6 @@ const waitFor = async (condition: () => boolean, timeoutMs = 10_000): Promise<vo
     await Bun.sleep(50);
   }
 };
-
-describe("orchestrate baseline", () => {
-  test("BL12: baseline runs the configured script and writes artifacts/baseline.json, recording no event", async () => {
-    const { repo, home } = baselineRun(`echo '{"tests":3}'`);
-
-    const run = orchestrate(repo, home, BASELINE_ARGS);
-
-    expect(run.code).toBe(0);
-    const path = join(runDirOf(repo, "feat-x"), "artifacts", "baseline.json");
-    const baseline = {
-      workspace: { command: `echo '{"tests":3}'`, exitCode: 0, output: { tests: 3 } },
-      packages: {},
-    };
-    expect(JSON.parse(run.stdout)).toEqual({ path, workspace: 0, packages: {} });
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(baseline);
-    expect((await eventsOf(repo)).map((event) => event.type)).toEqual(["workflow.started"]);
-  });
-
-  test("BL12: with no baseline script configured, it prints a null path and no exit codes", () => {
-    const { repo, home } = baselineRun(undefined);
-
-    const run = orchestrate(repo, home, BASELINE_ARGS);
-
-    expect(run.code).toBe(0);
-    expect(JSON.parse(run.stdout)).toEqual({ path: null, workspace: null, packages: {} });
-  });
-
-  test("BL15: SIGTERM kills the running baseline script, exits 143 and writes nothing", async () => {
-    const { repo, home } = baselineRun("echo $$ > pid; sleep 30");
-    const pidFile = join(repo, "pid");
-    const child = Bun.spawn(["bun", SCRIPT, ...BASELINE_ARGS], {
-      cwd: repo,
-      env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home },
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    await waitFor(() => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "");
-    const pid = Number(readFileSync(pidFile, "utf8").trim());
-
-    child.kill("SIGTERM");
-
-    expect(await child.exited).toBe(143);
-    await waitFor(() => !isAlive(pid), 2000);
-    expect(existsSync(join(runDirOf(repo, "feat-x"), "artifacts", "baseline.json"))).toBe(false);
-  });
-});
 
 const DEMO_SKILL = `---
 name: demo
@@ -412,12 +346,39 @@ describe("orchestrate skill", () => {
     });
     writeFileSync(join(root, "notes-extra.md"), "extension text\n");
 
-    const run = orchestrate(root, tempDir(), ["skill", "ref", "demo", "notes"], {
+    const run = orchestrate(root, tempDir(), ["skill", "ref", "demo.notes"], {
       HARNESS_SKILLS_DIR: skillsDir,
     });
 
     expect(run.code).toBe(0);
     expect(run.stdout).toBe("base text\n\nextension text\n");
+  });
+
+  test.each([
+    [
+      "the skill's own file",
+      {},
+      (skillsDir: string, _root: string) => join(skillsDir, "demo/notes.md"),
+    ],
+    [
+      "the project's file when it replaces the reference",
+      { demo: { references: { notes: { replace: "my-notes.md" } } } },
+      (_skillsDir: string, root: string) => join(root, "my-notes.md"),
+    ],
+  ])("skill ref --path prints the path of %s", (_case, extensions, expected) => {
+    const skillsDir = tempDir();
+    mkdirSync(join(skillsDir, "demo"));
+    writeFileSync(join(skillsDir, "demo/SKILL.md"), DEMO_SKILL);
+    writeFileSync(join(skillsDir, "demo/notes.md"), "base text\n");
+    const root = configuredRepo({ extensions });
+    writeFileSync(join(root, "my-notes.md"), "project text\n");
+
+    const run = orchestrate(root, tempDir(), ["skill", "ref", "--path", "demo.notes"], {
+      HARNESS_SKILLS_DIR: skillsDir,
+    });
+
+    expect(run.code).toBe(0);
+    expect(run.stdout).toBe(expected(skillsDir, root));
   });
 
   test("skill ref with no HARNESS_SKILLS_DIR reads the harness repo's own skills folder", () => {
@@ -435,7 +396,7 @@ describe("orchestrate skill", () => {
     const run = orchestrate(
       configuredRepo({}),
       tempDir(),
-      ["skill", "ref", "create-workspace", "select-repos"],
+      ["skill", "ref", "create-workspace.select-repos"],
       {
         HARNESS_SKILLS_DIR: undefined,
       },
@@ -445,8 +406,15 @@ describe("orchestrate skill", () => {
     expect(run.stdout).toBe(readFileSync(shipped, "utf8"));
   });
 
+  test("skill ref without a dot between skill and reference exits 1 showing the form", () => {
+    const run = orchestrate(configuredRepo({}), tempDir(), ["skill", "ref", "baseline"]);
+
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("SKILL.REF");
+  });
+
   test("WS33 — skill ref for a skill that does not exist exits 1 naming the skill", () => {
-    const run = orchestrate(configuredRepo({}), tempDir(), ["skill", "ref", "missing", "notes"]);
+    const run = orchestrate(configuredRepo({}), tempDir(), ["skill", "ref", "missing.notes"]);
 
     expect(run.code).toBe(1);
     expect(run.stderr).toContain("missing");
@@ -1219,6 +1187,53 @@ nodes:
     expect(stateOf(repo).nodeRuns.make.status).toBe("running");
   });
 
+  test.each([
+    ["plain words", "all checks green"],
+    ["text that looks like JSON", '{"ok":true}'],
+  ])("a node with no output schema records its output as plain text: %s", (_case, text) => {
+    const { repo, home } = startedRun(AGENT);
+    const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+    const done = orchestrate(repo, home, [
+      "done",
+      reply.nodeRunId,
+      "--run",
+      "feat-x",
+      "--output",
+      text,
+    ]);
+    expect(done.code).toBe(0);
+    expect(stateOf(repo).nodeRuns.ask.output).toBe(text);
+  });
+
+  test("a node with an output schema rejects output that is not JSON", () => {
+    const zodUrl = import.meta.resolve("zod");
+    const run = startedRun(`name: checked
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: ask
+    type: agent
+    prompt: check it
+    output: { module: ./schemas.ts, zodSchema: result }
+    input: {}
+`);
+    writeFileSync(
+      join(run.repo, "schemas.ts"),
+      `import { z } from "${zodUrl}";\nexport const schemas = { result: z.object({ ok: z.boolean() }) };\n`,
+    );
+    const reply = JSON.parse(orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]).stdout);
+    const done = orchestrate(run.repo, run.home, [
+      ...["done", reply.nodeRunId, "--run", "feat-x", "--output", "looks fine to me"],
+    ]);
+    expect(done.code).toBe(1);
+    expect(JSON.parse(done.stderr)).toMatchObject({
+      kind: "validation",
+      retryable: true,
+      issues: [{ kind: "output-schema", schema: "result", message: "output is not valid JSON" }],
+    });
+    expect(stateOf(run.repo).nodeRuns.ask.status).toBe("running");
+  });
+
   test("IW19 — a plain agent can repair output that fails its workflow.yaml schema", () => {
     const zodUrl = import.meta.resolve("zod");
     const run = startedRun(`name: checked
@@ -1337,7 +1352,6 @@ nodes:
     const refusals = [
       { flags: ["--output", "{}", "--error", "no"], names: ["--output", "--error"] },
       { flags: [], names: ["--output", "--error"] },
-      { flags: ["--output", "not json"], names: ["--output"] },
       { flags: ["--error", "x", "--artifact", "plan"], names: ["--artifact", "plan"] },
       { flags: ["--error", "x", "--artifact", "artifacts/plan.md"], names: ["--artifact"] },
     ];
@@ -1506,13 +1520,13 @@ describe("orchestrate call log", () => {
       call("next", {}, stage),
       call(
         "done",
-        { nodeRunId: stage.nodeRunId, output: { ok: true }, artifacts },
+        { nodeRunId: stage.nodeRunId, output: '{"ok":true}', artifacts },
         { kind: "error", message: refused.stderr.trim() },
         "rejected",
       ),
       call(
         "done",
-        { nodeRunId: stage.nodeRunId, output: { ok: true }, artifacts },
+        { nodeRunId: stage.nodeRunId, output: '{"ok":true}', artifacts },
         report,
         "completed",
       ),

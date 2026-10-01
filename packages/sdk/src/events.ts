@@ -270,7 +270,7 @@ const OrchestrateExecEvent = callEvent(
   z.strictObject({ nodeRunId: NonEmptyStringSchema }),
   reportOrError,
 );
-const OutputOutcomeSchema = z.strictObject({ output: z.json() });
+const OutputOutcomeSchema = z.strictObject({ output: z.string() });
 const ErrorOutcomeSchema = z.strictObject({ error: z.string() });
 const StepOutcomeSchema = z.union([OutputOutcomeSchema, ErrorOutcomeSchema]);
 export type StepOutcome = z.infer<typeof StepOutcomeSchema>;
