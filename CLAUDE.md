@@ -16,6 +16,7 @@
 - Plan before coding on complex tasks
 - When something goes sideways, stop and re-plan — don't keep pushing
 - After finishing a task: run typecheck, tests, and lint before calling it done
+- In a nested `.worktrees` checkout, `bun run lint` processes no files because `biome.json` excludes that path. Lint with a temporary Biome config that omits the exclusion.
 
 ## Style
 - Prefer small, focused functions
