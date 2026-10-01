@@ -429,9 +429,9 @@ const executeLoop = async (
   return executeLoop(node, findNodeRun(next, node), walk, next);
 };
 
-// Walks nodes in dependency order until one needs the skill. Once a node in this scope has
-// failed nothing more starts, unless it allows failure: the container around it sees the failure
-// and ends failed.
+// Walks nodes in dependency order until one needs the skill. Once a node in this scope has failed
+// without allowFailure nothing more starts: the container around it sees the failure and ends
+// failed.
 async function executeNodes(nodes: readonly PlanNode[], walk: Walk, state: State): Promise<Walked> {
   let current = state;
   for (const node of nodes) {
