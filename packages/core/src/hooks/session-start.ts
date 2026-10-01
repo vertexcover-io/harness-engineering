@@ -1,5 +1,6 @@
 import type { SessionStartHandler } from "@harness/sdk";
 import { appendRunEvent } from "@harness/sdk/internal";
+import { completeContextOnSessionStart } from "../context-step.ts";
 import { findEnvRun } from "./common.ts";
 
 // A new session has a new id, so the run's other hooks would stop recognizing it until it is
@@ -17,7 +18,7 @@ export const linkSession: SessionStartHandler = {
       source: "hooks",
       payload: { agent, sessionId, source },
     });
-    await deps.completeContextNode?.(run.ref, sessionId, source);
+    await completeContextOnSessionStart(run.ref, sessionId, source);
   },
 };
 

@@ -1,10 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   emitRunEvent,
-  type HookDeps,
   type NodeRun,
   noopLogger,
   type RunRef,
@@ -15,6 +14,7 @@ import {
   type TranscriptEntry,
 } from "@harness/sdk";
 import { createRegistry, jsonlEventStore, readState } from "@harness/sdk/internal";
+import * as contextStep from "../context-step.ts";
 import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 import { decideStop, runStopHook } from "./stop.ts";
 
@@ -310,16 +310,20 @@ describe("runStopHook", () => {
 describe("an open context node", () => {
   const contextOpen = { fresh: nodeRun("nr-1", "running", "context") };
 
-  const withHelper = async (
-    nodeRuns: State["nodeRuns"],
-    startContextStep?: HookDeps["startContextStep"],
-  ) => {
+  type StartContextStep = typeof contextStep.startContextStep;
+  // The real helper spawns a detached orchestrate process; these tests only check it is asked to.
+  const start = spyOn(contextStep, "startContextStep");
+  afterEach(() => start.mockReset());
+  afterAll(() => start.mockRestore());
+
+  const withHelper = async (nodeRuns: State["nodeRuns"], startContextStep?: StartContextStep) => {
     const { deps, runDir, cwd } = await setUp(nodeRuns);
     const calls: Array<readonly [RunRef, string, string]> = [];
-    const start =
+    start.mockImplementation(
       startContextStep ??
-      (async (run, sessionId, nodeRunId) => void calls.push([run, sessionId, nodeRunId]));
-    return { calls, runDir, cwd, deps: { ...deps, startContextStep: start } };
+        (async (run, sessionId, nodeRunId) => void calls.push([run, sessionId, nodeRunId])),
+    );
+    return { calls, runDir, cwd, deps };
   };
 
   test("lets the turn end, records context-node and starts the helper for that node", async () => {

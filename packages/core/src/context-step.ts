@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import {
   ContextStartedEvent,
   type IAgentProvider,
@@ -11,6 +11,7 @@ import {
   type Result,
   type RunRef,
   runDirOf,
+  spawnDetached,
 } from "@harness/sdk";
 import {
   appendRunEvent,
@@ -33,6 +34,26 @@ const IDLE_POLL_MS = 100;
 const DONE_POLL_MS = 250;
 // how long a new session may take to start, and a compact to finish, before the step fails
 const DONE_TIMEOUT_MS = { new: 60_000, compact: 180_000 } as const;
+
+// Detached, because the Stop hook must return before Claude goes idle and the step can begin.
+export const startContextStep = async (
+  run: RunRef,
+  sessionId: string,
+  nodeRunId: string,
+): Promise<void> => {
+  const args = [
+    join(import.meta.dir, "orchestrate.ts"),
+    "context",
+    nodeRunId,
+    "--run",
+    run.name,
+    "--session-id",
+    sessionId,
+    "--root",
+    run.cwd,
+  ];
+  spawnDetached(process.execPath, args, { cwd: run.cwd, output: "ignore" });
+};
 
 export type ContextStepOptions = Readonly<{
   run: RunRef;
