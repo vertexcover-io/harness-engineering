@@ -126,7 +126,7 @@ describe("recordGuard through runPreToolUse", () => {
     expect(message).toContain("link-session");
   });
 
-  test("SC10 — other writes pass and are logged as allowed, naming the handler", async () => {
+  test("SC10 — other writes pass and are not logged", async () => {
     const { cwd, runDir, deps } = await setUp();
 
     const verdict = await runPreToolUse(
@@ -136,15 +136,7 @@ describe("recordGuard through runPreToolUse", () => {
     );
 
     expect(verdict).toEqual({ kind: "allow" });
-    expect((await jsonlEventStore(runDir).read()).map((event) => event.payload)).toEqual([
-      {
-        agent: "claude",
-        sessionId: "s1",
-        tool: "Write",
-        handler: "record-guard",
-        decision: "allow",
-      },
-    ]);
+    expect(await jsonlEventStore(runDir).read()).toEqual([]);
   });
 
   test("SC11 — a failing handler allows, and a failing log still answers", async () => {
