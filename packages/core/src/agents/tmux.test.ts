@@ -217,6 +217,22 @@ describe("tmuxHost against a real tmux", () => {
     expect(await host.list()).not.toContain(name);
   });
 
+  test("kill closes only its own pane, so a second pane in the same session keeps running", async () => {
+    const { host, socketName } = makeTerminal();
+    const name = `s-${randomUUID()}`;
+    const first = await created(host, { name, cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
+    const second = (
+      await exec("tmux", ["-L", socketName, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", `=${name}:`, "sleep", "60"], "/")
+    ).stdout.trim();
+
+    expect((await first.kill()).ok).toBe(true);
+
+    expect(await first.isAlive()).toBe(false);
+    expect(await host.list()).toEqual([name]);
+    const panes = await exec("tmux", ["-L", socketName, "list-panes", "-a", "-F", "#{pane_id}"], "/");
+    expect(panes.stdout.trim()).toBe(second);
+  });
+
   test("SC4: find matches the exact name, so s-1 never reaches the session s-10", async () => {
     const { host } = makeTerminal();
     await created(host, { name: "s-10", cwd: process.cwd(), argv: ["sleep", "60"], env: {} });
