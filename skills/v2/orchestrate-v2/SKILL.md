@@ -13,15 +13,16 @@ environment, then sends this skill as the first message.
 
 ## Arguments
 
-`--workflow PATH --inputs JSON`, or `--resume NAME`
+`--workflow PATH --inputs JSON [--name NAME]`, or `--resume NAME`
 
 With `--resume NAME`, skip Step 1 (no `init`): tell the user the run is resuming, and go straight
 to Step 2's loop with that `NAME`.
 
 ## Step 1: initialize the run
 
-Derive a short kebab-case run name: from `inputs.prompt` when it is present, otherwise from the
-workflow's name (the `--workflow` file's basename without extension). Then run:
+Use `--name` as the run name when supplied. Otherwise, derive a short kebab-case run name from
+`inputs.prompt` when it is present, or from the workflow's name (the `--workflow` file's basename
+without extension). Then run:
 
 ```
 bun run orchestrate init NAME

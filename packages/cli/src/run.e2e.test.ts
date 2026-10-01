@@ -153,6 +153,36 @@ const waitFor = (predicate: () => boolean, timeoutMs = 5000): void => {
 
 describe("harness run", () => {
   test(
+    "a supplied --name reaches the launched agent without replacing the prompt input",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+
+      const result = harness(
+        repo,
+        env,
+        "run",
+        "ok.yaml",
+        "--prompt",
+        "different",
+        "--name",
+        "fix-login",
+      );
+      expect(result.code).toBe(0);
+      const isSession = (record: Record<string, unknown>) =>
+        Array.isArray(record.argv) && record.argv.includes("--session-id");
+      waitFor(() => readLines(fakeOut).some(isSession));
+      const launch = readLines(fakeOut).find(isSession);
+      const argv = launch?.argv;
+      const prompt = Array.isArray(argv) ? argv.at(-1) : undefined;
+      expect(prompt).toContain('--inputs {"prompt":"different"} --name fix-login');
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "SC23: the agent the server launched can init its run with orchestrate, using only its own environment",
     () => {
       const repo = makeRepo();

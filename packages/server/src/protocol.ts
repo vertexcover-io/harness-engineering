@@ -25,6 +25,7 @@ export const StartRunBodySchema = z.strictObject({
   workflowPath: AbsolutePathSchema,
   inputs: JsonObjectSchema,
   cwd: AbsolutePathSchema,
+  name: SlugSchema.optional(),
 });
 export type StartRunBody = z.infer<typeof StartRunBodySchema>;
 

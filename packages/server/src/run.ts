@@ -16,7 +16,7 @@ export type RunDeps = Readonly<{
 
 const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: StartRunBody) => {
   const log = c.get("log").child({ component: "runs" });
-  const { workflow, workflowPath, inputs, cwd } = body;
+  const { workflow, workflowPath, inputs, cwd, name } = body;
 
   if (!existsSync(workflowPath) || !existsSync(cwd)) {
     return errorResponse(c, 400, "bad-request", "workflowPath and cwd must exist");
@@ -39,10 +39,11 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
   await deps.registry.addRun(pending);
 
   // A run whose agent never started is removed, so a failed start records nothing.
+  const nameArg = name === undefined ? "" : ` --name ${name}`;
   const launched = await deps.provider
     .launch({
       cwd,
-      prompt: `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}`,
+      prompt: `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
       env: { HARNESS_RUN_ID: id, HARNESS_HOME: deps.home },
       hookCommand: orchestrateHookCommand(),
     })
