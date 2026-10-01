@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureLogger } from "@harness/core";
-import type { IAgentProvider, ITerminal, ITerminalHost, LaunchOptions, Result } from "@harness/sdk";
+import type { IAgentProvider, ITerminal, LaunchOptions, Result } from "@harness/sdk";
 import { noopLogger } from "@harness/sdk";
 import { createRegistry } from "@harness/sdk/internal";
 import { createApp } from "./app.ts";
@@ -29,7 +29,6 @@ const fakePane = (name: string): ITerminal => ({
   kill: done,
   attachCommand: () => ["tmux", "attach-session", "-t", name],
 });
-
 
 const fakeProvider = (
   launch: (options: LaunchOptions) => Promise<Result<{ sessionId: string; terminal: ITerminal }>>,
@@ -74,7 +73,9 @@ describe("POST /runs", () => {
 
   test("SC9: a relative workflowPath is 400 bad-request", async () => {
     const { cwd } = tempWorkspace();
-    const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }));
+    const deps = await buildDeps(() =>
+      Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }),
+    );
     const app = createApp(deps);
 
     const res = await app.request("/runs", {
@@ -283,7 +284,9 @@ describe("createHarnessClient", () => {
 
   test("calls the real routes over the socket and returns their typed bodies", async () => {
     const { workflowPath, cwd } = tempWorkspace();
-    const deps = await buildDeps(() => Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }));
+    const deps = await buildDeps(() =>
+      Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }),
+    );
     const { home, server } = serveOn(createApp(deps).fetch);
     try {
       const client = createHarnessClient({ home });

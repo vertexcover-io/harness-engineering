@@ -1,5 +1,5 @@
 export { type ClaudeProviderOptions, claudeProvider } from "./agents/claude.ts";
-export { harnessTmux } from "./agents/tmux.ts";
+export { harnessTerminalHost } from "./agents/tmux.ts";
 export {
   DOCTOR_TIMEOUT_MS,
   type DoctorJson,

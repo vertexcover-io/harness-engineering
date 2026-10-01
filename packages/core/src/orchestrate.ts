@@ -24,7 +24,7 @@ import {
 import { createRegistry, type StepOutcome } from "@harness/sdk/internal";
 import { claudeProvider } from "./agents/claude.ts";
 import { agentAdapters, HOOK_AGENTS } from "./agents/index.ts";
-import { currentPane, harnessTmux } from "./agents/tmux.ts";
+import { currentPane, harnessTerminalHost } from "./agents/tmux.ts";
 import { runContextStep } from "./context-step.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "./hooks/session-start.ts";
@@ -481,7 +481,7 @@ const contextCommand = () =>
         terminal: currentPane(process.env, helperLog),
         registry: registry(),
         provider: claudeProvider({
-          host: harnessTmux(process.env, helperLog),
+          host: harnessTerminalHost(process.env, helperLog),
           binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
           log: helperLog,
         }),

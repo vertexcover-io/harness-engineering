@@ -231,7 +231,10 @@ export const tmuxHost = (options: TmuxHostOptions): ITerminalHost => {
 const configPathFor = (env: NodeJS.ProcessEnv): string => join(harnessHome(env), "tmux.conf");
 
 // The tmux server `harness run` starts sessions on: HARNESS_TMUX_SOCKET, or `harness`.
-export const harnessTmux = (env: NodeJS.ProcessEnv = process.env, log?: ILogger): ITerminalHost =>
+export const harnessTerminalHost = (
+  env: NodeJS.ProcessEnv = process.env,
+  log?: ILogger,
+): ITerminalHost =>
   tmuxHost({
     socketName: env.HARNESS_TMUX_SOCKET ?? "harness",
     configPath: configPathFor(env),
