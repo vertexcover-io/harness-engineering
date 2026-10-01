@@ -1,3 +1,4 @@
+import { dirname, resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
 import {
   type DoctorJson,
@@ -5,10 +6,11 @@ import {
   type DoctorRow,
   runDoctor,
   verdict,
+  workflowChecks,
 } from "@harness/core";
 import { stopRunningOnSignal } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
-import { cliLog, commandLog } from "./client.ts";
+import { cliLog, commandLog, compileOrFail } from "./client.ts";
 
 const HEADERS = ["CHECK", "REQUIRED", "STATUS", "DETAIL", "FIX"] as const;
 // A version banner (curl prints its whole TLS stack) would push the FIX column off-screen.
@@ -72,15 +74,26 @@ export const renderJson = (report: DoctorReport): string => {
 
 export const exitCodeFor = (report: DoctorReport): number => (report.failed.length > 0 ? 1 : 0);
 
+const declaredChecks = async (workflowArg: string | undefined) => {
+  if (workflowArg === undefined) return [];
+  const cwd = process.cwd();
+  const path = resolve(cwd, workflowArg);
+  const plan = await compileOrFail(path, cwd);
+  return plan === null ? null : workflowChecks(plan.doctor, dirname(path));
+};
+
 export const doctorCommand = () =>
   new Command("doctor")
     .description("Check the tools, repository and config a harness run needs")
     .option("--json", "print the report as JSON")
-    .action(async ({ json }) => {
+    .option("--workflow <path>", "also run the checks this workflow declares")
+    .action(async ({ json, workflow }) => {
       stopRunningOnSignal();
+      const declared = await declaredChecks(workflow);
+      if (declared === null) return;
       const report = await runDoctor({
         cwd: process.cwd(),
-        extraChecks: runtimeChecks(),
+        extraChecks: [...runtimeChecks(), ...declared],
         log: cliLog(),
       });
       commandLog("doctor").debug(

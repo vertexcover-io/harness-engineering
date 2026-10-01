@@ -1,7 +1,13 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
   "files": {
-    "includes": ["packages/**", "skills/create-workspace/**", "*.json", "!!**/.worktrees"]
+    "includes": [
+      "packages/**",
+      "skills/create-workspace/**",
+      "skills/ticket-fetcher/**",
+      "*.json",
+      "!!**/.worktrees"
+    ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": { "enabled": true, "rules": { "preset": "recommended" } },

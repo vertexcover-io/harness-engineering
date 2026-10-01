@@ -398,6 +398,66 @@ const compileRejection = async (path: string, cwd: string): Promise<WorkflowErro
   throw new Error("expected compileWorkflow to reject");
 };
 
+describe("workflow doctor declarations", () => {
+  const declared = (check: string, key: string, fix = "fix it"): string =>
+    `  - check: ${check}\n    key: ${key}\n    fix: ${fix}\n`;
+
+  test("a workflow without doctor compiles to an empty list", async () => {
+    expect((await compile(workflow(script("a")))).doctor).toEqual([]);
+  });
+
+  test("declarations are kept in order", async () => {
+    const plan = await compile(
+      `name: test\ndoctor:\n${declared("env", "A")}${declared("binary", "bun")}nodes:${script("a")}\n`,
+    );
+    expect(plan.doctor.map((d) => `${d.check}:${d.key}`)).toEqual(["env:A", "binary:bun"]);
+  });
+
+  test.each([
+    ["an unknown check kind", "  - check: network\n    key: x\n    fix: y\n"],
+    ["an unknown field", "  - check: env\n    key: x\n    fix: y\n    optional: true\n"],
+    ["an empty key", '  - check: env\n    key: ""\n    fix: y\n'],
+    ["a missing fix", "  - check: env\n    key: x\n"],
+  ])("%s is a schema error", async (_label, entry) => {
+    const error = await rejection(`name: test\ndoctor:\n${entry}nodes:${script("a")}\n`);
+    expect(error.code).toBe("schema");
+  });
+
+  test("included workflows add their checks, recursively, without identical duplicates", async () => {
+    const leaf = join(workflowDir, "doctor-leaf.yml");
+    writeFileSync(
+      leaf,
+      `name: leaf\ndoctor:\n${declared("env", "SHARED")}${declared("file", "leaf.txt")}nodes:${script("x")}\n`,
+    );
+    const mid = join(workflowDir, "doctor-mid.yml");
+    writeFileSync(
+      mid,
+      `name: mid\ndoctor:\n${declared("env", "SHARED")}${declared("binary", "mid")}nodes:\n  - id: leaf\n    type: include\n    workflow: ${leaf}\n    input: null\n`,
+    );
+    const plan = await compile(
+      `name: top\ndoctor:\n${declared("env", "TOP")}nodes:\n  - id: mid\n    type: include\n    workflow: ${mid}\n    input: null\n`,
+    );
+    expect(plan.doctor.map((d) => `${d.check}:${d.key}`)).toEqual([
+      "env:TOP",
+      "env:SHARED",
+      "binary:mid",
+      "file:leaf.txt",
+    ]);
+  });
+
+  test("the same key with a different fix is kept as a separate entry", async () => {
+    const other = join(workflowDir, "doctor-other-fix.yml");
+    writeFileSync(
+      other,
+      `name: o\ndoctor:\n${declared("env", "K", "second")}nodes:${script("x")}\n`,
+    );
+    const plan = await compile(
+      `name: top\ndoctor:\n${declared("env", "K", "first")}nodes:\n  - id: o\n    type: include\n    workflow: ${other}\n    input: null\n`,
+    );
+    expect(plan.doctor).toHaveLength(2);
+  });
+});
+
 describe("includes, loops and agents", () => {
   test("SC46 — a recursive include is rejected with its chain", async () => {
     const dir = mkdtempSync(join(tmpdir(), "wf-inc-"));
@@ -694,6 +754,49 @@ describe("compile with stages", () => {
   });
 });
 
+describe("stage variables", () => {
+  const tuned = (variables: string, extra = "") =>
+    workflow(stageNode("say", "stages/tuned", `, variables: ${variables}${extra}`));
+
+  test("a node setting a variable its skill does not declare is rejected, naming the known ones", async () => {
+    const error = await stagesRejection(tuned("{ audience: devs, volume: loud }"));
+    expect(error.code).toBe("schema");
+    expect(error.message).toContain('"volume"');
+    expect(error.message).toContain("tone, audience");
+  });
+
+  test("a node leaving out a variable its skill gives no default is rejected, naming it", async () => {
+    const error = await stagesRejection(tuned("{ tone: loud }"));
+    expect(error.code).toBe("schema");
+    expect(error.message).toContain('"audience"');
+  });
+
+  test("a prompt-only agent node cannot set variables", async () => {
+    const error = await rejection(
+      workflow(
+        "\n  - { id: ask, type: agent, prompt: hi, input: null, variables: { tone: loud } }",
+      ),
+    );
+    expect(error.code).toBe("schema");
+    expect(error.message).toContain("variables");
+    expect(error.message).toContain("stage");
+  });
+
+  test.each([
+    [
+      "reads a node it does not depend on",
+      '{ audience: "{{ nodes.other.output }}" }',
+      "invalid-reference",
+    ],
+    ["mixes text and an expression", '{ audience: "all {{ inputs.who }}" }', "invalid-expression"],
+  ] as const)("a variable that %s is rejected", async (_label, variables, code) => {
+    const other = "\n  - { id: other, type: wait, durationMs: 1, input: null }";
+    const error = await stagesRejection(`${tuned(variables)}${other}\n`);
+    expect(error.code).toBe(code);
+    expect(error.message).toContain("say");
+  });
+});
+
 describe("compiled node placement", () => {
   test("IW42 — every compiled node lists the ids of the containers around it, through switches, loops and includes", async () => {
     const dir = mkdtempSync(join(tmpdir(), "wf-parents-"));
@@ -737,5 +840,27 @@ nodes:
     expect(sub?.parents).toEqual(["fix", "pick"]);
     if (sub?.type !== "include") throw new Error("sub is not an include");
     expect(sub.plan.nodes[0]?.parents).toEqual(["fix", "pick", "sub"]);
+  });
+});
+
+describe("the shipped task workflow", () => {
+  test("compiles with ticket-fetcher first, its task feeding create-workspace, and the Linear checks", async () => {
+    const plan = await compileWorkflow(
+      join(import.meta.dir, "..", "..", "..", "..", "workflows", "task.yaml"),
+    );
+
+    expect(plan.nodes.map((node) => node.id).slice(0, 2)).toEqual([
+      "ticket-fetcher",
+      "create-workspace",
+    ]);
+    expect(plan.doctor.map((d) => `${d.check}:${d.key}`)).toEqual([
+      "env:LINEAR_API_KEY",
+      "binary:bun",
+    ]);
+    const workspace = plan.nodes.find((node) => node.id === "create-workspace");
+    expect(workspace).toMatchObject({
+      dependsOn: ["ticket-fetcher"],
+      input: { request: "{{ nodes.ticket-fetcher.output.task }}" },
+    });
   });
 });

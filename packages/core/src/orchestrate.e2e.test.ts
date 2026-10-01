@@ -20,6 +20,7 @@ import {
   runDirOf,
   type WorkflowRun,
 } from "@harness/sdk";
+import { validateTicketDir } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
 const SCRIPT = join(import.meta.dir, "orchestrate.ts");
@@ -588,7 +589,7 @@ nodes:
 // A skills folder holding the producer and consumer demo stages, for HARNESS_SKILLS_DIR.
 const stageSkills = (produces = DEMO_STAGES.producer.produces): string => {
   const dir = tempDir();
-  writeStages(dir, { producer: { produces }, consumer: DEMO_STAGES.consumer });
+  writeStages(dir, { ...DEMO_STAGES, producer: { produces } });
   return dir;
 };
 
@@ -900,7 +901,31 @@ describe("orchestrate next and done with stages", () => {
       skill: join(skills, "producer/SKILL.md"),
       extension: join(repo, "docs/producer-ext.md"),
       input: { request: "hi" },
+      variables: {},
       done: `bun run orchestrate done ${reply.nodeRunId} --run feat-x`,
+    });
+  });
+
+  test("next hands a stage its skill's variable defaults under the node's values, an expression read from inputs", () => {
+    const skills = stageSkills();
+    const run = startedRun(`name: tuned
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: say
+    type: agent
+    stage: tuned
+    input: {}
+    variables: { audience: "{{ inputs.prompt }}" }
+`);
+    const next = orchestrate(run.repo, run.home, ["next", "--run", "feat-x"], {
+      HARNESS_SKILLS_DIR: skills,
+    });
+    expect(next.stderr).toBe("");
+    expect(JSON.parse(next.stdout)).toMatchObject({
+      kind: "stage",
+      nodeId: "say",
+      variables: { tone: "plain", audience: "hi" },
     });
   });
 
@@ -1766,5 +1791,99 @@ describe("orchestrate hook pre-tool-use", () => {
       type: "hooks.pre-tool-use.called",
       payload: { handler: "bash-antipatterns", decision: "deny" },
     });
+  });
+});
+
+describe("the task workflow's ticket-fetcher stage", () => {
+  const TASK = readFileSync(
+    join(import.meta.dir, "..", "..", "..", "workflows", "task.yaml"),
+    "utf8",
+  );
+  const TICKET = {
+    schemaVersion: 1,
+    provider: "linear",
+    id: "id-1",
+    key: "ENG-1",
+    url: "https://linear.app/x/issue/ENG-1",
+    title: "Add export",
+    body: "Export to CSV",
+    properties: {},
+    comments: [],
+    references: [],
+    assets: [],
+    complete: true,
+    fetchedAt: "2026-09-30T12:00:00Z",
+  };
+
+  const taskRun = (prompt: string) => {
+    const run = startedRun(TASK);
+    const registry = readRegistry(run.home);
+    writeRegistry(run.home, [
+      ...Object.values(registry.runs).map((r) => ({ ...r, inputs: { prompt } })),
+    ]);
+    const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args);
+    return { ...run, step };
+  };
+
+  const finishFetcher = (
+    step: (args: readonly string[]) => ReturnType<typeof orchestrate>,
+    output: unknown,
+    artifact: readonly string[] = [],
+  ) => {
+    const fetcher = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    expect(fetcher).toMatchObject({
+      nodeId: "ticket-fetcher",
+      input: expect.anything(),
+      variables: { provider: "linear" },
+    });
+    const done = step([
+      "done",
+      fetcher.nodeRunId,
+      "--run",
+      "feat-x",
+      "--output",
+      JSON.stringify(output),
+      ...artifact,
+    ]);
+    expect(done.stderr).toBe("");
+    expect(done.code).toBe(0);
+    return JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+  };
+
+  test("a plain prompt passes through to create-workspace unchanged", () => {
+    const { step } = taskRun("fix the login bug");
+
+    const workspace = finishFetcher(step, { task: "fix the login bug" });
+
+    expect(workspace).toMatchObject({
+      nodeId: "create-workspace",
+      input: { request: "fix the login bug" },
+    });
+  });
+
+  test("a ticket bundle registers as an artifact and its task text reaches create-workspace", async () => {
+    const { repo, step } = taskRun("work on ENG-1");
+    const dir = join(runDirOf(repo, "feat-x"), "artifacts", "ticket");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "ticket.json"), JSON.stringify(TICKET));
+    expect(await validateTicketDir(dir)).toMatchObject({ ok: true });
+    const task = "Add export\n\nExport to CSV";
+
+    const workspace = finishFetcher(
+      step,
+      {
+        task,
+        ticket: {
+          provider: "linear",
+          key: "ENG-1",
+          url: TICKET.url,
+          path: "artifacts/ticket/ticket.json",
+          complete: true,
+        },
+      },
+      ["--artifact", "ticket=artifacts/ticket/ticket.json"],
+    );
+
+    expect(workspace).toMatchObject({ nodeId: "create-workspace", input: { request: task } });
   });
 });

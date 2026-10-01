@@ -48,8 +48,9 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
        `✓` or `✗` the same way, then go back to 1.
    - `stage`: tell the user `▶ NODE_ID (stage STAGE)`. Read the file at `skill`, then the file
      at `extension` when it is not null; where the extension conflicts with the skill, the
-     extension wins. Follow the skill with the reply's `input` as its input, and `prompt` as
-     extra instructions when present. When the skill needs one of its references, run
+     extension wins. Follow the skill with the reply's `input` as its input, `variables` as the
+     values of the variables the skill names, and `prompt` as extra instructions when present.
+     When the skill needs one of its references, run
      `bun run orchestrate skill ref STAGE REF`, without `--run`, since references do not
      belong to a run; never open a reference file by its path, since
      that skips the project's changes to it. When the skill is done, run the reply's `done`

@@ -3,10 +3,12 @@ import { join, resolve } from "node:path";
 import type { JsonValue } from "@harness/sdk";
 import { parseDocument } from "yaml";
 import { z } from "zod";
-import { findStageDir, loadSkill } from "../stage.ts";
-import { expressionPaths, isWholeExpression } from "./evaluate.ts";
+import { findStageDir, loadSkill, own } from "../stage.ts";
+import { expressionPaths, expressionsIn, isWholeExpression } from "./evaluate.ts";
 import { importModule } from "./executors.ts";
 import {
+  type AgentNode,
+  type DoctorDeclaration,
   type IncludeNode,
   type LoopNode,
   NodeFailure,
@@ -77,14 +79,23 @@ const ancestorsOf = (
     new Map<string, Set<string>>(),
   );
 
+const variableValues = (node: WorkflowNode): string[] =>
+  node.type === "agent" ? Object.values(node.variables ?? {}) : [];
+
 const expressionFields = (node: WorkflowNode): JsonValue[] => [
   node.input,
   ...(node.type === "switch" ? [node.expression] : node.when === undefined ? [] : [node.when]),
+  ...variableValues(node),
 ];
 
+// A variable is plain text or one whole expression, never text around an expression.
 const checkSingleExpressions = (node: WorkflowNode, scope: string): void => {
-  const text = node.type === "switch" ? node.expression : node.when;
-  if (text !== undefined && !isWholeExpression(text)) {
+  const guard = node.type === "switch" ? node.expression : node.when;
+  const templated = variableValues(node).filter((value) => expressionsIn(value).length > 0);
+  const text = [guard, ...templated].find(
+    (value) => value !== undefined && !isWholeExpression(value),
+  );
+  if (text !== undefined) {
     throw new WorkflowError(
       "invalid-expression",
       `${node.id}: "${text}" must be exactly one {{ expression }}`,
@@ -240,10 +251,35 @@ const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
     skill: join(dir, "SKILL.md"),
     consumes: stage.value.consumes ?? [],
     produces: stage.value.produces ?? [],
+    variables: stage.value.variables,
     outputSchemaName: outputs.schema,
     outputSchema: schema,
     verifiers: await loadVerifiers(stage.value.verifiers, dir),
   };
+};
+
+// A stage node sets only the variables its skill declares, and every one the skill gives no default.
+const checkVariables = (node: AgentNode, stage: PlanStage): void => {
+  const set = node.variables ?? {};
+  const unknown = Object.keys(set).find((name) => own(stage.variables, name) === undefined);
+  if (unknown !== undefined) {
+    const known = Object.keys(stage.variables).join(", ") || "none";
+    throw new WorkflowError(
+      "schema",
+      `${node.id}: stage ${stage.ref} has no variable "${unknown}"; it has: ${known}`,
+      node.id,
+    );
+  }
+  const unset = Object.keys(stage.variables).find(
+    (name) => stage.variables[name]?.default === undefined && own(set, name) === undefined,
+  );
+  if (unset !== undefined) {
+    throw new WorkflowError(
+      "schema",
+      `${node.id}: stage ${stage.ref} needs variable "${unset}", which has no default; set it in variables`,
+      node.id,
+    );
+  }
 };
 
 // Where compile is: the chain of workflow files that led here, for include cycles and depth, and
@@ -294,7 +330,9 @@ async function compileNode(node: WorkflowNode, at: Compiling): Promise<PlanNode>
         node.id,
       );
     }
-    return { ...rest, parents, stage: await loadStage(stage, at.cwd) };
+    const loaded = await loadStage(stage, at.cwd);
+    checkVariables(node, loaded);
+    return { ...rest, parents, stage: loaded };
   }
   if (node.type === "exec") {
     const outputSchema =
@@ -333,6 +371,19 @@ const countNodes = (nodes: readonly PlanNode[]): number =>
     0,
   );
 
+const doctorOf = (nodes: readonly PlanNode[]): readonly DoctorDeclaration[] =>
+  nodes.flatMap((node) =>
+    node.type === "include" ? node.plan.doctor : listChildren(node).flatMap(doctorOf),
+  );
+
+// First seen wins, so the top workflow's checks lead.
+const uniqueDeclarations = (
+  declarations: readonly DoctorDeclaration[],
+): readonly DoctorDeclaration[] => {
+  const seen = new Map(declarations.map((d) => [JSON.stringify([d.check, d.key, d.fix]), d]));
+  return [...seen.values()];
+};
+
 async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
   const workflow = parseWorkflow(await readWorkflow(path));
   const nodes = await compileNodes(validateScope(workflow.nodes, ""), at);
@@ -340,7 +391,8 @@ async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
   if (size > MAX_EXPANDED_NODES) {
     throw new WorkflowError("include-limit", `${path} expands to ${size} nodes`, path);
   }
-  return Object.freeze({ name: workflow.name, inputs: workflow.inputs, nodes });
+  const doctor = uniqueDeclarations([...workflow.doctor, ...doctorOf(nodes)]);
+  return Object.freeze({ name: workflow.name, inputs: workflow.inputs, doctor, nodes });
 }
 
 const guaranteedInScope = (

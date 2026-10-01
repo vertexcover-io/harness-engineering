@@ -1,7 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { createLogger, resolveLevel } from "@harness/core";
+import {
+  compileWorkflow,
+  createLogger,
+  resolveLevel,
+  WorkflowError,
+  type WorkflowPlan,
+} from "@harness/core";
 import { harnessHome, type ILogger, spawnDetached, withLock } from "@harness/sdk";
 import { type ApiError, logPath, socketPath } from "@harness/server";
 import { createHarnessClient, type HarnessClient } from "@harness/server/client";
@@ -33,19 +39,34 @@ export const cliLog = (): ILogger => {
 export const commandLog = (command: string): ILogger =>
   cliLog().child({ component: "cli", command });
 
+const stackOf = (error: Error): string => {
+  const own = error.stack ?? error.message;
+  return error.cause instanceof Error ? `${own}\nCaused by: ${stackOf(error.cause)}` : own;
+};
+
 // On the terminal an error shows its message; its stack is for debugging, under LOG_LEVEL=debug.
 // The server's own logs keep every stack.
 export const fail = (problem: string | Error): void => {
   const debug = cliLevel() === "debug" || cliLevel() === "trace";
-  const text =
-    typeof problem === "string"
-      ? problem
-      : debug
-        ? (problem.stack ?? problem.message)
-        : problem.message;
+  const text = typeof problem === "string" ? problem : debug ? stackOf(problem) : problem.message;
   console.error(text);
   process.exitCode = 1;
 };
+
+// A compile error reads as CODE: message; the original stays as the cause for LOG_LEVEL=debug.
+const errorText = (error: unknown): string | Error => {
+  if (error instanceof WorkflowError) {
+    return new Error(`${error.code}: ${error.message}`, { cause: error });
+  }
+  return error instanceof Error ? error : String(error);
+};
+
+// null means the error is already printed and the exit code set.
+export const compileOrFail = (path: string, cwd: string): Promise<WorkflowPlan | null> =>
+  compileWorkflow(path, { cwd }).catch((error: unknown) => {
+    fail(errorText(error));
+    return null;
+  });
 
 // How a server error reads on the terminal.
 export const apiErrorText = (error: ApiError): string => `${error.code}: ${error.message}`;

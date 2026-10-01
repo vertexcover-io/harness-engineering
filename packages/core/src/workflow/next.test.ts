@@ -286,10 +286,44 @@ nodes:${stage("make", "producer", '\n    input: { request: "{{ inputs.prompt }}"
     expect(make).toMatchObject({
       node: { id: "make", stage: { ref: "stages/producer" } },
       input: { request: "hi" },
+      variables: {},
     });
     const afterMake = end(first.state, make.nodeRunId, "completed", { output: { ok: true } });
     const b = expectLeaf((await advance(plan, afterMake)).stop);
     expect(b).toMatchObject({ node: { id: "b" }, input: true });
+  });
+
+  test("a stage node is handed out with its skill's variable defaults under the node's own values, an expression read like its input", async () => {
+    const plan = await compilePlan(`name: t
+inputs:
+  who: { type: string, required: true }
+nodes:${stage("say", "tuned", '\n    input: {}\n    variables: { audience: "{{ inputs.who }}" }')}
+`);
+    const say = expectLeaf((await advance(plan, start({ who: "devs" }))).stop);
+    expect(say.variables).toEqual({ tone: "plain", audience: "devs" });
+    const overridden = await compilePlan(`name: t
+nodes:${stage("shout", "tuned", "\n    input: {}\n    variables: { tone: loud, audience: all }")}
+`);
+    const shout = expectLeaf((await advance(overridden, start())).stop);
+    expect(shout.variables).toEqual({ tone: "loud", audience: "all" });
+  });
+
+  test.each([
+    ["reads a missing input", "{{ inputs.nobody }}", "nobody"],
+    ["is not a string", "{{ inputs.count }}", "string"],
+  ])("a stage node whose variable %s fails before it starts", async (_label, value, message) => {
+    const plan = await compilePlan(`name: t
+inputs:
+  count: { type: number, default: 3 }
+nodes:${stage("say", "tuned", `\n    input: {}\n    variables: { audience: "${value}" }`)}
+`);
+    const done = await advance(plan, start());
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
+    expect(findRun(done.state, "say")).toMatchObject({
+      status: "failed",
+      startedAt: null,
+      output: { kind: "resolution", message: expect.stringContaining(message) },
+    });
   });
 
   test("IW14 — a stage whose producer completed without its artifact is blocked, and is handed out once the producer lists it", async () => {
