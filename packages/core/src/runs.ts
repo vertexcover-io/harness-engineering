@@ -46,6 +46,7 @@ import {
   CompletionIssueSchema,
   findConsumedArtifacts,
   findDefaultIssues,
+  readOutput,
 } from "./workflow/done.ts";
 import { runStepLeaf } from "./workflow/exec.ts";
 import {
@@ -549,34 +550,33 @@ const finishStepChecked = async (
       },
     };
   }
-  if (!("error" in outcome)) {
-    const { issues, rejected } = await checkCompletion(
-      run,
-      node,
-      nodeRunId,
-      outcome.output,
-      artifacts,
-    );
-    if (issues.length > 0) return rejectDone(run, step.value, issues, rejected);
+  if ("error" in outcome) {
+    const error = { kind: "exception" as const, message: outcome.error };
+    const record: NodeRecord = {
+      path: nodeRunId,
+      type: node.type,
+      status: "failed",
+      attempts: 1,
+      error,
+    };
+    return storeStepEnd(run, step.value, record, []);
   }
-  const record: NodeRecord =
-    "error" in outcome
-      ? {
-          path: nodeRunId,
-          type: node.type,
-          status: "failed",
-          attempts: 1,
-          error: { kind: "exception", message: outcome.error },
-        }
-      : {
-          path: nodeRunId,
-          type: node.type,
-          status: "completed",
-          attempts: 1,
-          output: outcome.output,
-        };
-  const kept = record.status === "completed" ? artifacts : [];
-  return storeStepEnd(run, step.value, record, kept);
+  const { output, issues, rejected } = await checkCompletion(
+    run,
+    node,
+    nodeRunId,
+    outcome.output,
+    artifacts,
+  );
+  if (issues.length > 0) return rejectDone(run, step.value, issues, rejected);
+  const record: NodeRecord = {
+    path: nodeRunId,
+    type: node.type,
+    status: "completed",
+    attempts: 1,
+    output,
+  };
+  return storeStepEnd(run, step.value, record, artifacts);
 };
 
 const storeStepEnd = async (
@@ -613,14 +613,20 @@ const checkCompletion = async (
   run: RunRef,
   node: PlanAgentNode,
   nodeRunId: string,
-  output: JsonValue,
+  text: string,
   artifacts: readonly ArtifactRef[],
-): Promise<Readonly<{ issues: readonly CompletionIssue[]; rejected: number }>> => {
-  const defaults = await findDefaultIssues(node, output, artifacts, runDirOf(run.cwd, run.name));
+): Promise<
+  Readonly<{ output: JsonValue; issues: readonly CompletionIssue[]; rejected: number }>
+> => {
+  const read = readOutput(node, text);
+  const output = read.ok ? read.value : text;
+  const defaults = read.ok
+    ? await findDefaultIssues(node, output, artifacts, runDirOf(run.cwd, run.name))
+    : [read.error];
   const verifiers = node.stage?.verifiers ?? [];
-  if (defaults.length === 0 && verifiers.length === 0) return { issues: [], rejected: 0 };
+  if (defaults.length === 0 && verifiers.length === 0) return { output, issues: [], rejected: 0 };
   const rejected = await countRejectedDones(run, nodeRunId);
-  if (defaults.length > 0) return { issues: defaults, rejected };
+  if (defaults.length > 0) return { output, issues: defaults, rejected };
   const input = {
     run: run.name,
     nodeRunId,
@@ -629,7 +635,7 @@ const checkCompletion = async (
   };
   const runs = await runVerifiers(verifiers, input, run.cwd, rejected + 1);
   await logVerifierRuns(run, node, nodeRunId, runs);
-  return { issues: issuesOf(runs), rejected };
+  return { output, issues: issuesOf(runs), rejected };
 };
 
 // One orchestrate.verifier event per verifier, in the order the stage lists them.

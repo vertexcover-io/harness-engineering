@@ -1,0 +1,56 @@
+{
+  "skill_name": "baseline",
+  "evals": [
+    {
+      "id": 1,
+      "name": "green-baseline-registers-artifact",
+      "prompt": "You are running the baseline stage of run feat-x. Your input is {}. The config declares a baseline command for packages core and sdk, and both suites currently pass.",
+      "expected_output": "Runs the baseline script for run feat-x, replies with the JSON it printed, and finishes the stage with the baseline artifact.",
+      "files": [],
+      "expectations": [
+        "Resolves the script with `orchestrate skill ref --path baseline.script` and runs it with `--run feat-x` and no --packages flag",
+        "Waits for the command to finish rather than stopping it early",
+        "The stage output is exactly the printed { path, workspace, packages } JSON",
+        "Finishes the stage with `--artifact baseline=artifacts/baseline.json`"
+      ],
+      "anti_expectations": [
+        "Runs typecheck, lint or test commands itself instead of the baseline script",
+        "Invents or reshapes fields in the output"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "red-suite-still-completes",
+      "prompt": "You are running the baseline stage of run feat-y. Your input is { \"packages\": [\"core\", \"sdk\"] }. The core suite currently has two failing tests; sdk passes.",
+      "expected_output": "Runs the baseline for core and sdk, finishes the stage normally with the baseline artifact, and names core as the script that exited non-zero.",
+      "files": [],
+      "expectations": [
+        "Runs the resolved baseline script with `--run feat-y --packages core,sdk`",
+        "Finishes the stage as completed, with `--artifact baseline=artifacts/baseline.json`",
+        "Names core as the script that exited non-zero in its report"
+      ],
+      "anti_expectations": [
+        "Finishes the stage with --error because a suite was red",
+        "Tries to fix the failing tests",
+        "Re-runs the baseline hoping for a different result"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "command-error-stops-without-editing-config",
+      "prompt": "You are running the baseline stage of run feat-z. Your input is {}. When you run the baseline it exits 1 and prints: CONFIG_STALE core: baseline cwd /repo/.worktrees/feat-z/pkgs/core is not a folder. Fix it in orchestrate.config.json",
+      "expected_output": "Stops and reports the CONFIG_STALE error as printed, leaving orchestrate.config.yaml untouched.",
+      "files": [],
+      "expectations": [
+        "Reports the error text the command printed, including CONFIG_STALE and the folder it named",
+        "Ends the stage with `done --error` carrying that message, with no --artifact",
+        "Says that fixing the config is for the person to do"
+      ],
+      "anti_expectations": [
+        "Edits orchestrate.config.yaml or orchestrate.config.json",
+        "Retries the command with different --packages or --dir options",
+        "Runs the package's tests directly as a workaround"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
-import type { ArtifactRef, JsonValue, NodeRun } from "@harness/sdk";
+import type { ArtifactRef, JsonValue, NodeRun, Result } from "@harness/sdk";
 import * as z from "zod";
 import type { PlanAgentNode, PlanStage } from "./types.ts";
 import { VerifierIssueSchema } from "./verifiers.ts";
@@ -104,6 +104,33 @@ const verifyArtifacts = async (
 };
 
 // What is wrong with a done before any verifier runs: its artifact files and its output's schema.
+// The schema a node's output must match, or undefined when the node takes plain text.
+const findOutputSchema = (
+  node: PlanAgentNode,
+): Readonly<{ name: string; schema: z.ZodType }> | undefined => {
+  if (node.stage !== undefined) return node.stage.output;
+  if (node.output === undefined || node.outputSchema === undefined) return undefined;
+  return { name: node.output.zodSchema, schema: node.outputSchema };
+};
+
+// The output a done hands in: kept as text, or parsed as JSON when the node names a schema.
+export const readOutput = (
+  node: PlanAgentNode,
+  text: string,
+): Result<JsonValue, CompletionIssue> => {
+  const declared = findOutputSchema(node);
+  if (declared === undefined) return { ok: true, value: text };
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    const message = "output is not valid JSON";
+    return {
+      ok: false,
+      error: { kind: "output-schema", schema: declared.name, path: "", message },
+    };
+  }
+};
+
 export const findDefaultIssues = async (
   node: PlanAgentNode,
   output: JsonValue,
@@ -111,19 +138,20 @@ export const findDefaultIssues = async (
   runDir: string,
 ): Promise<readonly CompletionIssue[]> => {
   const artifactIssues = await verifyArtifacts(runDir, node.stage, artifacts);
-  const schema = node.stage?.outputSchema ?? node.outputSchema ?? z.json();
-  const parsed = schema.safeParse(output);
-  const name = node.stage?.outputSchemaName ?? node.output?.zodSchema ?? "json";
-  const schemaIssues: CompletionIssue[] = parsed.success
-    ? []
-    : parsed.error.issues.map(
-        (issue): CompletionIssue => ({
-          kind: "output-schema",
-          schema: name,
-          path: issue.path.map(String).join("."),
-          message: issue.message,
-        }),
-      );
+  const declared = findOutputSchema(node);
+  const parsed = declared?.schema.safeParse(output);
+  const name = declared?.name ?? "text";
+  const schemaIssues: CompletionIssue[] =
+    parsed === undefined || parsed.success
+      ? []
+      : parsed.error.issues.map(
+          (issue): CompletionIssue => ({
+            kind: "output-schema",
+            schema: name,
+            path: issue.path.map(String).join("."),
+            message: issue.message,
+          }),
+        );
   return [...artifactIssues, ...schemaIssues];
 };
 

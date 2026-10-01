@@ -175,7 +175,8 @@ export {
   WorkflowRunSchema,
 } from "./registry.ts";
 export { findRoot, type RunLookup, resolveRoot, resolveRun } from "./runs.ts";
-export { type EventHandler, emitRunEvent, toRepoId } from "./state.ts";
+// Reading state.json is open to every caller; writing it stays behind the internal entry.
+export { type EventHandler, emitRunEvent, readState, toRepoId } from "./state.ts";
 export {
   type Finding,
   FindingSchema,

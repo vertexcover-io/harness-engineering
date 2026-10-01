@@ -5,8 +5,9 @@
       "packages/**",
       "skills/create-workspace/**",
       "skills/ticket-fetcher/**",
+      "skills/baseline/**",
       "*.json",
-      "!!**/.worktrees"
+      "!!.worktrees"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },

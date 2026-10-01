@@ -10,7 +10,13 @@ import {
   CreateWorkspaceOutputSchema,
 } from "../../../skills/create-workspace/scripts/workspace.ts";
 import { schemas as ticketSchemas } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
-import { loadStage, resolveExtension, resolveReference, StageSchema } from "./stage.ts";
+import {
+  loadStage,
+  resolveExtension,
+  resolveReference,
+  resolveReferencePath,
+  StageSchema,
+} from "./stage.ts";
 import { compileWorkflow } from "./workflow/compile.ts";
 
 const validStage = {
@@ -32,6 +38,11 @@ describe("StageSchema", () => {
   test("a full stage parses and produce entries default optional to false", () => {
     const stage = StageSchema.parse(validStage);
     expect(stage.produces).toEqual([{ artifact: "plan", optional: false }]);
+  });
+
+  test("inputs and outputs are optional", () => {
+    const { inputs: _inputs, outputs: _outputs, ...bare } = validStage;
+    expect(StageSchema.safeParse(bare).success).toBe(true);
   });
 
   test("variables default to none, and each declares a description and an optional string default", () => {
@@ -117,6 +128,14 @@ describe("loadStage", () => {
     expect(result.value.stage.produces).toEqual([{ artifact: "plan", optional: false }]);
     expect(result.value.inputSchema).toBe(registry["planning.input.v1"]);
     expect(result.value.outputSchema).toBe(registry["planning.output.v1"]);
+  });
+
+  test("a stage with no inputs or outputs takes any JSON in and plain text out", async () => {
+    const bare = validFrontmatter.replace(/inputs:\n.*\n.*\noutputs:\n.*\n.*\n.*\n/, "");
+    const result = await loadStage(await writeSkill("planning", bare), registry);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.inputSchema.safeParse({ any: ["thing"] }).success).toBe(true);
+    expect(result.value.outputSchema.safeParse("plain text").success).toBe(true);
   });
 
   test("WS27 — a folder named planning holding name: plan is rejected, naming both", async () => {
@@ -268,6 +287,59 @@ describe("resolveReference add", () => {
       ok: true,
       value: "extension text\n",
     });
+  });
+});
+
+describe("resolveReferencePath", () => {
+  test.each([
+    [
+      "no extension",
+      "notes",
+      undefined,
+      (skillsDir: string, _root: string) => join(skillsDir, "demo", "notes.md"),
+    ],
+    [
+      "replace",
+      "notes",
+      { notes: { replace: "ext/notes.md" } },
+      (_s: string, root: string) => join(root, "ext/notes.md"),
+    ],
+    [
+      "add",
+      "extra",
+      { extra: { add: "ext/notes.md" } },
+      (_s: string, root: string) => join(root, "ext/notes.md"),
+    ],
+  ])(
+    "with %s, it is the path of the file the reference reads",
+    async (_label, ref, references, expected) => {
+      const options = await setupResolve(references ? { demo: { references } } : {});
+      expect(await resolveReferencePath({ ...options, ref })).toEqual({
+        ok: true,
+        value: expected(options.skillsDir, options.root),
+      });
+    },
+  );
+
+  test.each([
+    [
+      "an extend, which has no single file",
+      { notes: { extend: "ext/notes.md" } },
+      "notes",
+      "replace",
+    ],
+    [
+      "a replace whose file does not exist",
+      { notes: { replace: "ext/missing.md" } },
+      "notes",
+      "ext/missing.md",
+    ],
+    ["an unlisted ref", {}, "ghost", 'unknown reference "ghost"'],
+  ])("%s is an error", async (_label, references, ref, message) => {
+    const options = await setupResolve({ demo: { references } });
+    const result = await resolveReferencePath({ ...options, ref });
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain(message);
   });
 });
 

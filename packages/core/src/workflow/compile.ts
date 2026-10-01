@@ -237,14 +237,20 @@ const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
   const stage = await loadSkill(dir);
   if (!stage.ok) throw new WorkflowError("missing-stage", `stage ${ref}: ${stage.error}`, ref);
   const { outputs } = stage.value;
-  if (outputs.module === undefined) {
+  if (outputs !== undefined && outputs.module === undefined) {
     throw new WorkflowError("missing-schema", `stage ${ref}: outputs.module is required`, ref);
   }
-  const schema = await resolveOutputSchema(
-    { module: outputs.module, zodSchema: outputs.schema },
-    dir,
-    `stage ${ref}`,
-  );
+  const output =
+    outputs?.module === undefined
+      ? undefined
+      : {
+          name: outputs.schema,
+          schema: await resolveOutputSchema(
+            { module: outputs.module, zodSchema: outputs.schema },
+            dir,
+            `stage ${ref}`,
+          ),
+        };
   return {
     ref,
     name: stage.value.name,
@@ -252,8 +258,7 @@ const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
     consumes: stage.value.consumes ?? [],
     produces: stage.value.produces ?? [],
     variables: stage.value.variables,
-    outputSchemaName: outputs.schema,
-    outputSchema: schema,
+    ...(output === undefined ? {} : { output }),
     verifiers: await loadVerifiers(stage.value.verifiers, dir),
   };
 };

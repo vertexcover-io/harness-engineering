@@ -10,16 +10,11 @@ import {
   type NodeRun,
   type Result,
   type RunRef,
+  readState,
   runDirOf,
   spawnDetached,
 } from "@harness/sdk";
-import {
-  appendRunEvent,
-  jsonlEventStore,
-  type Registry,
-  readState,
-  runLockPath,
-} from "@harness/sdk/internal";
+import { appendRunEvent, jsonlEventStore, type Registry, runLockPath } from "@harness/sdk/internal";
 import {
   CLAUDE_CLEAR_INPUT_KEY,
   CLAUDE_NOTHING_TO_COMPACT,

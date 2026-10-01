@@ -4,6 +4,7 @@ import {
   type HookReply,
   type NodeRun,
   type RunRef,
+  readState,
   runDirOf,
   type State,
   type StopHandler,
@@ -11,14 +12,14 @@ import {
   type StopReason,
   type TranscriptEntry,
 } from "@harness/sdk";
-import { appendRunEvent, jsonlEventStore, readState } from "@harness/sdk/internal";
+import { appendRunEvent, jsonlEventStore } from "@harness/sdk/internal";
 import { startContextStep } from "../context-step.ts";
 import { orchestrateCommand } from "../runs.ts";
 import { findSessionRun } from "./common.ts";
 
 export const DEFAULT_STOP_MAX_BLOCKS = 1;
 // `bun run orchestrate next` or `bun …/orchestrate.ts done`, but not a path like orchestrate-v2/SKILL.md
-const ORCHESTRATE = /\borchestrate(?:\.ts)?\s+(?:init|link-session|emit|baseline|next|exec|done)\b/;
+const ORCHESTRATE = /\borchestrate(?:\.ts)?\s+(?:init|link-session|emit|next|exec|done)\b/;
 const ASK_RULE = "If you need the user's input, ask with AskUserQuestion.";
 
 const ALLOW: HookReply = { kind: "allow" };
