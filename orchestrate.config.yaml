@@ -29,16 +29,6 @@ packages:
       testAll: bun test ./packages/core
       testFile: bun test {FILE}
 
-  agents:
-    path: packages/agents
-    runner: bun
-    description: "@harness/agents: agent adapters"
-    commands:
-      bootstrap: bun install
-      typecheck: bun run --filter @harness/agents typecheck
-      lint: bunx biome check packages/agents
-      testAll: bun test ./packages/agents
-      testFile: bun test {FILE}
 
   server:
     path: packages/server

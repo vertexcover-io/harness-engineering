@@ -2,14 +2,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
-  CLAUDE_CLEAR_INPUT_KEY,
-  CLAUDE_NOTHING_TO_COMPACT,
-  currentPane,
-  isClaudeBusy,
-  type PaneTarget,
-  typeLine,
-} from "@harness/agents";
-import {
   ContextStartedEvent,
   emitRunEvent,
   type IAgentProvider,
@@ -25,7 +17,14 @@ import {
   runDirOf,
   runLockPath,
 } from "@harness/sdk";
+import {
+  CLAUDE_CLEAR_INPUT_KEY,
+  CLAUDE_NOTHING_TO_COMPACT,
+  isClaudeBusy,
+  typeLine,
+} from "./claude.ts";
 import { completeContextStep, findContextPlanNode } from "./runs.ts";
+import { currentPane, type PaneTarget } from "./tmux.ts";
 
 const IDLE_TIMEOUT_MS = 30_000;
 const IDLE_POLL_MS = 100;

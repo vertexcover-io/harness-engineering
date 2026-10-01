@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { continueWorkflow, noopLogger, type Registry, recordGuard } from "@harness/sdk";
+import { noopLogger, type Registry } from "@harness/sdk";
 import { claudeAdapter, claudeHookSettings, readClaudeTranscript } from "./claude-hooks.ts";
+import { preToolUseHandlers, recordGuard } from "./hooks/pre-tool-use.ts";
+import { continueWorkflow, stopHandlers } from "./hooks/stop.ts";
 
 const claudeStop = claudeAdapter.stop;
 const claudePreToolUse = claudeAdapter.preToolUse;
@@ -168,6 +170,24 @@ describe("claudeHookSettings PreToolUse", () => {
     ]);
     expect(settings.hooks.Stop[0]?.hooks[0]?.command).toEndWith(
       "'stop' '--agent' 'claude' '--handler' 'continue-workflow'",
+    );
+  });
+});
+
+describe("claudeHookSettings handlers", () => {
+  const settings = claudeHookSettings(["bun", "orchestrate.ts", "hook"]);
+  const handlerNames = (groups: readonly { hooks: readonly { command: string }[] }[]): string[] =>
+    groups.flatMap((group) =>
+      group.hooks.map((hook) => /'--handler' '([^']+)'/.exec(hook.command)?.[1] ?? ""),
+    );
+
+  test("SC2: Claude registers only handlers that orchestrate hook knows", () => {
+    const stop = handlerNames(settings.hooks.Stop);
+    const preToolUse = handlerNames(settings.hooks.PreToolUse);
+    for (const name of stop) expect(Object.keys(stopHandlers)).toContain(name);
+    for (const name of preToolUse) expect(Object.keys(preToolUseHandlers)).toContain(name);
+    expect([...stop, ...preToolUse]).toEqual(
+      expect.arrayContaining(["continue-workflow", "record-guard", "bash-antipatterns"]),
     );
   });
 });

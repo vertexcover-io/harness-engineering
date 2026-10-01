@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { Glob } from "bun";
 
 const filesContaining = (
@@ -23,14 +23,21 @@ describe("source boundaries", () => {
     );
   });
 
-  test("SC40: sdk and agents src never import pino directly", () => {
+  test("SC40: sdk src never import pino directly", () => {
     // excludeTests: true, so this assertion's own needle text can't match itself.
     expect(
       filesContaining("packages/sdk/src/**/*.ts", 'from "pino', { excludeTests: true }),
     ).toEqual([]);
-    expect(
-      filesContaining("packages/agents/src/**/*.ts", 'from "pino', { excludeTests: true }),
-    ).toEqual([]);
+  });
+
+  test("SC3: no source file imports the deleted agents package, and the package is gone", () => {
+    // Built from parts so this file's own needle text can't match itself.
+    const agentsImport = ["@harness", "agents"].join("/");
+    const sources = ["packages/*/src/**/*.ts", "skills/**/*.{ts,mts,js,mjs}"].flatMap((pattern) =>
+      filesContaining(pattern, agentsImport),
+    );
+    expect(sources).toEqual([]);
+    expect(existsSync("packages/agents")).toBe(false);
   });
 
   test("sdk never imports core, so it installs as a library on its own", () => {

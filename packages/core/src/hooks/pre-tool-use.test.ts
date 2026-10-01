@@ -2,19 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jsonlEventStore } from "../event-store.ts";
-import { runDirOf } from "../events.ts";
-import { noopLogger } from "../logger.ts";
-import { createRegistry, registryPath } from "../registry.ts";
 import {
-  bashAntipatterns,
+  createRegistry,
+  jsonlEventStore,
+  noopLogger,
   type PreToolUseHandler,
-  protectedRecordOf,
-  recordGuard,
-  runPreToolUse,
+  registryPath,
+  runDirOf,
   type ToolCall,
   type ToolUse,
-} from "./pre-tool-use.ts";
+} from "@harness/sdk";
+import { bashAntipatterns, protectedRecordOf, recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 
 describe("protectedRecordOf", () => {
   const where = { cwd: "/repo", home: "/home/u", harnessHome: "/home/u/.harness" };

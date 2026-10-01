@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { claudeProvider, harnessTmux } from "@harness/agents";
-import { createLogger, resolveLevel } from "@harness/core";
+import { claudeProvider, createLogger, harnessTmux, resolveLevel } from "@harness/core";
 import type { Check, IAgentProvider, ILogger, ITerminal } from "@harness/sdk";
 import { createRegistry, noopLogger, registryPath } from "@harness/sdk";
 import prettyFactory from "pino-pretty";

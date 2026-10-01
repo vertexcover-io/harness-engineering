@@ -11,7 +11,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { currentPane } from "@harness/agents";
 import {
   createGit,
   createRegistry,
@@ -26,6 +25,7 @@ import {
 } from "@harness/sdk";
 import corePackage from "../package.json";
 import { type InitOptions, initializeRun, linkRunSession, terminalName } from "./runs.ts";
+import { currentPane } from "./tmux.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id: "r-1",

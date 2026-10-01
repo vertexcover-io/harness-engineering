@@ -3,13 +3,6 @@ import { appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
 import {
-  agentAdapters,
-  claudeProvider,
-  currentPane,
-  HOOK_AGENTS,
-  harnessTmux,
-} from "@harness/agents";
-import {
   type AgentAdapter,
   AgentTypeSchema,
   type ArtifactRef,
@@ -21,7 +14,6 @@ import {
   harnessHome,
   type JsonValue,
   loadConfigOrDefault,
-  preToolUseHandlers,
   type Result,
   type RunRef,
   registryPath,
@@ -29,12 +21,15 @@ import {
   resolveRun,
   runDirOf,
   type StepOutcome,
-  sessionStartHandlers,
   spawnDetached,
-  stopHandlers,
   stopRunningOnSignal,
 } from "@harness/sdk";
+import { agentAdapters, HOOK_AGENTS } from "./agents.ts";
+import { claudeProvider } from "./claude.ts";
 import { completeContextOnSessionStart, runContextStep } from "./context-step.ts";
+import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
+import { sessionStartHandlers } from "./hooks/session-start.ts";
+import { stopHandlers } from "./hooks/stop.ts";
 import { createLogger, resolveLevel } from "./logging.ts";
 import {
   type DoneError,
@@ -53,6 +48,7 @@ import {
   resolveReference,
 } from "./stage.ts";
 import { captureBaseline } from "./stages/baseline.ts";
+import { currentPane, harnessTmux } from "./tmux.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";

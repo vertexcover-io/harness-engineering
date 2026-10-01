@@ -11,7 +11,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@harness/agents": "workspace:*",
     "@harness/core": "workspace:*",
     "@harness/sdk": "workspace:*",
     "@hono/zod-validator": "^0.9.1",
