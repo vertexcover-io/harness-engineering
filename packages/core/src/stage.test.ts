@@ -407,3 +407,27 @@ describe("the real ticket-fetcher skill", () => {
     expect(plan.nodes.map((node) => node.id)).toEqual(["fetch"]);
   });
 });
+
+describe("the real design skill", () => {
+  const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "design");
+
+  test("DS1: loads as an inline stage with no output schema, producing a design artifact, its references on disk", async () => {
+    const result = await loadStage(skillDir, {});
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.stage.mode).toBe("inline");
+    expect(result.value.stage.outputs).toBeUndefined();
+    expect(result.value.stage.produces).toEqual([{ artifact: "design", optional: false }]);
+    expect(Object.keys(result.value.stage.references).sort()).toEqual(["coverage", "design-doc"]);
+  });
+
+  test("DS2: a workflow that feeds it the ticket-fetcher's task compiles", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "design-wf-"));
+    const path = join(dir, "wf.yaml");
+    await writeFile(
+      path,
+      'name: t\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n  - id: fetch\n    type: agent\n    stage: ticket-fetcher\n    input:\n      request: "{{ inputs.prompt }}"\n  - id: design\n    type: agent\n    stage: design\n    dependsOn: [fetch]\n    input:\n      task: "{{ nodes.fetch.output.task }}"\n',
+    );
+    const plan = await compileWorkflow(path, { cwd: dir });
+    expect(plan.nodes.map((node) => node.id)).toEqual(["fetch", "design"]);
+  });
+});
