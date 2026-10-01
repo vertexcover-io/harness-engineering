@@ -292,20 +292,17 @@ const runWithHandlers = async (
 };
 
 describe("emitRunEvent", () => {
-  test("SC8: refuses a workflow.* event and leaves the log untouched", async () => {
+  test.each([
+    "workflow.node.completed",
+    "orchestrate.done",
+    "hooks.session-start.called",
+  ])("SC8: refuses the engine-owned %s and leaves the log untouched", async (type) => {
     const { run, runDir } = await runWithHandlers({});
 
-    const result = await emitRunEvent(run, {
-      type: "workflow.node.completed",
-      source: "ext",
-      payload: {},
-    });
+    const result = await emitRunEvent(run, { type, source: "ext", payload: {} });
 
-    expect(result).toEqual({
-      ok: false,
-      error:
-        "workflow.node.completed is engine-owned; use next, exec, or done for workflow lifecycle",
-    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.error).toStartWith(type);
     expect(await jsonlEventStore(runDir).read()).toHaveLength(0);
   });
 
