@@ -670,6 +670,21 @@ describe("compile with stages", () => {
     expect(error.message).toContain("allowFailure");
   });
 
+  test("a required consumed artifact cannot depend only on a container that may fail", async () => {
+    const error = await stagesRejection(
+      workflow(`
+  - id: retry
+    type: loop
+    allowFailure: true
+    until: "{{ iteration.index >= 1 }}"
+    maxIterations: 2
+    input: {}
+    nodes:
+      - { id: make, type: agent, stage: stages/producer, input: {} }${stageNode("use", "stages/consumer", ", dependsOn: [retry]")}`),
+    );
+    expect(error.code).toBe("missing-artifact");
+  });
+
   test("a consumer cannot rely on an artifact produced by only one switch case", async () => {
     const source = workflow(`
   - id: choice
