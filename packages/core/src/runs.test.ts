@@ -327,7 +327,7 @@ describe("terminal naming", () => {
     const { registry, run, init } = await savedRun({ terminal: "old" });
 
     const result = await init("fix-login", run.id, {
-      pane: { terminal: failing, pane: "%99" },
+      pane: failing,
     });
 
     expect(result.ok).toBe(true);
@@ -341,7 +341,7 @@ describe("terminal naming", () => {
     };
     const { registry, run, init } = await savedRun({ terminal: "old" });
 
-    const result = await init("fix-login", run.id, { pane: { terminal: throwing, pane: "%99" } });
+    const result = await init("fix-login", run.id, { pane: throwing });
 
     expect(result.ok).toBe(true);
     expect(existsSync(result.ok ? result.value.dir : "")).toBe(true);

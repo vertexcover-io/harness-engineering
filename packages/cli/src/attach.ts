@@ -30,7 +30,7 @@ const attachArgv = async (
   if (!run.ok) return run;
   const { id, terminal } = run.value;
   if (terminal === null) return { ok: false, error: `run ${id} has no terminal yet` };
-  return { ok: true, value: harnessTmux().attachCommand(terminal) };
+  return { ok: true, value: harnessTmux().find(terminal).attachCommand() };
 };
 
 export const attachCommand = () =>

@@ -444,15 +444,14 @@ const contextCommand = () =>
           level: "debug",
         },
       );
-      const pane = currentPane(process.env, helperLog);
       await runContextStep({
         run,
         nodeRunId,
         oldSessionId: opts.sessionId,
-        paneTarget: pane,
+        terminal: currentPane(process.env, helperLog),
         registry: registry(),
         provider: claudeProvider({
-          terminal: pane?.terminal ?? harnessTmux(),
+          host: harnessTmux(process.env, helperLog),
           binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
           log: helperLog,
         }),

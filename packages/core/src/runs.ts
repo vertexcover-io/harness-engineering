@@ -9,6 +9,7 @@ import {
   findRoot,
   type IGit,
   type ILogger,
+  type ITerminal,
   type JsonValue,
   loadConfigOrDefault,
   type NodeRun,
@@ -38,7 +39,6 @@ import {
 } from "@harness/sdk/internal";
 import * as z from "zod";
 import corePackage from "../package.json";
-import type { PaneTarget } from "./agents/tmux.ts";
 import { extensionPath } from "./stage.ts";
 import { compileWorkflow } from "./workflow/compile.ts";
 import {
@@ -74,7 +74,7 @@ export type InitOptions = Readonly<{
   git: IGit;
   log: ILogger;
   // the agent's tmux pane, when init runs inside one
-  pane?: PaneTarget | undefined;
+  pane?: ITerminal | undefined;
 }>;
 
 export const terminalName = (runName: string, runId: string): string =>
@@ -82,19 +82,18 @@ export const terminalName = (runName: string, runId: string): string =>
 
 // A failed rename is only logged: the run works, its tmux session just keeps the old name.
 const renameTerminal = async (run: WorkflowRun, options: InitOptions): Promise<void> => {
-  const { pane: target, registry, name, log } = options;
-  if (target === undefined) return;
-  const { terminal: tmux, pane } = target;
+  const { pane, registry, name, log } = options;
+  if (pane === undefined) return;
   const terminal = terminalName(name, run.id);
   try {
-    const renamed = await tmux.rename(pane, terminal);
+    const renamed = await pane.rename(terminal);
     if (!renamed.ok) {
-      log.warn({ runId: run.id, pane, err: renamed.error }, "tmux session not renamed");
+      log.warn({ runId: run.id, err: renamed.error }, "tmux session not renamed");
       return;
     }
     await registry.setTerminal(run.id, terminal);
   } catch (error) {
-    log.warn({ runId: run.id, pane, err: error }, "tmux session not renamed");
+    log.warn({ runId: run.id, err: error }, "tmux session not renamed");
   }
 };
 

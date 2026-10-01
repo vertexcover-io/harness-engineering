@@ -52,7 +52,7 @@ describe("harness attach", () => {
 
     const found = attach(cwd, home, "fix-login");
     expect(found.code).toBe(0);
-    expect(found.stdout).toEndWith("attach-session -t =claude-fix-login-3c4d");
+    expect(found.stdout).toEndWith("attach-session -t =claude-fix-login-3c4d:");
 
     const unknown = attach(cwd, home, "nope");
     expect(unknown.code).toBe(1);
@@ -72,7 +72,7 @@ describe("harness attach", () => {
 
     const byId = attach(cwd, home, "--run-id", "r-1a2b3c4d");
     expect(byId.code).toBe(0);
-    expect(byId.stdout).toEndWith("attach-session -t =claude-fix-login-3c4d");
+    expect(byId.stdout).toEndWith("attach-session -t =claude-fix-login-3c4d:");
 
     const idAsName = attach(cwd, home, "r-1a2b3c4d");
     expect(idAsName.code).toBe(1);
@@ -99,6 +99,6 @@ describe("harness attach", () => {
     const found = attach(cwd, home, "in-worktree");
 
     expect(found.stderr).toBe("");
-    expect(found.stdout).toEndWith("attach-session -t =claude-in-worktree-1e2f");
+    expect(found.stdout).toEndWith("attach-session -t =claude-in-worktree-1e2f:");
   }, 40_000);
 });

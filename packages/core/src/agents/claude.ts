@@ -7,6 +7,7 @@ import {
   type IAgentProvider,
   type ILogger,
   type ITerminal,
+  type ITerminalHost,
   type LaunchOptions,
   noopLogger,
   type PermissionMode,
@@ -34,14 +35,13 @@ export const isClaudeBusy = (screen: string): boolean =>
 // Types `text` into a Claude pane or session and submits it with Enter.
 export const typeLine = async (
   terminal: ITerminal,
-  target: string,
   text: string,
   wait: (ms: number) => Promise<unknown> = sleep,
 ): Promise<Result<void>> => {
-  const typed = await terminal.sendText(target, text);
+  const typed = await terminal.sendText(text);
   if (!typed.ok) return typed;
   await wait(SUBMIT_DELAY_MS);
-  return terminal.sendKeys(target, ["Enter"]);
+  return terminal.sendKeys(["Enter"]);
 };
 
 export type ClaudeArgOptions = Readonly<{
@@ -94,7 +94,7 @@ const redactRunArgs = (args: readonly string[]): string[] =>
   args.map((arg, i) => (REDACTED_RUN_FLAGS.has(args[i - 1] ?? "") ? "[redacted]" : arg));
 
 export type ClaudeProviderOptions = Readonly<{
-  terminal: ITerminal;
+  host: ITerminalHost;
   log?: ILogger;
   binary?: string;
   newId?: () => string;
@@ -163,7 +163,7 @@ export const interpretOutput = <T>(
 };
 
 export const claudeProvider = ({
-  terminal,
+  host,
   log: parentLog = noopLogger,
   binary = "claude",
   newId = randomUUID,
@@ -178,7 +178,7 @@ export const claudeProvider = ({
       model: options.model,
       permissionMode: options.permissionMode,
     };
-    const created = await terminal.create({
+    const created = await host.create({
       name: sessionId,
       cwd: options.cwd,
       argv: [binary, ...claudeArgs(sessionId, options)],
@@ -193,28 +193,29 @@ export const claudeProvider = ({
   };
 
   const relaunch = async (
-    target: string,
+    terminal: ITerminal,
     sessionId: string,
     options: LaunchOptions,
   ): Promise<Result<void>> => {
-    const respawned = await terminal.respawn(target, {
+    const respawned = await terminal.respawn({
       cwd: options.cwd,
       argv: [binary, ...claudeArgs(sessionId, options)],
       env: options.env ?? {},
     });
     const sessionLog = log.child({ sessionId });
-    if (respawned.ok) sessionLog.info({ pane: target }, "claude relaunched in its pane");
-    else sessionLog.error({ err: respawned.error, pane: target }, "claude not relaunched");
+    if (respawned.ok) sessionLog.info({}, "claude relaunched in its pane");
+    else sessionLog.error({ err: respawned.error }, "claude not relaunched");
     return respawned;
   };
 
   const prompt = async (sessionId: string, text: string): Promise<Result<void>> => {
     const sessionLog = log.child({ sessionId });
-    if (!(await terminal.isAlive(sessionId))) {
+    const terminal = host.find(sessionId);
+    if (!(await terminal.isAlive())) {
       sessionLog.error({}, "prompt not sent: the session is not running");
       return { ok: false, error: `session ${sessionId} is not running` };
     }
-    const submitted = await typeLine(terminal, sessionId, text);
+    const submitted = await typeLine(terminal, text);
     if (!submitted.ok) {
       sessionLog.error({ err: submitted.error }, "prompt not sent");
       return submitted;
@@ -225,7 +226,7 @@ export const claudeProvider = ({
 
   const stop = async (sessionId: string): Promise<Result<void>> => {
     const sessionLog = log.child({ sessionId });
-    const result = await terminal.kill(sessionId);
+    const result = await host.find(sessionId).kill();
     if (result.ok) sessionLog.info({}, "claude session stopped");
     else sessionLog.error({ err: result.error }, "claude session not stopped");
     return result;

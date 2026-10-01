@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ITerminal, jsonLogger, type Result, type TerminalSpec } from "@harness/sdk";
+import {
+  type ITerminal,
+  type ITerminalHost,
+  jsonLogger,
+  type Result,
+  type TerminalSpec,
+} from "@harness/sdk";
 import * as z from "zod";
 import {
   claudeArgs,
@@ -54,83 +60,92 @@ type Call =
   | { readonly method: "create"; readonly spec: TerminalSpec; readonly at: number }
   | {
       readonly method: "sendText";
-      readonly name: string;
+      readonly pane: string;
       readonly text: string;
       readonly at: number;
     }
   | {
       readonly method: "sendKeys";
-      readonly name: string;
+      readonly pane: string;
       readonly keys: readonly string[];
       readonly at: number;
     }
-  | { readonly method: "kill"; readonly name: string; readonly at: number }
+  | { readonly method: "kill"; readonly pane: string; readonly at: number }
   | {
       readonly method: "respawn";
-      readonly target: string;
+      readonly pane: string;
       readonly spec: Omit<TerminalSpec, "name">;
       readonly at: number;
     };
 
-const fakeTerminal = (
+const ok: Result<void> = { ok: true, value: undefined };
+
+// A pane that records every call against its own name.
+const fakePane = (pane: string, calls: Call[], alive: boolean): ITerminal => ({
+  sendText: (text) => {
+    calls.push({ method: "sendText", pane, text, at: Date.now() });
+    return Promise.resolve(ok);
+  },
+  sendKeys: (keys) => {
+    calls.push({ method: "sendKeys", pane, keys, at: Date.now() });
+    return Promise.resolve(ok);
+  },
+  kill: () => {
+    calls.push({ method: "kill", pane, at: Date.now() });
+    return Promise.resolve(ok);
+  },
+  capture: () => Promise.resolve({ ok: true, value: "" }),
+  rename: () => Promise.resolve(ok),
+  respawn: (spec) => {
+    calls.push({ method: "respawn", pane, spec, at: Date.now() });
+    return Promise.resolve(ok);
+  },
+  isAlive: () => Promise.resolve(alive),
+  attachCommand: () => ["tmux", "attach-session", "-t", pane],
+});
+
+const fakeHost = (
   options: { alive?: boolean; createOk?: boolean } = {},
-): ITerminal & {
-  calls: Call[];
-} => {
+): ITerminalHost & { calls: Call[] } => {
   const calls: Call[] = [];
-  const ok: Result<void> = { ok: true, value: undefined };
+  const alive = options.alive ?? true;
   return {
     calls,
     checks: [],
     create: (spec) => {
       calls.push({ method: "create", spec, at: Date.now() });
-      return Promise.resolve(options.createOk === false ? { ok: false, error: "boom" } : ok);
+      return Promise.resolve(
+        options.createOk === false
+          ? { ok: false, error: "boom" }
+          : { ok: true, value: fakePane(spec.name, calls, alive) },
+      );
     },
-    sendText: (name, text) => {
-      calls.push({ method: "sendText", name, text, at: Date.now() });
-      return Promise.resolve(ok);
-    },
-    sendKeys: (name, keys) => {
-      calls.push({ method: "sendKeys", name, keys, at: Date.now() });
-      return Promise.resolve(ok);
-    },
-    kill: (name) => {
-      calls.push({ method: "kill", name, at: Date.now() });
-      return Promise.resolve(ok);
-    },
-    capture: () => Promise.resolve({ ok: true, value: "" }),
-    rename: () => Promise.resolve({ ok: true, value: undefined }),
-    respawn: (target, spec) => {
-      calls.push({ method: "respawn", target, spec, at: Date.now() });
-      return Promise.resolve(ok);
-    },
-    isAlive: () => Promise.resolve(options.alive ?? true),
+    find: (name) => fakePane(name, calls, alive),
     list: () => Promise.resolve([]),
-    attachCommand: (name) => ["tmux", "attach-session", "-t", name],
   };
 };
 
 describe("claudeProvider.prompt", () => {
   test("SC6: a session whose isAlive is false returns ok:false and sends nothing", async () => {
-    const terminal = fakeTerminal({ alive: false });
-    const provider = claudeProvider({ terminal, newId: () => "s1" });
+    const host = fakeHost({ alive: false });
+    const provider = claudeProvider({ host, newId: () => "s1" });
 
     const result = await provider.prompt("s1", "hello");
 
     expect(result).toEqual({ ok: false, error: "session s1 is not running" });
-    expect(terminal.calls).toHaveLength(0);
+    expect(host.calls).toHaveLength(0);
   });
 
-  test("SC7: a live session sends the text, then Enter at least 150ms later", async () => {
-    const terminal = fakeTerminal({ alive: true });
-    const provider = claudeProvider({ terminal, newId: () => "s1" });
+  test("SC7: a live session sends the text into its own pane, then Enter at least 150ms later", async () => {
+    const host = fakeHost({ alive: true });
+    const provider = claudeProvider({ host, newId: () => "s1" });
 
     const result = await provider.prompt("s1", "hello");
 
     expect(result).toEqual({ ok: true, value: undefined });
-    expect(terminal.calls.map((c) => c.method)).toEqual(["sendText", "sendKeys"]);
-    const [sendText, sendKeys] = terminal.calls;
-    expect(sendText?.method).toBe("sendText");
+    expect(host.calls.map((c) => c.method)).toEqual(["sendText", "sendKeys"]);
+    const [sendText, sendKeys] = host.calls;
+    expect(sendText).toMatchObject({ method: "sendText", pane: "s1", text: "hello" });
     expect(sendKeys).toMatchObject({ method: "sendKeys", keys: ["Enter"] });
     expect((sendKeys?.at ?? 0) - (sendText?.at ?? 0)).toBeGreaterThanOrEqual(149);
   });
@@ -139,7 +154,7 @@ describe("claudeProvider.prompt", () => {
 describe("claudeProvider.launch", () => {
   test("a terminal that fails to create the session returns ok:false", async () => {
     const provider = claudeProvider({
-      terminal: fakeTerminal({ createOk: false }),
+      host: fakeHost({ createOk: false }),
       newId: () => "s1",
     });
 
@@ -149,10 +164,10 @@ describe("claudeProvider.launch", () => {
 
 describe("claudeProvider.relaunch", () => {
   test("replaces the program in the pane with claude on the given session id and first prompt", async () => {
-    const terminal = fakeTerminal();
-    const provider = claudeProvider({ terminal, binary: "/bin/claude", newId: () => "unused" });
+    const host = fakeHost();
+    const provider = claudeProvider({ host, binary: "/bin/claude", newId: () => "unused" });
 
-    const result = await provider.relaunch("%3", "s-new", {
+    const result = await provider.relaunch(host.find("%3"), "s-new", {
       cwd: "/repo",
       prompt: "/orchestrate-v2 --resume feat-x",
       env: { HARNESS_RUN_ID: "r-1" },
@@ -160,8 +175,8 @@ describe("claudeProvider.relaunch", () => {
     });
 
     expect(result).toEqual({ ok: true, value: undefined });
-    const [call] = terminal.calls;
-    expect(call).toMatchObject({ method: "respawn", target: "%3" });
+    const [call] = host.calls;
+    expect(call).toMatchObject({ method: "respawn", pane: "%3" });
     const spec = call?.method === "respawn" ? call.spec : undefined;
     expect(spec?.cwd).toBe("/repo");
     expect(spec?.env).toEqual({ HARNESS_RUN_ID: "r-1" });
@@ -175,8 +190,7 @@ describe("claudeProvider.launch logging", () => {
   test("SC37: no log line contains the prompt or system-prompt text", async () => {
     const lines: string[] = [];
     const log = jsonLogger({ level: "debug", write: (line) => lines.push(line) });
-    const terminal = fakeTerminal();
-    const provider = claudeProvider({ terminal, log, newId: () => "s1" });
+    const provider = claudeProvider({ host: fakeHost(), log, newId: () => "s1" });
 
     await provider.launch({
       cwd: "/repo",
@@ -298,7 +312,7 @@ describe("claudeProvider.run", () => {
         is_error: false,
       }),
     });
-    const provider = claudeProvider({ terminal: fakeTerminal(), binary });
+    const provider = claudeProvider({ host: fakeHost(), binary });
 
     const result = await provider.run({
       prompt: "hi",
@@ -313,7 +327,7 @@ describe("claudeProvider.run", () => {
     const binary = fakeClaudeBinary({
       stdout: JSON.stringify({ result: "boom", session_id: "s", is_error: true }),
     });
-    const provider = claudeProvider({ terminal: fakeTerminal(), binary });
+    const provider = claudeProvider({ host: fakeHost(), binary });
 
     const result = await provider.run({ prompt: "hi", cwd: process.cwd() });
 
@@ -326,7 +340,7 @@ describe("claudeProvider.run", () => {
       stdout: JSON.stringify({ result: "ok", session_id: "s2", is_error: false }),
       exitCode: 2,
     });
-    const provider = claudeProvider({ terminal: fakeTerminal(), binary });
+    const provider = claudeProvider({ host: fakeHost(), binary });
 
     const result = await provider.run({ prompt: "hi", cwd: process.cwd() });
 
@@ -342,7 +356,7 @@ describe("claudeProvider.run", () => {
         is_error: false,
       }),
     });
-    const provider = claudeProvider({ terminal: fakeTerminal(), binary });
+    const provider = claudeProvider({ host: fakeHost(), binary });
 
     const result = await provider.run({
       prompt: "hi",
