@@ -134,6 +134,8 @@ const fakeProvider = (relaunchOk = true) => {
     prompt: async () => ({ ok: true, value: undefined }),
     stop: async () => ({ ok: true, value: undefined }),
     run: async () => ({ ok: false, error: new Error("unused") }),
+    limitResetWait: async () => null,
+    promptWhenReady: async () => ({ ok: true, value: "not-ready" }),
   };
   return { provider, relaunches };
 };

@@ -2,13 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { noopLogger, type RegistryReader } from "@harness/sdk";
+import { noopLogger, type RegistryReader, type StopFailureInput } from "@harness/sdk";
 import { preToolUseHandlers, recordGuard } from "../hooks/pre-tool-use.ts";
 import { continueWorkflow, stopHandlers } from "../hooks/stop.ts";
 import { claudeAdapter, claudeHookSettings, readClaudeTranscript } from "./claude-hooks.ts";
 
 const claudeStop = claudeAdapter.stop;
 const claudePreToolUse = claudeAdapter.preToolUse;
+
+const NO_RUNS: RegistryReader = {
+  findRun: async () => undefined,
+  findRunsByName: async () => [],
+};
 
 const line = (value: unknown): string => JSON.stringify(value);
 const user = (content: unknown, extra: Record<string, unknown> = {}) =>
@@ -86,11 +91,7 @@ describe("claudeHookSettings", () => {
 });
 
 describe("claudeAdapter.preToolUse", () => {
-  const registry: RegistryReader = {
-    findRun: async () => undefined,
-    findRunsByName: async () => [],
-  };
-  const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
+  const deps = { registry: NO_RUNS, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
   const stdin = (tool_name: string, tool_input: Record<string, unknown>) =>
     JSON.stringify({ session_id: "s1", tool_name, tool_input, cwd: "/repo" });
   const TARGET = ".harness/x/state.json";
@@ -161,6 +162,60 @@ describe("claudeHookSettings PreToolUse", () => {
     expect(settings.hooks.Stop[0]?.hooks[0]?.command).toEndWith(
       "'stop' '--agent' 'claude' '--handler' 'continue-workflow'",
     );
+  });
+});
+
+describe("claudeAdapter.stopFailure", () => {
+  const deps = { registry: NO_RUNS, env: {}, log: noopLogger };
+  test.each([
+    ["rate_limit", true],
+    ["overloaded", false],
+  ])(
+    "Claude's error %s and its last_assistant_message reach the handler with usageLimit %p, and the hook prints nothing",
+    async (error, usageLimit) => {
+      const seen: StopFailureInput[] = [];
+      const handler = {
+        name: "spy",
+        run: async (input: StopFailureInput) => void seen.push(input),
+      };
+      const stdin = line({
+        session_id: "s1",
+        hook_event_name: "StopFailure",
+        error,
+        error_details: "429",
+        last_assistant_message: "You've hit your limit · resets 3pm (UTC)",
+      });
+      const printed = await claudeAdapter.stopFailure?.(stdin, deps, handler);
+      expect(printed).toBe("");
+      expect(seen).toEqual([
+        {
+          agent: "claude",
+          sessionId: "s1",
+          error,
+          usageLimit,
+          message: "You've hit your limit · resets 3pm (UTC)",
+        },
+      ]);
+    },
+  );
+});
+
+describe("claudeHookSettings StopFailure", () => {
+  test("StopFailure runs resume-after-limit only for rate_limit, the error a usage limit ends a turn with", () => {
+    const settings = claudeHookSettings(["/usr/bin/bun", "/o.ts", "hook"]);
+    expect(settings.hooks.StopFailure).toEqual([
+      {
+        matcher: "rate_limit",
+        hooks: [
+          {
+            type: "command",
+            command:
+              "'/usr/bin/bun' '/o.ts' 'hook' 'stop-failure' '--agent' 'claude' '--handler' 'resume-after-limit'",
+            timeout: 30,
+          },
+        ],
+      },
+    ]);
   });
 });
 

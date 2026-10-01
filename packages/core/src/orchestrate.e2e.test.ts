@@ -2142,3 +2142,41 @@ describe("context node through a real tmux pane", () => {
     }
   }, 30_000);
 });
+
+describe("orchestrate hook stop-failure", () => {
+  // The test itself may run inside tmux; the helper must not find this pane and type into it.
+  const RUN_ENV = { HARNESS_RUN_ID: "r-1", TMUX: undefined, TMUX_PANE: undefined };
+
+  test("a usage limit is logged as agent.limit.reached and its detached wait starts, which with no terminal only logs why it cannot type", async () => {
+    const run = startedRun(ONE_AGENT);
+    const link = ["link-session", "--run", "feat-x", "--agent", "claude", "--session-id", "A"];
+    expect(orchestrate(run.repo, run.home, link).code).toBe(0);
+
+    const result = orchestrate(
+      run.repo,
+      run.home,
+      ["hook", "stop-failure", "--agent", "claude", "--handler", "resume-after-limit"],
+      RUN_ENV,
+      JSON.stringify({
+        session_id: "A",
+        error: "rate_limit",
+        last_assistant_message: "resets 3pm (UTC)",
+      }),
+    );
+
+    expect(result).toMatchObject({ code: 0, stdout: "" });
+    expect((await eventsOf(run.repo)).at(-1)).toMatchObject({
+      type: "agent.limit.reached",
+      payload: {
+        agent: "claude",
+        sessionId: "A",
+        error: "rate_limit",
+        message: "resets 3pm (UTC)",
+      },
+    });
+    const log = join(runDirOf(run.repo, "feat-x"), "limit-wait.log");
+    await waitFor(
+      () => existsSync(log) && readFileSync(log, "utf8").includes("no terminal to type into"),
+    );
+  }, 20_000);
+});

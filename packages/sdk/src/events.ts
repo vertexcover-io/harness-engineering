@@ -170,6 +170,30 @@ export const SessionReplacedEvent = z.object({
   }),
 });
 
+// The agent hit its plan's usage limit; message is its error text, which may name the reset time.
+export const LimitReachedEvent = z.object({
+  payload: z.strictObject({
+    agent: AgentTypeSchema,
+    sessionId: NonEmptyStringSchema,
+    error: NonEmptyStringSchema,
+    message: z.string().optional(),
+  }),
+});
+
+// from: where the reset time was read.
+export const LimitWaitingEvent = z.object({
+  payload: z.strictObject({
+    sessionId: NonEmptyStringSchema,
+    limitEventId: NonEmptyStringSchema,
+    resumeAt: z.iso.datetime(),
+    from: z.enum(["message", "screen", "fallback"]),
+  }),
+});
+
+export const LimitResumedEvent = z.object({
+  payload: z.strictObject({ sessionId: NonEmptyStringSchema, limitEventId: NonEmptyStringSchema }),
+});
+
 const workspaceEvent = <P extends z.ZodType>(payload: P) => z.object({ payload });
 
 const ShaSchema = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/, "Expected a full commit SHA");
@@ -317,6 +341,9 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "hooks.stop.called": StopCalledEvent,
   "hooks.pre-tool-use.called": PreToolUseCalledEvent,
   "hooks.session-start.called": SessionStartCalledEvent,
+  "agent.limit.reached": LimitReachedEvent,
+  "agent.limit.waiting": LimitWaitingEvent,
+  "agent.limit.resumed": LimitResumedEvent,
 };
 
 // An event before the emitter fills runId, ts and (when not given) id. Built from the shape,

@@ -80,29 +80,38 @@ type Call =
 
 const ok: Result<void> = { ok: true, value: undefined };
 
-// A pane that records every call against its own name.
-const fakePane = (pane: string, calls: Call[], alive: boolean): ITerminal => ({
-  sendText: (text) => {
-    calls.push({ method: "sendText", pane, text, at: Date.now() });
-    return Promise.resolve(ok);
-  },
-  sendKeys: (keys) => {
-    calls.push({ method: "sendKeys", pane, keys, at: Date.now() });
-    return Promise.resolve(ok);
-  },
-  kill: () => {
-    calls.push({ method: "kill", pane, at: Date.now() });
-    return Promise.resolve(ok);
-  },
-  capture: () => Promise.resolve({ ok: true, value: "" }),
-  rename: () => Promise.resolve(ok),
-  respawn: (spec) => {
-    calls.push({ method: "respawn", pane, spec, at: Date.now() });
-    return Promise.resolve(ok);
-  },
-  isAlive: () => Promise.resolve(alive),
-  attachCommand: () => ["tmux", "attach-session", "-t", pane],
-});
+// A pane that records every call against its own name, and shows each of `screens` in turn.
+const fakePane = (
+  pane: string,
+  calls: Call[],
+  alive: boolean,
+  screens: readonly string[] = [""],
+): ITerminal => {
+  let captures = 0;
+  return {
+    sendText: (text) => {
+      calls.push({ method: "sendText", pane, text, at: Date.now() });
+      return Promise.resolve(ok);
+    },
+    sendKeys: (keys) => {
+      calls.push({ method: "sendKeys", pane, keys, at: Date.now() });
+      return Promise.resolve(ok);
+    },
+    kill: () => {
+      calls.push({ method: "kill", pane, at: Date.now() });
+      return Promise.resolve(ok);
+    },
+    capture: () =>
+      Promise.resolve({ ok: true, value: screens[Math.min(captures++, screens.length - 1)] ?? "" }),
+    rename: () => Promise.resolve(ok),
+    respawn: (spec) => {
+      calls.push({ method: "respawn", pane, spec, at: Date.now() });
+      return Promise.resolve(ok);
+    },
+    isAlive: () => Promise.resolve(alive),
+    attachCommand: () => ["tmux", "attach-session", "-t", pane],
+  };
+};
 
 const fakeHost = (
   options: { alive?: boolean; createOk?: boolean } = {},
@@ -396,5 +405,89 @@ describe("isClaudeBusy", () => {
     ["❯ ", false],
   ])("SC22: %j is busy: %p", (screen, busy) => {
     expect(isClaudeBusy(screen)).toBe(busy);
+  });
+});
+
+const RULE = "─".repeat(40);
+// Claude 2.1.286's empty input box, with its status line below.
+const PROMPT = `${RULE}\n❯\n${RULE}\n  Model: Opus | Ctx Used: 8.0%`;
+const LIMIT_MENU = [
+  "What do you want to do?",
+  "❯ 1. Upgrade your plan",
+  "  2. Stop and wait for limit to reset",
+  "Enter to confirm · Esc to cancel",
+].join("\n");
+
+describe("claudeProvider.limitResetWait", () => {
+  test("reads the reset from the error message, else from the limit banner on the pane's screen", async () => {
+    const now = new Date("2026-10-01T13:00:00Z");
+    const provider = claudeProvider({ host: fakeHost() });
+    const pane = fakePane("p", [], true, [`● You've hit your limit · resets 4pm (UTC)\n${PROMPT}`]);
+    const hour = 3_600_000;
+    expect(await provider.limitResetWait(pane, "resets 3pm (UTC)", now)).toEqual({
+      ms: 2 * hour + 60_000,
+      from: "message",
+    });
+    expect(await provider.limitResetWait(pane, "Usage limit reached", now)).toEqual({
+      ms: 3 * hour + 60_000,
+      from: "screen",
+    });
+  });
+});
+
+describe("claudeProvider.promptWhenReady", () => {
+  const typedInto = async (...screens: readonly string[]) => {
+    const calls: Call[] = [];
+    const provider = claudeProvider({ host: fakeHost() });
+    const result = await provider.promptWhenReady(fakePane("p", calls, true, screens), "continue");
+    const typed = calls.map((c) =>
+      c.method === "sendText" ? c.text : c.method === "sendKeys" ? c.keys : c.method,
+    );
+    return { result, typed };
+  };
+  const SENT = [["C-u"], "continue", ["Enter"]];
+
+  test.each([
+    ["an empty input box", [`● Done.\n${PROMPT}`]],
+    [
+      "a numbered list in Claude's reply above the input box",
+      [`1. Fixed the bug\n2. Added a test\n${PROMPT}`],
+    ],
+  ])("%s: the input is cleared and the text submitted", async (_, screens) => {
+    expect(await typedInto(...screens)).toEqual({
+      result: { ok: true, value: "sent" },
+      typed: SENT,
+    });
+  });
+
+  test("an open limit menu is answered with Stop and wait before the text is typed", async () => {
+    expect(await typedInto(LIMIT_MENU, PROMPT)).toEqual({
+      result: { ok: true, value: "sent" },
+      typed: [["Down", "Enter"], ...SENT],
+    });
+  });
+
+  test.each([
+    ["a draft in the input box", `${RULE}\n❯ half a message\n${RULE}`],
+    ["a permission dialog", "Do you want to run this command?\n❯ 1. Yes\n  2. No"],
+    [
+      "an unnumbered dialog",
+      "Monthly spend limit reached\n❯ Adjust monthly spend limit: $20.00\n  Wait for limit to reset",
+    ],
+    [
+      "a dialog showing only its footer",
+      "Do you want to proceed?\nEnter to confirm · Esc to cancel",
+    ],
+    ["Claude at work above its input box", `· Vibing… (3s)\n${PROMPT}`],
+    ["a bare ❯ outside the input box", "● Done.\n❯\n  ? for shortcuts"],
+    [
+      "a live limit menu without Stop and wait",
+      "What do you want to do?\n❯ 1. Upgrade your plan\n  2. Ask your admin",
+    ],
+  ])("%s: nothing is typed and the answer is not-ready", async (_, screen) => {
+    expect(await typedInto(screen)).toEqual({
+      result: { ok: true, value: "not-ready" },
+      typed: [],
+    });
   });
 });

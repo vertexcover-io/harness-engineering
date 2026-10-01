@@ -18,6 +18,7 @@ import {
 } from "@harness/sdk";
 import * as z from "zod";
 import { claudeHookSettings } from "./claude-hooks.ts";
+import { limitMenuKeys, readResetWait } from "./claude-limit.ts";
 
 // Claude never returns while it is waiting for Enter to submit; the spike found 150ms reliable.
 const SUBMIT_DELAY_MS = 150;
@@ -31,6 +32,60 @@ export const CLAUDE_CLEAR_INPUT_KEY = "C-u";
 
 export const isClaudeBusy = (screen: string): boolean =>
   screen.includes("queued messages") || screen.split("\n").some((line) => SPINNER.test(line));
+
+const RULE = /^\s*─{10,}\s*$/;
+const DIALOG_FOOTER = /enter to confirm|esc to cancel/i;
+
+// Claude's empty input box: a bare ❯ between two rules. A dialog replaces the box, so seeing it
+// is the positive sign that Enter submits a message.
+const hasEmptyInputBox = (screen: string): boolean =>
+  screen
+    .split("\n")
+    .some(
+      (line, i, lines) =>
+        line.trim() === "❯" && RULE.test(lines[i - 1] ?? "") && RULE.test(lines[i + 1] ?? ""),
+    );
+
+const isAwaitingInput = (screen: string): boolean =>
+  hasEmptyInputBox(screen) && !isClaudeBusy(screen) && !DIALOG_FOOTER.test(screen);
+
+// On some versions Claude's limit menu has "Upgrade your plan" selected, so a bare Enter would buy
+// an upgrade; this picks "Stop and wait" instead. Returns the screen to judge next: unchanged when
+// no limit menu is open, re-read after answering it, or null for a menu it cannot answer safely.
+// It answers once: a menu still open afterwards leaves no empty input, so nothing gets typed.
+const answerLimitMenu = async (
+  terminal: ITerminal,
+  screen: string,
+): Promise<Result<string | null>> => {
+  const keys = limitMenuKeys(screen);
+  if (keys === null) return { ok: true, value: null };
+  if (keys.length === 0) return { ok: true, value: screen };
+  const answered = await terminal.sendKeys(keys);
+  if (!answered.ok) return answered;
+  return terminal.capture();
+};
+
+const limitResetWait = async (terminal: ITerminal, message: string, now: Date) => {
+  const screen = await terminal.capture();
+  return readResetWait({ message, screen: screen.ok ? screen.value : "", now });
+};
+
+const promptWhenReady = async (
+  terminal: ITerminal,
+  text: string,
+): Promise<Result<"sent" | "not-ready">> => {
+  const captured = await terminal.capture();
+  if (!captured.ok) return captured;
+  const screen = await answerLimitMenu(terminal, captured.value);
+  if (!screen.ok) return screen;
+  if (screen.value === null || !isAwaitingInput(screen.value)) {
+    return { ok: true, value: "not-ready" };
+  }
+  const cleared = await terminal.sendKeys([CLAUDE_CLEAR_INPUT_KEY]);
+  if (!cleared.ok) return cleared;
+  const typed = await typeLine(terminal, text);
+  return typed.ok ? { ok: true, value: "sent" } : typed;
+};
 
 // Types `text` into a Claude pane or session and submits it with Enter.
 export const typeLine = async (
@@ -270,6 +325,8 @@ export const claudeProvider = ({
     relaunch,
     prompt,
     stop,
+    limitResetWait,
+    promptWhenReady,
     run,
   };
 };

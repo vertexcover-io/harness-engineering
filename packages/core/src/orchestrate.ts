@@ -29,6 +29,8 @@ import { runContextStep } from "./context-step.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "./hooks/session-start.ts";
 import { stopHandlers } from "./hooks/stop.ts";
+import { stopFailureHandlers } from "./hooks/stop-failure.ts";
+import { runLimitWait } from "./limit-wait.ts";
 import { createLogger, resolveLevel } from "./logging.ts";
 import {
   type DoneError,
@@ -419,6 +421,12 @@ const hookCommand = () => {
     handlers: preToolUseHandlers,
     answer: (adapter) => adapter.preToolUse,
   });
+  addHookCommand(hook, {
+    name: "stop-failure",
+    description: "Log a turn an API error ended, and wait out a usage limit",
+    handlers: stopFailureHandlers,
+    answer: (adapter) => adapter.stopFailure,
+  });
   return hook;
 };
 
@@ -435,15 +443,7 @@ const contextCommand = () =>
       const target = await getWorkflowRun(opts.run, opts.root);
       if (!target.ok) return fail(target.error);
       const { run } = target.value;
-      // stderr is detached, so this helper logs to the run's folder
-      const file = join(runDirOf(run.cwd, run.name), "context.log");
-      const helperLog = createLogger(
-        { service: "harness-context", run: run.name },
-        {
-          destination: { write: (chunk: string) => void appendFileSync(file, chunk) },
-          level: "debug",
-        },
-      );
+      const helperLog = helperLogger(run, "harness-context", "context.log");
       await runContextStep({
         run,
         nodeRunId,
@@ -464,6 +464,45 @@ const contextCommand = () =>
       });
     });
 
+// stderr is detached, so a helper logs to a file in the run's folder.
+const helperLogger = (run: RunRef, service: string, file: string) => {
+  const path = join(runDirOf(run.cwd, run.name), file);
+  return createLogger(
+    { service, run: run.name },
+    { destination: { write: (chunk: string) => void appendFileSync(path, chunk) }, level: "debug" },
+  );
+};
+
+const limitWaitCommand = () =>
+  new Command("limit-wait")
+    .description(
+      "Wait out a usage limit, then have the agent continue in its terminal (started by the StopFailure hook)",
+    )
+    .argument("<eventId>", "id of the agent.limit.reached event")
+    .requiredOption("--run <name>", RUN_HELP)
+    .requiredOption("--session-id <id>", "the agent session the limit stopped")
+    .option("--root <dir>", ROOT_HELP)
+    .action(async (limitEventId, opts) => {
+      const target = await getWorkflowRun(opts.run, opts.root);
+      if (!target.ok) return fail(target.error);
+      const { run } = target.value;
+      const log = helperLogger(run, "harness-limit-wait", "limit-wait.log");
+      const claude = claudeProvider({
+        host: harnessTerminalHost(process.env, log),
+        binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
+        log,
+      });
+      await runLimitWait({
+        run,
+        sessionId: opts.sessionId,
+        limitEventId,
+        agents: { claude },
+        // the hook that started this helper ran inside the agent's terminal, and left it in env
+        terminal: currentTerminal(process.env, log),
+        log,
+      }).catch((error: unknown) => log.error({ err: error }, "limit wait threw"));
+    });
+
 stopRunningOnSignal();
 
 await new Command()
@@ -479,5 +518,6 @@ await new Command()
   .addCommand(skillCommand())
   .addCommand(hookCommand())
   .addCommand(contextCommand())
+  .addCommand(limitWaitCommand())
   .parseAsync(process.argv)
   .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
