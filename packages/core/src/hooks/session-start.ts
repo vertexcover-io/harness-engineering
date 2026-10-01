@@ -1,4 +1,5 @@
-import { emitRunEvent, type SessionStartHandler } from "@harness/sdk";
+import type { SessionStartHandler } from "@harness/sdk";
+import { appendRunEvent } from "@harness/sdk/internal";
 import { findEnvRun } from "./common.ts";
 
 // A new session has a new id, so the run's other hooks would stop recognizing it until it is
@@ -11,7 +12,7 @@ export const linkSession: SessionStartHandler = {
     if (run === undefined) return;
     const { agent, sessionId, source } = input;
     await deps.registry.linkSession(run.ref.id, { agent, sessionId });
-    await emitRunEvent(run.ref, {
+    await appendRunEvent(run.ref, {
       type: "hooks.session-start.called",
       source: "hooks",
       payload: { agent, sessionId, source },

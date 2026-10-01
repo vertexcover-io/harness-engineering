@@ -97,20 +97,38 @@ const namedNewestFirst = (registry: RegistryFile, name: string): readonly Workfl
     .filter((run) => run.name === name)
     .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-export type Registry = Readonly<{
+export type RegistryReader = Readonly<{
   findRun: (runId: string) => Promise<WorkflowRun | undefined>;
   findRunsByName: (name: string) => Promise<readonly WorkflowRun[]>;
-  addRun: (run: WorkflowRun) => Promise<void>;
-  removeRun: (runId: string) => Promise<void>;
-  initRun: (runId: string, name: string) => Promise<void>;
-  setTerminal: (runId: string, terminal: string) => Promise<void>;
-  linkSession: (runId: string, session: SessionRef) => Promise<void>;
 }>;
+
+export type Registry = RegistryReader &
+  Readonly<{
+    addRun: (run: WorkflowRun) => Promise<void>;
+    removeRun: (runId: string) => Promise<void>;
+    initRun: (runId: string, name: string) => Promise<void>;
+    setTerminal: (runId: string, terminal: string) => Promise<void>;
+    linkSession: (runId: string, session: SessionRef) => Promise<void>;
+  }>;
+
+const readRegistry = async (path: string): Promise<RegistryFile> => {
+  const text = await readIfExists(path);
+  return text === null ? EMPTY_REGISTRY : RegistryFileSchema.parse(JSON.parse(text));
+};
+
+// What a script needs to find its run; changing the registry is the engine's job.
+export const createRegistryReader = (path: string): RegistryReader => ({
+  findRun: async (runId) => (await readRegistry(path)).runs[runId],
+  findRunsByName: async (name) => namedNewestFirst(await readRegistry(path), name),
+});
 
 // A run id is unique everywhere; a run name only within a repo, so it comes with that repo's root.
 export type RunTarget = Readonly<{ runId: string } | { name: string; root: string }>;
 
-const findRunById = async (registry: Registry, runId: string): Promise<Result<WorkflowRun>> => {
+const findRunById = async (
+  registry: RegistryReader,
+  runId: string,
+): Promise<Result<WorkflowRun>> => {
   const run = await registry.findRun(runId);
   return run === undefined
     ? { ok: false, error: `no run with id "${runId}"` }
@@ -120,7 +138,7 @@ const findRunById = async (registry: Registry, runId: string): Promise<Result<Wo
 // A name resolves the way orchestrate resolves it (resolveRun), so a run started in a linked
 // worktree or a sub-repo of `root` is found too.
 export const findRunByIdOrName = async (
-  registry: Registry,
+  registry: RegistryReader,
   target: RunTarget,
 ): Promise<Result<WorkflowRun>> => {
   if ("runId" in target) return findRunById(registry, target.runId);
@@ -131,17 +149,12 @@ export const findRunByIdOrName = async (
 export const createRegistry = (path: string, parentLog: ILogger = noopLogger): Registry => {
   const log = parentLog.child({ component: "registry", path });
 
-  const read = async (): Promise<RegistryFile> => {
-    const text = await readIfExists(path);
-    return text === null ? EMPTY_REGISTRY : RegistryFileSchema.parse(JSON.parse(text));
-  };
-
   // One change at a time: the lock is held from reading the file until the new one is renamed
   // in, so two requests cannot both change the same old copy. The rename means the file is
   // never half-written.
   const update = (change: Change): Promise<boolean> =>
     withLock(`${path}.lock`, async () => {
-      const current = await read();
+      const current = await readRegistry(path);
       const next = change(current);
       if (next === current) return false;
       const tempPath = `${path}.tmp-${randomUUID()}`;
@@ -152,8 +165,7 @@ export const createRegistry = (path: string, parentLog: ILogger = noopLogger): R
     });
 
   return {
-    findRun: async (runId) => (await read()).runs[runId],
-    findRunsByName: async (name) => namedNewestFirst(await read(), name),
+    ...createRegistryReader(path),
     addRun: async (run) => {
       await update(addRun(run));
     },

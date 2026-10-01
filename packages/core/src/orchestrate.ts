@@ -8,7 +8,6 @@ import {
   type ArtifactRef,
   ArtifactRefSchema,
   createGit,
-  createRegistry,
   emitRunEvent,
   type HookDeps,
   harnessHome,
@@ -20,10 +19,10 @@ import {
   resolveRoot,
   resolveRun,
   runDirOf,
-  type StepOutcome,
   spawnDetached,
   stopRunningOnSignal,
 } from "@harness/sdk";
+import { createRegistry, type StepOutcome } from "@harness/sdk/internal";
 import { agentAdapters, HOOK_AGENTS } from "./agents.ts";
 import { claudeProvider } from "./claude.ts";
 import { completeContextOnSessionStart, runContextStep } from "./context-step.ts";
@@ -178,11 +177,6 @@ const emitCommand = () =>
     .option("--stage <name>", "stage the event belongs to")
     .option("--root <dir>", ROOT_HELP)
     .action(async (type, opts) => {
-      if (type.startsWith("workflow.")) {
-        return fail(`${type} is engine-owned; use next, exec, or done for workflow lifecycle`);
-      }
-      // The reset helper trusts hooks.session-start.called, so only the hooks may write hook events.
-      if (type.startsWith("hooks.")) return fail(`${type} is written only by the agent's hooks`);
       const payload = parseJsonFlag(opts.payload, "--payload");
       if (!payload.ok) return fail(payload.error);
       const target = await getWorkflowRun(opts.run, opts.root);

@@ -3,7 +3,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jsonlEventStore, runDirOf, type WorkflowRun } from "@harness/sdk";
+import { runDirOf, type WorkflowRun } from "@harness/sdk";
+import { jsonlEventStore } from "@harness/sdk/internal";
 
 const SCRIPT = join(import.meta.dir, "workspace.ts");
 

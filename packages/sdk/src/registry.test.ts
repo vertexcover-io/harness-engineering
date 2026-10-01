@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   createRegistry,
+  createRegistryReader,
   findRunByIdOrName,
   RegistryFileSchema,
   type RunTarget,
@@ -143,5 +144,20 @@ describe("findRunByIdOrName", () => {
     expect(await errorOf({ name: "nope", root })).toContain('no run named "nope"');
     rmSync(join(root, ".harness", "fix-login"), { recursive: true });
     expect(await errorOf({ name: "fix-login", root })).toContain("no longer exists");
+  });
+});
+
+describe("createRegistryReader", () => {
+  test("SC10: finds what the registry wrote and exposes no write methods", async () => {
+    const path = tempRegistryPath();
+    const registry = createRegistry(path);
+    await registry.addRun(run("r-10"));
+    await registry.initRun("r-10", "spec");
+
+    const reader = createRegistryReader(path);
+
+    expect((await reader.findRun("r-10"))?.name).toBe("spec");
+    expect((await reader.findRunsByName("spec")).map((found) => found.id)).toEqual(["r-10"]);
+    expect(Object.keys(reader).sort()).toEqual(["findRun", "findRunsByName"]);
   });
 });

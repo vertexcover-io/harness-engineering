@@ -2,23 +2,16 @@ import { access, copyFile, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   type ArtifactRef,
-  appendRunEvent,
-  appendRunEventIf,
   type Config,
-  createState,
-  type DoneStatus,
   type EmitInput,
   type EventHandlerRefs,
-  emitRunEvent,
   eventError,
   findRoot,
   type IGit,
   type ILogger,
   type JsonValue,
-  jsonlEventStore,
   loadConfigOrDefault,
   type NodeRun,
-  type Registry,
   type Result,
   type RunLookup,
   type RunRef,
@@ -28,13 +21,21 @@ import {
   SessionRefSchema,
   SlugSchema,
   type State,
-  type StepOutcome,
-  type StepReport,
   stackOf,
-  syncState,
   type VerifierRun,
   type WorkflowRun,
 } from "@harness/sdk";
+import {
+  appendRunEvent,
+  appendRunEventIf,
+  createState,
+  type DoneStatus,
+  jsonlEventStore,
+  type Registry,
+  type StepOutcome,
+  type StepReport,
+  syncState,
+} from "@harness/sdk/internal";
 import * as z from "zod";
 import corePackage from "../package.json";
 import { extensionPath } from "./stage.ts";
@@ -113,7 +114,7 @@ const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<S
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
   const version = String(corePackage.version);
   await createState({ runId: run.id, runDir: dir, version, eventHandlers });
-  const appended = await emitRunEvent(
+  const appended = await appendRunEvent(
     { id: run.id, cwd: run.cwd, name },
     {
       id: "workflow-started",
@@ -179,7 +180,8 @@ export const initializeRun = async (
 };
 
 export const linkRunSession = async (
-  options: RunLookup & Readonly<{ agent: string; sessionId: string }>,
+  options: Omit<RunLookup, "registry"> &
+    Readonly<{ registry: Registry; agent: string; sessionId: string }>,
 ): Promise<Result<readonly SessionRef[]>> => {
   const session = SessionRefSchema.safeParse({
     agent: options.agent,
@@ -259,7 +261,7 @@ const logCall = async <T, E extends string | DoneError = string>(
     error instanceof Error ? error : new Error(String(error)),
   );
   const status = statusOf === undefined ? {} : { status: statusOf(outcome) };
-  const logged = await emitRunEvent(run, {
+  const logged = await appendRunEvent(run, {
     type: `orchestrate.${call.command}`,
     source: "orchestrate",
     payload: { input: call.input, output: replyOf(outcome), ...status },
@@ -434,7 +436,7 @@ const runExecStep = async (run: RunRef, nodeRunId: string): Promise<Result<StepR
   }
   const input = step.value.nodeRun.input ?? null;
   const record = await runStepLeaf(node, input, { cwd: run.cwd, path: nodeRunId });
-  const stored = await emitRunEvent(run, buildStepEndEvent(step.value, record));
+  const stored = await appendRunEvent(run, buildStepEndEvent(step.value, record));
   return stored.ok ? { ok: true, value: buildReport(step.value, record) } : stored;
 };
 
@@ -478,7 +480,7 @@ export const completeContextStep = async (
     attempts: 1,
     output,
   };
-  const stored = await emitRunEvent(run, buildStepEndEvent(leaf.value, record));
+  const stored = await appendRunEvent(run, buildStepEndEvent(leaf.value, record));
   return stored.ok ? { ok: true, value: buildReport(leaf.value, record) } : stored;
 };
 
@@ -639,7 +641,7 @@ const logVerifierRuns = async (
   runs: readonly VerifierRun[],
 ): Promise<void> => {
   for (const verifierRun of runs) {
-    const logged = await emitRunEvent(run, {
+    const logged = await appendRunEvent(run, {
       type: "orchestrate.verifier",
       source: "orchestrate",
       nodeId: node.id,

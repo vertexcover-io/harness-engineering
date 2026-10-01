@@ -307,6 +307,23 @@ export const VerifierRunSchema = z.strictObject({
   error: z.strictObject({ reason: VerifierErrorReasonSchema, message: z.string() }).optional(),
 });
 export type VerifierRun = z.infer<typeof VerifierRunSchema>;
+
+export const VerifierResultSchema = z
+  .strictObject({ pass: z.boolean(), findings: z.array(FindingSchema).default([]) })
+  .refine((result) => result.pass || result.findings.length > 0, {
+    path: ["findings"],
+    message: "a failing result needs at least one finding",
+  });
+export type VerifierResult = z.infer<typeof VerifierResultSchema>;
+
+export type VerifierInput = Readonly<{
+  run: string;
+  nodeRunId: string;
+  output: JsonValue;
+  artifacts: Readonly<Record<string, string>>;
+  args: JsonValue;
+}>;
+
 const OrchestrateVerifierEvent = z.object({ payload: VerifierRunSchema });
 
 const catalog: Readonly<Record<string, z.ZodType>> = {

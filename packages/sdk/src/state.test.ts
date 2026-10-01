@@ -7,6 +7,7 @@ import { type Event, type JsonValue, type State, StateSchema } from "./contracts
 import { type IEventStore, jsonlEventStore } from "./event-store.ts";
 import { runDirOf } from "./events.ts";
 import {
+  appendRunEvent,
   appendRunEventIf,
   createState,
   type EventHandler,
@@ -290,6 +291,35 @@ const runWithHandlers = async (
   return { run, runDir, stateJson };
 };
 
+describe("emitRunEvent", () => {
+  test("SC8: refuses a workflow.* event and leaves the log untouched", async () => {
+    const { run, runDir } = await runWithHandlers({});
+
+    const result = await emitRunEvent(run, {
+      type: "workflow.node.completed",
+      source: "ext",
+      payload: {},
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "workflow.node.completed is engine-owned; use next, exec, or done for workflow lifecycle",
+    });
+    expect(await jsonlEventStore(runDir).read()).toHaveLength(0);
+  });
+
+  test("SC9: a custom event lands in the log and state.json in the same call", async () => {
+    const { run, stateJson } = await runWithHandlers({});
+
+    const result = await emitRunEvent(run, { type: "custom.ext.note", source: "ext", payload: {} });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect((await stateJson()).lastEventSeq).toBe(result.value.seq);
+  });
+});
+
 describe("emitRunEvent with extension handlers", () => {
   test("EH7 — a custom.* event's extension handler writes state.custom into state.json", async () => {
     const { run, stateJson } = await runWithHandlers({
@@ -311,7 +341,7 @@ describe("emitRunEvent with extension handlers", () => {
       "workflow.started": [{ handler: "onStarted" }],
     });
 
-    await emitRunEvent(run, {
+    await appendRunEvent(run, {
       type: "workflow.started",
       source: "test",
       payload: { workflow: "feature", inputs: { ticket: "T-1" } },

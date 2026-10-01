@@ -1,12 +1,9 @@
 import {
   type EmitInput,
-  emitRunEvent,
   type HookDeps,
   type HookReply,
-  jsonlEventStore,
   type NodeRun,
   type RunRef,
-  readState,
   runDirOf,
   type State,
   type StopHandler,
@@ -14,6 +11,7 @@ import {
   type StopReason,
   type TranscriptEntry,
 } from "@harness/sdk";
+import { appendRunEvent, jsonlEventStore, readState } from "@harness/sdk/internal";
 import { orchestrateCommand } from "../runs.ts";
 import { findSessionRun } from "./common.ts";
 
@@ -212,7 +210,7 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
     ]);
     const check = { run, state, touchedRun, progressSinceCheck, maxBlocks: maxBlocksOf(deps.env) };
     const decision = decideStop(check);
-    const stored = await emitRunEvent(run, stopCalledEvent(input, check, decision));
+    const stored = await appendRunEvent(run, stopCalledEvent(input, check, decision));
     if (!stored.ok) {
       // An unrecorded block would reset the count, so it could block forever.
       deps.log.warn({ error: stored.error }, "stop allowed: the hook call was not recorded");

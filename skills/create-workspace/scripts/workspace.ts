@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import {
   type Config,
   createGit,
-  createRegistry,
+  createRegistryReader,
   type EventError,
   emitRunEvent,
   eventError,
@@ -741,7 +741,7 @@ const runOf = async (
 ): Promise<Result<RunRef | undefined>> =>
   name === undefined
     ? { ok: true, value: undefined }
-    : resolveRun({ registry: createRegistry(registryPath(), log), root, name });
+    : resolveRun({ registry: createRegistryReader(registryPath()), root, name });
 
 const changeWorkspace = async (
   change: typeof createWorkspace,

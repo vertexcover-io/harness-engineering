@@ -2,13 +2,13 @@ import { randomBytes } from "node:crypto";
 import {
   type EmitInput,
   eventError,
-  findNodeRuns,
   type JsonValue,
   type NodeRun,
   type SkipOutput,
   type State,
   stackOf,
 } from "@harness/sdk";
+import { findNodeRuns } from "@harness/sdk/internal";
 import { z } from "zod";
 import { own } from "../stage.ts";
 import { findConsumedArtifacts } from "./done.ts";

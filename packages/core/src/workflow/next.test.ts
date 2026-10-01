@@ -2,16 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  builtInHandlers,
-  type EmitInput,
-  type Event,
-  type JsonObject,
-  type JsonValue,
-  type NodeRun,
-  projectEvents,
-  type State,
-} from "@harness/sdk";
+import type { EmitInput, Event, JsonObject, JsonValue, NodeRun, State } from "@harness/sdk";
+import { builtInHandlers, projectEvents } from "@harness/sdk/internal";
 import { compileWorkflow } from "./compile.ts";
 import { type Decision, decideNext } from "./next.ts";
 import { DEMO_STAGES, writeStages } from "./test-stages.ts";

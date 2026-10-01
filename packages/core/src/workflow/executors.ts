@@ -1,11 +1,9 @@
 import { resolve } from "node:path";
+import { type JsonValue, type ProcessRecord, spawn } from "@harness/sdk";
 import {
-  type JsonValue,
   loadFunction as loadSdkFunction,
-  type ProcessRecord,
   importModule as sdkImportModule,
-  spawn,
-} from "@harness/sdk";
+} from "@harness/sdk/internal";
 import { z } from "zod";
 import { type NodeContext, NodeFailure, WorkflowError, type WorkflowFunction } from "./types.ts";
 

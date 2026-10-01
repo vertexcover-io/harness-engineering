@@ -10,7 +10,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createState, jsonlEventStore, type RunRef, runDirOf } from "@harness/sdk";
+import { type RunRef, runDirOf } from "@harness/sdk";
+import { createState, jsonlEventStore } from "@harness/sdk/internal";
 import { captureLogger } from "../logging.ts";
 import { type Baseline, captureBaseline } from "./baseline.ts";
 

@@ -12,17 +12,15 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  createRegistry,
-  emitRunEvent,
   type IAgentProvider,
   type ITerminal,
-  jsonlEventStore,
   type LaunchOptions,
   noopLogger,
   type RunRef,
   runDirOf,
   type State,
 } from "@harness/sdk";
+import { appendRunEvent, createRegistry, jsonlEventStore } from "@harness/sdk/internal";
 import { completeContextOnSessionStart, runContextStep } from "./context-step.ts";
 
 const RESUME = "/orchestrate-v2 --resume feat-x";
@@ -317,7 +315,7 @@ describe("runContextStep: compact", () => {
 
 describe("completeContextOnSessionStart", () => {
   const started = (context: Context, action: "new" | "compact", sessionId: string) =>
-    emitRunEvent(context.run, {
+    appendRunEvent(context.run, {
       type: "workflow.context.started",
       source: "orchestrate",
       payload: { nodeRunId: "nr-1", action, sessionId },

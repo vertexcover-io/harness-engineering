@@ -4,7 +4,7 @@ import { loadConfigOrDefault } from "./config.ts";
 import type { Result } from "./contracts.ts";
 import { type RunRef, runDirOf } from "./events.ts";
 import { createGit } from "./git.ts";
-import type { Registry, WorkflowRun } from "./registry.ts";
+import type { RegistryReader, WorkflowRun } from "./registry.ts";
 
 const git = createGit();
 
@@ -36,7 +36,7 @@ export const resolveRoot = (root: string | undefined): Promise<Result<string>> =
     ? findRoot(process.cwd())
     : Promise.resolve({ ok: true, value: resolve(root) });
 
-export type RunLookup = Readonly<{ registry: Registry; root: string; name: string }>;
+export type RunLookup = Readonly<{ registry: RegistryReader; root: string; name: string }>;
 
 // Every action after init names its run by spec name; the folder must still exist, since
 // writing to it would recreate a run folder with no workflow.started.

@@ -2,7 +2,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   type EmitInput,
-  emitRunEvent,
   type HookDeps,
   harnessHome,
   type PreToolUseHandler,
@@ -12,6 +11,7 @@ import {
   type ToolUse,
   type ToolVerdict,
 } from "@harness/sdk";
+import { appendRunEvent } from "@harness/sdk/internal";
 import { findSessionRun } from "./common.ts";
 import { expandPath, type PathBase, shellWriteTargets } from "./write-targets.ts";
 
@@ -125,7 +125,7 @@ const logCall = async (
   try {
     const run = await findSessionRun(use, deps);
     if (run === undefined) return;
-    const stored = await emitRunEvent(run, calledEvent(use, handler, verdict));
+    const stored = await appendRunEvent(run, calledEvent(use, handler, verdict));
     if (!stored.ok) deps.log.warn({ error: stored.error }, "pre-tool-use call not recorded");
   } catch (error) {
     deps.log.warn({ err: error }, "pre-tool-use call not recorded");
