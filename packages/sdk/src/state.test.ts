@@ -292,19 +292,18 @@ const runWithHandlers = async (
 };
 
 describe("emitRunEvent", () => {
-  test.each([
-    "workflow.node.completed",
-    "orchestrate.done",
-    "hooks.session-start.called",
-  ])("SC8: refuses the engine-owned %s and leaves the log untouched", async (type) => {
-    const { run, runDir } = await runWithHandlers({});
+  test.each(["workflow.node.completed", "orchestrate.done", "hooks.session-start.called"])(
+    "SC8: refuses the engine-owned %s and leaves the log untouched",
+    async (type) => {
+      const { run, runDir } = await runWithHandlers({});
 
-    const result = await emitRunEvent(run, { type, source: "ext", payload: {} });
+      const result = await emitRunEvent(run, { type, source: "ext", payload: {} });
 
-    expect(result.ok).toBe(false);
-    expect(result.ok ? "" : result.error).toStartWith(type);
-    expect(await jsonlEventStore(runDir).read()).toHaveLength(0);
-  });
+      expect(result.ok).toBe(false);
+      expect(result.ok ? "" : result.error).toStartWith(type);
+      expect(await jsonlEventStore(runDir).read()).toHaveLength(0);
+    },
+  );
 
   test("SC9: a custom event lands in the log and state.json in the same call", async () => {
     const { run, stateJson } = await runWithHandlers({});
