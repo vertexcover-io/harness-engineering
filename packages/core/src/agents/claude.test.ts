@@ -22,7 +22,7 @@ import { claudeSettings } from "./claude-hooks.ts";
 describe("claudeArgs", () => {
   test("SC1: every option present puts the flags in order with prompt last", () => {
     expect(
-      claudeArgs("id-1", {
+      claudeArgs({
         model: "opus",
         effort: "high",
         permissionMode: "plan",
@@ -30,8 +30,6 @@ describe("claudeArgs", () => {
         prompt: "fix the bug",
       }),
     ).toEqual([
-      "--session-id",
-      "id-1",
       "--model",
       "opus",
       "--effort",
@@ -44,15 +42,15 @@ describe("claudeArgs", () => {
     ]);
   });
 
-  test("SC1: omitted options add nothing beyond the session id", () => {
-    expect(claudeArgs("id-2", {})).toEqual(["--session-id", "id-2"]);
+  test("SC2: omitted options add nothing, and no --session-id is ever passed", () => {
+    expect(claudeArgs({})).toEqual([]);
   });
 
   test("SC24 — a hook command adds Claude settings with the Stop hook before the prompt", () => {
     const orchestrateArgv = ["/b", "/o.ts"];
-    const args = claudeArgs("id-1", { orchestrateArgv, prompt: "go" });
-    expect(args).toEqual(["--session-id", "id-1", "--settings", expect.any(String), "go"]);
-    expect(JSON.parse(args[3] ?? "")).toEqual(claudeSettings(orchestrateArgv));
+    const args = claudeArgs({ orchestrateArgv, prompt: "go" });
+    expect(args).toEqual(["--settings", expect.any(String), "go"]);
+    expect(JSON.parse(args[1] ?? "")).toEqual(claudeSettings(orchestrateArgv));
   });
 });
 
@@ -170,6 +168,18 @@ describe("claudeProvider.launch", () => {
     expect(await provider.launch({ cwd: "/repo" })).toEqual({ ok: false, error: "boom" });
   });
 
+  test("SC2: the launch argv has no --session-id, and the tmux session is named by a fresh id", async () => {
+    const host = fakeHost();
+    const provider = claudeProvider({ host, newId: () => "fresh-uuid" });
+
+    await provider.launch({ cwd: "/repo", prompt: "go" });
+
+    const [create] = host.calls;
+    const spec = create?.method === "create" ? create.spec : undefined;
+    expect(spec?.name).toBe("fresh-uuid");
+    expect(spec?.argv).not.toContain("--session-id");
+  });
+
   test("returns the pane it created, so a later prompt and stop reach it without a name lookup", async () => {
     const host = fakeHost();
     const provider = claudeProvider({ host, newId: () => "s1" });
@@ -179,7 +189,7 @@ describe("claudeProvider.launch", () => {
     await provider.prompt(launched.value.terminal, "hello");
     await provider.stop(launched.value.terminal);
 
-    expect(launched.value.sessionId).toBe("s1");
+    expect(launched.value.terminalName).toBe("s1");
     expect(host.calls.map((c) => [c.method, "pane" in c ? c.pane : c.spec.name])).toEqual([
       ["create", "s1"],
       ["sendText", "s1"],

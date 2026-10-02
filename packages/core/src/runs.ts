@@ -77,14 +77,14 @@ export type InitOptions = Readonly<{
   terminal?: ITerminal | undefined;
 }>;
 
-export const terminalName = (runName: string, runId: string): string =>
-  `claude-${runName}-${runId.slice(-4)}`;
+export const terminalName = (agent: string, runName: string, runId: string): string =>
+  `${agent}-${runName}-${runId.slice(-4)}`;
 
 // A failed rename is only logged: the run works, its tmux session just keeps the old name.
 const renameTerminal = async (run: WorkflowRun, options: InitOptions): Promise<void> => {
   const { terminal, registry, name, log } = options;
   if (terminal === undefined) return;
-  const sessionName = terminalName(name, run.id);
+  const sessionName = terminalName(run.sessions[0]?.agent ?? "claude", name, run.id);
   try {
     const renamed = await terminal.rename(sessionName);
     if (!renamed.ok) {

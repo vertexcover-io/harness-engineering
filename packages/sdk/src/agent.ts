@@ -24,6 +24,8 @@ export type TerminalSpec = Readonly<{
   cwd: string;
   argv: readonly string[];
   env: Readonly<Record<string, string>>;
+  // a command whose output the host shows in the session's status bar; none leaves the bar off
+  statusLine?: readonly string[];
 }>;
 
 // One pane of a terminal: what an agent's screen is read from and typed into.
@@ -90,10 +92,12 @@ export type AgentResult<T = string> =
 
 export interface IAgentProvider {
   readonly type: AgentType;
+  // what goes before a skill's name to invoke it in a message: "/" for Claude, "$" for Codex
+  readonly skillPrefix: string;
   readonly checks: readonly Check[];
   // interactive sessions never return a result
-  // the new session and the pane it runs in
-  launch(options: LaunchOptions): Promise<Result<{ sessionId: string; terminal: ITerminal }>>;
+  // no session id: the agent's SessionStart hook links it
+  launch(options: LaunchOptions): Promise<Result<{ terminalName: string; terminal: ITerminal }>>;
   // replaces the agent running in `terminal` with a new session on `sessionId`, in the same pane
   relaunch(terminal: ITerminal, sessionId: string, options: LaunchOptions): Promise<Result<void>>;
   prompt(terminal: ITerminal, text: string): Promise<Result<void>>;

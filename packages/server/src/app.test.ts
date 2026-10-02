@@ -32,9 +32,13 @@ const fakePane = (name: string): ITerminal => ({
 });
 
 const fakeProvider = (
-  launch: (options: LaunchOptions) => Promise<Result<{ sessionId: string; terminal: ITerminal }>>,
+  type: IAgentProvider["type"],
+  launch: (
+    options: LaunchOptions,
+  ) => Promise<Result<{ terminalName: string; terminal: ITerminal }>>,
 ): IAgentProvider => ({
-  type: "claude",
+  type,
+  skillPrefix: type === "codex" ? "$" : "/",
   checks: [],
   launch,
   relaunch: () => Promise.resolve({ ok: true, value: undefined }),
@@ -46,15 +50,22 @@ const fakeProvider = (
 });
 
 const buildDeps = async (
-  launch: (options: LaunchOptions) => Promise<Result<{ sessionId: string; terminal: ITerminal }>>,
+  launch: (
+    options: LaunchOptions,
+  ) => Promise<Result<{ terminalName: string; terminal: ITerminal }>>,
   log = noopLogger,
 ) => {
   const registryPath = join(mkdtempSync(join(tmpdir(), "harness-registry-")), "registry.json");
   const registry = createRegistry(registryPath, log);
+  const asked: string[] = [];
   return {
     registryPath,
     registry,
-    provider: fakeProvider(launch),
+    asked,
+    providerFor: (agent: IAgentProvider["type"]) => {
+      asked.push(agent);
+      return fakeProvider(agent, launch);
+    },
     log,
     home: "/home/.harness",
     pid: 4242,
@@ -77,7 +88,7 @@ describe("POST /runs", () => {
   test("SC9: a relative workflowPath is 400 bad-request", async () => {
     const { cwd } = tempWorkspace();
     const deps = await buildDeps(() =>
-      Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }),
+      Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } }),
     );
     const app = createApp(deps);
 
@@ -99,7 +110,7 @@ describe("POST /runs", () => {
       seen.push(options);
       return Promise.resolve({
         ok: true,
-        value: { sessionId: "session-xyz", terminal: fakePane("%7") },
+        value: { terminalName: "session-xyz", terminal: fakePane("%7") },
       });
     });
     const app = createApp(deps);
@@ -115,7 +126,7 @@ describe("POST /runs", () => {
       run: { id: string; sessions: unknown[]; terminal: string | null };
       attach: string[];
     };
-    expect(json.run.sessions).toEqual([{ agent: "claude", sessionId: "session-xyz" }]);
+    expect(json.run.sessions).toEqual([]);
     expect(json.run.terminal).toBe("session-xyz");
     // The pane id, not the session name, so the attach survives init renaming the session.
     expect(json.attach).toEqual(["tmux", "attach-session", "-t", "%7"]);
@@ -130,12 +141,48 @@ describe("POST /runs", () => {
     expect((await deps.registry.findRun(json.run.id))?.terminal).toBe("session-xyz");
   });
 
+  test("SC4: the provider for the body's agent launches, no session is linked, and the terminal name is stored", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    const deps = await buildDeps(() =>
+      Promise.resolve({ ok: true, value: { terminalName: "t-1", terminal: fakePane("t-1") } }),
+    );
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, agent: "codex" }),
+    });
+
+    expect(res.status).toBe(201);
+    const { run } = (await res.json()) as { run: { id: string } };
+    expect(deps.asked).toEqual(["codex"]);
+    expect(await deps.registry.findRun(run.id)).toMatchObject({ sessions: [], terminal: "t-1" });
+  });
+
+  test("SC16: the first prompt invokes the skill the way the agent does: $orchestrate-v2 for codex", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    let prompt: string | undefined;
+    const deps = await buildDeps((options) => {
+      prompt = options.prompt;
+      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
+    });
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, agent: "codex" }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(prompt).toBe(`$orchestrate-v2 --workflow ${workflowPath} --inputs {}`);
+  });
+
   test("a supplied name reaches the agent as the run name", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     let prompt: string | undefined;
     const deps = await buildDeps((options) => {
       prompt = options.prompt;
-      return Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } });
+      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
     });
 
     const res = await createApp(deps).request("/runs", {
@@ -161,7 +208,7 @@ describe("POST /runs", () => {
     let launched = false;
     const deps = await buildDeps(() => {
       launched = true;
-      return Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } });
+      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
     });
 
     const res = await createApp(deps).request("/runs", {
@@ -179,7 +226,7 @@ describe("POST /runs", () => {
     let savedAtLaunch: unknown;
     const deps = await buildDeps(async (options) => {
       savedAtLaunch = await deps.registry.findRun(String(options.env?.HARNESS_RUN_ID));
-      return { ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } };
+      return { ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } };
     });
     const app = createApp(deps);
 
@@ -196,7 +243,7 @@ describe("POST /runs", () => {
   test("a config file in the body is saved on the run; with none the run's config is null", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     const deps = await buildDeps(() =>
-      Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }),
+      Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } }),
     );
     const app = createApp(deps);
     const config = join(cwd, "custom.json");
@@ -263,7 +310,7 @@ describe("POST /runs logging", () => {
     const { workflowPath, cwd } = tempWorkspace();
     const { log, lines, at } = captureLogger();
     const deps = await buildDeps(
-      () => Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }),
+      () => Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } }),
       log,
     );
     const app = createApp(deps);
@@ -276,7 +323,7 @@ describe("POST /runs logging", () => {
 
     expect(res.headers.get("x-request-id")).toBeString();
     const runStarted = at("info").find((line) => line.msg === "run started");
-    expect(runStarted).toMatchObject({ runId: expect.any(String), sessionId: "s1" });
+    expect(runStarted).toMatchObject({ runId: expect.any(String), terminalName: "s1" });
     const httpLine = at("info").find(
       (line) => line.component === "http" && line.msg === "request finished",
     );
@@ -312,7 +359,7 @@ describe("createHarnessClient", () => {
   test("calls the real routes over the socket and returns their typed bodies", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     const deps = await buildDeps(() =>
-      Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }),
+      Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } }),
     );
     const { home, server } = serveOn(createApp(deps).fetch);
     try {
@@ -322,9 +369,7 @@ describe("createHarnessClient", () => {
       expect(health).toEqual({ ok: true, value: { pid: 4242, version: "0.0.0-test" } });
 
       const started = await client.run({ workflow: "ok", workflowPath, inputs: {}, cwd });
-      expect(started.ok && started.value.run.sessions).toEqual([
-        { agent: "claude", sessionId: "s1" },
-      ]);
+      expect(started.ok && started.value.run.sessions).toEqual([]);
 
       const refused = await client.run({
         workflow: "ok",

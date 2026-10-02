@@ -165,7 +165,7 @@ describe("decideStop", () => {
   });
 });
 
-const setUp = async (nodeRuns: State["nodeRuns"]) => {
+const setUp = async (nodeRuns: State["nodeRuns"], agent: "claude" | "codex" = "claude") => {
   const home = await realpath(await mkdtemp(join(tmpdir(), "hooks-home-")));
   const cwd = await realpath(await mkdtemp(join(tmpdir(), "hooks-repo-")));
   const registry = createRegistry(registryPath(home));
@@ -175,7 +175,7 @@ const setUp = async (nodeRuns: State["nodeRuns"]) => {
     workflowPath: join(cwd, "workflow.yaml"),
     inputs: {},
     cwd,
-    sessions: [{ agent: "claude", sessionId: "s1" }],
+    sessions: [{ agent, sessionId: "s1" }],
     name: "feat-x",
     terminal: null,
     config: null,
@@ -187,9 +187,13 @@ const setUp = async (nodeRuns: State["nodeRuns"]) => {
   return { runDir, cwd, deps: { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger } };
 };
 
-const input = (entries: readonly TranscriptEntry[] | undefined): StopInput => ({
-  agent: "claude",
+const input = (
+  entries: readonly TranscriptEntry[] | undefined,
+  agent: "claude" | "codex" = "claude",
+): StopInput => ({
+  agent,
   sessionId: "s1",
+  contextSteps: agent === "claude",
   readTranscript: async () => entries,
 });
 
@@ -346,6 +350,27 @@ describe("an open context node", () => {
     expect((await jsonlEventStore(runDir).read()).map((e) => e.payload)).toEqual([
       expect.objectContaining({ decision: "allow", reason: "context-node", nodeRunId: "nr-1" }),
     ]);
+  });
+
+  test("SC15: a codex session's context node completes as not applied, the helper never starts, and the turn is sent to next", async () => {
+    const { deps, runDir } = await setUp(contextOpen, "codex");
+    await writeFile(
+      join(runDir, "workflow.yaml"),
+      "name: w\nnodes:\n  - id: fresh\n    type: context\n    action: new\n",
+    );
+
+    const reply = await runStopHook(input(orchestrateAfterPrompt, "codex"), deps);
+
+    expect(reply).toMatchObject({ kind: "continue", message: expect.stringContaining("next") });
+    expect(spawn).not.toHaveBeenCalled();
+    const state = await readState(runDir);
+    expect(state?.nodeRuns.fresh).toMatchObject({
+      status: "completed",
+      output: {
+        applied: false,
+        reason: "context steps are not supported on codex",
+      },
+    });
   });
 
   test("an open agent node still blocks and starts no helper", async () => {

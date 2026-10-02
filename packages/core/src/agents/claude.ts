@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
 import {
   type AgentResult,
   checkBinary,
@@ -19,9 +18,14 @@ import {
 import * as z from "zod";
 import { claudeSettings } from "./claude-hooks.ts";
 import { limitMenuKeys, readResetWait } from "./claude-limit.ts";
-
-// Claude never returns while it is waiting for Enter to submit; the spike found 150ms reliable.
-const SUBMIT_DELAY_MS = 150;
+import {
+  parseJsonAnswer,
+  promptTerminal,
+  respawnAgent,
+  stopTerminal,
+  summarize,
+  typeLine,
+} from "./common.ts";
 
 // What Claude Code 2.1.285 shows in its pane. While it works, a spinner line (`✻ Compacting…`)
 // or the hint under a queued prompt is on screen.
@@ -87,18 +91,6 @@ const promptWhenReady = async (
   return typed.ok ? { ok: true, value: "sent" } : typed;
 };
 
-// Types `text` into a Claude pane or session and submits it with Enter.
-export const typeLine = async (
-  terminal: ITerminal,
-  text: string,
-  wait: (ms: number) => Promise<unknown> = sleep,
-): Promise<Result<void>> => {
-  const typed = await terminal.sendText(text);
-  if (!typed.ok) return typed;
-  await wait(SUBMIT_DELAY_MS);
-  return terminal.sendKeys(["Enter"]);
-};
-
 export type ClaudeArgOptions = Readonly<{
   model?: string;
   effort?: Effort;
@@ -108,9 +100,7 @@ export type ClaudeArgOptions = Readonly<{
   orchestrateArgv?: readonly string[];
 }>;
 
-export const claudeArgs = (sessionId: string, options: ClaudeArgOptions): string[] => [
-  "--session-id",
-  sessionId,
+export const claudeArgs = (options: ClaudeArgOptions): string[] => [
   ...(options.model !== undefined ? ["--model", options.model] : []),
   ...(options.effort !== undefined ? ["--effort", options.effort] : []),
   ...(options.permissionMode !== undefined ? ["--permission-mode", options.permissionMode] : []),
@@ -155,29 +145,6 @@ export type ClaudeProviderOptions = Readonly<{
   newId?: () => string;
 }>;
 
-const parseResult = <T>(
-  result: string,
-  outputFormat: z.ZodType<T>,
-  sessionId: string,
-): AgentResult<T> => {
-  const json = parseJson(result);
-  if (!json.ok)
-    return { ok: false, error: new Error("claude result is not valid JSON"), sessionId };
-  const parsed = outputFormat.safeParse(json.value);
-  return parsed.success
-    ? { ok: true, output: parsed.data, sessionId }
-    : {
-        ok: false,
-        error: new Error(`claude result failed schema: ${parsed.error.message}`),
-        sessionId,
-      };
-};
-
-// stdout/stderr can hold Claude's answer text, code, or secrets from the repo, so error
-// messages carry only their size and a small prefix, never the full text.
-const summarize = (text: string): string =>
-  `(${Buffer.byteLength(text)} bytes): ${text.length > 200 ? `${text.slice(0, 200)}…` : text}`;
-
 // Turns `claude -p --output-format json` stdout and its exit code into an AgentResult.
 export const interpretOutput = <T>(
   { code, stdout, stderr }: Readonly<{ code: number; stdout: string; stderr: string }>,
@@ -214,7 +181,7 @@ export const interpretOutput = <T>(
     return { ok: false, error: new Error("claude output is missing session_id") };
   }
   if (!outputFormat) return { ok: true, output: result as T, sessionId };
-  return parseResult(result, outputFormat, sessionId);
+  return parseJsonAnswer("claude", result, outputFormat, sessionId);
 };
 
 export const claudeProvider = ({
@@ -227,18 +194,18 @@ export const claudeProvider = ({
 
   const launch = async (
     options: LaunchOptions,
-  ): Promise<Result<{ sessionId: string; terminal: ITerminal }>> => {
-    const sessionId = newId();
-    const sessionLog = log.child({ sessionId });
+  ): Promise<Result<{ terminalName: string; terminal: ITerminal }>> => {
+    const terminalName = newId();
+    const sessionLog = log.child({ terminalName });
     const settings = {
       cwd: options.cwd,
       model: options.model,
       permissionMode: options.permissionMode,
     };
     const created = await host.create({
-      name: sessionId,
+      name: terminalName,
       cwd: options.cwd,
-      argv: [binary, ...claudeArgs(sessionId, options)],
+      argv: [binary, ...claudeArgs(options)],
       env: options.env ?? {},
     });
     if (!created.ok) {
@@ -246,7 +213,7 @@ export const claudeProvider = ({
       return created;
     }
     sessionLog.info(settings, "claude session started");
-    return { ok: true, value: { sessionId, terminal: created.value } };
+    return { ok: true, value: { terminalName, terminal: created.value } };
   };
 
   const relaunch = async (
@@ -254,37 +221,19 @@ export const claudeProvider = ({
     sessionId: string,
     options: LaunchOptions,
   ): Promise<Result<void>> => {
-    const respawned = await terminal.respawn({
+    const spec = {
       cwd: options.cwd,
-      argv: [binary, ...claudeArgs(sessionId, options)],
+      argv: [binary, "--session-id", sessionId, ...claudeArgs(options)],
       env: options.env ?? {},
-    });
-    const sessionLog = log.child({ sessionId });
-    if (respawned.ok) sessionLog.info({}, "claude relaunched in its pane");
-    else sessionLog.error({ err: respawned.error }, "claude not relaunched");
-    return respawned;
+    };
+    return respawnAgent("claude", terminal, spec, log.child({ sessionId }));
   };
 
-  const prompt = async (terminal: ITerminal, text: string): Promise<Result<void>> => {
-    if (!(await terminal.isAlive())) {
-      log.error({}, "prompt not sent: the session is not running");
-      return { ok: false, error: "the agent's terminal is not running" };
-    }
-    const submitted = await typeLine(terminal, text);
-    if (!submitted.ok) {
-      log.error({ err: submitted.error }, "prompt not sent");
-      return submitted;
-    }
-    log.info({ chars: text.length }, "prompt sent");
-    return submitted;
-  };
+  const prompt = (terminal: ITerminal, text: string): Promise<Result<void>> =>
+    promptTerminal(terminal, text, log);
 
-  const stop = async (terminal: ITerminal): Promise<Result<void>> => {
-    const result = await terminal.kill();
-    if (result.ok) log.info({}, "claude session stopped");
-    else log.error({ err: result.error }, "claude session not stopped");
-    return result;
-  };
+  const stop = (terminal: ITerminal): Promise<Result<void>> =>
+    stopTerminal("claude", terminal, log);
 
   const run = async <T = string>(request: RunRequest<T>): Promise<AgentResult<T>> => {
     const args = claudeRunArgs(request);
@@ -314,6 +263,7 @@ export const claudeProvider = ({
 
   return {
     type: "claude",
+    skillPrefix: "/",
     checks: [
       {
         name: "claude",

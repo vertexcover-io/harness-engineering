@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { orchestrateArgv } from "@harness/core";
+import { orchestrateArgv, type WorkflowAgent } from "@harness/core";
 import type { IAgentProvider, WorkflowRun } from "@harness/sdk";
 import type { Registry } from "@harness/sdk/internal";
 import type { Context } from "hono";
@@ -10,17 +10,19 @@ import { type StartRunBody, StartRunBodySchema } from "./protocol.ts";
 
 export type RunDeps = Readonly<{
   registry: Registry;
-  provider: IAgentProvider;
+  providerFor: (agent: WorkflowAgent) => IAgentProvider;
   home: string;
 }>;
 
 const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: StartRunBody) => {
   const log = c.get("log").child({ component: "runs" });
-  const { workflow, workflowPath, inputs, cwd, name, config } = body;
+  const { workflow, workflowPath, inputs, cwd, name, agent, config } = body;
 
   if (!existsSync(workflowPath) || !existsSync(cwd)) {
     return errorResponse(c, 400, "bad-request", "workflowPath and cwd must exist");
   }
+
+  const provider = deps.providerFor(agent);
 
   const id = `r-${randomBytes(4).toString("hex")}`;
   const runLog = log.child({ runId: id });
@@ -41,10 +43,10 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
 
   // A run whose agent never started is removed, so a failed start records nothing.
   const nameArg = name === undefined ? "" : ` --name ${name}`;
-  const launched = await deps.provider
+  const launched = await provider
     .launch({
       cwd,
-      prompt: `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
+      prompt: `${provider.skillPrefix}orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
       env: { HARNESS_RUN_ID: id, HARNESS_HOME: deps.home },
       orchestrateArgv: orchestrateArgv(),
     })
@@ -61,16 +63,10 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     return errorResponse(c, 502, "agent-failed", String(launched.error));
   }
 
-  const { sessionId, terminal } = launched.value;
-  const session = { agent: deps.provider.type, sessionId };
-  await deps.registry.linkSession(id, session);
-  await deps.registry.setTerminal(id, sessionId);
-  const run = (await deps.registry.findRun(id)) ?? {
-    ...pending,
-    sessions: [session],
-    terminal: sessionId,
-  };
-  runLog.info({ workflow, cwd, agent: deps.provider.type, sessionId }, "run started");
+  const { terminalName, terminal } = launched.value;
+  await deps.registry.setTerminal(id, terminalName);
+  const run = (await deps.registry.findRun(id)) ?? { ...pending, terminal: terminalName };
+  runLog.info({ workflow, cwd, agent, terminalName }, "run started");
   return c.json({ run, attach: [...terminal.attachCommand()] }, 201);
 };
 

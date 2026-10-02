@@ -308,6 +308,29 @@ describe("tmuxHost against a real tmux", () => {
     await pane.kill();
   });
 
+  test("SC13: a session with statusLine gets its own status bar showing that command; one without keeps the global off", async () => {
+    const { host, socketName } = makeTerminal();
+    const withBar = `s-${randomUUID()}`;
+    const without = `s-${randomUUID()}`;
+    const spec = { cwd: process.cwd(), argv: ["sleep", "60"], env: {} };
+    await created(host, { ...spec, name: withBar, statusLine: ["echo", "it's here"] });
+    await created(host, { ...spec, name: without });
+
+    const show = async (session: string, option: string): Promise<string> =>
+      (
+        await exec(
+          "tmux",
+          ["-L", socketName, "show-options", "-t", `=${session}:`, option],
+          process.cwd(),
+        )
+      ).stdout.trim();
+
+    expect(await show(withBar, "status")).toBe("status on");
+    expect(await show(withBar, "status-interval")).toBe("status-interval 5");
+    expect(await show(withBar, "status-right")).toContain("#('echo' 'it'");
+    expect(await show(without, "status")).toBe("");
+  });
+
   test("SC7c: an older harness tmux gets its config rewritten and reloaded once, before the first create", async () => {
     const { socketName, configPath } = makeSocket();
     const dir = mkdtempSync(join(tmpdir(), "harness-tmux-old-"));

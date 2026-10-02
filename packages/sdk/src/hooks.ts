@@ -28,6 +28,8 @@ export type TranscriptEntry =
 export type StopInput = Readonly<{
   agent: AgentType;
   sessionId: string;
+  // whether the agent can start a new session or compact in its pane for a context node
+  contextSteps: boolean;
   // undefined when the transcript is missing or cannot be read
   readTranscript: () => Promise<readonly TranscriptEntry[] | undefined>;
 }>;

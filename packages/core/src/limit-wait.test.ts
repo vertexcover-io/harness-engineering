@@ -69,6 +69,7 @@ const fakeAgent = (
   const seen: Seen = { waits: [], prompts: [] };
   const agent: IAgentProvider = {
     type: "claude",
+    skillPrefix: "/",
     checks: [],
     launch: unused,
     relaunch: unused,

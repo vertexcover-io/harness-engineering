@@ -1,6 +1,12 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { claudeProvider, createLogger, harnessTerminalHost, resolveLevel } from "@harness/core";
+import {
+  agentProvider,
+  createLogger,
+  harnessTerminalHost,
+  resolveLevel,
+  type WorkflowAgent,
+} from "@harness/core";
 import type { Check, IAgentProvider, ILogger, ITerminalHost } from "@harness/sdk";
 import { noopLogger, registryPath } from "@harness/sdk";
 import { createRegistry } from "@harness/sdk/internal";
@@ -8,21 +14,19 @@ import prettyFactory from "pino-pretty";
 import serverPackage from "../package.json";
 import { createApp } from "./app.ts";
 import { pidPath, socketPath } from "./protocol.ts";
-export type Runtime = Readonly<{ host: ITerminalHost; provider: IAgentProvider }>;
+export type Runtime = Readonly<{
+  host: ITerminalHost;
+  providerFor: (agent: WorkflowAgent) => IAgentProvider;
+}>;
 
 export const defaultRuntime = (log: ILogger = noopLogger): Runtime => {
   const host = harnessTerminalHost(process.env, log);
-  const provider = claudeProvider({
-    host,
-    binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
-    log,
-  });
-  return { host, provider };
+  return { host, providerFor: (agent) => agentProvider({ agent, host, env: process.env, log }) };
 };
 
-export const runtimeChecks = (): readonly Check[] => {
-  const { host, provider } = defaultRuntime();
-  return [...host.checks, ...provider.checks];
+export const runtimeChecks = (agent: WorkflowAgent): readonly Check[] => {
+  const { host, providerFor } = defaultRuntime();
+  return [...host.checks, ...providerFor(agent).checks];
 };
 
 // Callers check /health first: this always starts, and replaces any socket file it finds.
@@ -51,12 +55,12 @@ export const startServer = async ({ home }: { home: string }): Promise<void> => 
     serverLog.info({ socket }, "removed a socket file left by a server that is no longer running");
   }
 
-  const { provider } = defaultRuntime(log);
+  const { providerFor } = defaultRuntime(log);
   const registry = createRegistry(registryPath(home), log);
   const version = String(serverPackage.version);
   const app = createApp({
     registry,
-    provider,
+    providerFor,
     log,
     home,
     pid: process.pid,

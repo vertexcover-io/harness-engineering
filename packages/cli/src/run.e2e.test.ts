@@ -152,6 +152,10 @@ const readLines = (path: string): Array<Record<string, unknown>> =>
         .map((line) => JSON.parse(line) as Record<string, unknown>)
     : [];
 
+// The doctor runs the fake agent with --version; the launch is the call that carries the hooks.
+const isLaunch = (record: Record<string, unknown>): boolean =>
+  Array.isArray(record.argv) && record.argv.includes("--settings");
+
 const waitFor = (predicate: () => boolean, timeoutMs = 5000): void => {
   const start = Date.now();
   while (!predicate()) {
@@ -178,8 +182,7 @@ describe("harness run", () => {
         "fix-login",
       );
       expect(result.code).toBe(0);
-      const isSession = (record: Record<string, unknown>) =>
-        Array.isArray(record.argv) && record.argv.includes("--session-id");
+      const isSession = (record: Record<string, unknown>) => isLaunch(record);
       waitFor(() => readLines(fakeOut).some(isSession));
       const launch = readLines(fakeOut).find(isSession);
       const argv = launch?.argv;
@@ -199,8 +202,7 @@ describe("harness run", () => {
 
       const run = harness(repo, env, "run", "ok.yaml", "--prompt", "hi");
       expect(run.code).toBe(0);
-      const isSession = (record: Record<string, unknown>) =>
-        Array.isArray(record.argv) && record.argv.includes("--session-id");
+      const isSession = (record: Record<string, unknown>) => isLaunch(record);
       waitFor(() => readLines(fakeOut).some(isSession));
       const launch = readLines(fakeOut).find(isSession);
       const agentEnv = launch?.env as NodeJS.ProcessEnv;
@@ -226,8 +228,7 @@ describe("harness run", () => {
       const { env, fakeOut } = makeEnv();
 
       expect(harness(repo, env, "run", "ok.yaml", "--prompt", "hi").code).toBe(0);
-      const isSession = (record: Record<string, unknown>) =>
-        Array.isArray(record.argv) && record.argv.includes("--session-id");
+      const isSession = (record: Record<string, unknown>) => isLaunch(record);
       waitFor(() => readLines(fakeOut).some(isSession));
       const argv = readLines(fakeOut).find(isSession)?.argv;
       const args = Array.isArray(argv) ? argv.map(String) : [];
@@ -249,8 +250,7 @@ describe("harness run", () => {
       const { env, fakeOut } = makeEnv();
 
       expect(harness(repo, env, "run", "ok.yaml", "--prompt", "hi").code).toBe(0);
-      const isSession = (record: Record<string, unknown>) =>
-        Array.isArray(record.argv) && record.argv.includes("--session-id");
+      const isSession = (record: Record<string, unknown>) => isLaunch(record);
       waitFor(() => readLines(fakeOut).some(isSession));
       const argv = readLines(fakeOut).find(isSession)?.argv;
       const args = Array.isArray(argv) ? argv.map(String) : [];
@@ -260,6 +260,49 @@ describe("harness run", () => {
       expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain(
         "packages/core/src/orchestrate.ts' 'hook' 'pre-tool-use' '--agent' 'claude'",
       );
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "SC6: the run starts with no session, its terminal is the launched tmux name, and a SessionStart hook call links the session",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut, home, socket } = makeEnv();
+
+      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "hi");
+      expect(run.code).toBe(0);
+      const runId = run.stdout.trim().split("\n")[0] ?? "";
+      waitFor(() => readLines(fakeOut).some((record) => isLaunch(record)));
+      const launch = readLines(fakeOut).find((record) => isLaunch(record));
+      expect(launch?.argv).not.toContain("--session-id");
+
+      const registryFile = join(home, "registry.json");
+      const saved = () => JSON.parse(readFileSync(registryFile, "utf8")).runs[runId];
+      expect(saved().sessions).toEqual([]);
+      const tmuxNames = spawnSync(
+        "tmux",
+        ["-L", socket, "list-sessions", "-F", "#{session_name}"],
+        {
+          encoding: "utf8",
+        },
+      ).stdout.split("\n");
+      expect(tmuxNames).toContain(saved().terminal);
+
+      const hook = spawnSync(
+        "bun",
+        [ORCHESTRATE, "hook", "session-start", "--agent", "claude", "--handler", "link-session"],
+        {
+          cwd: String(launch?.cwd),
+          env: launch?.env as NodeJS.ProcessEnv,
+          input: JSON.stringify({ session_id: "claude-chose-this", source: "startup", cwd: repo }),
+          encoding: "utf8",
+        },
+      );
+      expect(hook.status).toBe(0);
+      expect(saved().sessions).toEqual([{ agent: "claude", sessionId: "claude-chose-this" }]);
 
       stopServer(repo, env);
     },
@@ -282,14 +325,8 @@ describe("harness run", () => {
       expect(status.code).toBe(0);
       expect(status.stdout).toMatch(/^pid \d+/);
 
-      waitFor(() =>
-        readLines(fakeOut).some(
-          (record) => Array.isArray(record.argv) && record.argv.includes("--session-id"),
-        ),
-      );
-      const record = readLines(fakeOut).find(
-        (line) => Array.isArray(line.argv) && line.argv.includes("--session-id"),
-      );
+      waitFor(() => readLines(fakeOut).some((record) => isLaunch(record)));
+      const record = readLines(fakeOut).find(isLaunch);
       const argv = record?.argv as string[] | undefined;
       expect(argv?.at(-1)).toContain(`/orchestrate-v2 --workflow ${join(repo, "ok.yaml")}`);
       expect(record?.runId).toBe(runId);
@@ -344,9 +381,7 @@ describe("harness run", () => {
       const run = harness(repo, withoutKey, "run", "needs-key.yaml", "--prompt", "x");
       expect(run.code).toBe(1);
       expect(run.stderr).toContain("BLOCKED env:HARNESS_E2E_UNSET_KEY");
-      const launches = readLines(fakeOut).filter(
-        (record) => Array.isArray(record.argv) && record.argv.includes("--session-id"),
-      );
+      const launches = readLines(fakeOut).filter((record) => isLaunch(record));
       expect(launches).toEqual([]);
       expect(existsSync(join(home, "registry.json"))).toBe(false);
     },
@@ -378,10 +413,8 @@ describe("harness run", () => {
       const runId = run.stdout.trim().split("\n")[0] ?? "";
       const registry = JSON.parse(readFileSync(join(home, "registry.json"), "utf8"));
       expect(registry.runs[runId].config).toBe(file);
-      const isSession = (record: Record<string, unknown>) =>
-        Array.isArray(record.argv) && record.argv.includes("--session-id");
-      waitFor(() => readLines(fakeOut).some(isSession));
-      const launch = readLines(fakeOut).find(isSession);
+      waitFor(() => readLines(fakeOut).some(isLaunch));
+      const launch = readLines(fakeOut).find(isLaunch);
       const init = spawnSync("bun", [ORCHESTRATE, "init", "fix-login"], {
         cwd: String(launch?.cwd),
         env: launch?.env as NodeJS.ProcessEnv,

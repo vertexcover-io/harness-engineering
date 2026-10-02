@@ -397,7 +397,13 @@ async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
     throw new WorkflowError("include-limit", `${path} expands to ${size} nodes`, path);
   }
   const doctor = uniqueDeclarations([...workflow.doctor, ...doctorOf(nodes)]);
-  return Object.freeze({ name: workflow.name, inputs: workflow.inputs, doctor, nodes });
+  return Object.freeze({
+    name: workflow.name,
+    agent: workflow.agent,
+    inputs: workflow.inputs,
+    doctor,
+    nodes,
+  });
 }
 
 const guaranteedInScope = (

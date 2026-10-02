@@ -20,6 +20,7 @@ import {
 } from "@harness/sdk";
 
 // Bundled as text, so a compiled harness binary carries it too.
+import { shellQuote } from "./common.ts";
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
 
 const MIN_VERSION = [3, 3] as const;
@@ -125,6 +126,26 @@ const runTmux = async (
   return { ok: false, error: asError(stderr) };
 };
 
+// The global config keeps the bar off; this turns it on for one session.
+const showStatusLine = async (
+  socket: TmuxSocket,
+  target: string,
+  command: readonly string[],
+): Promise<void> => {
+  const options: readonly (readonly [string, string])[] = [
+    ["status", "on"],
+    ["status-interval", "5"],
+    ["status-right-length", "120"],
+    ["status-right", `#(${command.map(shellQuote).join(" ")})`],
+  ];
+  // A lone ";" argument separates tmux commands, so all four go in one tmux call.
+  const commands = options.flatMap(([name, value], i) => [
+    ...(i === 0 ? [] : [";"]),
+    ...["set-option", "-t", target, name, value],
+  ]);
+  await runTmux(socket, commands);
+};
+
 // One pane, at a tmux target that every command takes: a pane id such as %3, which survives a
 // session rename, or =name: for the pane of the session named exactly `name`.
 const tmuxPane = (socket: TmuxSocket, target: string): ITerminal => ({
@@ -217,7 +238,9 @@ export const tmuxHost = (options: TmuxHostOptions): ITerminalHost => {
     ]);
     if (!result.ok) return result;
     socket.log.info({ session: spec.name, cwd: spec.cwd }, "tmux session created");
-    return { ok: true, value: tmuxPane(socket, result.value.trim()) };
+    const pane = result.value.trim();
+    if (spec.statusLine !== undefined) await showStatusLine(socket, pane, spec.statusLine);
+    return { ok: true, value: tmuxPane(socket, pane) };
   };
 
   return {

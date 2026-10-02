@@ -46,6 +46,12 @@ const resolveFailure = (value: string, scope: Scope): NodeFailure => {
 };
 
 describe("compile", () => {
+  test("SC1: a top-level agent: codex reaches the plan, a missing key means claude, and agent: pi is a schema error", async () => {
+    expect((await compile(`agent: codex\n${workflow(script("a"))}`)).agent).toBe("codex");
+    expect((await compile(workflow(script("a")))).agent).toBe("claude");
+    expect((await rejection(`agent: pi\n${workflow(script("a"))}`)).code).toBe("schema");
+  });
+
   test("resolves workflow.yaml output schemas before an exec or agent runs", async () => {
     const modulePath = join(workflowDir, "compile-output-schemas.ts");
     writeFileSync(

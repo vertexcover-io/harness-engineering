@@ -356,8 +356,8 @@ const privateTmux = () => {
 };
 
 describe("terminal naming", () => {
-  test("SC1: the name is claude-NAME- plus the last 4 characters of the run id", () => {
-    expect(terminalName("fix-login", "r-1a2b3c4d")).toBe("claude-fix-login-3c4d");
+  test("SC5: the name is AGENT-NAME- plus the last 4 characters of the run id", () => {
+    expect(terminalName("codex", "fix-login", "r-1a2b3c4d")).toBe("codex-fix-login-3c4d");
   });
 
   test("SC3: init renames the pane's tmux session and records the name", async () => {
@@ -370,6 +370,22 @@ describe("terminal naming", () => {
       expect(result.ok).toBe(true);
       expect(tmux(socket, "list-sessions", "-F", "#{session_name}")).toBe("claude-fix-login-3c4d");
       expect((await registry.findRun(run.id))?.terminal).toBe("claude-fix-login-3c4d");
+    } finally {
+      tmux(socket, "kill-server");
+    }
+  });
+
+  test("SC5: init names the tmux session after the run's first session's agent", async () => {
+    const { socket, terminal } = privateTmux();
+    try {
+      const { run, init } = await savedRun({
+        id: "r-1a2b3c4d",
+        sessions: [{ agent: "codex", sessionId: "s1" }],
+      });
+
+      await init("fix-login", run.id, { terminal });
+
+      expect(tmux(socket, "list-sessions", "-F", "#{session_name}")).toBe("codex-fix-login-3c4d");
     } finally {
       tmux(socket, "kill-server");
     }

@@ -3,7 +3,7 @@ import type { ClientResponse } from "hono/client";
 import { hc } from "hono/client";
 import type { SuccessStatusCode } from "hono/utils/http-status";
 import type { AppType } from "./app.ts";
-import { type ApiError, ErrorBodySchema, type StartRunBody, socketPath } from "./protocol.ts";
+import { type ApiError, ErrorBodySchema, type StartRunRequest, socketPath } from "./protocol.ts";
 
 export type HarnessClientOptions = Readonly<{ home?: string; log?: ILogger }>;
 
@@ -74,7 +74,7 @@ export const createHarnessClient = ({
   });
   return {
     health: () => unwrap(api.health.$get()),
-    run: (body: StartRunBody) => unwrap(api.runs.$post({ json: body })),
+    run: (body: StartRunRequest) => unwrap(api.runs.$post({ json: body })),
   };
 };
 

@@ -14,13 +14,14 @@ import {
 } from "@harness/sdk";
 import { appendRunEvent, jsonlEventStore } from "@harness/sdk/internal";
 import { startContextStep } from "../context-step.ts";
-import { orchestrateCommand } from "../runs.ts";
+import { completeContextStep, findContextPlanNode, orchestrateCommand } from "../runs.ts";
 import { findSessionRun } from "./common.ts";
 
 export const DEFAULT_STOP_MAX_BLOCKS = 1;
 // `bun run orchestrate next` or `bun …/orchestrate.ts done`, but not a path like orchestrate-v2/SKILL.md
 const ORCHESTRATE = /\borchestrate(?:\.ts)?\s+(?:init|link-session|emit|next|exec|done)\b/;
-const ASK_RULE = "If you need the user's input, ask with AskUserQuestion.";
+const ASK_RULE =
+  "If you need the user's input, ask the way the orchestrate-v2 skill's reference for your agent says.";
 
 const ALLOW: HookReply = { kind: "allow" };
 
@@ -180,6 +181,25 @@ const readTouchedRun = async (input: StopInput, state: State): Promise<boolean |
     ? touchedRunSinceLastPrompt(await input.readTranscript())
     : undefined;
 
+// An agent without context steps: the node ends as not applied and the session goes on to `next`.
+const decideForAgent = async (input: StopInput, check: StopCheck): Promise<StopDecision> => {
+  const decision = decideStop(check);
+  if (decision.reason !== "context-node" || input.contextSteps) return decision;
+  const planNode = await findContextPlanNode(check.run, decision.nodeRunId);
+  if (!planNode.ok) throw new Error(planNode.error);
+  const completed = await completeContextStep(check.run, decision.nodeRunId, {
+    action: planNode.value.action,
+    applied: false,
+    reason: `context steps are not supported on ${input.agent}`,
+  });
+  if (!completed.ok) throw new Error(completed.error);
+  return {
+    reason: "next-not-run",
+    blockStreak: decision.blockStreak + 1,
+    message: nextMessage(check.run),
+  };
+};
+
 // Decides whether the agent may end its turn and logs the call as hooks.stop.called. It never
 // throws: a hook that fails must let the turn end, or it could trap the session.
 export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<HookReply> => {
@@ -197,7 +217,7 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
       progressSince(runDir, state.stopHook?.seq),
     ]);
     const check = { run, state, touchedRun, progressSinceCheck, maxBlocks: maxBlocksOf(deps.env) };
-    const decision = decideStop(check);
+    const decision = await decideForAgent(input, check);
     const stored = await appendRunEvent(run, stopCalledEvent(input, check, decision));
     if (!stored.ok) {
       // An unrecorded block would reset the count, so it could block forever.
