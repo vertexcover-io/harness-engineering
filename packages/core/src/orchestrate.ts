@@ -7,17 +7,19 @@ import {
   AgentTypeSchema,
   type ArtifactRef,
   ArtifactRefSchema,
+  type CheckoutConfig,
   createGit,
   emitRunEvent,
   type HookDeps,
   harnessHome,
   type JsonValue,
-  loadConfigOrDefault,
+  loadPickedConfig,
+  type PickRunInput,
+  pickRun,
   type Result,
   type RunRef,
   registryPath,
-  resolveRoot,
-  resolveRun,
+  requireRun,
   runDirOf,
   stopRunningOnSignal,
 } from "@harness/sdk";
@@ -53,8 +55,8 @@ import {
 import { renderStatusline } from "./statusline.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
-const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
-const RUN_HELP = "spec name of the run, as given to init";
+const RUN_HELP = "spec name of the run, as given to init (default: $HARNESS_RUN_ID)";
+const RUN_ID_HELP = "id of the run, instead of its name (default: $HARNESS_RUN_ID)";
 const EMPTY_NODE_RUN_ID = "nodeRunId must not be empty";
 
 // stdout carries only command output, so skills can parse it; logs go to stderr.
@@ -131,68 +133,66 @@ const initCommand = () =>
       printResult(result.ok ? { ok: true, value: { runId, dir: result.value.dir } } : result);
     });
 
+type RunFlags = Readonly<{ run?: string | undefined; runId?: string | undefined }>;
+
+const runInputFromFlags = (flags: RunFlags): PickRunInput => ({
+  registry: registry(),
+  name: flags.run,
+  id: flags.runId,
+  env: process.env,
+  cwd: process.cwd(),
+});
+
 const linkSessionCommand = () =>
   new Command("link-session")
     .description("Add an agent session to the run")
-    .requiredOption("--run <name>", RUN_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .addOption(
       new Option("--agent <type>", "agent type")
         .choices(AgentTypeSchema.options)
         .makeOptionMandatory(),
     )
     .requiredOption("--session-id <id>", "agent session id")
-    .option("--root <dir>", ROOT_HELP)
     .action(async (opts) => {
-      const root = await resolveRoot(opts.root);
-      if (!root.ok) return fail(root.error);
-      const { run: name, agent, sessionId } = opts;
-      printResult(
-        await linkRunSession({ registry: registry(), root: root.value, name, agent, sessionId }),
-      );
+      const run = await requireRun(runInputFromFlags(opts));
+      if (!run.ok) return fail(run.error);
+      const { agent, sessionId } = opts;
+      printResult(await linkRunSession({ registry: registry(), run: run.value, agent, sessionId }));
     });
-
-const getWorkflowRun = async (
-  name: string,
-  rootFlag: string | undefined,
-): Promise<Result<Readonly<{ root: string; run: RunRef }>>> => {
-  const root = await resolveRoot(rootFlag);
-  if (!root.ok) return root;
-  const run = await resolveRun({ registry: registry(), root: root.value, name });
-  return run.ok ? { ok: true, value: { root: root.value, run: run.value } } : run;
-};
 
 const emitCommand = () =>
   new Command("emit")
     .description("Add an event to the run's event log")
     .argument("<type>", "event type, e.g. custom.review.note")
-    .requiredOption("--run <name>", RUN_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .requiredOption("--source <name>", "who sent the event, e.g. the skill's name")
     .option("--payload <json>", "event payload as JSON", "{}")
     .option("--id <id>", "event id; a repeated id returns the event stored first")
     .option("--node-id <id>", "node the event belongs to; needs --node-run-id")
     .option("--node-run-id <id>", "node run the event belongs to; needs --node-id")
     .option("--stage <name>", "stage the event belongs to")
-    .option("--root <dir>", ROOT_HELP)
     .action(async (type, opts) => {
       const payload = parseJsonFlag(opts.payload, "--payload");
       if (!payload.ok) return fail(payload.error);
-      const target = await getWorkflowRun(opts.run, opts.root);
-      if (!target.ok) return fail(target.error);
+      const run = await requireRun(runInputFromFlags(opts));
+      if (!run.ok) return fail(run.error);
       const { source, id, nodeId, nodeRunId, stage } = opts;
       const input = { type, payload: payload.value, source, id, nodeId, nodeRunId, stage };
-      printResult(await emitRunEvent(target.value.run, input));
+      printResult(await emitRunEvent(run.value, input));
     });
 
 const nextCommand = () =>
   new Command("next")
     .description("Move the run to its next step and print that step as JSON")
-    .requiredOption("--run <name>", RUN_HELP)
-    .option("--root <dir>", ROOT_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .action(async (opts) =>
       runWorkflowCommand(async () => {
-        const target = await getWorkflowRun(opts.run, opts.root);
-        if (!target.ok) return fail(target.error);
-        printResult(await nextStep(target.value.run, target.value.root));
+        const run = await requireRun(runInputFromFlags(opts));
+        if (!run.ok) return fail(run.error);
+        printResult(await nextStep(run.value));
       }),
     );
 
@@ -200,14 +200,14 @@ const execCommand = () =>
   new Command("exec")
     .description("Run an exec or wait node that next handed out, and record how it ended")
     .argument("<nodeRunId>", "node run id from next")
-    .requiredOption("--run <name>", RUN_HELP)
-    .option("--root <dir>", ROOT_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .action(async (nodeRunId, opts) =>
       runWorkflowCommand(async () => {
         if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
-        const target = await getWorkflowRun(opts.run, opts.root);
-        if (!target.ok) return fail(target.error);
-        const report = await execStep(target.value.run, nodeRunId);
+        const run = await requireRun(runInputFromFlags(opts));
+        if (!run.ok) return fail(run.error);
+        const report = await execStep(run.value, nodeRunId);
         printResult(report);
         if (report.ok && report.value.status !== "completed") process.exitCode = 1;
       }),
@@ -258,7 +258,8 @@ const doneCommand = () =>
   new Command("done")
     .description("Finish an agent or stage node that next handed out, with its output or error")
     .argument("<nodeRunId>", "node run id from next")
-    .requiredOption("--run <name>", RUN_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .option(
       "--output <text>",
       "the node's output: plain text, or JSON when the node names an output schema; - reads stdin",
@@ -270,7 +271,6 @@ const doneCommand = () =>
       collect,
       [] as string[],
     )
-    .option("--root <dir>", ROOT_HELP)
     .action(async (nodeRunId, opts) => {
       if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
       const outcome = await parseOutcome(opts);
@@ -289,16 +289,16 @@ const doneCommand = () =>
           flag: "--artifact",
           message: artifacts.error,
         });
-      const target = await getWorkflowRun(opts.run, opts.root);
-      if (!target.ok)
+      const run = await requireRun(runInputFromFlags(opts));
+      if (!run.ok)
         return failDone({
           kind: "configuration",
           retryable: false,
           code: "run",
-          path: opts.run,
-          message: target.error,
+          path: opts.runId ?? opts.run ?? (process.env.HARNESS_RUN_ID || ""),
+          message: run.error,
         });
-      const report = await finishStep(target.value.run, nodeRunId, outcome.value, artifacts.value);
+      const report = await finishStep(run.value, nodeRunId, outcome.value, artifacts.value);
       if (!report.ok) return failDone(report.error);
       printJson(report.value);
       if (report.ok && report.value.status !== "completed") process.exitCode = 1;
@@ -309,32 +309,36 @@ const nodeCommand = () => {
   node
     .command("show")
     .description("Print the node run's id, stage, input, attempt, consumed artifacts and run dirs")
-    .requiredOption("--run <name>", RUN_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .requiredOption("--node-run <id>", "node run id from next")
-    .option("--root <dir>", ROOT_HELP)
     .action(async (opts) =>
       runWorkflowCommand(async () => {
         const nodeRunId = opts.nodeRun;
         if (nodeRunId === "") return fail(EMPTY_NODE_RUN_ID);
-        const target = await getWorkflowRun(opts.run, opts.root);
-        if (!target.ok) return fail(target.error);
-        const { cwd, name } = target.value.run;
+        const run = await requireRun(runInputFromFlags(opts));
+        if (!run.ok) return fail(run.error);
+        const { cwd, name } = run.value;
         printJson(await getNodeFacts(name, nodeRunId, cwd));
       }).catch((error: unknown) => fail(error instanceof Error ? error.message : String(error))),
     );
   return node;
 };
 
+const configFor = async (flags: RunFlags): Promise<Result<CheckoutConfig>> => {
+  const run = await pickRun(runInputFromFlags(flags));
+  return run.ok ? loadPickedConfig(run.value, process.cwd()) : run;
+};
+
 const printResolved = async (
   skill: string,
-  flags: { root?: string },
+  flags: RunFlags,
   resolveText: typeof resolveExtension,
 ): Promise<void> => {
-  const root = await resolveRoot(flags.root);
-  if (!root.ok) return fail(root.error);
-  const config = await loadConfigOrDefault(root.value);
-  if (!config.ok) return fail(config.error);
-  const options = { skillsDir: harnessSkillsDir(), root: root.value, config: config.value, skill };
+  const loaded = await configFor(flags);
+  if (!loaded.ok) return fail(loaded.error);
+  const { root, config } = loaded.value;
+  const options = { skillsDir: harnessSkillsDir(), root, config, skill };
   const text = await resolveText(options);
   if (!text.ok) return fail(text.error);
   process.stdout.write(text.value);
@@ -348,7 +352,8 @@ const skillCommand = () => {
     .command("ref")
     .argument("<SKILL.REF>", "skill name, a dot, and a reference from its frontmatter")
     .option("--path", "print where the reference's file is instead of its text, to run it")
-    .option("--root <dir>", ROOT_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .action((target: string, flags) => {
       const dot = target.lastIndexOf(".");
       if (dot <= 0 || dot === target.length - 1) {
@@ -364,7 +369,8 @@ const skillCommand = () => {
   skill
     .command("extension")
     .argument("<skill>", "skill name")
-    .option("--root <dir>", ROOT_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .action((name, flags) => printResolved(name, flags, resolveExtension));
   return skill;
 };
@@ -455,13 +461,13 @@ const contextCommand = () =>
       "Carry out an open context node: start a new session in the agent's pane, or compact it (started by the Stop hook)",
     )
     .argument("<nodeRunId>", "node run id of the open context node")
-    .requiredOption("--run <name>", RUN_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .requiredOption("--session-id <id>", "the agent session whose turn just ended")
-    .option("--root <dir>", ROOT_HELP)
     .action(async (nodeRunId, opts) => {
-      const target = await getWorkflowRun(opts.run, opts.root);
-      if (!target.ok) return fail(target.error);
-      const { run } = target.value;
+      const picked = await requireRun(runInputFromFlags(opts));
+      if (!picked.ok) return fail(picked.error);
+      const run = picked.value;
       const helperLog = helperLogger(run, "harness-context", "context.log");
       await runContextStep({
         run,
@@ -498,13 +504,13 @@ const limitWaitCommand = () =>
       "Wait out a usage limit, then have the agent continue in its terminal (started by the StopFailure hook)",
     )
     .argument("<eventId>", "id of the agent.limit.reached event")
-    .requiredOption("--run <name>", RUN_HELP)
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
     .requiredOption("--session-id <id>", "the agent session the limit stopped")
-    .option("--root <dir>", ROOT_HELP)
     .action(async (limitEventId, opts) => {
-      const target = await getWorkflowRun(opts.run, opts.root);
-      if (!target.ok) return fail(target.error);
-      const { run } = target.value;
+      const picked = await requireRun(runInputFromFlags(opts));
+      if (!picked.ok) return fail(picked.error);
+      const run = picked.value;
       const log = helperLogger(run, "harness-limit-wait", "limit-wait.log");
       const claude = claudeProvider({
         host: harnessTerminalHost(process.env, log),

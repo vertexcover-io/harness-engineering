@@ -80,6 +80,7 @@ const setUp = async (node: string) => {
     sessions: [{ agent: "claude", sessionId: "A" }],
     name: "feat-x",
     terminal: "claude-feat-x-r-1",
+    config: null,
     createdAt: new Date().toISOString(),
   });
   return { run, runDir, registry };

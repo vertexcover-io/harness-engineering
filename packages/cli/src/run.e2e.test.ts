@@ -354,6 +354,73 @@ describe("harness run", () => {
   );
 
   test(
+    "--config FILE, resolved against the current folder, is saved on the run and recorded by init, even with no config in the repo",
+    () => {
+      const repo = makeRepo();
+      rmSync(join(repo, "orchestrate.config.json"));
+      mkdirSync(join(repo, "configs"));
+      const file = join(repo, "configs", "custom.json");
+      writeFileSync(file, '{ "version": 2 }\n');
+      const { env, home, fakeOut } = makeEnv();
+
+      const run = harness(
+        join(repo, "configs"),
+        env,
+        "run",
+        "../ok.yaml",
+        "--prompt",
+        "hi",
+        "--config",
+        "custom.json",
+      );
+      expect(run.stderr).not.toContain("BLOCKED");
+      expect(run.code).toBe(0);
+      const runId = run.stdout.trim().split("\n")[0] ?? "";
+      const registry = JSON.parse(readFileSync(join(home, "registry.json"), "utf8"));
+      expect(registry.runs[runId].config).toBe(file);
+      const isSession = (record: Record<string, unknown>) =>
+        Array.isArray(record.argv) && record.argv.includes("--session-id");
+      waitFor(() => readLines(fakeOut).some(isSession));
+      const launch = readLines(fakeOut).find(isSession);
+      const init = spawnSync("bun", [ORCHESTRATE, "init", "fix-login"], {
+        cwd: String(launch?.cwd),
+        env: launch?.env as NodeJS.ProcessEnv,
+        encoding: "utf8",
+      });
+      expect(init.status).toBe(0);
+      const state = JSON.parse(
+        readFileSync(join(repo, ".harness", "fix-login", "state.json"), "utf8"),
+      );
+      expect(state.config).toEqual({ path: file, root: join(repo, "configs") });
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test.each([
+    ["a missing file", (_file: string) => {}],
+    ["an invalid file", (file: string) => writeFileSync(file, "{")],
+    ["a directory", (file: string) => mkdirSync(file)],
+  ])(
+    "--config naming %s stops harness run before any run or session starts",
+    (_case, create) => {
+      const repo = makeRepo();
+      const file = join(repo, "custom.json");
+      create(file);
+      const { env, home, fakeOut } = makeEnv();
+
+      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "x", "--config", "custom.json");
+
+      expect(run.code).toBe(1);
+      expect(run.stderr).toContain(file);
+      expect(readLines(fakeOut)).toEqual([]);
+      expect(existsSync(join(home, "registry.json"))).toBe(false);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "SC13: a cyclic workflow fails to compile and records no run",
     () => {
       const repo = makeRepo();

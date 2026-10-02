@@ -103,11 +103,13 @@ export const createState = async ({
   runDir,
   version,
   eventHandlers,
+  config,
 }: Readonly<{
   runId: string;
   runDir: string;
   version: string;
   eventHandlers: EventHandlerRefs;
+  config?: State["config"];
 }>): Promise<State> => {
   const cwd = dirname(dirname(runDir));
   const state: State = {
@@ -131,6 +133,7 @@ export const createState = async ({
     nodeRuns: {},
     activeSessions: [],
     eventHandlers,
+    ...(config === undefined ? {} : { config }),
   };
   await withLock(lockOf(runDir), () => writeStateAtomically(runDir, state));
   return state;

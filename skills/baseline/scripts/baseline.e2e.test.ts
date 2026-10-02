@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runDirOf, type WorkflowRun } from "@harness/sdk";
+import { createState } from "@harness/sdk/internal";
 
 const SCRIPT = join(import.meta.dir, "baseline.ts");
 
@@ -35,6 +36,7 @@ const baselineRun = (baseline: string | undefined): Readonly<{ repo: string; hom
     sessions: [],
     name: "feat-x",
     terminal: null,
+    config: null,
     createdAt: new Date().toISOString(),
   };
   const home = tempDir();
@@ -46,8 +48,17 @@ const baselineRun = (baseline: string | undefined): Readonly<{ repo: string; hom
 // A run id or harness home from the shell running the tests must never reach a real registry.
 const env = (home: string) => ({ ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home });
 
-const baseline = (repo: string, home: string, args: readonly string[]) => {
-  const run = spawnSync("bun", [SCRIPT, ...args], { cwd: repo, encoding: "utf8", env: env(home) });
+const baseline = (
+  cwd: string,
+  home: string,
+  args: readonly string[],
+  extra: Readonly<Record<string, string>> = {},
+) => {
+  const run = spawnSync("bun", [SCRIPT, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...env(home), ...extra },
+  });
   return { code: run.status, stdout: run.stdout, stderr: run.stderr };
 };
 
@@ -92,10 +103,46 @@ describe("baseline.ts", () => {
     expect(JSON.parse(run.stdout)).toEqual({ path: null, workspace: null, packages: {} });
   });
 
+  test("a run whose state.json records a config file runs that file's baseline, not the repo's", async () => {
+    const { repo, home } = baselineRun("echo from-repo-config");
+    const elsewhere = tempDir();
+    const file = join(elsewhere, "custom.json");
+    writeFileSync(file, JSON.stringify({ version: 2, baseline: "echo from-run-config" }));
+    const runDir = runDirOf(repo, "feat-x");
+    writeFileSync(join(runDir, "workflow.yaml"), "name: ok\nnodes: []\n");
+    await createState({
+      runId: "r-1",
+      runDir,
+      version: "1.0.0",
+      eventHandlers: {},
+      config: { path: file, root: elsewhere },
+    });
+
+    const run = baseline(repo, home, ["--run", "feat-x", "--dir", repo]);
+
+    expect(run.code).toBe(0);
+    const recorded = JSON.parse(readFileSync(join(runDir, "artifacts", "baseline.json"), "utf8"));
+    expect(recorded.workspace.command).toBe("echo from-run-config");
+  });
+
+  test("$HARNESS_RUN_ID picks the run with no flag, and --run-id picks it from outside the repo", () => {
+    const { repo, home } = baselineRun("echo ok");
+    const path = join(runDirOf(repo, "feat-x"), "artifacts", "baseline.json");
+
+    const fromSession = baseline(repo, home, ["--dir", repo], { HARNESS_RUN_ID: "r-1" });
+    const byId = baseline(tempDir(), home, ["--run-id", "r-1", "--dir", repo]);
+
+    expect(fromSession.code).toBe(0);
+    expect(JSON.parse(fromSession.stdout).path).toBe(path);
+    expect(byId.code).toBe(0);
+    expect(JSON.parse(byId.stdout).path).toBe(path);
+  });
+
   test.each([
-    ["no --run", ["--dir", "."], "--run"],
+    ["no --run", ["--dir", "."], "no run: pass --run or --run-id"],
     ["a run the registry does not have", ["--run", "ghost", "--dir", "."], "ghost"],
     ["an unknown flag", ["--run", "feat-x", "--nope"], "--nope"],
+    ["--root", ["--run", "feat-x", "--root", "."], "--root"],
   ])("exits 1 on %s, naming it", (_case, args, named) => {
     const { repo, home } = baselineRun(undefined);
 

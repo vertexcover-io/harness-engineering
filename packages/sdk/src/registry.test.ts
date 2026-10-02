@@ -6,11 +6,10 @@ import { dirname, join } from "node:path";
 import {
   createRegistry,
   createRegistryReader,
-  findRunByIdOrName,
   RegistryFileSchema,
-  type RunTarget,
   type WorkflowRun,
 } from "./registry.ts";
+import { findRunByIdOrName, type RunTarget } from "./runs.ts";
 
 const run = (id: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id,
@@ -21,6 +20,7 @@ const run = (id: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => (
   sessions: [],
   name: null,
   terminal: null,
+  config: null,
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -97,6 +97,16 @@ describe("createRegistry", () => {
       "r-old",
     ]);
     expect(await registry.findRunsByName("missing")).toEqual([]);
+  });
+});
+
+describe("config", () => {
+  test("a run record written before config existed loads with config null", async () => {
+    const path = tempRegistryPath();
+    const { config: _omitted, ...legacy } = run("r-old");
+    await writeFile(path, JSON.stringify({ version: 1, runs: { "r-old": legacy } }));
+
+    expect((await createRegistry(path).findRun("r-old"))?.config).toBeNull();
   });
 });
 

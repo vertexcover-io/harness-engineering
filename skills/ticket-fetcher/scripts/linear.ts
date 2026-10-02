@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { open, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { readProjectEnv, resolveRoot } from "@harness/sdk";
+import { readProjectEnv } from "@harness/sdk";
 import * as z from "zod";
 import { SafeFilenameSchema } from "./ticket.ts";
 
@@ -32,8 +32,8 @@ export const parseIssueRef = (input: string): string => {
   throw new Error(`not a Linear issue key or URL: ${input}`);
 };
 
-export const loadApiKey = async (root: string): Promise<string> => {
-  const key = await readProjectEnv(root, "LINEAR_API_KEY");
+export const loadApiKey = async (cwd: string): Promise<string> => {
+  const key = await readProjectEnv(cwd, "LINEAR_API_KEY");
   if (key === undefined || key === "") {
     throw new Error("LINEAR_API_KEY is not set; add it to the project .env or the environment");
   }
@@ -205,16 +205,16 @@ const parseLimit = (value: string | undefined): number => {
   return limit;
 };
 
-const loadApi = async (root: string): Promise<Api> => {
+const loadApi = async (cwd: string): Promise<Api> => {
   const override = process.env.LINEAR_API_URL;
   return {
     url: override ?? DEFAULT_API_URL,
-    key: await loadApiKey(root),
+    key: await loadApiKey(cwd),
     ...(override === undefined ? {} : { allowedOrigin: new URL(override).origin }),
   };
 };
 
-const runCommand = async (root: string, argv: readonly string[]): Promise<unknown> => {
+const runCommand = async (cwd: string, argv: readonly string[]): Promise<unknown> => {
   const { positionals, values } = parseArgs({
     args: [...argv],
     allowPositionals: true,
@@ -222,7 +222,7 @@ const runCommand = async (root: string, argv: readonly string[]): Promise<unknow
   });
   const [command, arg] = positionals;
   if (arg === undefined) throw new Error(USAGE);
-  const api = await loadApi(root);
+  const api = await loadApi(cwd);
   if (command === "search") return searchIssues(api, arg, parseLimit(values.limit));
   if (command === "issue") return fetchIssue(api, parseIssueRef(arg));
   const { dir, name } = values;
@@ -232,9 +232,7 @@ const runCommand = async (root: string, argv: readonly string[]): Promise<unknow
 
 const main = async (argv: readonly string[]): Promise<void> => {
   try {
-    const root = await resolveRoot(undefined);
-    if (!root.ok) throw new Error(root.error);
-    console.log(JSON.stringify(await runCommand(root.value, argv)));
+    console.log(JSON.stringify(await runCommand(process.cwd(), argv)));
   } catch (error) {
     console.error(error);
     process.exitCode = 1;

@@ -35,6 +35,7 @@ const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   sessions: [],
   name: null,
   terminal: null,
+  config: null,
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -194,6 +195,70 @@ describe("initializeRun", () => {
     expect(state.custom).toEqual({ note: "looks good" });
   });
 
+  const handlerConfig = (dir: string, file = "orchestrate.config.json"): string => {
+    const path = join(dir, file);
+    writeFileSync(join(dir, "handlers.ts"), "export const onNote = (state) => state;\n");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 2,
+        eventHandlers: { "custom.review.note": [{ module: "handlers.ts", handler: "onNote" }] },
+      }),
+    );
+    return path;
+  };
+
+  test("a run in a linked worktree records the worktree's config in state.json and freezes its handlers against the worktree", async () => {
+    const main = makeRepo();
+    writeFileSync(join(main, "orchestrate.config.json"), JSON.stringify({ version: 2 }));
+    const worktree = join(main, ".worktrees", "dev");
+    gitCmd(main, "worktree", "add", "-q", "-b", "dev", worktree);
+    const cwd = realpathSync(worktree);
+    const path = handlerConfig(cwd);
+    const { init } = await savedRun({ cwd });
+
+    const result = await init("fix-login");
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.state.config).toEqual({ path, root: cwd });
+    expect(result.value.state.eventHandlers).toEqual({
+      "custom.review.note": [{ module: join(cwd, "handlers.ts"), handler: "onNote" }],
+    });
+  });
+
+  test("a run started with --config records that file, and its handlers resolve against the file's folder", async () => {
+    const elsewhere = tempDir();
+    const path = handlerConfig(elsewhere, "custom.json");
+    const { init } = await savedRun({ config: path });
+
+    const result = await init("fix-login");
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.state.config).toEqual({ path, root: elsewhere });
+    expect(result.value.state.eventHandlers["custom.review.note"]?.[0]?.module).toBe(
+      join(elsewhere, "handlers.ts"),
+    );
+  });
+
+  test("a run whose checkout has no config records a null path, rooted at the checkout", async () => {
+    const { cwd, init } = await savedRun();
+
+    const result = await init("fix-login");
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.state.config).toEqual({ path: null, root: cwd });
+  });
+
+  test("a run whose --config file is gone is refused, leaving no run folder", async () => {
+    const missing = join(tempDir(), "gone.json");
+    const { cwd, init } = await savedRun({ config: missing });
+
+    const result = await init("fix-login");
+
+    expect(result.ok ? "" : result.error).toContain(missing);
+    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+  });
+
   test("a step that fails after the folder is made removes the folder, so a retry can succeed", async () => {
     const { cwd, init, registry, run } = await savedRun({ workflowPath: "/abs/missing.yaml" });
 
@@ -260,7 +325,7 @@ describe("linkRunSession", () => {
   test("SC22: links a new agent session once and refuses an unknown agent without changing the run", async () => {
     const { cwd, registry, run } = await initializedRun();
     const link = (agent: string, sessionId: string) =>
-      linkRunSession({ registry, root: cwd, name: "fix-login", agent, sessionId });
+      linkRunSession({ registry, run: { id: run.id, cwd, name: "fix-login" }, agent, sessionId });
 
     expect(await link("codex", "s2")).toEqual({
       ok: true,

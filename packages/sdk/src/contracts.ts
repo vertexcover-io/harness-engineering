@@ -208,6 +208,11 @@ export const StateSchema = z.strictObject({
   activeSessions: z.array(SessionRefSchema).default([]),
   custom: JsonObjectSchema.optional(),
   eventHandlers: EventHandlerRefsSchema.default({}),
+  // Settled by init: the config file the run reads (null = the default config) and the folder its
+  // relative paths resolve against. A run initialized before this field searched its checkout.
+  config: z
+    .strictObject({ path: AbsolutePathSchema.nullable(), root: AbsolutePathSchema })
+    .optional(),
 });
 
 export const EventSchema = z

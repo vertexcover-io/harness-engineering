@@ -1,6 +1,6 @@
 import { Command } from "@commander-js/extra-typings";
 import { harnessTerminalHost } from "@harness/core";
-import { type Result, registryPath, resolveRoot, spawnInteractive } from "@harness/sdk";
+import { findRoot, type Result, registryPath, spawnInteractive } from "@harness/sdk";
 import {
   createRegistry,
   findRunByIdOrName,
@@ -18,7 +18,7 @@ const pickTarget = async (
   if (name === undefined || runId !== undefined) {
     return { ok: false, error: "pass a run name or --run-id, not both" };
   }
-  const root = await resolveRoot(undefined);
+  const root = await findRoot(process.cwd());
   return root.ok ? { ok: true, value: { name, root: root.value } } : root;
 };
 

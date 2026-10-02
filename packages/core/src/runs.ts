@@ -2,21 +2,21 @@ import { access, copyFile, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   type ArtifactRef,
+  type CheckoutConfig,
   type Config,
   type EmitInput,
   type EventHandlerRefs,
   eventError,
-  findRoot,
   type IGit,
   type ILogger,
   type ITerminal,
   type JsonValue,
-  loadConfigOrDefault,
+  loadCheckoutConfig,
+  loadNamedConfig,
+  loadRecordedConfig,
   type NodeRun,
   type Result,
-  type RunLookup,
   type RunRef,
-  resolveRun,
   runDirOf,
   type SessionRef,
   SessionRefSchema,
@@ -97,7 +97,11 @@ const renameTerminal = async (run: WorkflowRun, options: InitOptions): Promise<v
   }
 };
 
-type CheckedInit = Readonly<{ run: WorkflowRun; eventHandlers: EventHandlerRefs }>;
+type CheckedInit = Readonly<{
+  run: WorkflowRun;
+  eventHandlers: EventHandlerRefs;
+  config: NonNullable<State["config"]>;
+}>;
 
 const frozenHandlers = (config: Config, root: string): EventHandlerRefs =>
   Object.fromEntries(
@@ -108,12 +112,12 @@ const frozenHandlers = (config: Config, root: string): EventHandlerRefs =>
   );
 
 const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<State> => {
-  const { run, eventHandlers } = checked;
+  const { run, eventHandlers, config } = checked;
   const { name } = options;
   const dir = runDirOf(run.cwd, name);
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
   const version = String(corePackage.version);
-  await createState({ runId: run.id, runDir: dir, version, eventHandlers });
+  await createState({ runId: run.id, runDir: dir, version, eventHandlers, config });
   const appended = await appendRunEvent(
     { id: run.id, cwd: run.cwd, name },
     {
@@ -151,11 +155,15 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
   if ((await git.repoRoot(run.cwd)) === null) {
     return { ok: false, error: `${run.cwd} is not inside a git repository` };
   }
-  const root = await findRoot(run.cwd);
-  if (!root.ok) return root;
-  const config = await loadConfigOrDefault(root.value);
-  if (!config.ok) return config;
-  return { ok: true, value: { run, eventHandlers: frozenHandlers(config.value, root.value) } };
+  const loaded = await (run.config === null
+    ? loadCheckoutConfig(run.cwd)
+    : loadNamedConfig(run.config));
+  if (!loaded.ok) return loaded;
+  const { config, path, root } = loaded.value;
+  return {
+    ok: true,
+    value: { run, eventHandlers: frozenHandlers(config, root), config: { path, root } },
+  };
 };
 
 export const initializeRun = async (
@@ -180,17 +188,13 @@ export const initializeRun = async (
 };
 
 export const linkRunSession = async (
-  options: RunLookup & Readonly<{ registry: Registry; agent: string; sessionId: string }>,
+  options: Readonly<{ registry: Registry; run: RunRef; agent: string; sessionId: string }>,
 ): Promise<Result<readonly SessionRef[]>> => {
-  const session = SessionRefSchema.safeParse({
-    agent: options.agent,
-    sessionId: options.sessionId,
-  });
+  const { registry, run, agent, sessionId } = options;
+  const session = SessionRefSchema.safeParse({ agent, sessionId });
   if (!session.success) return { ok: false, error: z.prettifyError(session.error) };
-  const run = await resolveRun(options);
-  if (!run.ok) return run;
-  await options.registry.linkSession(run.value.id, session.data);
-  const linked = await options.registry.findRun(run.value.id);
+  await registry.linkSession(run.id, session.data);
+  const linked = await registry.findRun(run.id);
   return { ok: true, value: linked?.sessions ?? [session.data] };
 };
 
@@ -224,8 +228,6 @@ export type StepReply =
     }>
   | Readonly<{ kind: "context"; nodeRunId: string; nodeId: string; action: ContextNode["action"] }>
   | Exclude<Decision, { kind: "leaf" }>;
-
-type NextOptions = Readonly<{ root: string; config: Config }>;
 
 type Call = Readonly<{ command: "next" | "exec" | "done"; input: JsonValue }>;
 
@@ -322,7 +324,7 @@ const compileWorkflowPlan = (run: RunDirRef): Promise<WorkflowPlan> =>
 const buildLeafReply = (
   decision: Extract<Decision, { kind: "leaf" }>,
   run: RunRef,
-  options: NextOptions,
+  options: CheckoutConfig,
 ): StepReply => {
   const { node, nodeRunId, input, variables } = decision;
   if (node.type === "context") {
@@ -358,11 +360,11 @@ const buildLeafReply = (
 };
 
 // Walks the run to its next step, saving each engine event to event.jsonl as it is recorded.
-const walkToNextStep = async (run: RunRef, root: string): Promise<Result<StepReply>> => {
-  const config = await loadConfigOrDefault(root);
-  if (!config.ok) return config;
+const walkToNextStep = async (run: RunRef): Promise<Result<StepReply>> => {
   const runDir = runDirOf(run.cwd, run.name);
   const [plan, state] = await Promise.all([compileWorkflowPlan(run), readRunState(runDir)]);
+  const config = await loadRecordedConfig(state.config, run.cwd);
+  if (!config.ok) return config;
   const emit: Emit = async (_state, event) => {
     const appended = await appendRunEvent(run, event);
     if (!appended.ok) throw new Error(`${event.type} was not stored: ${appended.error}`);
@@ -370,13 +372,12 @@ const walkToNextStep = async (run: RunRef, root: string): Promise<Result<StepRep
     return appended.value.state;
   };
   const { decision } = await decideNext(plan, state, emit);
-  const options = { root, config: config.value };
-  const reply = decision.kind === "leaf" ? buildLeafReply(decision, run, options) : decision;
+  const reply = decision.kind === "leaf" ? buildLeafReply(decision, run, config.value) : decision;
   return { ok: true, value: reply };
 };
 
-export const nextStep = (run: RunRef, root: string): Promise<Result<StepReply>> =>
-  logCall(run, { command: "next", input: {} }, walkToNextStep(run, root));
+export const nextStep = (run: RunRef): Promise<Result<StepReply>> =>
+  logCall(run, { command: "next", input: {} }, walkToNextStep(run));
 
 // The step the run is at, when `nodeRunId` is its run, read from its workflow and state.json.
 const loadRunningLeaf = async (run: RunRef, nodeRunId: string): Promise<Result<RunningLeaf>> => {

@@ -10,9 +10,10 @@ import {
   type Exec,
   execWithTimeout,
   fail,
-  findRoot,
+  findConfigRoot,
   type ILogger,
   type LoadedConfig,
+  loadConfigAt,
   loadConfigFile,
   NOT_FOUND,
   NonEmptyStringSchema,
@@ -78,18 +79,24 @@ const checkHarnessIgnored = async ({ root, exec }: CheckContext): Promise<Outcom
   return ignored ? ok(".harness/ is gitignored") : fail(".harness/ is not gitignored");
 };
 
+// Unlike a run, the doctor reports a missing config instead of using the default one.
+const readFoundConfig = async (root: string): Promise<Result<LoadedConfig>> => {
+  const folder = await findConfigRoot(root);
+  const loaded = await loadConfigFile(folder.ok ? folder.value : root);
+  return loaded.ok ? loaded : { ok: false, error: loaded.error.message };
+};
+
 // A config that cannot be read at all (a directory in its place) throws; it is a broken config like any other.
-const readConfig = async (root: string): Promise<Result<LoadedConfig>> => {
+const readConfig = async ({ root, config }: CheckContext): Promise<Result<LoadedConfig>> => {
   try {
-    const loaded = await loadConfigFile(root);
-    return loaded.ok ? loaded : { ok: false, error: loaded.error.message };
+    return await (config === undefined ? readFoundConfig(root) : loadConfigAt(config));
   } catch (error) {
     return { ok: false, error: `orchestrate config cannot be read: ${errorMessage(error)}` };
   }
 };
 
-const checkOrchestrateConfig = async ({ root }: CheckContext): Promise<Outcome> => {
-  const config = await readConfig(root);
+const checkOrchestrateConfig = async (context: CheckContext): Promise<Outcome> => {
+  const config = await readConfig(context);
   return config.ok ? ok(config.value.path) : fail(config.error);
 };
 
@@ -208,8 +215,8 @@ export const verdict = (report: DoctorReport): string => {
   return "READY";
 };
 
-const readDoctorCommand = async (root: string): Promise<string | null> => {
-  const config = await readConfig(root);
+const readDoctorCommand = async (context: CheckContext): Promise<string | null> => {
+  const config = await readConfig(context);
   return config.ok ? (config.value.config.doctor ?? null) : null;
 };
 
@@ -231,8 +238,9 @@ const projectRow = (status: CheckStatus, detail: string, fix: string): DoctorRow
 });
 
 // A doctor that speaks the contract contributes its rows; one that does not is a single row.
-export const projectDoctor = async (root: string, exec: Exec): Promise<readonly DoctorRow[]> => {
-  const command = await readDoctorCommand(root);
+export const projectDoctor = async (context: CheckContext): Promise<readonly DoctorRow[]> => {
+  const { root, exec } = context;
+  const command = await readDoctorCommand(context);
   if (command === null) return [];
   try {
     const { code, stdout } = await exec("sh", ["-c", `${command} --json`], root);
@@ -263,6 +271,8 @@ export type DoctorOptions = {
   // Checks a caller adds, such as a plugin's own tools; their rows follow the built-in ones.
   readonly extraChecks?: readonly Check[];
   readonly log?: ILogger;
+  // the config file harness run --config named
+  readonly config?: string | undefined;
 };
 
 export const runDoctor = async ({
@@ -270,14 +280,16 @@ export const runDoctor = async ({
   exec = execWithTimeout(DOCTOR_TIMEOUT_MS),
   extraChecks = [],
   log: parentLog = noopLogger,
+  config,
 }: DoctorOptions): Promise<DoctorReport> => {
   const log = parentLog.child({ component: "doctor" });
   // Outside a repository the checks still run, against cwd; git-repo reports the problem.
   const root = (await createGit(exec).repoRoot(cwd)) ?? cwd;
   const checks = [...CHECKS, ...extraChecks];
+  const context = { root, exec, config };
   const [rows, projectRows] = await Promise.all([
-    Promise.all(checks.map((check) => evaluate(check, { root, exec }, log))),
-    projectDoctor(root, exec),
+    Promise.all(checks.map((check) => evaluate(check, context, log))),
+    projectDoctor(context),
   ]);
   return summarize([...rows, ...projectRows]);
 };
@@ -303,9 +315,7 @@ const runDeclared = async (
   workflowDir: string,
 ): Promise<Outcome> => {
   if (check === "env") {
-    // The same main-checkout .env the skill scripts read through resolveRoot, even from a worktree.
-    const main = await findRoot(root);
-    return (await readProjectEnv(main.ok ? main.value : root, key)) ? ok("set") : fail("missing");
+    return (await readProjectEnv(root, key)) ? ok("set") : fail("missing");
   }
   if (check === "binary") {
     const path = Bun.which(key);

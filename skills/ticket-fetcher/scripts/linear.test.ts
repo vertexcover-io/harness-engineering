@@ -120,6 +120,17 @@ describe("loadApiKey", () => {
     expect(seen.auth.at(-1)).toBe("from-main");
   });
 
+  test("from a linked worktree with its own .env the CLI reads that file, not main's", async () => {
+    const main = makeRepo();
+    const worktree = join(main, "linked");
+    git(main, "worktree", "add", "-q", worktree);
+    writeFileSync(join(main, ".env"), "LINEAR_API_KEY=from-main\n");
+    writeFileSync(join(worktree, ".env"), "LINEAR_API_KEY=from-worktree\n");
+    const { code } = await runCli(["search", "export"], worktree);
+    expect(code).toBe(0);
+    expect(seen.auth.at(-1)).toBe("from-worktree");
+  });
+
   test("throws a clear error when missing", async () => {
     const saved = process.env.LINEAR_API_KEY;
     delete process.env.LINEAR_API_KEY;

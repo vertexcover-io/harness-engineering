@@ -10,21 +10,21 @@ import {
   type EventError,
   emitRunEvent,
   eventError,
+  findRoot,
   type ILogger,
   type JsonValue,
   jsonLogger,
   type Layout,
   LayoutSchema,
   LogLevelSchema,
-  loadConfigOrDefault,
+  loadPickedConfig,
   NameSchema,
   NonEmptyStringSchema,
   noopLogger,
+  pickRun,
   type Result,
   type RunRef,
   registryPath,
-  resolveRoot,
-  resolveRun,
   SlugSchema,
   spawn,
   stackOf,
@@ -56,9 +56,11 @@ export const schemas = { "create-workspace.output.v1": CreateWorkspaceOutputSche
 export type OutputLine = Readonly<{ repo: string; text: string }>;
 
 // With a run, the command records its events in that run's log; without one, it records none.
+// root is the main checkout, where worktrees go; config is the run's own, or the current checkout's.
 export type WorkspaceOptions = Readonly<{
   run?: RunRef | undefined;
   root: string;
+  config: Config;
   branch: string;
   repos?: readonly string[] | undefined;
   base?: string | undefined;
@@ -190,9 +192,8 @@ const locateWorkspace = async (options: WorkspaceOptions): Promise<Result<Locati
   if (!(await git.isValidBranchName(options.root, options.branch))) {
     return { ok: false, error: `invalid branch name "${options.branch}"` };
   }
-  const config = await loadConfigOrDefault(options.root);
-  if (!config.ok) return config;
-  const { layout, path, baseBranch } = config.value.workspace;
+  const { config } = options;
+  const { layout, path, baseBranch } = config.workspace;
   const base = options.base ?? baseBranch;
   if (base !== undefined && !(await git.isValidBranchName(options.root, base))) {
     const source = options.base === undefined ? "workspace.baseBranch" : "base";
@@ -203,7 +204,7 @@ const locateWorkspace = async (options: WorkspaceOptions): Promise<Result<Locati
   const workspaceDir = resolve(options.root, filled.value);
   return {
     ok: true,
-    value: { config: config.value, layout, branch: options.branch, base, workspaceDir },
+    value: { config, layout, branch: options.branch, base, workspaceDir },
   };
 };
 
@@ -626,15 +627,13 @@ export type WorkspaceInfo = Readonly<{
   packages: readonly Readonly<{ name: string; path: string; description?: string }>[];
 }>;
 
-export const workspaceInfo = async (root: string): Promise<Result<WorkspaceInfo>> => {
-  const config = await loadConfigOrDefault(root);
-  if (!config.ok) return config;
-  const packages = Object.entries(config.value.packages).map(([name, pkg]) => ({
+export const workspaceInfo = (config: Config): WorkspaceInfo => {
+  const packages = Object.entries(config.packages).map(([name, pkg]) => ({
     name,
     path: pkg.path,
     ...(pkg.description === undefined ? {} : { description: pkg.description }),
   }));
-  return { ok: true, value: { layout: config.value.workspace.layout, packages } };
+  return { layout: config.workspace.layout, packages };
 };
 
 // stdout carries only the report, so failures are logged to stderr, at warn unless LOG_LEVEL says otherwise.
@@ -650,29 +649,30 @@ project's setup and teardown.
   add BRANCH --repos    put more repos into a multi-layout workspace that already exists
   remove BRANCH         remove BRANCH's worktrees
 
-  --run NAME        spec name of the run whose event log records this change (default: none)
+  --run NAME        spec name of the run whose event log records this change and whose
+                    config applies (default: $HARNESS_RUN_ID, else none)
+  --run-id ID       the run by id instead of name
   --repos A,B       multi layout: comma-separated packages to branch (remove default: all)
   --base BRANCH     branch a new branch starts from, fetched from origin first
                     (default: origin's default branch)
   --force           remove: remove worktrees with uncommitted or untracked files
-  --root DIR        repo holding orchestrate.config.json and the run (default: main checkout)
 `;
 
 const FLAGS = {
   run: { type: "string" },
+  "run-id": { type: "string" },
   repos: { type: "string" },
   base: { type: "string" },
   force: { type: "boolean" },
-  root: { type: "string" },
 } as const;
 
 const CommandSchema = z.enum(["info", "create", "add", "remove"]);
 
 const COMMAND_FLAGS: Readonly<Record<z.infer<typeof CommandSchema>, readonly string[]>> = {
-  info: ["root"],
-  create: ["run", "repos", "base", "root"],
-  add: ["run", "repos", "base", "root"],
-  remove: ["run", "repos", "force", "root"],
+  info: ["run", "run-id"],
+  create: ["run", "run-id", "repos", "base"],
+  add: ["run", "run-id", "repos", "base"],
+  remove: ["run", "run-id", "repos", "force"],
 };
 
 const CHANGES = { create: createWorkspace, add: addRepositories, remove: removeWorkspace };
@@ -735,28 +735,38 @@ const splitList = (value: string): string[] =>
     .map((name) => name.trim())
     .filter((name) => name !== "");
 
-const runOf = async (
-  root: string,
-  name: string | undefined,
-): Promise<Result<RunRef | undefined>> =>
-  name === undefined
-    ? { ok: true, value: undefined }
-    : resolveRun({ registry: createRegistryReader(registryPath()), root, name });
+type Target = Readonly<{ run: RunRef | undefined; root: string; config: Config }>;
+
+// The run the flags or $HARNESS_RUN_ID name, if any; its config, else the current checkout's; and
+// the main checkout, where worktrees go.
+const findTarget = async (flags: Flags): Promise<Result<Target>> => {
+  const run = await pickRun({
+    registry: createRegistryReader(registryPath()),
+    name: flags.run,
+    id: flags["run-id"],
+    env: process.env,
+    cwd: process.cwd(),
+  });
+  if (!run.ok) return run;
+  const cwd = run.value?.cwd ?? process.cwd();
+  const [root, loaded] = await Promise.all([findRoot(cwd), loadPickedConfig(run.value, cwd)]);
+  if (!root.ok) return root;
+  if (!loaded.ok) return loaded;
+  return { ok: true, value: { run: run.value, root: root.value, config: loaded.value.config } };
+};
 
 const changeWorkspace = async (
   change: typeof createWorkspace,
-  root: string,
+  target: Target,
   branch: string,
   flags: Flags,
 ): Promise<void> => {
-  const run = await runOf(root, flags.run);
-  if (!run.ok) return fail(run.error);
   const onOutput = (line: OutputLine): void => {
     process.stderr.write(`[${line.repo}] ${line.text}\n`);
   };
   const repos = flags.repos === undefined ? undefined : splitList(flags.repos);
   const { base, force } = flags;
-  const result = await change({ root, run: run.value, branch, repos, base, force, onOutput, log });
+  const result = await change({ ...target, branch, repos, base, force, onOutput, log });
   if (!result.ok) return fail(result.error);
   const { eventError: unrecorded, ...report } = result.value;
   printJson(report);
@@ -770,14 +780,11 @@ const main = async (argv: readonly string[]): Promise<void> => {
   if (argv.includes("--help") || argv.includes("-h")) return void process.stdout.write(USAGE);
   const line = parseCommandLine(argv);
   if (!line.ok) return fail(line.error);
-  const root = await resolveRoot(line.value.flags.root);
-  if (!root.ok) return fail(root.error);
-  if (line.value.command === "info") {
-    const info = await workspaceInfo(root.value);
-    return info.ok ? printJson(info.value) : fail(info.error);
-  }
+  const target = await findTarget(line.value.flags);
+  if (!target.ok) return fail(target.error);
+  if (line.value.command === "info") return printJson(workspaceInfo(target.value.config));
   const { command, branch, flags } = line.value;
-  await changeWorkspace(CHANGES[command], root.value, branch, flags);
+  await changeWorkspace(CHANGES[command], target.value, branch, flags);
 };
 
 if (import.meta.main) {

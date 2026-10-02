@@ -8,7 +8,7 @@ import {
   type ILogger,
   jsonLogger,
   LogLevelSchema,
-  loadConfig,
+  loadRunConfig,
   NameSchema,
   NOT_FOUND,
   NonEmptyStringSchema,
@@ -16,8 +16,7 @@ import {
   type RunRef,
   readState,
   registryPath,
-  resolveRoot,
-  resolveRun,
+  requireRun,
   runDirOf,
   type SpawnResult,
   spawn,
@@ -46,19 +45,12 @@ export type CapturedBaseline = Readonly<{ path: string; baseline: Baseline }>;
 const BASELINE_PATH = "artifacts/baseline.json";
 
 export type BaselineError = Readonly<{
-  code:
-    | "CONFIG_MISSING"
-    | "CONFIG_AMBIGUOUS"
-    | "CONFIG_INVALID"
-    | "PACKAGE_UNKNOWN"
-    | "STATE_MISSING"
-    | "CONFIG_STALE"
-    | "WORKTREE_MISSING";
+  code: "PACKAGE_UNKNOWN" | "STATE_MISSING" | "CONFIG_STALE" | "WORKTREE_MISSING";
   message: string;
 }>;
 
 export type BaselineOptions = Readonly<{
-  root: string;
+  config: Config;
   run: RunRef;
   dir?: string | undefined;
   packages: readonly string[];
@@ -236,12 +228,10 @@ const runScripts = async (
 export const captureBaseline = async (
   options: BaselineOptions,
 ): Promise<Result<CapturedBaseline | null, BaselineError>> => {
-  const config = await loadConfig(options.root);
-  if (!config.ok) return config;
   const workspace = await resolveWorkspace(options);
   if (!workspace.ok) return workspace;
   const log = options.log.child({ component: "baseline" });
-  const scripts = collectScripts(config.value, workspace.value, options.packages, log);
+  const scripts = collectScripts(options.config, workspace.value, options.packages, log);
   if (!scripts.ok) return scripts;
   if (scripts.value.length === 0) return { ok: true, value: null };
   const baseline = await runScripts(scripts.value, log);
@@ -255,17 +245,18 @@ export const captureBaseline = async (
 // stdout carries only the report, so failures are logged to stderr, at warn unless LOG_LEVEL says otherwise.
 const log = jsonLogger({ level: LogLevelSchema.catch("warn").parse(process.env.LOG_LEVEL) });
 
-const USAGE = `usage: baseline.ts --run NAME [--packages A,B] [--dir DIR] [--root DIR]
+const USAGE = `usage: baseline.ts [--run NAME | --run-id ID] [--packages A,B] [--dir DIR]
 
-Runs the config's baseline scripts in the run's workspace (--dir, else state.json's
+Runs the run's config's baseline scripts in its workspace (--dir, else state.json's
 workspace.path), writes artifacts/baseline.json and prints { path, workspace, packages }.
+With neither --run nor --run-id, the run is $HARNESS_RUN_ID.
 `;
 
 const FLAGS = {
   run: { type: "string" },
+  "run-id": { type: "string" },
   packages: { type: "string" },
   dir: { type: "string" },
-  root: { type: "string" },
 } as const;
 
 const fail = (error: string): void => {
@@ -283,18 +274,19 @@ const main = async (argv: readonly string[]): Promise<void> => {
   if (argv.includes("--help") || argv.includes("-h")) return void process.stdout.write(USAGE);
   // parseArgs throws on an unknown flag; main's caller prints that error.
   const flags = parseArgs({ args: [...argv], options: FLAGS }).values;
-  const { run: name, packages, dir } = flags;
-  if (name === undefined) return fail(`--run is required\n\n${USAGE}`);
-  const root = await resolveRoot(flags.root);
-  if (!root.ok) return fail(root.error);
-  const run = await resolveRun({
+  const { packages, dir } = flags;
+  const run = await requireRun({
     registry: createRegistryReader(registryPath()),
-    root: root.value,
-    name,
+    name: flags.run,
+    id: flags["run-id"],
+    env: process.env,
+    cwd: process.cwd(),
   });
   if (!run.ok) return fail(run.error);
+  const config = await loadRunConfig(run.value);
+  if (!config.ok) return fail(config.error);
   const result = await captureBaseline({
-    root: root.value,
+    config: config.value.config,
     run: run.value,
     dir: dir === undefined ? undefined : resolve(dir),
     packages: packages === undefined ? [] : splitList(packages),

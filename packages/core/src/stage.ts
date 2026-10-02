@@ -122,8 +122,8 @@ export const spawnOrchestrateHelper = ({
   run,
   sessionId,
 }: Readonly<{ command: string; id: string; run: RunRef; sessionId: string }>): void => {
-  const args = [ORCHESTRATE_SCRIPT, command, id, "--run", run.name, "--session-id", sessionId];
-  spawnDetached(process.execPath, [...args, "--root", run.cwd], { cwd: run.cwd, output: "ignore" });
+  const args = [ORCHESTRATE_SCRIPT, command, id, "--run-id", run.id, "--session-id", sessionId];
+  spawnDetached(process.execPath, args, { cwd: run.cwd, output: "ignore" });
 };
 
 // The server that asks for this runs under bun, so execPath is bun.

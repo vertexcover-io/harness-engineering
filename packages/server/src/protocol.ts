@@ -26,6 +26,8 @@ export const StartRunBodySchema = z.strictObject({
   inputs: JsonObjectSchema,
   cwd: AbsolutePathSchema,
   name: SlugSchema.optional(),
+  // the config file harness run --config named; the run reads it instead of its checkout's
+  config: AbsolutePathSchema.optional(),
 });
 export type StartRunBody = z.infer<typeof StartRunBodySchema>;
 

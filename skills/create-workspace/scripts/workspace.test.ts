@@ -10,16 +10,39 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ERROR_MESSAGE_LIMIT, type RunRef, runDirOf } from "@harness/sdk";
+import {
+  ERROR_MESSAGE_LIMIT,
+  loadCheckoutConfig,
+  type Result,
+  type RunRef,
+  runDirOf,
+} from "@harness/sdk";
 import { jsonlEventStore } from "@harness/sdk/internal";
 import {
-  addRepositories,
+  addRepositories as addWith,
   CreateWorkspaceInputSchema,
-  createWorkspace,
+  createWorkspace as createWith,
   type OutputLine,
   type RepoOutcome,
-  removeWorkspace,
+  removeWorkspace as removeWith,
+  type WorkspaceOptions,
+  type WorkspaceReport,
 } from "./workspace.ts";
+
+type Options = Omit<WorkspaceOptions, "config">;
+
+// Reads the repo's config at call time, as the script does with no run, so a test can write the
+// config just before the call.
+const changeWithConfig = async (
+  change: typeof createWith,
+  options: Options,
+): Promise<Result<WorkspaceReport>> => {
+  const loaded = await loadCheckoutConfig(options.root);
+  return loaded.ok ? change({ ...options, config: loaded.value.config }) : loaded;
+};
+const createWorkspace = (options: Options) => changeWithConfig(createWith, options);
+const addRepositories = (options: Options) => changeWithConfig(addWith, options);
+const removeWorkspace = (options: Options) => changeWithConfig(removeWith, options);
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
