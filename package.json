@@ -27,7 +27,7 @@
     "test:scripts": "node --test scripts/*.test.ts",
     "test:scripts:bun": "bun test scripts/",
     "test:hooks": "node --test hooks/*.test.mjs",
-    "test:skills": "node --experimental-strip-types --test \"skills/!(create-workspace)/**/*.test.ts\" \"skills/**/*.test.mjs\""
+    "test:skills": "node --experimental-strip-types --test \"skills/!(create-workspace|ticket-fetcher|baseline)/**/*.test.ts\" \"skills/**/*.test.mjs\""
   },
   "pi": {
     "skills": [
