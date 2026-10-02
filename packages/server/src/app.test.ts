@@ -68,6 +68,7 @@ const buildDeps = async (
     },
     log,
     home: "/home/.harness",
+    viewerOrigin: "http://localhost:1",
     pid: 4242,
     version: "0.0.0-test",
   };
@@ -404,5 +405,33 @@ describe("createHarnessClient", () => {
       ok: false,
       error: { code: "internal", message: "server unreachable" },
     });
+  });
+});
+
+describe("run page URL", () => {
+  test("SC11: POST /runs returns the page URL, GET /runs/:id/view returns it later, and a missing run is 404", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    const deps = {
+      ...(await buildDeps(() =>
+        Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } }),
+      )),
+      viewerOrigin: "http://localhost:4321",
+    };
+    const app = createApp(deps);
+
+    const started = await app.request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+    });
+    const { run, view } = (await started.json()) as { run: { id: string }; view: string };
+    expect(view).toBe(`http://localhost:4321/runs/${run.id}`);
+
+    const again = await app.request(`/runs/${run.id}/view`);
+    expect(await again.json()).toEqual({ view });
+
+    const missing = await app.request("/runs/r-missing/view");
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as { error: { code: string } }).error.code).toBe("not-found");
   });
 });

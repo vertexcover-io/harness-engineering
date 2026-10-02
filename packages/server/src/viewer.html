@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Artifact Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* Layout: three working panes (files | rendered artifact | comment threads) over a live tmux strip. */
+:root {
+  --bg: #f4f6f5; --panel: #ffffff; --panel-2: #edf1ef; --line: #d9e0dc;
+  --fg: #18211d; --muted: #5a6862; --accent: #1d6b62; --accent-fg: #ffffff; --accent-soft: #d9eeea;
+  --mark: #fde7a4; --mark-line: #c99400;
+  --del: #b2362d; --del-soft: #fbe2df; --rep: #6449b0; --rep-soft: #ebe5fa;
+  --ok: #2d7a32; --ok-soft: #e0f1e1; --info: #2b5ca4; --info-soft: #e0eaf8; --warn: #915f00; --warn-soft: #faeed3;
+  --term-bg: #141c19; --term-fg: #d6e2dc; --term-dim: #7b8b84; --term-accent: #7ccfc2; --term-warn: #e9bc62; --term-rule: #33413b;
+  --shadow: 0 8px 28px rgba(16, 32, 26, .14);
+  --ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --read: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1412; --panel: #161d1a; --panel-2: #1c2521; --line: #29342f;
+    --fg: #e1eae6; --muted: #92a29b; --accent: #5cc0b2; --accent-fg: #0c1714; --accent-soft: #173330;
+    --mark: #5b4a12; --mark-line: #d9b23a;
+    --del: #f07f75; --del-soft: #3b1d1a; --rep: #b6a0f2; --rep-soft: #2a2341;
+    --ok: #79c97d; --ok-soft: #1a321e; --info: #8bb2f2; --info-soft: #1a2740; --warn: #e7b65c; --warn-soft: #3a2d12;
+    --term-bg: #0a0e0c; --term-rule: #26302c; --shadow: 0 8px 28px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1412; --panel: #161d1a; --panel-2: #1c2521; --line: #29342f;
+  --fg: #e1eae6; --muted: #92a29b; --accent: #5cc0b2; --accent-fg: #0c1714; --accent-soft: #173330;
+  --mark: #5b4a12; --mark-line: #d9b23a;
+  --del: #f07f75; --del-soft: #3b1d1a; --rep: #b6a0f2; --rep-soft: #2a2341;
+  --ok: #79c97d; --ok-soft: #1a321e; --info: #8bb2f2; --info-soft: #1a2740; --warn: #e7b65c; --warn-soft: #3a2d12;
+  --term-bg: #0a0e0c; --term-rule: #26302c; --shadow: 0 8px 28px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--ui); }
+* { box-sizing: border-box; }
+[hidden] { display: none; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) 360px;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "bar bar bar" "files doc threads";
+}
+
+/* top bar */
+.bar { grid-area: bar; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: .01em; }
+.brand-mark { width: 18px; height: 18px; border-radius: 4px; background: var(--accent); position: relative; }
+.brand-mark::after { content: ""; position: absolute; inset: 5px 4px; border-top: 2px solid var(--accent-fg); border-bottom: 2px solid var(--accent-fg); }
+.run { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.run b { color: var(--fg); font-weight: 500; }
+.spacer { flex: 1; }
+.tabs { display: flex; gap: 2px; align-self: stretch; align-items: stretch; margin: -10px 0; }
+.tab { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 13px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; }
+.tab[aria-current="page"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tab.soon { cursor: default; }
+.tab small { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; padding: 0 5px; border-radius: 999px; background: var(--panel-2); }
+@keyframes pulse { 50% { opacity: .25; } }
+.pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 500; background: var(--ok-soft); color: var(--ok); }
+.pill[data-state="waiting"] { background: var(--warn-soft); color: var(--warn); }
+.pill[data-state="stopped"], .pill[data-state="starting"] { background: var(--panel-2); color: var(--muted); }
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill[hidden] { display: none; }
+
+/* files */
+.files { grid-area: files; border-right: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 14px 10px; display: flex; flex-direction: column; gap: 6px; }
+.side-label { font-family: var(--mono); font-size: 11.5px; color: var(--muted); padding: 0 8px 4px; }
+.file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.file-btn { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; text-align: left; padding: 6px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--fg); }
+.file-btn:hover { background: var(--panel-2); }
+.file-btn[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.file-btn .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-btn .dir { color: var(--muted); }
+.count { font-family: var(--ui); font-size: 11px; min-width: 18px; text-align: center; padding: 0 5px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.file-btn[aria-current="true"] .count { background: var(--panel); color: var(--accent); }
+.folder { font-family: var(--mono); font-size: 11.5px; color: var(--muted); padding: 8px 8px 2px; }
+.file-list .nested .file-btn { padding-left: 20px; }
+.file-btn.view-only .name { color: var(--muted); }
+.ftype { font-family: var(--ui); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.draft-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; animation: pulse 1.4s ease-in-out infinite; }
+.side-empty { font-size: 12.5px; color: var(--muted); padding: 4px 8px; }
+.badge { font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+.badge.draft { background: var(--warn-soft); color: var(--warn); }
+.badge.final { background: var(--ok-soft); color: var(--ok); }
+.badge.readonly { background: var(--panel-2); color: var(--muted); }
+.mode-btn { display: inline-flex; align-items: center; gap: 8px; }
+.mode-btn .knob { width: 26px; height: 15px; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; }
+.mode-btn .knob::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--panel); transition: left .15s; }
+.mode-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.mode-btn[aria-pressed="true"] .knob { background: var(--accent); }
+.mode-btn[aria-pressed="true"] .knob::after { left: 13px; }
+.mode-btn:disabled { opacity: .45; cursor: default; }
+kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+.code-view { margin: 28px 24px 80px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; counter-reset: ln; padding: 10px 0; }
+.code-view span { display: block; white-space: pre; padding-right: 16px; }
+.code-view span::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 3.2em; margin-right: 14px; text-align: right; color: var(--muted); opacity: .6; }
+.img-view { margin: 28px 24px 80px; display: grid; gap: 8px; justify-items: start; }
+.img-view img { border: 1px solid var(--line); border-radius: 10px; max-width: 100%; }
+.empty-state { max-width: 520px; margin: 12vh auto 0; padding: 0 24px; display: flex; flex-direction: column; gap: 14px; }
+.empty-state h2 { font-size: 20px; margin: 0; text-wrap: balance; }
+.empty-state p { margin: 0; color: var(--muted); }
+.empty-state .watch { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12.5px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; align-self: flex-start; }
+.empty-state .watch .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: pulse 1.4s ease-in-out infinite; }
+.empty-state ol { margin: 0; padding-left: 20px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.side-note { margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.side-note code { font-family: var(--mono); font-size: 11.5px; }
+
+/* document */
+.doc-pane { grid-area: doc; overflow: auto; position: relative; }
+.doc-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 24px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+.doc-head[hidden] { display: none; }
+.doc-path { font-family: var(--mono); font-size: 13px; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 5px 11px; font-size: 13px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 500; }
+.btn.primary:disabled { opacity: .45; cursor: default; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.ghost:hover { color: var(--fg); background: var(--panel-2); }
+.hint { font-size: 12.5px; color: var(--muted); }
+
+.doc { max-width: 74ch; margin: 0 auto; padding: 28px 24px 80px 72px; font-family: var(--read); font-size: 16.5px; line-height: 1.65; }
+.doc h1, .doc h2, .doc h3 { font-family: var(--ui); line-height: 1.25; text-wrap: balance; }
+.doc h1 { font-size: 26px; font-weight: 600; margin: 0 0 18px; }
+.doc h2 { font-size: 19px; font-weight: 600; margin: 34px 0 10px; }
+.doc h3 { font-size: 16px; font-weight: 600; margin: 24px 0 8px; }
+.doc p, .doc ul, .doc ol { margin: 0 0 14px; }
+.doc li { margin-bottom: 4px; }
+.doc code { font-family: var(--mono); font-size: .82em; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+.doc table { border-collapse: collapse; font-family: var(--ui); font-size: 13.5px; line-height: 1.45; margin: 0 0 18px; width: 100%; }
+.doc th, .doc td { border-bottom: 1px solid var(--line); padding: 7px 10px 7px 0; text-align: left; vertical-align: top; }
+.doc th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.table-wrap { overflow: visible; }
+.table-wrap > table { display: block; overflow-x: auto; }
+.doc, .doc > * { overflow-wrap: anywhere; }
+.doc > [data-lines] { position: relative; }
+.doc > [data-lines]::before { content: "L" attr(data-lines); position: absolute; left: -64px; top: .35em; width: 52px; text-align: right; font-family: var(--mono); font-size: 10.5px; line-height: 1.4; color: var(--muted); opacity: .55; }
+.doc > h1[data-lines]::before, .doc > h2[data-lines]::before { top: .5em; }
+.doc.flash > [data-lines].changed { animation: changed 2.2s ease-out; }
+@keyframes changed { 0% { background: var(--accent-soft); } 100% { background: transparent; } }
+
+
+/* html artifact frame */
+.html-frame { margin: 28px 24px 80px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+.html-chrome { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel-2); font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.html-chrome i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: inline-block; }
+.html-chrome span { margin-left: 8px; }
+
+/* threads */
+.threads { grid-area: threads; border-left: 1px solid var(--line); background: var(--panel); overflow: auto; display: flex; flex-direction: column; }
+.threads-head { position: sticky; top: 0; z-index: 2; background: var(--panel); padding: 12px 16px 10px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 8px; }
+.threads-head h2 { font-size: 14px; margin: 0; font-weight: 600; }
+.threads-body { padding: 12px 12px 24px; display: flex; flex-direction: column; gap: 12px; }
+.group-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 4px 4px 0; display: flex; align-items: center; gap: 8px; }
+.batch { border: 1px dashed var(--accent); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--accent-soft); }
+.batch-foot { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; }
+.card.focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.card.orphan { background: var(--panel-2); }
+.card-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cid { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.chip { font-size: 11px; font-weight: 500; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.chip.k-delete { background: var(--del-soft); color: var(--del); }
+.chip.k-replace { background: var(--rep-soft); color: var(--rep); }
+.chip.k-global { background: var(--info-soft); color: var(--info); }
+.status { margin-left: auto; font-size: 11.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+.status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.s-draft { color: var(--muted); }
+.s-sent { color: var(--info); }
+.s-waiting { color: var(--warn); }
+.s-waiting::before { animation: pulse 1s infinite; }
+.s-delivered { color: var(--info); }
+.s-answered { color: var(--accent); }
+.s-changed { color: var(--ok); }
+.s-declined { color: var(--del); }
+.loc { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.quote { margin: 0; padding: 2px 0 2px 9px; border-left: 2px solid var(--mark-line); font-family: var(--read); font-size: 13.5px; color: var(--muted); overflow-wrap: anywhere; }
+.quote.k-delete { border-left-color: var(--del); text-decoration: line-through; }
+.quote.k-replace { border-left-color: var(--rep); }
+.quote .arrow { text-decoration: none; display: block; color: var(--fg); }
+.orphan .quote { text-decoration: line-through; opacity: .7; }
+.msg { display: flex; flex-direction: column; gap: 1px; font-size: 13.5px; overflow-wrap: anywhere; }
+.msg .who { font-size: 11px; font-weight: 600; color: var(--muted); }
+.msg.agent .who { color: var(--accent); }
+.msg.agent { padding-left: 9px; border-left: 2px solid var(--accent-soft); }
+.reply-row { display: flex; gap: 6px; }
+.reply-row input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 7px; padding: 5px 8px; font-size: 13px; }
+.x { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 4px; }
+.live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.live.off .dot { background: var(--muted); }
+.send-error { margin: 0; font-size: 12.5px; color: var(--del); }
+.doc-pane.commenting #docRoot { cursor: text; }
+.doc-pane.commenting .doc > [data-lines]:hover { background: color-mix(in srgb, var(--mark) 22%, transparent); border-radius: 3px; }
+.doc-pane.commenting .doc > [data-lines]::before { opacity: 1; color: var(--accent); }
+mark.hl { color: inherit; background: var(--mark); border-bottom: 2px solid var(--mark-line); border-radius: 2px; cursor: pointer; padding: 0 1px; }
+mark.hl.k-delete { background: var(--del-soft); border-bottom-color: var(--del); text-decoration: line-through; text-decoration-color: var(--del); }
+mark.hl.k-replace { background: var(--rep-soft); border-bottom-color: var(--rep); }
+mark.hl.is-draft { background: transparent; border-bottom-style: dashed; }
+mark.hl.is-done { background: transparent; border-bottom-width: 1px; }
+mark.hl.pulse { animation: pulseMark 1.2s ease-out; }
+@keyframes pulseMark { 0%, 40% { box-shadow: 0 0 0 4px var(--mark-line); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.selbar { position: fixed; z-index: 20; display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--fg); box-shadow: var(--shadow); transform: translate(-50%, -100%); }
+.selbar[hidden], .composer[hidden], .toast[hidden] { display: none; }
+.selbar button { border: 0; background: transparent; color: var(--bg); font-size: 12.5px; font-weight: 500; padding: 5px 10px; border-radius: 6px; }
+.selbar button:hover { background: rgba(127, 127, 127, .3); }
+.composer { position: fixed; z-index: 21; width: min(360px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.composer h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.composer textarea { width: 100%; min-height: 76px; resize: vertical; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 7px 9px; font-size: 13.5px; }
+.composer .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.composer .row .hint { margin-right: auto; }
+.toast { position: fixed; z-index: 30; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 9px; font-size: 13px; box-shadow: var(--shadow); max-width: calc(100vw - 32px); }
+.empty { font-size: 13px; color: var(--muted); padding: 14px 6px; }
+
+
+
+@media (max-width: 1100px) {
+  .app { grid-template-columns: 190px minmax(0, 1fr) 320px; }
+  .doc { padding-left: 24px; }
+  .doc > [data-lines]::before { display: none; }
+}
+@media (max-width: 860px) {
+  .app { display: flex; flex-direction: column; height: auto; }
+  .files { border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 16px; }
+  .file-list { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .file-btn { width: auto; border: 1px solid var(--line); }
+  .side-note { display: none; }
+  .doc-head { padding: 10px 16px; position: static; }
+  .mode-btn, .file-btn, #sendBtn, .composer .btn { min-height: 44px; }
+  .doc { padding: 20px 16px 32px; font-size: 16px; }
+  .html-frame { margin: 20px 16px 32px; }
+  .threads { border-left: 0; border-top: 1px solid var(--line); }
+  .threads-head { position: static; }
+  .composer { left: 16px !important; right: 16px; top: auto !important; bottom: 16px; width: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .draft-dot, .empty-state .watch .dot { animation: none; }
+}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>harness view</div>
+    <div class="run">run <b id="runName"></b> · <span id="runId"></span></div>
+    <nav class="tabs" aria-label="Run views">
+      <span class="tab" aria-current="page">Artifacts</span>
+      <span class="tab soon" title="Live DAG of the run's nodes, coming later">Workflow <small>soon</small></span>
+    </nav>
+    <div class="spacer"></div>
+    <span class="pill" id="agentPill" data-state="starting" role="status" hidden><span class="dot"></span><span id="pillText">Agent starting</span></span>
+  </header>
+
+  <nav class="files" aria-label="Artifacts">
+    <div class="side-label" id="sideLabel">artifacts/</div>
+    <ul class="file-list" id="fileList"></ul>
+    <p class="side-note">Every file under the run's <code>artifacts/</code>. New files and edits appear on their own.</p>
+  </nav>
+
+  <main class="doc-pane" id="docPane">
+    <div class="doc-head" id="docHead" hidden>
+      <span class="doc-path" id="docPath"></span>
+      <span class="badge" id="docBadge"></span>
+      <span class="live" id="live" title="Edits and replies stream in from the server"><span class="dot"></span>Live</span>
+      <span class="spacer"></span>
+      <button class="btn mode-btn" type="button" id="modeBtn" aria-pressed="false"><span class="knob" aria-hidden="true"></span>Comment mode <kbd>C</kbd></button>
+      <button class="btn" type="button" id="globalBtn" hidden>Comment on whole file</button>
+    </div>
+    <div id="docHost"></div>
+  </main>
+
+  <aside class="threads" aria-label="Comments">
+    <div class="threads-head"><h2>Comments</h2><span class="hint" id="threadCount"></span></div>
+    <div class="threads-body" id="threads"></div>
+  </aside>
+</div>
+
+<div class="selbar" id="selbar" hidden>
+  <button type="button" data-kind="comment">Comment</button>
+  <button type="button" data-kind="delete">Delete</button>
+  <button type="button" data-kind="replace">Replace</button>
+</div>
+
+<form class="composer" id="composer" hidden>
+  <h3 id="composerTitle">Comment</h3>
+  <blockquote class="quote" id="composerQuote"></blockquote>
+  <label class="hint" for="composerText" id="composerLabel">Your comment</label>
+  <textarea id="composerText"></textarea>
+  <div class="row">
+    <span class="hint">⌘↵ to add</span>
+    <button class="btn ghost" type="button" id="composerCancel">Cancel</button>
+    <button class="btn primary" type="submit">Add to batch</button>
+  </div>
+</form>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module">
+import { findQuote, quoteContext } from "/assets/anchor.js";
+
+const runId = location.pathname.split("/")[2] ?? "";
+const $ = (selector) => document.querySelector(selector);
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const short = (text, n) => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
+
+const MODE_KEY = "harness-viewer:comment-mode";
+const readMode = () => {
+  try { return localStorage.getItem(MODE_KEY) === "on"; } catch { return false; }
+};
+const writeMode = (on) => {
+  try { localStorage.setItem(MODE_KEY, on ? "on" : "off"); } catch {}
+};
+
+let runName = null;
+let files = [];
+let filesJson = "";
+let current = null;
+let currentReply = null;
+let comments = [];
+let delivery = null;
+let drafts = [];
+let nextDraft = 1;
+let commentMode = readMode();
+let focusId = null;
+let sendError = "";
+let blockKeys = new Set();
+
+const base = (path) => path.split("/").pop();
+const rel = (path) => path.replace(/^artifacts\//, "");
+const canComment = (type) => type === "md" || type === "html";
+const currentFile = () => files.find((f) => f.path === current);
+const forFile = (path) => [...comments, ...drafts].filter((c) => c.file === path);
+
+/* ---------- file tree ---------- */
+
+function fileButton(file) {
+  const li = el("li");
+  const btn = el("button", "file-btn");
+  btn.type = "button";
+  btn.setAttribute("aria-current", String(file.path === current));
+  if (!canComment(file.type)) btn.classList.add("view-only");
+  if (file.draft) {
+    const dot = el("span", "draft-dot");
+    dot.title = "Draft: the agent is still writing it";
+    btn.append(dot);
+  }
+  btn.append(el("span", "name", base(file.path)));
+  if (!canComment(file.type)) btn.append(el("span", "ftype", file.path.split(".").pop()));
+  const count = forFile(file.path).length;
+  if (count) btn.append(el("span", "count", String(count)));
+  btn.addEventListener("click", () => select(file.path));
+  li.append(btn);
+  return li;
+}
+
+function renderFiles() {
+  const list = $("#fileList");
+  list.replaceChildren();
+  if (files.length === 0) {
+    list.append(el("li", "side-empty", "No files yet."));
+    return;
+  }
+  for (const file of files.filter((f) => !rel(f.path).includes("/"))) list.append(fileButton(file));
+  const folders = [...new Set(files.map((f) => rel(f.path)).filter((p) => p.includes("/")).map((p) => p.split("/")[0]))];
+  for (const folder of folders) {
+    const li = el("li", "nested");
+    li.append(el("div", "folder", `${folder}/`));
+    const sub = el("ul", "file-list");
+    for (const file of files.filter((f) => rel(f.path).startsWith(`${folder}/`))) sub.append(fileButton(file));
+    li.append(sub);
+    list.append(li);
+  }
+}
+
+function renderHead() {
+  const file = currentFile();
+  $("#docHead").hidden = !file;
+  if (!file) return;
+  $("#docPath").textContent = file.path;
+  const badge = $("#docBadge");
+  if (!canComment(file.type)) {
+    badge.className = "badge readonly";
+    badge.textContent = "View only";
+  } else if (file.draft) {
+    badge.className = "badge draft";
+    badge.textContent = "Draft · the agent is writing it";
+  } else {
+    badge.className = "badge final";
+    badge.textContent = "Final";
+  }
+  const ok = canComment(file.type);
+  const modeBtn = $("#modeBtn");
+  modeBtn.disabled = !ok;
+  modeBtn.title = ok ? "Turn on to select text and comment" : "Comments work on Markdown and HTML files";
+  modeBtn.setAttribute("aria-pressed", String(commentMode && ok));
+  $("#globalBtn").hidden = !(commentMode && ok);
+  $("#docPane").classList.toggle("commenting", commentMode && ok);
+}
+
+function emptyState(starting) {
+  const box = el("div", "empty-state");
+  const watch = el("div", "watch");
+  watch.append(el("span", "dot"));
+  if (starting) {
+    box.append(
+      el("h2", "", "The run is starting"),
+      el("p", "", "harness run opened this page right away. The agent is reading the task and will name the run in a moment; its files appear here after that."),
+    );
+    watch.append("waiting for orchestrate init");
+    box.append(watch);
+    return box;
+  }
+  box.append(
+    el("h2", "", "No artifacts in this run yet"),
+    el("p", "", "Files show up here as soon as the agent writes them."),
+  );
+  watch.append(`watching .harness/${runName}/artifacts/`);
+  box.append(watch);
+  const steps = el("ol");
+  for (const text of [
+    "The design stage writes design.md here first.",
+    "Open it and read it, even while it is still a draft.",
+    "Turn on Comment mode to select text and comment on it.",
+  ]) steps.append(el("li", "", text));
+  box.append(steps);
+  return box;
+}
+
+/* ---------- document ---------- */
+
+function withLineLabels(article) {
+  for (const table of article.querySelectorAll(":scope > table")) {
+    const wrap = el("div", "table-wrap");
+    wrap.dataset.lines = table.dataset.lines;
+    table.replaceWith(wrap);
+    wrap.append(table);
+  }
+}
+
+let mermaidLoading = null;
+function loadMermaid() {
+  mermaidLoading ??= new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
+    script.onload = () => resolve(window.mermaid);
+    script.onerror = () => resolve(null);
+    document.head.append(script);
+  });
+  return mermaidLoading;
+}
+
+async function drawMermaid(root) {
+  const blocks = root.querySelectorAll("pre.mermaid");
+  if (blocks.length === 0) return;
+  const mermaid = await loadMermaid();
+  if (!mermaid) return;
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: false, theme: dark ? "dark" : "default" });
+  await mermaid.run({ nodes: blocks }).catch(() => {});
+}
+
+const MARK_CSS = "mark.hl{color:inherit;background:#fde7a4;border-bottom:2px solid #c99400;border-radius:2px;cursor:pointer;padding:0 1px}mark.hl.k-delete{background:#fbe2df;border-bottom-color:#b2362d;text-decoration:line-through}mark.hl.k-replace{background:#ebe5fa;border-bottom-color:#6449b0}mark.hl.is-draft{background:transparent;border-bottom-style:dashed}mark.hl.is-done{background:transparent;border-bottom-width:1px}mark.hl.pulse{animation:pulseMark 1.2s ease-out}@keyframes pulseMark{0%,40%{box-shadow:0 0 0 4px #c99400}100%{box-shadow:0 0 0 0 transparent}}";
+
+function iframeLoaded(iframe) {
+  const doc = iframe.contentDocument;
+  if (!doc) return;
+  const style = doc.createElement("style");
+  style.textContent = MARK_CSS;
+  doc.head.append(style);
+  doc.addEventListener("selectionchange", scheduleSelection);
+  doc.addEventListener("click", onMarkClick);
+  refresh();
+}
+
+function docView(reply) {
+  if (reply.type === "md") {
+    const article = el("article", "doc");
+    article.id = "docRoot";
+    article.innerHTML = reply.html;
+    withLineLabels(article);
+    drawMermaid(article);
+    return article;
+  }
+  if (reply.type === "html") {
+    const frame = el("div", "html-frame");
+    const chrome = el("div", "html-chrome");
+    chrome.append(el("i"), el("i"), el("i"), el("span", "", reply.path));
+    const iframe = el("iframe");
+    iframe.id = "htmlFrame";
+    iframe.src = `${reply.raw}?v=${Date.now()}`;
+    iframe.title = reply.path;
+    iframe.style.cssText = "width:100%;height:70vh;border:0;background:#fff";
+    iframe.addEventListener("load", () => iframeLoaded(iframe));
+    frame.append(chrome, iframe);
+    return frame;
+  }
+  if (reply.type === "image") {
+    const box = el("div", "img-view");
+    const img = el("img");
+    img.src = reply.raw;
+    img.alt = base(reply.path);
+    box.append(img);
+    return box;
+  }
+  if (reply.type === "text") {
+    const pre = el("pre", "code-view");
+    for (const line of reply.text.replace(/\n$/, "").split("\n")) pre.append(el("span", "", line || " "));
+    return pre;
+  }
+  return el("p", "empty", "No preview for this file type.");
+}
+
+const docRoot = () => {
+  const article = $("#docRoot");
+  if (article) return article;
+  return $("#htmlFrame")?.contentDocument?.body ?? null;
+};
+
+const blockKey = (block) => `${block.dataset.lines}|${block.textContent}`;
+
+function flashChanged(root, before) {
+  if (before.size === 0) return;
+  root.classList.add("flash");
+  for (const block of root.querySelectorAll(":scope > [data-lines]")) {
+    if (!before.has(blockKey(block))) block.classList.add("changed");
+  }
+}
+
+async function showFile(path, { keepScroll }) {
+  const res = await fetch(`/runs/${runId}/file?path=${encodeURIComponent(path)}`);
+  if (current !== path) return;
+  if (!res.ok) {
+    $("#docHost").replaceChildren(el("p", "empty", "This file could not be read."));
+    return;
+  }
+  currentReply = await res.json();
+  const pane = $("#docPane");
+  const top = pane.scrollTop;
+  const before = blockKeys;
+  const view = docView(currentReply);
+  $("#docHost").replaceChildren(view);
+  blockKeys = new Set();
+  if (currentReply.type === "md") {
+    for (const block of view.querySelectorAll(":scope > [data-lines]")) blockKeys.add(blockKey(block));
+    if (keepScroll) flashChanged(view, before);
+  }
+  pane.scrollTop = keepScroll ? top : 0;
+  refresh();
+}
+
+async function select(path) {
+  current = path;
+  focusId = null;
+  currentReply = null;
+  blockKeys = new Set();
+  history.replaceState(null, "", `#${path}`);
+  hideSelbar();
+  renderFiles();
+  renderHead();
+  await showFile(path, { keepScroll: false });
+}
+
+/* ---------- highlights ---------- */
+
+function clearMarks(root) {
+  for (const mark of root.querySelectorAll("mark.hl")) {
+    const parent = mark.parentNode;
+    mark.replaceWith(...mark.childNodes);
+    parent.normalize();
+  }
+}
+
+function wrapRange(root, [start, end], comment) {
+  const doc = root.ownerDocument;
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  let pos = 0;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const stop = pos + n.data.length;
+    if (stop > start && pos < end) hits.push([n, Math.max(start, pos) - pos, Math.min(end, stop) - pos]);
+    pos = stop;
+    if (pos >= end) break;
+  }
+  for (const [node, a, b] of hits) {
+    let text = node;
+    if (a > 0) text = text.splitText(a);
+    if (b - a < text.data.length) text.splitText(b - a);
+    const mark = doc.createElement("mark");
+    mark.className = `hl k-${comment.kind}`;
+    if (comment.draft) mark.classList.add("is-draft");
+    if (["answered", "declined", "changed"].includes(comment.status)) mark.classList.add("is-done");
+    mark.dataset.cid = comment.id;
+    text.parentNode.insertBefore(mark, text);
+    mark.appendChild(text);
+  }
+}
+
+function applyHighlights() {
+  const root = docRoot();
+  for (const c of forFile(current ?? "")) {
+    c.orphan = false;
+    c.pos = Number.POSITIVE_INFINITY;
+  }
+  if (!root || !currentReply) return;
+  clearMarks(root);
+  const full = root.textContent;
+  for (const c of forFile(current)) {
+    if (!c.anchor) continue;
+    const range = findQuote(full, c.anchor);
+    if (!range) {
+      c.orphan = true;
+      continue;
+    }
+    c.pos = range[0];
+  }
+  const placed = forFile(current).filter((c) => c.anchor && !c.orphan).sort((a, b) => b.pos - a.pos);
+  for (const c of placed) wrapRange(root, [c.pos, c.pos + c.anchor.quote.length], c);
+}
+
+function onMarkClick(e) {
+  const mark = e.target.closest?.("mark[data-cid]");
+  if (!mark) return;
+  const sel = (mark.ownerDocument.defaultView ?? window).getSelection();
+  if (sel?.isCollapsed) focusComment(mark.dataset.cid, "card");
+}
+
+function pulse(mark) {
+  mark.classList.remove("pulse");
+  void mark.offsetWidth;
+  mark.classList.add("pulse");
+}
+
+function focusComment(id, target) {
+  focusId = id;
+  renderThreads();
+  if (target === "doc") {
+    const mark = docRoot()?.querySelector(`mark[data-cid="${id}"]`);
+    if (!mark) return;
+    mark.scrollIntoView({ block: "center", behavior: "smooth" });
+    pulse(mark);
+    return;
+  }
+  document.querySelector(`#threads .card[data-cid="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+/* ---------- threads ---------- */
+
+function statusLabel(c) {
+  if (c.draft) return ["s-draft", "Not sent"];
+  if (c.status === "sent" && delivery?.kind === "waiting") return ["s-waiting", `Waiting: ${delivery.reason}`];
+  return {
+    sent: ["s-sent", "Sending"],
+    delivered: ["s-delivered", "With the agent"],
+    answered: ["s-answered", "Answered"],
+    changed: ["s-changed", "Changed"],
+    declined: ["s-declined", "Declined"],
+  }[c.status] ?? ["s-sent", c.status];
+}
+
+function locationText(c) {
+  const name = base(c.file);
+  if (!c.anchor) return `${name} · whole file`;
+  if (c.anchor.selector) return `${name} · ${c.anchor.selector}`;
+  const [start, end] = c.anchor.lines ?? [];
+  const where = start === undefined ? name : `${name}:${start === end ? start : `${start}-${end}`}`;
+  return c.anchor.heading ? `${where} · ${c.anchor.heading}` : where;
+}
+
+function draftThread(c) {
+  if (c.kind === "delete") return c.text ? [{ by: "user", text: c.text }] : [];
+  if (c.kind === "replace") return [];
+  return [{ by: "user", text: c.text }];
+}
+
+async function sendReply(c, input) {
+  const text = input.value.trim();
+  if (!text) return;
+  const res = await fetch(`/runs/${runId}/comments/${c.id}/reply`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) return;
+  input.value = "";
+  await refreshComments();
+}
+
+function card(c) {
+  const node = el("div", "card");
+  node.dataset.cid = c.id;
+  if (c.orphan) node.classList.add("orphan");
+  if (focusId === c.id) node.classList.add("focus");
+  const top = el("div", "card-top");
+  top.append(el("span", "cid", c.draft ? "draft" : c.id));
+  if (c.kind !== "comment") top.append(el("span", `chip k-${c.kind}`, { delete: "Delete", replace: "Replace", global: "Whole file" }[c.kind]));
+  const [cls, label] = statusLabel(c);
+  top.append(el("span", `status ${cls}`, label));
+  if (c.draft) {
+    const x = el("button", "x", "×");
+    x.type = "button";
+    x.setAttribute("aria-label", "Remove draft");
+    x.addEventListener("click", (e) => {
+      e.stopPropagation();
+      drafts = drafts.filter((d) => d !== c);
+      refresh();
+    });
+    top.append(x);
+  }
+  node.append(top, el("div", "loc", locationText(c)));
+  if (c.anchor) {
+    const q = el("blockquote", `quote k-${c.kind}`, short(c.anchor.quote, 140));
+    if (c.kind === "replace" && c.draft) q.append(el("span", "arrow", `→ ${short(c.text, 140)}`));
+    node.append(q);
+  }
+  for (const m of c.draft ? draftThread(c) : c.thread) {
+    const msg = el("div", `msg ${m.by}`);
+    msg.append(el("span", "who", m.by === "agent" ? "Agent" : "You"), el("span", "", m.text));
+    node.append(msg);
+  }
+  if (!c.draft) {
+    const row = el("form", "reply-row");
+    const input = el("input");
+    input.id = `reply-${c.id}`;
+    input.placeholder = "Reply…";
+    input.setAttribute("aria-label", `Reply to ${c.id}`);
+    const go = el("button", "btn", "Reply");
+    go.type = "submit";
+    row.append(input, go);
+    row.addEventListener("submit", (e) => {
+      e.preventDefault();
+      sendReply(c, input);
+    });
+    node.append(row);
+  }
+  node.addEventListener("click", (e) => {
+    if (e.target.closest("form, button")) return;
+    focusComment(c.id, "doc");
+  });
+  return node;
+}
+
+function threadsEmptyText(file) {
+  if (file && !canComment(file.type)) return "This file is view only. Comments work on Markdown and HTML files.";
+  if (!commentMode) return "No comments on this file yet. Turn on Comment mode (press C), then select text to add one.";
+  return "No comments on this file yet. Select text in the page to add one, or comment on the whole file.";
+}
+
+function renderThreads() {
+  const body = $("#threads");
+  const typed = [...body.querySelectorAll("input")].map((i) => [i.id, i.value]);
+  const activeId = body.contains(document.activeElement) ? document.activeElement.id : null;
+  body.replaceChildren();
+  if (drafts.length) {
+    const batch = el("div", "batch");
+    batch.append(el("div", "group-label", `Not sent yet · ${drafts.length}`));
+    for (const d of drafts) batch.append(card(d));
+    const foot = el("div", "batch-foot");
+    foot.append(el("span", "hint", "Sent together as one message"));
+    const send = el("button", "btn primary", `Send ${drafts.length} to the agent`);
+    send.type = "button";
+    send.id = "sendBtn";
+    send.addEventListener("click", sendDrafts);
+    foot.append(send);
+    batch.append(foot);
+    if (sendError) batch.append(el("p", "send-error", sendError));
+    body.append(batch);
+  }
+  const mine = comments.filter((c) => c.file === current);
+  const live = mine.filter((c) => !c.orphan).sort((a, b) => a.pos - b.pos);
+  const gone = mine.filter((c) => c.orphan);
+  $("#threadCount").textContent = current ? `${mine.length} on ${base(current)}` : "";
+  if (!mine.length && !drafts.length) body.append(el("p", "empty", threadsEmptyText(currentFile())));
+  for (const c of live) body.append(card(c));
+  if (gone.length) {
+    body.append(el("div", "group-label", "Text no longer in the file"));
+    for (const c of gone) body.append(card(c));
+  }
+  for (const [id, value] of typed) {
+    const input = document.getElementById(id);
+    if (input) input.value = value;
+  }
+  if (activeId) document.getElementById(activeId)?.focus();
+}
+
+function refresh() {
+  applyHighlights();
+  renderFiles();
+  renderThreads();
+}
+
+async function sendDrafts() {
+  sendError = "";
+  const batch = drafts.map((d) => ({
+    file: d.file,
+    kind: d.kind,
+    text: d.text,
+    ...(d.anchor ? { anchor: d.anchor } : {}),
+  }));
+  const res = await fetch(`/runs/${runId}/comments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ comments: batch }),
+  }).catch(() => null);
+  if (res?.status === 201) {
+    drafts = [];
+    await refreshComments();
+    return;
+  }
+  sendError = res ? `Could not send: ${(await res.text()) || res.status}` : "Could not send: the server is not reachable.";
+  renderThreads();
+}
+
+async function refreshComments() {
+  const res = await fetch(`/runs/${runId}/comments`).catch(() => null);
+  if (!res?.ok) return;
+  applyComments(await res.json());
+}
+
+function applyComments(body) {
+  comments = body.comments;
+  delivery = body.delivery;
+  refresh();
+}
+
+/* ---------- selection and composer ---------- */
+
+const textOffset = (root, container, offset) => {
+  const range = root.ownerDocument.createRange();
+  range.selectNodeContents(root);
+  range.setEnd(container, offset);
+  return range.toString().length;
+};
+
+const elementOf = (node) => (node.nodeType === 1 ? node : node.parentElement);
+
+function headingFor(root, node) {
+  let h2 = null;
+  let h3 = null;
+  for (const h of root.querySelectorAll("h2, h3")) {
+    const pos = h.compareDocumentPosition(node);
+    if (!(pos & Node.DOCUMENT_POSITION_FOLLOWING) && !(pos & Node.DOCUMENT_POSITION_CONTAINED_BY)) continue;
+    if (h.tagName === "H2") { h2 = h; h3 = null; } else { h3 = h; }
+  }
+  return [h2, h3].filter(Boolean).map((h) => h.textContent.trim()).join(" > ");
+}
+
+function linesOf(node) {
+  const block = elementOf(node)?.closest("[data-lines]");
+  return block ? block.dataset.lines.split("-").map(Number) : null;
+}
+
+function mergedLines(a, b) {
+  const found = [linesOf(a), linesOf(b)].filter(Boolean);
+  if (found.length === 0) return null;
+  return [Math.min(...found.map((l) => l[0])), Math.max(...found.map((l) => l[1]))];
+}
+
+function cssPath(node, root) {
+  let cur = elementOf(node);
+  const parts = [];
+  while (cur && cur !== root) {
+    if (cur.tagName !== "MARK") {
+      const same = [...cur.parentElement.children].filter((c) => c.tagName === cur.tagName);
+      const nth = same.length > 1 ? `:nth-of-type(${same.indexOf(cur) + 1})` : "";
+      parts.unshift(cur.tagName.toLowerCase() + (cur.classList[0] ? `.${cur.classList[0]}` : "") + nth);
+    }
+    cur = cur.parentElement;
+  }
+  return parts.join(" > ");
+}
+
+function frameOffset() {
+  const frame = $("#htmlFrame");
+  if (!frame?.contentDocument?.body) return { x: 0, y: 0 };
+  const box = frame.getBoundingClientRect();
+  return { x: box.left, y: box.top };
+}
+
+function captureSelection() {
+  const file = currentFile();
+  if (!commentMode || !file || !canComment(file.type)) return null;
+  const root = docRoot();
+  if (!root) return null;
+  const sel = root.ownerDocument.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) return null;
+  const raw = range.toString();
+  const quote = raw.trim();
+  if (!quote) return null;
+  const start = textOffset(root, range.startContainer, range.startOffset) + (raw.length - raw.trimStart().length);
+  const anchor = { quote, ...quoteContext(root.textContent, start, quote) };
+  if (file.type === "html") {
+    anchor.selector = cssPath(range.startContainer, root);
+  } else {
+    const lines = mergedLines(range.startContainer, range.endContainer);
+    if (lines) anchor.lines = lines;
+    const heading = headingFor(root, range.startContainer);
+    if (heading) anchor.heading = heading;
+  }
+  const box = range.getBoundingClientRect();
+  const off = frameOffset();
+  const rect = { left: box.left + off.x, top: box.top + off.y, width: box.width, bottom: box.bottom + off.y };
+  return { rect, anchor };
+}
+
+let pending = null;
+const hideSelbar = () => { $("#selbar").hidden = true; };
+
+function showSelbar() {
+  const captured = captureSelection();
+  if (!captured) {
+    if (!$("#composer").contains(document.activeElement)) hideSelbar();
+    return;
+  }
+  pending = captured;
+  const bar = $("#selbar");
+  const r = captured.rect;
+  bar.style.left = `${Math.min(Math.max(r.left + r.width / 2, 120), window.innerWidth - 120)}px`;
+  bar.style.top = `${Math.max(r.top - 8, 52)}px`;
+  bar.hidden = false;
+}
+
+let selTimer = null;
+function scheduleSelection() {
+  clearTimeout(selTimer);
+  selTimer = setTimeout(showSelbar, 220);
+}
+document.addEventListener("selectionchange", scheduleSelection);
+
+$("#selbar").addEventListener("mousedown", (e) => e.preventDefault());
+$("#selbar").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn || !pending) return;
+  openComposer(btn.dataset.kind, pending.anchor, pending.rect);
+});
+
+let composing = null;
+
+function openComposer(kind, anchor, rect) {
+  hideSelbar();
+  composing = { kind, anchor };
+  const titles = { comment: "Comment", delete: "Ask to delete this", replace: "Suggest a replacement", global: `Comment on ${base(current)}` };
+  const labels = { comment: "Your comment", delete: "Why? (optional)", replace: "Replace with", global: "Your comment" };
+  $("#composerTitle").textContent = titles[kind];
+  $("#composerLabel").textContent = labels[kind];
+  const q = $("#composerQuote");
+  q.className = `quote k-${kind}`;
+  q.hidden = !anchor;
+  q.textContent = anchor ? short(anchor.quote, 160) : "";
+  const ta = $("#composerText");
+  ta.value = kind === "replace" ? anchor.quote : "";
+  const box = $("#composer");
+  box.hidden = false;
+  const top = rect ? rect.bottom + 10 : 120;
+  const left = rect ? rect.left : window.innerWidth / 2 - 180;
+  box.style.top = `${Math.min(top, window.innerHeight - box.offsetHeight - 16)}px`;
+  box.style.left = `${Math.min(Math.max(left, 16), window.innerWidth - box.offsetWidth - 16)}px`;
+  ta.focus();
+  if (kind === "replace") ta.select();
+}
+
+function closeComposer() {
+  $("#composer").hidden = true;
+  composing = null;
+  window.getSelection()?.removeAllRanges();
+  $("#htmlFrame")?.contentDocument?.getSelection()?.removeAllRanges();
+}
+
+$("#composerCancel").addEventListener("click", closeComposer);
+$("#composerText").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    $("#composer").requestSubmit();
+  }
+});
+const inTextField = () => {
+  const a = document.activeElement;
+  return a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+};
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeComposer();
+    hideSelbar();
+    return;
+  }
+  if (e.key.toLowerCase() === "c" && !e.metaKey && !e.ctrlKey && !e.altKey && !inTextField()) toggleMode();
+});
+
+$("#composer").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!composing) return;
+  const text = $("#composerText").value.trim();
+  const { kind, anchor } = composing;
+  if (kind !== "delete" && !text) return;
+  drafts.push({ id: `d${nextDraft++}`, draft: true, file: current, kind, text, anchor: anchor ?? null, thread: [] });
+  closeComposer();
+  refresh();
+});
+
+$("#globalBtn").addEventListener("click", (e) => openComposer("global", null, e.currentTarget.getBoundingClientRect()));
+
+function toggleMode() {
+  const file = currentFile();
+  if (!file || !canComment(file.type)) return;
+  commentMode = !commentMode;
+  writeMode(commentMode);
+  if (!commentMode) hideSelbar();
+  renderHead();
+  renderThreads();
+}
+$("#modeBtn").addEventListener("click", toggleMode);
+
+$("#docHost").addEventListener("click", onMarkClick);
+
+/* ---------- live stream ---------- */
+
+let toastTimer = null;
+function toast(text) {
+  const t = $("#toast");
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+}
+
+function showRun(body) {
+  runName = body.run.name;
+  $("#runName").textContent = runName ?? "starting";
+  if (runName) $("#sideLabel").textContent = `.harness/${runName}/artifacts/`;
+}
+
+async function applyFiles(body) {
+  const json = JSON.stringify(body);
+  if (json === filesJson) return;
+  filesJson = json;
+  showRun(body);
+  files = body.files;
+  renderFiles();
+  renderHead();
+  if (body.state === "starting" || files.length === 0) {
+    if (!current) $("#docHost").replaceChildren(emptyState(body.state === "starting"));
+    return;
+  }
+  const wanted = decodeURIComponent(location.hash.slice(1));
+  if (!current || !files.some((f) => f.path === current)) {
+    await select(files.some((f) => f.path === wanted) ? wanted : files[0].path);
+  }
+}
+
+function onFile(info) {
+  if (info.path !== current) return;
+  toast(`${base(info.path)} changed`);
+  showFile(current, { keepScroll: true });
+}
+
+const AGENT_LABELS = { starting: "Agent starting", running: "Agent running", stopped: "Agent not running" };
+
+function applyAgent({ state, reason }) {
+  const pill = $("#agentPill");
+  pill.dataset.state = state;
+  $("#pillText").textContent = state === "waiting" ? `Waiting: ${reason}` : AGENT_LABELS[state];
+  pill.hidden = false;
+}
+
+function connect() {
+  const source = new EventSource(`/runs/${runId}/stream`);
+  const setLive = (on) => $("#live").classList.toggle("off", !on);
+  source.onopen = () => setLive(true);
+  source.onerror = () => setLive(false);
+  source.addEventListener("files", (e) => applyFiles(JSON.parse(e.data)));
+  source.addEventListener("file", (e) => onFile(JSON.parse(e.data)));
+  source.addEventListener("agent", (e) => applyAgent(JSON.parse(e.data)));
+  source.addEventListener("comments", (e) => applyComments(JSON.parse(e.data)));
+}
+
+async function load() {
+  $("#runId").textContent = runId;
+  const res = await fetch(`/runs/${runId}/files`);
+  if (!res.ok) {
+    $("#docHost").replaceChildren(el("p", "empty", "No run with this id."));
+    return;
+  }
+  await applyFiles(await res.json());
+  connect();
+}
+
+addEventListener("hashchange", () => {
+  const path = decodeURIComponent(location.hash.slice(1));
+  if (path !== current && files.some((f) => f.path === path)) select(path);
+});
+
+load();
+</script>
+</html>

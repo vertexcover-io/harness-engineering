@@ -12,7 +12,10 @@ export type RunDeps = Readonly<{
   registry: Registry;
   providerFor: (agent: WorkflowAgent) => IAgentProvider;
   home: string;
+  viewerOrigin: string;
 }>;
+
+const viewUrl = (deps: RunDeps, runId: string): string => `${deps.viewerOrigin}/runs/${runId}`;
 
 const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: StartRunBody) => {
   const log = c.get("log").child({ component: "runs" });
@@ -67,11 +70,17 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
   await deps.registry.setTerminal(id, terminalName);
   const run = (await deps.registry.findRun(id)) ?? { ...pending, terminal: terminalName };
   runLog.info({ workflow, cwd, agent, terminalName }, "run started");
-  return c.json({ run, attach: [...terminal.attachCommand()] }, 201);
+  return c.json({ run, attach: [...terminal.attachCommand()], view: viewUrl(deps, id) }, 201);
 };
 
 // Mounted at /runs by app.ts. Chained, so each route's input and output types reach AppType.
 export const runRoutes = (deps: RunDeps) =>
-  new Hono<{ Variables: Vars }>().post("/", jsonBody(StartRunBodySchema), (c) =>
-    startRun(c, deps, c.req.valid("json")),
-  );
+  new Hono<{ Variables: Vars }>()
+    .post("/", jsonBody(StartRunBodySchema), (c) => startRun(c, deps, c.req.valid("json")))
+    .get("/:id/view", async (c) => {
+      const id = c.req.param("id");
+      if ((await deps.registry.findRun(id)) === undefined) {
+        return errorResponse(c, 404, "not-found", `no run with id ${id}`);
+      }
+      return c.json({ view: viewUrl(deps, id) }, 200);
+    });
