@@ -28,7 +28,7 @@ RUN below is the run's spec name. The input may hold:
 |---|---|
 | `workspace` | the create-workspace stage's output. Work in each repo's `worktreeDir`; without it, work in the current checkout. |
 | `phases` | the phase numbers to build. Without it, every phase in the plan. |
-| `feedback` | review items to fix. With it, the assignment is those items; the plan supplies context only. |
+| `feedback` | review items to fix. With it, the assignment is those items; the plan supplies context only. Each item is a defect to reproduce; its `fix` is a suggestion, never a reason to change files outside the assignment. An item with `needsDecision: true` is a product question: ask the user what to do before changing code, and record the answer in `implementation.md`, where qa reads it. |
 
 The first that applies is the assignment:
 
@@ -59,7 +59,7 @@ feature:
 - `## Test Scenarios`: `### Unit`, `### Integration`, `### E2E`, each scenario numbered `SCn`.
   One test per scenario, at the level it sits under. Carry the id in the test title
   (`SC12: …`) so a reviewer can trace tests back to scenarios. `### QA Agent` scenarios are not
-  yours; the verify stage proves them.
+  yours; the qa stage proves them.
 - `## Commit`: the commit message.
 
 ## 3. Build, one phase at a time

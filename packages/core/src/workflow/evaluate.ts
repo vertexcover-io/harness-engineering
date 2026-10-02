@@ -6,6 +6,7 @@ export type NodeResult = Readonly<Pick<NodeRun, "status" | "input" | "output">>;
 
 export type IterationView = Readonly<{
   index: number;
+  max: number;
   previous: JsonValue;
   nodes: Readonly<Record<string, NodeResult>>;
 }>;
@@ -40,7 +41,8 @@ export const parsePath = (expression: string): string[] => {
   if (segments.some((s) => !SEGMENT.test(s) || BLOCKED.has(s)))
     return fail(`invalid path "${text}"`);
   if (root === "inputs") return segments;
-  if (root === "iteration" && (id === "index" || id === "previous")) return segments;
+  if (root === "iteration" && (id === "index" || id === "max" || id === "previous"))
+    return segments;
   const nodeSegments = root === "iteration" && id === "nodes" ? segments.slice(1) : segments;
   const [nodesRoot, nodeId, nodeField] = nodeSegments;
   const isNodePath =
@@ -97,6 +99,7 @@ const readPath = (scope: Scope, segments: readonly string[]): JsonValue => {
   const iteration = scope.iteration ?? fail(`${label}: iteration is only available inside a loop`);
   const [part, ...more] = rest;
   if (part === "index") return descend(iteration.index, more, label);
+  if (part === "max") return descend(iteration.max, more, label);
   if (part === "previous") return descend(iteration.previous, more, label);
   return readNode(iteration.nodes, more, label);
 };

@@ -14,7 +14,7 @@ const template = (rel) => readFileSync(join(REPO, rel), "utf8");
 // Fixtures come from the real templates: a hand-written one only proves the
 // completeness predicate matches this file.
 const PLAN_SHELL = template("skills/planning/scripts/plan-shell.html");
-const PROOF_TEMPLATE = template("skills/functional-verify/references/proof-report-template.html");
+const PROOF_TEMPLATE = template("skills/qa/references/proof-report-template.html");
 
 // A finished plan is the shell with every slot comment written over — here, removed.
 const COMPLETE_PLAN =

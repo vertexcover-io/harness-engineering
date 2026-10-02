@@ -11,8 +11,8 @@
     "bun": ">=1.2"
   },
   "scripts": {
-    "typecheck": "bun run --filter '@harness/*' typecheck && tsc -p skills/create-workspace && tsc -p skills/ticket-fetcher && tsc -p skills/baseline",
-    "test": "bun test ./packages ./skills/create-workspace ./skills/ticket-fetcher ./skills/baseline",
+    "typecheck": "bun run --filter '@harness/*' typecheck && tsc -p skills/create-workspace && tsc -p skills/ticket-fetcher && tsc -p skills/baseline && tsc -p skills/qa",
+    "test": "bun test ./packages ./skills/create-workspace ./skills/ticket-fetcher ./skills/baseline ./skills/qa",
     "lint": "biome check",
     "check": "bun scripts/check.ts",
     "lint:fix": "biome check --write",
@@ -27,7 +27,7 @@
     "test:scripts": "node --test scripts/*.test.ts",
     "test:scripts:bun": "bun test scripts/",
     "test:hooks": "node --test hooks/*.test.mjs",
-    "test:skills": "node --experimental-strip-types --test \"skills/!(create-workspace|ticket-fetcher|baseline)/**/*.test.ts\" \"skills/**/*.test.mjs\""
+    "test:skills": "node --experimental-strip-types --test \"skills/!(create-workspace|ticket-fetcher|baseline|qa)/**/*.test.ts\" \"skills/**/*.test.mjs\""
   },
   "pi": {
     "skills": [

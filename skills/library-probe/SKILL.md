@@ -41,14 +41,14 @@ turns belief into evidence before a single line of production code is written.
 ## Outputs
 
 - `.harness/<SPEC_NAME>/library-probe.md` — verdict file (see template below)
-- `.harness/<SPEC_NAME>/verification/verification-stubs.md` — probe scenarios `functional-verify` re-runs
+- `.harness/<SPEC_NAME>/verification/verification-stubs.md` — probe scenarios `qa` re-runs
 - `.harness/<SPEC_NAME>/probes/<lib>/` — per-library evidence:
   - `health.json` — health heuristic snapshot
   - `probe.<ext>` — the smoke script (kept for re-run)
   - `probe.log` — actual stdout/stderr
   - `payload.sample.json` — captured response sample (truncated)
 - Promotes the verified probe scripts as **VS-0** scenarios in the spec, so
-  `functional-verify` re-runs them at the end of the pipeline.
+  `qa` re-runs them at the end of the pipeline.
 
 ---
 
@@ -218,7 +218,7 @@ else fail the gate with verdict `BLOCKED:no-viable-library`.
 
 ## Step 6 — Promote probes to verification scenarios
 
-For every library that landed `VERIFIED`, write a stub entry `functional-verify`
+For every library that landed `VERIFIED`, write a stub entry `qa`
 re-runs at the end of the pipeline:
 
 ```markdown
@@ -228,10 +228,10 @@ re-runs at the end of the pipeline:
 **Expected:** exit 0, payload.sample.json non-empty
 ```
 
-Save as `.harness/<SPEC_NAME>/verification/verification-stubs.md` — `functional-verify`
+Save as `.harness/<SPEC_NAME>/verification/verification-stubs.md` — `qa`
 reads it directly as API scenarios for its Step 3.
 
-This way `functional-verify` re-runs the same probes at the end of the
+This way `qa` re-runs the same probes at the end of the
 pipeline — if the lib died between probe and PR, we catch it.
 
 ---

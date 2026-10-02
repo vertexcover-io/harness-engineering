@@ -17,7 +17,14 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync,
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
@@ -54,11 +61,24 @@ const MEDIA_ISLAND = /<script type="application\/json" id="report-media">[\s\S]*
 
 // What the report's modal can show: images, video, and the text files it previews.
 const MIME_TYPES: Readonly<Record<string, string>> = {
-  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-  ".webp": "image/webp", ".avif": "image/avif", ".svg": "image/svg+xml",
-  ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
-  ".csv": "text/csv", ".tsv": "text/tab-separated-values", ".json": "application/json",
-  ".txt": "text/plain", ".log": "text/plain", ".md": "text/markdown", ".xml": "application/xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".svg": "image/svg+xml",
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".csv": "text/csv",
+  ".tsv": "text/tab-separated-values",
+  ".json": "application/json",
+  ".txt": "text/plain",
+  ".log": "text/plain",
+  ".md": "text/markdown",
+  ".xml": "application/xml",
   ".html": "text/html",
 };
 
@@ -162,7 +182,8 @@ export function checkFrameShape(source: FrameSize | null, cropWindow: string): S
 
   return {
     kind: "stretched",
-    note: `the frame was stretched: source ${source.width}x${source.height} is aspect ` +
+    note:
+      `the frame was stretched: source ${source.width}x${source.height} is aspect ` +
       `${sourceAspect.toFixed(2)}, ${cropWindow} is aspect ${cropAspect.toFixed(2)}`,
   };
 }
@@ -179,12 +200,24 @@ function buildVideo(dir: string, prefix: string): string | null {
     execFileSync(
       "ffmpeg",
       [
-        "-nostdin", "-v", "error", "-y",
-        "-framerate", "1/3",
-        "-pattern_type", "glob",
-        "-i", join("screenshots", `${prefix}__*.png`),
-        "-vf", FILTER_GRAPH,
-        "-c:v", "libx264", "-preset", "veryfast", "-r", "30",
+        "-nostdin",
+        "-v",
+        "error",
+        "-y",
+        "-framerate",
+        "1/3",
+        "-pattern_type",
+        "glob",
+        "-i",
+        join("screenshots", `${prefix}__*.png`),
+        "-vf",
+        FILTER_GRAPH,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-r",
+        "30",
         `${prefix}.mp4`,
       ],
       { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
@@ -200,8 +233,21 @@ function cropWindow(dir: string, prefix: string): string | null {
   // Default loglevel, since -v error silences cropdetect itself.
   const probe = spawnSync(
     "ffmpeg",
-    ["-nostdin", "-hide_banner", "-ss", "1", "-t", "0.5", "-i", `${prefix}.mp4`,
-      "-vf", "cropdetect", "-f", "null", "-"],
+    [
+      "-nostdin",
+      "-hide_banner",
+      "-ss",
+      "1",
+      "-t",
+      "0.5",
+      "-i",
+      `${prefix}.mp4`,
+      "-vf",
+      "cropdetect",
+      "-f",
+      "null",
+      "-",
+    ],
     { cwd: dir, encoding: "utf8" },
   );
   return parseCropWindow(`${probe.stdout ?? ""}\n${probe.stderr ?? ""}`);
@@ -242,7 +288,8 @@ export const formatResult = (result: ScenarioResult): string =>
     ? `FAILED ${result.prefix} — ${result.failure}`
     : `ok ${result.prefix}.mp4 ${result.crop}${result.note === null ? "" : ` — ${result.note}`}`;
 
-const hasFfmpeg = (): boolean => spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
+const hasFfmpeg = (): boolean =>
+  spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
 
 /** The report's JSON island, or null when it is absent or does not hold a JSON object. */
 export function parseReportData(html: string): Record<string, unknown> | null {
@@ -263,12 +310,14 @@ const listOf = (v: unknown): readonly unknown[] => (Array.isArray(v) ? v : []);
 
 /** Every file the report names — video, frames, design baseline, artifacts — once each, in order. */
 export function mediaPaths(data: Record<string, unknown>): readonly string[] {
-  const named = listOf(data["scenarios"]).filter(isRecord).flatMap((scenario) => [
-    scenario["video"],
-    ...listOf(scenario["frames"]).map((frame) => pathOf(frame, "src")),
-    isRecord(scenario["visualMatch"]) ? scenario["visualMatch"]["baseline"] : null,
-    ...listOf(scenario["artifacts"]).map((artifact) => pathOf(artifact, "href")),
-  ]);
+  const named = listOf(data["scenarios"])
+    .filter(isRecord)
+    .flatMap((scenario) => [
+      scenario["video"],
+      ...listOf(scenario["frames"]).map((frame) => pathOf(frame, "src")),
+      isRecord(scenario["visualMatch"]) ? scenario["visualMatch"]["baseline"] : null,
+      ...listOf(scenario["artifacts"]).map((artifact) => pathOf(artifact, "href")),
+    ]);
   const local = named
     .filter((path): path is string => typeof path === "string" && path !== "")
     .filter((path) => !/^[a-z][a-z0-9+.-]*:/i.test(path));
@@ -291,7 +340,8 @@ const isInside = (dir: string, path: string): boolean => {
 /** One named file as a data URI, or the reason it is left out of the report. */
 function inlineFile(dir: string, path: string): InlineResult {
   const mime = MIME_TYPES[extname(path).toLowerCase()];
-  if (mime === undefined) return { path, bytes: null, uri: null, failure: "not a type the report shows" };
+  if (mime === undefined)
+    return { path, bytes: null, uri: null, failure: "not a type the report shows" };
   // A design baseline is an image kept outside the directory; nothing else the report names is,
   // and a text file from outside it has no business inside an html that gets shared.
   if (!mime.startsWith("image/") && !isInside(dir, path)) {

@@ -396,7 +396,7 @@ One block per issue, under a one-word heading such as `## Detail`. Keep the fiel
 - **Severity:** major
 - **Class:** MISSED
 - **Fix type:** skill-gap
-- **Stage:** functional-verify
+- **Stage:** qa
 - **Missed by:** no gate reads the verifier's method, only its verdict
 - **When:** 14:22 → 14:51 IST (29m)
 

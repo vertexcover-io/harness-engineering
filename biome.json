@@ -6,6 +6,8 @@
       "skills/create-workspace/**",
       "skills/ticket-fetcher/**",
       "skills/baseline/**",
+      "skills/qa/**",
+      "!skills/qa/references",
       "*.json",
       "!!.worktrees"
     ]

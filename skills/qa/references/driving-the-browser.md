@@ -24,7 +24,7 @@ sandbox!` and every later command reports a dead session. Export two variables b
 command in the run and Step 7's cleanup agree on them:
 
 ```bash
-export AGENT_BROWSER_SESSION=<SPEC_NAME>       # one named session for the whole run, so Step 7 closes the browser it actually drove
+export AGENT_BROWSER_SESSION=RUN               # one named session for the whole run, so Step 7 closes the browser it actually drove
 export AGENT_BROWSER_DEFAULT_TIMEOUT=2000      # fail a doomed wait fast instead of at the 25s default
 ```
 
@@ -108,14 +108,14 @@ after the click is the race you came here to close. When it resolves `{appeared:
 **Film the whole life of the scenario, not a checklist of its steps.** Every step earns at least one frame, many earn
 more — a scenario with more *promoted* frames than steps is doing it right.
 
-**Capture to staging, promote only what you verified.** Shoot into `.harness/<SPEC_NAME>/verify-staging/` — scratch,
+**Capture to staging, promote only what you verified.** Shoot into `.harness/RUN/verify-staging/` — scratch,
 a sibling of `verification/` and never part of it — and move a frame into `screenshots/` only once it earns its
 place. Re-takes, dead ends, and missed clicks stay in staging and are discarded at cleanup.
 
 **Re-driving a scenario an earlier round filmed? Delete its old evidence first, then capture.**
 
 ```bash
-rm .harness/<SPEC_NAME>/verification/screenshots/NN_*
+rm .harness/RUN/artifacts/verification/screenshots/NN_*
 ```
 
 Delete what that walk produced beside the report too — the `verification/NN_<slug>.<ext>` download or webhook body
@@ -138,7 +138,7 @@ For every action, run one batch that acts, asserts, and captures **to staging**:
 cat <<'EOF' | agent-browser batch --json
 [["eval","(()=>document.querySelector('[data-testid=add-more]').click())()"],
  ["eval","(()=>({n: document.querySelectorAll('[data-testid^=row-]').length}))()"],
- ["screenshot","/abs/path/to/.harness/<SPEC_NAME>/verify-staging/02_half_rupee_gap_matches__03_rows_added.png"]]
+ ["screenshot","/abs/path/to/.harness/RUN/verify-staging/02_half_rupee_gap_matches__03_rows_added.png"]]
 EOF
 ```
 

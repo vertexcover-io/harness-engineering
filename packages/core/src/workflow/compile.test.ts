@@ -921,10 +921,10 @@ nodes:
 });
 
 describe("the shipped task workflow", () => {
+  const TASK_WORKFLOW = join(import.meta.dir, "..", "..", "..", "..", "workflows", "task.yaml");
+
   test("compiles with ticket-fetcher first, its task feeding create-workspace, and the Linear checks", async () => {
-    const plan = await compileWorkflow(
-      join(import.meta.dir, "..", "..", "..", "..", "workflows", "task.yaml"),
-    );
+    const plan = await compileWorkflow(TASK_WORKFLOW);
 
     expect(plan.nodes.map((node) => node.id).slice(0, 2)).toEqual([
       "ticket-fetcher",
@@ -942,9 +942,7 @@ describe("the shipped task workflow", () => {
   });
 
   test("runs the design stage after the baseline, fed the ticket-fetcher's task", async () => {
-    const plan = await compileWorkflow(
-      join(import.meta.dir, "..", "..", "..", "..", "workflows", "task.yaml"),
-    );
+    const plan = await compileWorkflow(TASK_WORKFLOW);
 
     expect(plan.nodes.find((node) => node.id === "design")).toMatchObject({
       dependsOn: ["baseline"],
@@ -952,13 +950,11 @@ describe("the shipped task workflow", () => {
     });
   });
 
-  test("ends with planning, implement and code-review in that order, each in the run's workspace", async () => {
-    const plan = await compileWorkflow(
-      join(import.meta.dir, "..", "..", "..", "..", "workflows", "task.yaml"),
-    );
+  test("SC10: runs planning, implement and code-review in that order, each in the run's workspace", async () => {
+    const plan = await compileWorkflow(TASK_WORKFLOW);
     const workspace = "{{ nodes.create-workspace.output }}";
 
-    expect(plan.nodes.slice(-3)).toMatchObject([
+    expect(plan.nodes.slice(-4, -1)).toMatchObject([
       {
         id: "planning",
         stage: { ref: "planning" },
@@ -978,5 +974,41 @@ describe("the shipped task workflow", () => {
         input: { workspace },
       },
     ]);
+  });
+
+  test("SC8: ends with a qa loop after code-review that re-runs implement with qa's bugs until qa stops failing", async () => {
+    const plan = await compileWorkflow(TASK_WORKFLOW);
+
+    expect(plan.nodes.at(-1)).toMatchObject({
+      id: "qa-loop",
+      type: "loop",
+      dependsOn: ["code-review"],
+      until: "{{ iteration.nodes.qa.output.status != 'FAIL' }}",
+      maxIterations: 4,
+      input: {
+        workspace: "{{ nodes.create-workspace.output }}",
+        task: "{{ nodes.ticket-fetcher.output.task }}",
+      },
+      nodes: [
+        {
+          id: "fix",
+          stage: { ref: "implement" },
+          when: "{{ iteration.index > 1 }}",
+          dependsOn: [],
+          input: { workspace: "{{ inputs.workspace }}", feedback: "{{ iteration.previous.bugs }}" },
+        },
+        {
+          id: "qa",
+          stage: { ref: "qa", output: { name: "qa.output.v1" } },
+          dependsOn: [],
+          input: {
+            workspace: "{{ inputs.workspace }}",
+            task: "{{ inputs.task }}",
+            round: "{{ iteration.index }}",
+            rounds: "{{ iteration.max }}",
+          },
+        },
+      ],
+    });
   });
 });

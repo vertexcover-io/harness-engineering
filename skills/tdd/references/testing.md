@@ -62,7 +62,7 @@ For how to write them, read `integration-e2e.md`. E2E suites must be hermetic �
 `hermetic-e2e.md`: self-provisioned infra on ephemeral ports, one env-driven source of truth,
 fail-fast health gates, per-spec DB isolation.
 
-**User-visible change?** Passing unit and integration tests do not close it — `functional-verify`
+**User-visible change?** Passing unit and integration tests do not close it — `qa`
 drives the real browser and owns that proof.
 
 ---

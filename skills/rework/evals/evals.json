@@ -57,7 +57,7 @@
       "id": 3,
       "name": "blast-radius-fails-open-and-skips-untraceable-repos",
       "prompt": "The rework fix touched packages/api/src/mailer.ts and packages/api/src/config.ts in acme/lydia, which holds a prior run, and src/client.ts in acme/serana, which holds none. mailer.ts is named in phases/phase-2.md; config.ts is named in no phase file. Trace the blast radius.",
-      "expected_output": "One general-purpose subagent traces acme/lydia and returns two lists. Because config.ts maps to no phase, the radius widens to every coverage id in that repo's prior proof-report. acme/serana has no prior run, so nothing is traced there and its scope is the files this fix changed. The in-radius list is passed in the Stage 5 dispatch as functional-verify's requirement enumeration. The out-of-radius list reaches rework-report.html as a caveat.",
+      "expected_output": "One general-purpose subagent traces acme/lydia and returns two lists. Because config.ts maps to no phase, the radius widens to every coverage id in that repo's prior proof-report. acme/serana has no prior run, so nothing is traced there and its scope is the files this fix changed. The in-radius list is passed in the Stage 5 dispatch as qa's requirement enumeration. The out-of-radius list reaches rework-report.html as a caveat.",
       "files": [],
       "expectations": [
         "Traces only acme/lydia, and states that acme/serana's scope is its changed files",
@@ -73,7 +73,7 @@
         "Does not halt because acme/serana has no prior run to trace",
         "Does not write a scope file — the dispatch prompt carries the in-radius list, and the report carries the out-of-radius list as a caveat",
         "Does not narrow scope when a changed file maps to no phase",
-        "Does not edit functional-verify's own scope rule or claim a partial verification is complete"
+        "Does not edit qa's own scope rule or claim a partial verification is complete"
       ]
     },
     {

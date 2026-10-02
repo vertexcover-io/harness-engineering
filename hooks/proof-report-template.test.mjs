@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 const REPO = join(import.meta.dirname, "..");
 const TEMPLATE = readFileSync(
-  join(REPO, "skills/functional-verify/references/proof-report-template.html"),
+  join(REPO, "skills/qa/references/proof-report-template.html"),
   "utf8",
 );
 

@@ -6,7 +6,12 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  checkFrameShape, mediaPaths, parseCropWindow, parseReportData, pngSize, scenarioPrefixes,
+  checkFrameShape,
+  mediaPaths,
+  parseCropWindow,
+  parseReportData,
+  pngSize,
+  scenarioPrefixes,
   withMediaIsland,
 } from "./report-media.ts";
 
@@ -38,8 +43,22 @@ const frame = (dir: string, name: string, width = 1280, height = 800): void => {
     writeFileSync(path, "");
     return;
   }
-  spawnSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i",
-    `color=c=red:s=${width}x${height}:d=1`, "-frames:v", "1", path], { stdio: "ignore" });
+  spawnSync(
+    "ffmpeg",
+    [
+      "-v",
+      "error",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      `color=c=red:s=${width}x${height}:d=1`,
+      "-frames:v",
+      "1",
+      path,
+    ],
+    { stdio: "ignore" },
+  );
 };
 
 test("SC1: prefix discovery groups a scenario's frames and ignores unrelated files", () => {
@@ -93,21 +112,22 @@ test("SC6: a missing or extra argument, or an absent directory, exits 2", () => 
   assert.equal(run(join(sandbox("gone"), "nope")).status, 2);
 });
 
-test("SC7: each scenario builds its own video and reports its crop window",
-  { skip: needsFfmpeg }, () => {
-    const dir = withScreenshots("build");
-    frame(dir, "01_desktop__01_open.png", 1280, 800);
-    frame(dir, "01_desktop__02_saved.png", 1280, 800);
-    frame(dir, "02_phone__01_open.png", 390, 844);
+test("SC7: each scenario builds its own video and reports its crop window", {
+  skip: needsFfmpeg,
+}, () => {
+  const dir = withScreenshots("build");
+  frame(dir, "01_desktop__01_open.png", 1280, 800);
+  frame(dir, "01_desktop__02_saved.png", 1280, 800);
+  frame(dir, "02_phone__01_open.png", 390, 844);
 
-    const r = run(dir);
+  const r = run(dir);
 
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, /^ok 01_desktop\.mp4 crop=\d+:\d+:\d+:\d+$/m);
-    assert.match(r.stdout, /^ok 02_phone\.mp4 crop=\d+:\d+:\d+:\d+$/m);
-    assert.ok(existsSync(join(dir, "01_desktop.mp4")));
-    assert.ok(existsSync(join(dir, "02_phone.mp4")));
-  });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^ok 01_desktop\.mp4 crop=\d+:\d+:\d+:\d+$/m);
+  assert.match(r.stdout, /^ok 02_phone\.mp4 crop=\d+:\d+:\d+:\d+$/m);
+  assert.ok(existsSync(join(dir, "01_desktop.mp4")));
+  assert.ok(existsSync(join(dir, "02_phone.mp4")));
+});
 
 // Every crop window below is one this repo's own ffmpeg actually reported for that source shape.
 test("SC9: a portrait frame whose crop fills the canvas was stretched", () => {
@@ -120,7 +140,10 @@ test("SC9: a portrait frame whose crop fills the canvas was stretched", () => {
 
 test("SC10: a portrait frame pillarboxed into the canvas kept its shape", () => {
   assert.equal(checkFrameShape({ width: 390, height: 844 }, "crop=320:720:478:0").kind, "matches");
-  assert.equal(checkFrameShape({ width: 1170, height: 2532 }, "crop=320:720:478:0").kind, "matches");
+  assert.equal(
+    checkFrameShape({ width: 1170, height: 2532 }, "crop=320:720:478:0").kind,
+    "matches",
+  );
   assert.equal(checkFrameShape({ width: 390, height: 2000 }, "crop=128:720:576:0").kind, "matches");
 });
 
@@ -135,8 +158,14 @@ test("SC12: a 16:9 frame filling the canvas exactly is not a stretch", () => {
 });
 
 test("SC13: a reshaped desktop frame is caught too, not just a portrait one", () => {
-  assert.equal(checkFrameShape({ width: 1280, height: 800 }, "crop=1280:720:0:0").kind, "stretched");
-  assert.equal(checkFrameShape({ width: 768, height: 1024 }, "crop=1280:720:0:0").kind, "stretched");
+  assert.equal(
+    checkFrameShape({ width: 1280, height: 800 }, "crop=1280:720:0:0").kind,
+    "stretched",
+  );
+  assert.equal(
+    checkFrameShape({ width: 768, height: 1024 }, "crop=1280:720:0:0").kind,
+    "stretched",
+  );
 });
 
 test("SC14: an unreadable source or an unreadable window skips the check, never fails it", () => {
@@ -146,17 +175,20 @@ test("SC14: an unreadable source or an unreadable window skips the check, never 
   assert.equal(checkFrameShape({ width: 0, height: 0 }, "crop=1280:720:0:0").kind, "unchecked");
 });
 
-test("SC15: the PNG header reader reports a real frame's dimensions",
-  { skip: needsFfmpeg }, () => {
-    const dir = withScreenshots("pngsize");
-    frame(dir, "01_phone__01_open.png", 390, 844);
-    frame(dir, "02_desktop__01_open.png", 1280, 800);
+test("SC15: the PNG header reader reports a real frame's dimensions", { skip: needsFfmpeg }, () => {
+  const dir = withScreenshots("pngsize");
+  frame(dir, "01_phone__01_open.png", 390, 844);
+  frame(dir, "02_desktop__01_open.png", 1280, 800);
 
-    assert.deepEqual(pngSize(join(dir, "screenshots", "01_phone__01_open.png")),
-      { width: 390, height: 844 });
-    assert.deepEqual(pngSize(join(dir, "screenshots", "02_desktop__01_open.png")),
-      { width: 1280, height: 800 });
+  assert.deepEqual(pngSize(join(dir, "screenshots", "01_phone__01_open.png")), {
+    width: 390,
+    height: 844,
   });
+  assert.deepEqual(pngSize(join(dir, "screenshots", "02_desktop__01_open.png")), {
+    width: 1280,
+    height: 800,
+  });
+});
 
 test("SC16: anything that is not a readable PNG reads as no dimensions", () => {
   const dir = withScreenshots("notpng");
@@ -169,21 +201,25 @@ test("SC16: anything that is not a readable PNG reads as no dimensions", () => {
   assert.equal(pngSize(join(dir, "screenshots", "absent.png")), null);
   assert.equal(pngSize(at("empty.png", "")), null);
   assert.equal(pngSize(at("text.png", "not a png")), null);
-  assert.equal(pngSize(at("truncated.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))), null);
+  assert.equal(
+    pngSize(at("truncated.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))),
+    null,
+  );
 });
 
-test("SC8: a scenario ffmpeg cannot build is FAILED, and the run exits non-zero",
-  { skip: needsFfmpeg }, () => {
-    const dir = withScreenshots("failure");
-    frame(dir, "01_good__01_open.png", 1280, 800);
-    writeFileSync(join(dir, "screenshots", "02_broken__01_open.png"), "not a png");
+test("SC8: a scenario ffmpeg cannot build is FAILED, and the run exits non-zero", {
+  skip: needsFfmpeg,
+}, () => {
+  const dir = withScreenshots("failure");
+  frame(dir, "01_good__01_open.png", 1280, 800);
+  writeFileSync(join(dir, "screenshots", "02_broken__01_open.png"), "not a png");
 
-    const r = run(dir);
+  const r = run(dir);
 
-    assert.equal(r.status, 1);
-    assert.match(r.stdout, /^ok 01_good\.mp4 crop=/m);
-    assert.match(r.stdout, /^FAILED 02_broken — ffmpeg: .+/m);
-  });
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /^ok 01_good\.mp4 crop=/m);
+  assert.match(r.stdout, /^FAILED 02_broken — ffmpeg: .+/m);
+});
 
 const island = (id: string, json: string): string =>
   `<script type="application/json" id="${id}">${json}</script>`;
@@ -202,12 +238,18 @@ test("SC17: the report's media paths are every video, frame, baseline and artifa
     scenarios: [
       {
         video: "01_a.mp4",
-        frames: [{ src: "screenshots/01_a__01_open.png", label: "open" }, "screenshots/01_a__02_saved.png"],
+        frames: [
+          { src: "screenshots/01_a__01_open.png", label: "open" },
+          "screenshots/01_a__02_saved.png",
+        ],
         visualMatch: { baseline: "design/a.png" },
         artifacts: [{ label: "export", href: "01_a_export.csv" }, "01_a.mp4"],
       },
       { frames: [{ src: "screenshots/01_a__01_open.png" }], visualMatch: { baseline: null } },
-      { video: "https://example.com/run.mp4", artifacts: [{ href: "data:text/plain,hi" }, { label: "no href" }] },
+      {
+        video: "https://example.com/run.mp4",
+        artifacts: [{ href: "data:text/plain,hi" }, { label: "no href" }],
+      },
       "not a scenario",
     ],
   };
@@ -254,13 +296,23 @@ test("SC20: --inline writes every readable file into the report as a data URI", 
   assert.match(r.stdout, /^ok 01_a\.mp4 11B$/m);
   assert.match(r.stdout, /^ok screenshots\/01_a__01_open\.png 9B$/m);
   const html = readFileSync(join(dir, "proof-report.html"), "utf8");
-  assert.ok(html.includes(`"01_a.mp4":"data:video/mp4;base64,${Buffer.from("video-bytes").toString("base64")}"`));
+  assert.ok(
+    html.includes(
+      `"01_a.mp4":"data:video/mp4;base64,${Buffer.from("video-bytes").toString("base64")}"`,
+    ),
+  );
   assert.ok(html.includes(`data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`));
 });
 
 test("SC21: a file --inline cannot read is FAILED, exits 1, and the rest is still inlined", () => {
   const dir = withReport("inline-missing", {
-    scenarios: [{ video: "01_a.mp4", artifacts: [{ href: "01_a.bin" }], visualMatch: { baseline: "gone.png" } }],
+    scenarios: [
+      {
+        video: "01_a.mp4",
+        artifacts: [{ href: "01_a.bin" }],
+        visualMatch: { baseline: "gone.png" },
+      },
+    ],
   });
   writeFileSync(join(dir, "01_a.mp4"), "video-bytes");
   writeFileSync(join(dir, "01_a.bin"), "binary");
@@ -295,13 +347,18 @@ test("SC23: outside the verification directory only an image is inlined", () => 
   mkdirSync(dir);
   mkdirSync(join(spec, "design"));
   writeFileSync(join(spec, "design", "modal.png"), "png-bytes");
-  writeFileSync(join(spec, "settings.json"), "{\"secret\":1}");
-  writeFileSync(join(dir, "proof-report.html"), reportHtml({
-    scenarios: [{
-      visualMatch: { baseline: "../design/modal.png" },
-      artifacts: [{ href: "../settings.json" }, { href: join(spec, "settings.json") }],
-    }],
-  }));
+  writeFileSync(join(spec, "settings.json"), '{"secret":1}');
+  writeFileSync(
+    join(dir, "proof-report.html"),
+    reportHtml({
+      scenarios: [
+        {
+          visualMatch: { baseline: "../design/modal.png" },
+          artifacts: [{ href: "../settings.json" }, { href: join(spec, "settings.json") }],
+        },
+      ],
+    }),
+  );
 
   const r = run("--inline", dir);
 
@@ -310,5 +367,5 @@ test("SC23: outside the verification directory only an image is inlined", () => 
   assert.match(r.stdout, /^FAILED \.\.\/settings\.json — outside the verification directory$/m);
   assert.match(r.stdout, /^FAILED \/.*settings\.json — outside the verification directory$/m);
   const html = readFileSync(join(dir, "proof-report.html"), "utf8");
-  assert.doesNotMatch(html, new RegExp(Buffer.from("{\"secret\":1}").toString("base64")));
+  assert.doesNotMatch(html, new RegExp(Buffer.from('{"secret":1}').toString("base64")));
 });
