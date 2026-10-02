@@ -3,7 +3,6 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { parseEnv } from "node:util";
 import { parse } from "yaml";
 import type { Result } from "./contracts.ts";
 
@@ -30,13 +29,6 @@ export const readText = async (path: string): Promise<Result<string>> => {
   } catch (error) {
     return { ok: false, error: `${path}: cannot read file: ${String(error)}` };
   }
-};
-
-// ROOT/.env is read on every call so a long-running process never sees stale inherited values.
-// A key the file sets wins; otherwise the process environment supplies it.
-export const readProjectEnv = async (root: string, key: string): Promise<string | undefined> => {
-  const text = await readIfExists(join(root, ".env"));
-  return parseEnv(text ?? "")[key] ?? process.env[key];
 };
 
 export const parseYaml = (text: string, path: string): Result<unknown> => {

@@ -19,12 +19,11 @@ export {
 export { importModule, loadFunction, type ModuleError, runLockPath } from "./files.ts";
 export {
   createRegistry,
-  findRunByIdOrName,
   type Registry,
   type RegistryFile,
   RegistryFileSchema,
-  type RunTarget,
 } from "./registry.ts";
+export { findRunByIdOrName, type RunTarget } from "./runs.ts";
 export {
   appendRunEvent,
   appendRunEventIf,

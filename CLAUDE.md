@@ -26,7 +26,7 @@
 ## Architecture
 - There are two command-line entry points, split by who calls them:
   - The `harness` CLI (`packages/cli`) is for people: `harness run`, `harness server …`, `harness doctor`. A command that needs the server parses its flags, calls `ensureServer()`, calls one server route, and prints the reply.
-  - The orchestrate script (`packages/core/src/orchestrate.ts`, run with `bun run orchestrate …`) is for skills: every action a skill takes on a run (`init`, `link-session`, `emit`, `next`, `exec`, `done`, `workspace …`, `skill …`) is a subcommand there. It calls core directly and never goes through the server. Only `init` takes the run id; every later action names the run by its spec name. The registry (`registry.json`) is shared with the server through its file lock.
+  - The orchestrate script (`packages/core/src/orchestrate.ts`, run with `bun run orchestrate …`) is for skills: every action a skill takes on a run (`init`, `link-session`, `emit`, `next`, `exec`, `done`, `skill …`) is a subcommand there. It calls core directly and never goes through the server. `init` takes the run id (`--run-id`, else `$HARNESS_RUN_ID`); every later action names its run with `--run NAME` or `--run-id ID`, else `$HARNESS_RUN_ID`, and a flag always wins over the variable. The registry (`registry.json`) is shared with the server through its file lock.
   - A new action a skill needs goes in the orchestrate script, not in `harness` and not as a server route.
 
 ## Communication

@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { noopLogger, type RunRef, runDirOf } from "@harness/sdk";
+import { ConfigSchema, noopLogger, type RunRef, runDirOf } from "@harness/sdk";
 import { createState, jsonlEventStore } from "@harness/sdk/internal";
 import { type Baseline, captureBaseline } from "./baseline.ts";
 
@@ -39,7 +39,9 @@ const capture = (
   log = noopLogger,
 ) =>
   captureBaseline({
-    root,
+    config: ConfigSchema.parse(
+      JSON.parse(readFileSync(join(root, "orchestrate.config.json"), "utf8")),
+    ),
     run,
     packages: options.packages ?? [],
     dir: options.dir,

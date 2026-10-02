@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -305,6 +306,41 @@ describe("runDoctor (integration)", () => {
     expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
       status: "ok",
       detail: expect.stringMatching(/orchestrate\.config\.json$/),
+    });
+  });
+
+  test("from a sub-repo that a multi-layout meta folder lists, the config check reads the meta folder's config", async () => {
+    const meta = realpathSync(await makeDir("doctor-meta-"));
+    await writeFile(
+      join(meta, "orchestrate.config.json"),
+      JSON.stringify({
+        version: 2,
+        workspace: { layout: "multi" },
+        packages: { api: { path: "api" } },
+      }),
+    );
+    const api = join(meta, "api");
+    await mkdir(api);
+    await exec("git", ["init"], api);
+
+    const report = await runDoctor({ cwd: api, exec });
+    expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
+      status: "ok",
+      detail: join(meta, "orchestrate.config.json"),
+    });
+  });
+
+  test("with a config file named, the config check reads that file and not the repo's", async () => {
+    const dir = await makeDir("doctor-named-config-");
+    await exec("git", ["init"], dir);
+    await writeFile(join(dir, "orchestrate.config.json"), "{}");
+    const file = join(dir, "custom.json");
+    await writeFile(file, V2);
+
+    const report = await runDoctor({ cwd: dir, exec, config: file });
+    expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
+      status: "ok",
+      detail: file,
     });
   });
 

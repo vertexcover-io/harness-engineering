@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureLogger } from "@harness/core";
 import type { IAgentProvider, ITerminal, LaunchOptions, Result } from "@harness/sdk";
-import { noopLogger } from "@harness/sdk";
+import { noopLogger, WorkflowRunSchema } from "@harness/sdk";
 import { createRegistry } from "@harness/sdk/internal";
+import * as z from "zod";
 import { createApp } from "./app.ts";
 import { createHarnessClient } from "./client.ts";
 import { socketPath } from "./protocol.ts";
@@ -190,6 +191,30 @@ describe("POST /runs", () => {
 
     expect(res.status).toBe(201);
     expect(savedAtLaunch).toMatchObject({ workflowPath, cwd, sessions: [], name: null });
+  });
+
+  test("a config file in the body is saved on the run; with none the run's config is null", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    const deps = await buildDeps(() =>
+      Promise.resolve({ ok: true, value: { sessionId: "s1", terminal: fakePane("s1") } }),
+    );
+    const app = createApp(deps);
+    const config = join(cwd, "custom.json");
+    const start = (extra: object) =>
+      app.request("/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, ...extra }),
+      });
+
+    const runOf = async (extra: object) =>
+      z.object({ run: WorkflowRunSchema }).parse(await (await start(extra)).json()).run;
+    const withConfig = await runOf({ config });
+    const without = await runOf({});
+
+    expect(withConfig.config).toBe(config);
+    expect((await deps.registry.findRun(withConfig.id))?.config).toBe(config);
+    expect(without.config).toBeNull();
   });
 
   test("SC11: a failing provider is 502 agent-failed and records no run", async () => {

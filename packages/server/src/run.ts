@@ -16,7 +16,7 @@ export type RunDeps = Readonly<{
 
 const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: StartRunBody) => {
   const log = c.get("log").child({ component: "runs" });
-  const { workflow, workflowPath, inputs, cwd, name } = body;
+  const { workflow, workflowPath, inputs, cwd, name, config } = body;
 
   if (!existsSync(workflowPath) || !existsSync(cwd)) {
     return errorResponse(c, 400, "bad-request", "workflowPath and cwd must exist");
@@ -34,6 +34,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     sessions: [],
     name: null,
     terminal: null,
+    config: config ?? null,
     createdAt: new Date().toISOString(),
   };
   await deps.registry.addRun(pending);

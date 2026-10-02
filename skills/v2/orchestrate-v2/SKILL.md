@@ -55,9 +55,9 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      extension wins. Follow the skill with the reply's `input` as its input, `variables` as the
      values of the variables the skill names, and `prompt` as extra instructions when present.
      When the skill needs one of its references, run
-     `bun run orchestrate skill ref STAGE.REF`, without `--run`, since references do not
-     belong to a run; never open a reference file by its path, since
-     that skips the project's changes to it. When the skill is done, run the reply's `done`
+     `bun run orchestrate skill ref STAGE.REF`. It needs no `--run`: it finds the run through
+     `HARNESS_RUN_ID` and reads the config that run started with. Never open a reference file by
+     its path, since that skips the project's changes to it. When the skill is done, run the reply's `done`
      command with `--output -`, plus `--artifact NAME=artifacts/PATH` for each artifact the
      skill wrote under `.harness/NAME/`, and pass the output on stdin in a quoted heredoc. The
      output is JSON when the skill declares `outputs` (or the node an `output` schema), and plain

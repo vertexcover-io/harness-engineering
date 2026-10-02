@@ -4,15 +4,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import * as z from "zod";
 import {
+  AbsolutePathSchema,
   JsonObjectSchema,
   NonEmptyStringSchema,
-  type Result,
   SessionRefSchema,
   SlugSchema,
 } from "./contracts.ts";
 import { readIfExists, withLock } from "./files.ts";
 import { type ILogger, noopLogger } from "./logger.ts";
-import { resolveRun } from "./runs.ts";
 
 export const harnessHome = (env: NodeJS.ProcessEnv = process.env): string =>
   env.HARNESS_HOME ?? join(homedir(), ".harness");
@@ -31,6 +30,8 @@ export const WorkflowRunSchema = z.strictObject({
   name: SlugSchema.nullable(),
   // tmux session the run's agent lives in; null until the server launches it
   terminal: NonEmptyStringSchema.nullable().default(null),
+  // the config file `harness run --config` named; init settles the run's config from it
+  config: AbsolutePathSchema.nullable().default(null),
   createdAt: z.iso.datetime(),
 });
 export type WorkflowRun = z.infer<typeof WorkflowRunSchema>;
@@ -121,30 +122,6 @@ export const createRegistryReader = (path: string): RegistryReader => ({
   findRun: async (runId) => (await readRegistry(path)).runs[runId],
   findRunsByName: async (name) => namedNewestFirst(await readRegistry(path), name),
 });
-
-// A run id is unique everywhere; a run name only within a repo, so it comes with that repo's root.
-export type RunTarget = Readonly<{ runId: string } | { name: string; root: string }>;
-
-const findRunById = async (
-  registry: RegistryReader,
-  runId: string,
-): Promise<Result<WorkflowRun>> => {
-  const run = await registry.findRun(runId);
-  return run === undefined
-    ? { ok: false, error: `no run with id "${runId}"` }
-    : { ok: true, value: run };
-};
-
-// A name resolves the way orchestrate resolves it (resolveRun), so a run started in a linked
-// worktree or a sub-repo of `root` is found too.
-export const findRunByIdOrName = async (
-  registry: RegistryReader,
-  target: RunTarget,
-): Promise<Result<WorkflowRun>> => {
-  if ("runId" in target) return findRunById(registry, target.runId);
-  const found = await resolveRun({ registry, root: target.root, name: target.name });
-  return found.ok ? findRunById(registry, found.value.id) : found;
-};
 
 export const createRegistry = (path: string, parentLog: ILogger = noopLogger): Registry => {
   const log = parentLog.child({ component: "registry", path });

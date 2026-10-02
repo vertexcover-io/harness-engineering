@@ -27,6 +27,7 @@ const run = (id: string, name: string, cwd: string, terminal: string | null): Wo
   sessions: [],
   name,
   terminal,
+  config: null,
   createdAt: new Date().toISOString(),
 });
 

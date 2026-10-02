@@ -35,6 +35,7 @@ export {
   ConfigSchema,
   type LoadedConfig,
   loadConfig,
+  loadConfigAt,
   loadConfigFile,
   loadConfigOrDefault,
   NameSchema,
@@ -128,7 +129,6 @@ export {
   parseFrontmatter,
   parseYaml,
   readIfExists,
-  readProjectEnv,
   readText,
   withLock,
 } from "./files.ts";
@@ -181,7 +181,22 @@ export {
   type WorkflowRun,
   WorkflowRunSchema,
 } from "./registry.ts";
-export { findRoot, type RunLookup, resolveRoot, resolveRun } from "./runs.ts";
+export {
+  type CheckoutConfig,
+  findConfigRoot,
+  findRoot,
+  loadCheckoutConfig,
+  loadNamedConfig,
+  loadPickedConfig,
+  loadRecordedConfig,
+  loadRunConfig,
+  type PickRunInput,
+  pickRun,
+  type RunLookup,
+  readProjectEnv,
+  requireRun,
+  resolveRun,
+} from "./runs.ts";
 // Reading state.json is open to every caller; writing it stays behind the internal entry.
 export { type EventHandler, emitRunEvent, readState, toRepoId } from "./state.ts";
 export {

@@ -17,7 +17,12 @@ export type Outcome = {
   readonly fix?: readonly string[] | undefined;
 };
 
-export type CheckContext = { readonly root: string; readonly exec: Exec };
+// config: the file `harness run --config` named, read in place of the repo's own config.
+export type CheckContext = {
+  readonly root: string;
+  readonly exec: Exec;
+  readonly config?: string | undefined;
+};
 
 export type Check = {
   readonly name: string;

@@ -178,6 +178,7 @@ const setUp = async (nodeRuns: State["nodeRuns"]) => {
     sessions: [{ agent: "claude", sessionId: "s1" }],
     name: "feat-x",
     terminal: null,
+    config: null,
     createdAt: "2026-09-26T10:00:00Z",
   });
   const runDir = runDirOf(cwd, "feat-x");
@@ -338,17 +339,7 @@ describe("an open context node", () => {
     expect(spawn.mock.calls).toEqual([
       [
         process.execPath,
-        [
-          ORCHESTRATE_SCRIPT,
-          "context",
-          "nr-1",
-          "--run",
-          "feat-x",
-          "--session-id",
-          "s1",
-          "--root",
-          cwd,
-        ],
+        [ORCHESTRATE_SCRIPT, "context", "nr-1", "--run-id", "r-1", "--session-id", "s1"],
         { cwd, output: "ignore" },
       ],
     ]);

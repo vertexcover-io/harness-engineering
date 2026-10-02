@@ -46,6 +46,7 @@ const savedRun = (cwd: string, overrides: Partial<WorkflowRun> = {}): WorkflowRu
     sessions: [],
     name: null,
     terminal: null,
+    config: null,
     createdAt: new Date().toISOString(),
     ...overrides,
   };
@@ -432,8 +433,8 @@ describe("orchestrate skill", () => {
 });
 
 // A run named feat-x in a fresh repo, started from SOURCE the way `harness run` + init leave it.
-const startedRun = (source: string): Readonly<{ repo: string; home: string }> => {
-  const repo = tempRepo();
+const startedRun = (source: string, config?: object): Readonly<{ repo: string; home: string }> => {
+  const repo = config === undefined ? tempRepo() : configuredRepo(config);
   const home = tempDir();
   const workflowPath = join(repo, "steps.yaml");
   writeFileSync(workflowPath, source);
@@ -468,6 +469,153 @@ nodes:
     dependsOn: [w]
     input: "{{ nodes.w.output }}"
 `;
+
+const WORKTREE_CONFIG = {
+  extensions: {
+    producer: { skill: "docs/producer-ext.md", references: { demo: { add: "docs/demo.md" } } },
+  },
+};
+
+// A run started in a linked worktree of a repo whose main checkout has a config without the
+// worktree's extensions, initialized the way harness run + init leave it.
+const worktreeRun = (runOverrides: Partial<WorkflowRun> = {}) => {
+  const main = configuredRepo({});
+  const worktree = join(main, ".worktrees", "dev");
+  execFileSync("git", ["worktree", "add", "-q", "-b", "dev", worktree], { cwd: main });
+  writeFileSync(
+    join(worktree, "orchestrate.config.json"),
+    JSON.stringify({ version: 2, ...WORKTREE_CONFIG }),
+  );
+  mkdirSync(join(worktree, "docs"));
+  writeFileSync(join(worktree, "docs/demo.md"), "worktree-only reference\n");
+  const home = tempDir();
+  const workflowPath = join(worktree, "stages.yaml");
+  writeFileSync(workflowPath, STAGES_WORKFLOW);
+  writeRegistry(home, [savedRun(worktree, { workflowPath, ...runOverrides })]);
+  const env = { HARNESS_SKILLS_DIR: stageSkills() };
+  const init = orchestrate(worktree, home, ["init", "feat-x", "--run-id", "r-1"], env);
+  if (init.code !== 0) throw new Error(init.stderr);
+  return { main, worktree, home, env };
+};
+
+describe("a run started in a linked worktree", () => {
+  test("VER-289: skill ref and next, given no flags inside the run's session, read the worktree's config that main lacks", () => {
+    const { main, worktree, home, env } = worktreeRun();
+    const session = { ...env, HARNESS_RUN_ID: "r-1" };
+
+    const ref = orchestrate(main, home, ["skill", "ref", "producer.demo"], session);
+    const next = orchestrate(main, home, ["next"], session);
+
+    expect(ref.stdout).toBe("worktree-only reference\n");
+    expect(ref.code).toBe(0);
+    expect(next.code).toBe(0);
+    const reply = JSON.parse(next.stdout);
+    expect(reply.extension).toBe(join(worktree, "docs/producer-ext.md"));
+    expect(reply.done).toBe(`bun run orchestrate done ${reply.nodeRunId} --run feat-x`);
+  });
+
+  test("skill ref with no run reads the config of the checkout it runs in", () => {
+    const { main, worktree, home, env } = worktreeRun();
+
+    const fromWorktree = orchestrate(worktree, home, ["skill", "ref", "producer.demo"], env);
+    const fromMain = orchestrate(main, home, ["skill", "ref", "producer.demo"], env);
+
+    expect(fromWorktree.stdout).toBe("worktree-only reference\n");
+    expect(fromMain.code).toBe(1);
+    expect(fromMain.stderr).toContain('unknown reference "demo"');
+  });
+
+  test("a run started with harness run --config reads that file for every command, wherever it lives", () => {
+    const elsewhere = tempDir();
+    const file = join(elsewhere, "custom.json");
+    writeFileSync(
+      file,
+      JSON.stringify({ version: 2, extensions: { producer: { skill: "producer-ext.md" } } }),
+    );
+    const { main, home, env } = worktreeRun({ config: file });
+    const session = { ...env, HARNESS_RUN_ID: "r-1" };
+
+    const next = orchestrate(main, home, ["next"], session);
+    const ref = orchestrate(main, home, ["skill", "ref", "producer.demo"], session);
+
+    expect(JSON.parse(next.stdout).extension).toBe(join(elsewhere, "producer-ext.md"));
+    expect(ref.code).toBe(1);
+    expect(ref.stderr).toContain('unknown reference "demo"');
+  });
+
+  test("a config file recorded at init that is then deleted stops next, naming the file", () => {
+    const { worktree, home, env } = worktreeRun();
+    const file = join(worktree, "orchestrate.config.json");
+    unlinkSync(file);
+
+    const next = orchestrate(worktree, home, ["next", "--run", "feat-x"], env);
+
+    expect(next.code).toBe(1);
+    expect(next.stderr).toContain(file);
+  });
+});
+
+describe("picking the run", () => {
+  test("--run-id picks the run from a folder outside any repo", () => {
+    const { home, env } = worktreeRun();
+
+    const next = orchestrate(tempDir(), home, ["next", "--run-id", "r-1"], env);
+
+    expect(next.code).toBe(0);
+    expect(JSON.parse(next.stdout).nodeId).toBe("make");
+  });
+
+  test("--run wins over $HARNESS_RUN_ID, and --run with a --run-id naming another run is refused", () => {
+    const { worktree, home, env } = worktreeRun();
+
+    const ghost = orchestrate(worktree, home, ["next", "--run", "ghost"], {
+      ...env,
+      HARNESS_RUN_ID: "r-1",
+    });
+    const clash = orchestrate(worktree, home, ["next", "--run", "ghost", "--run-id", "r-1"], env);
+
+    expect(ghost.code).toBe(1);
+    expect(ghost.stderr).toContain('no run named "ghost"');
+    expect(clash.code).toBe(1);
+    expect(clash.stderr).toContain("--run ghost and --run-id r-1 name different runs");
+  });
+
+  test("a command with no --run, no --run-id and no $HARNESS_RUN_ID is refused", () => {
+    const { worktree, home } = worktreeRun();
+
+    const next = orchestrate(worktree, home, ["next"]);
+
+    expect(next.code).toBe(1);
+    expect(next.stderr).toContain(
+      "no run: pass --run or --run-id, or run inside a harness session",
+    );
+  });
+
+  test("--root is no longer accepted", () => {
+    const { worktree, home } = worktreeRun();
+
+    const next = orchestrate(worktree, home, ["next", "--run", "feat-x", "--root", worktree]);
+
+    expect(next.code).toBe(1);
+    expect(next.stderr).toContain("--root");
+  });
+
+  test("done's refusal names the run id that picked a run it cannot find", () => {
+    const { worktree, home } = worktreeRun();
+
+    const done = orchestrate(worktree, home, ["done", "nr-1", "--output", "x"], {
+      HARNESS_RUN_ID: "r-ghost",
+    });
+
+    expect(done.code).toBe(1);
+    expect(JSON.parse(done.stderr)).toMatchObject({
+      kind: "configuration",
+      code: "run",
+      path: "r-ghost",
+      message: "run r-ghost not found",
+    });
+  });
+});
 
 describe("orchestrate next and exec", () => {
   test("IW10 — next and exec, called in turn, take an exec, wait and exec workflow from init to finished", async () => {
@@ -877,22 +1025,20 @@ describe("stage verifiers", () => {
 });
 
 describe("orchestrate next and done with stages", () => {
-  const stageRun = (produces?: string) => {
+  const stageRun = (produces?: string, config?: object) => {
     const skills = stageSkills(produces);
-    const run = startedRun(STAGES_WORKFLOW);
+    const run = startedRun(STAGES_WORKFLOW, config);
     const env = { HARNESS_SKILLS_DIR: skills };
     const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args, env);
     return { ...run, skills, step };
   };
 
   test("IW17 — next replies with the stage's skill path, the project's extension path, its input and a done command", () => {
-    const { repo, skills, step } = stageRun();
+    const { repo, skills, step } = stageRun(undefined, {
+      extensions: { producer: { skill: "docs/producer-ext.md" } },
+    });
     mkdirSync(join(repo, "docs"));
     writeFileSync(join(repo, "docs/producer-ext.md"), "use short names\n");
-    writeFileSync(
-      join(repo, "orchestrate.config.json"),
-      JSON.stringify({ version: 2, extensions: { producer: { skill: "docs/producer-ext.md" } } }),
-    );
     const next = step(["next", "--run", "feat-x"]);
     expect(next.code).toBe(0);
     const reply = JSON.parse(next.stdout);
@@ -1582,7 +1728,7 @@ describe("orchestrate call log", () => {
   });
 
   test("OL5 — a next refused over a config broken after init is logged", async () => {
-    const { repo, home } = startedRun(ONE_EXEC);
+    const { repo, home } = startedRun(ONE_EXEC, {});
     writeFileSync(join(repo, "orchestrate.config.json"), "{");
 
     const next = orchestrate(repo, home, ["next", "--run", "feat-x"]);

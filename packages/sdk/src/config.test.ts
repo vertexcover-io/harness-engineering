@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import * as z from "zod";
-import { type Config, ConfigSchema, loadConfig } from "./config.ts";
+import { type Config, ConfigSchema, loadConfig, loadConfigAt } from "./config.ts";
 
 const exampleYaml = `version: 2
 doctor: bun bin/doctor.ts
@@ -401,4 +401,14 @@ describe("loadConfig", () => {
       expect(result.error.message).not.toContain("stages");
     },
   );
+});
+
+describe("loadConfigAt", () => {
+  test("a path naming a folder fails with an error naming the path", async () => {
+    const folder = join(root, "configs");
+    await mkdir(folder);
+    const result = await loadConfigAt(folder);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain(`${folder}: cannot read config file`);
+  });
 });

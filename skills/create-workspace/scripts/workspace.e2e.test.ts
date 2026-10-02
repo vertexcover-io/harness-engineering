@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runDirOf, type WorkflowRun } from "@harness/sdk";
-import { jsonlEventStore } from "@harness/sdk/internal";
+import { createState, jsonlEventStore } from "@harness/sdk/internal";
 
 const SCRIPT = join(import.meta.dir, "workspace.ts");
 
@@ -50,6 +50,7 @@ const initializedRun = (home: string, cwd: string): void => {
     sessions: [],
     name: "feat-x",
     terminal: null,
+    config: null,
     createdAt: new Date().toISOString(),
   };
   mkdirSync(home, { recursive: true });
@@ -60,11 +61,16 @@ const initializedRun = (home: string, cwd: string): void => {
 const eventsOf = (cwd: string) => jsonlEventStore(runDirOf(cwd, "feat-x")).read();
 
 // A run id or harness home from the shell running the tests must never reach a real registry.
-const workspace = (cwd: string, home: string, args: readonly string[]) => {
+const workspace = (
+  cwd: string,
+  home: string,
+  args: readonly string[],
+  env: Readonly<Record<string, string>> = {},
+) => {
   const run = spawnSync("bun", [SCRIPT, ...args], {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home },
+    env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home, ...env },
   });
   return { code: run.status, stdout: run.stdout, stderr: run.stderr };
 };
@@ -104,13 +110,85 @@ describe("workspace.ts", () => {
     expect(JSON.parse(mono.stdout)).toEqual({ layout: "mono", packages: [] });
   });
 
-  test("--root points the command at a repo other than the one it runs in", () => {
-    const root = makeMulti();
+  test("info with no run reads the config of the linked worktree it runs in, not main's", () => {
+    const root = tempRepo();
+    const worktree = join(root, ".worktrees/dev");
+    execFileSync("git", ["worktree", "add", "-q", "-b", "dev", worktree], { cwd: root });
+    writeFileSync(
+      join(worktree, "orchestrate.config.json"),
+      JSON.stringify({ version: 2, packages: { app: { path: ".", description: "the app" } } }),
+    );
 
-    const info = workspace(tempDir(), tempDir(), ["info", "--root", root]);
+    const fromWorktree = workspace(worktree, tempDir(), ["info"]);
+    const fromMain = workspace(root, tempDir(), ["info"]);
 
-    expect(info.code).toBe(0);
-    expect(JSON.parse(info.stdout).layout).toBe("multi");
+    expect(JSON.parse(fromWorktree.stdout).packages).toEqual([
+      { name: "app", path: ".", description: "the app" },
+    ]);
+    expect(JSON.parse(fromMain.stdout).packages).toEqual([]);
+  });
+
+  test("--root is refused", () => {
+    const root = tempRepo();
+
+    const info = workspace(root, tempDir(), ["info", "--root", root]);
+
+    expect(info.code).toBe(1);
+    expect(info.stderr).toContain("--root");
+  });
+
+  test("inside a harness session, create records into the run $HARNESS_RUN_ID names", async () => {
+    const root = tempRepo();
+    const home = tempDir();
+    initializedRun(home, root);
+
+    const created = workspace(root, home, ["create", "b"], { HARNESS_RUN_ID: "r-1" });
+
+    expect(created.code).toBe(0);
+    expect((await eventsOf(root)).map((event) => event.type)).toEqual(["workspace.created"]);
+  });
+
+  test("--run-id picks the run from outside the repo, and worktrees still go under its main checkout", async () => {
+    const root = tempRepo();
+    const home = tempDir();
+    initializedRun(home, root);
+
+    const created = workspace(tempDir(), home, ["create", "b", "--run-id", "r-1"]);
+
+    expect(created.code).toBe(0);
+    expect(existsSync(join(root, ".worktrees/b"))).toBe(true);
+    expect((await eventsOf(root)).map((event) => event.type)).toEqual(["workspace.created"]);
+  });
+
+  test("a run whose state.json records a config file runs that file's setup, not the repo's", async () => {
+    const root = tempRepo();
+    const home = tempDir();
+    initializedRun(home, root);
+    writeFileSync(
+      join(root, "orchestrate.config.json"),
+      JSON.stringify({ version: 2, workspace: { setup: "echo from-repo-config" } }),
+    );
+    const elsewhere = tempDir();
+    const file = join(elsewhere, "custom.json");
+    writeFileSync(
+      file,
+      JSON.stringify({ version: 2, workspace: { setup: "echo from-run-config" } }),
+    );
+    const runDir = runDirOf(root, "feat-x");
+    writeFileSync(join(runDir, "workflow.yaml"), "name: ok\nnodes: []\n");
+    await createState({
+      runId: "r-1",
+      runDir,
+      version: "1.0.0",
+      eventHandlers: {},
+      config: { path: file, root: elsewhere },
+    });
+
+    const created = workspace(root, home, ["create", "b", "--run", "feat-x"]);
+
+    expect(created.code).toBe(0);
+    expect(created.stderr).toContain("from-run-config");
+    expect(created.stderr).not.toContain("from-repo-config");
   });
 
   test("create prints the report as JSON and sends setup output to stderr", () => {

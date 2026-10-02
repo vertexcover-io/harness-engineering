@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
 import { runDoctor, verdict, workflowChecks } from "@harness/core";
-import { createGit, type JsonObject, spawnInteractive } from "@harness/sdk";
+import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
 import {
   apiErrorText,
@@ -26,6 +26,7 @@ export const runCommand = () =>
     .option("--name <name>", "run name (default: derived from the prompt)")
     .option("--input <key=value>", "extra input, repeatable", collectInput, {})
     .option("--attach", "attach to the session's terminal once it starts")
+    .option("--config <file>", "orchestrate config file the run reads (default: the checkout's)")
     .action(async (workflowArg, opts) => {
       const log = commandLog("run");
       const cwd = process.cwd();
@@ -35,8 +36,15 @@ export const runCommand = () =>
       if (plan === null) return;
       log.debug({ workflow: plan.name, path: workflowPath }, "workflow compiled");
 
+      const config = opts.config === undefined ? undefined : resolve(cwd, opts.config);
+      if (config !== undefined) {
+        const loaded = await loadNamedConfig(config);
+        if (!loaded.ok) return fail(loaded.error);
+      }
+
       const report = await runDoctor({
         cwd,
+        config,
         extraChecks: [...runtimeChecks(), ...workflowChecks(plan.doctor, dirname(workflowPath))],
         log: cliLog(),
       });
@@ -54,6 +62,7 @@ export const runCommand = () =>
         inputs: { prompt: opts.prompt, ...opts.input } satisfies JsonObject,
         cwd: repoRoot,
         ...(opts.name === undefined ? {} : { name: opts.name }),
+        ...(config === undefined ? {} : { config }),
       });
       if (!result.ok) return fail(apiErrorText(result.error));
       const { run } = result.value;

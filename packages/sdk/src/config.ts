@@ -194,6 +194,10 @@ export const loadConfigFile = async (
       },
     };
   }
+  return parseConfigFile(file);
+};
+
+const parseConfigFile = (file: ConfigFile): Result<LoadedConfig, ConfigError> => {
   const yaml = parseYaml(file.text, file.path);
   if (!yaml.ok) return invalid(yaml.error);
   const versioned = checkVersion(yaml.value, file.path);
@@ -202,6 +206,26 @@ export const loadConfigFile = async (
   if (!parsed.success) return invalid(`${file.path}: ${z.prettifyError(parsed.error)}`);
   return { ok: true, value: { config: parsed.data, path: file.path } };
 };
+
+const readConfigAt = async (path: string): Promise<Result<string>> => {
+  try {
+    const text = await readIfExists(path);
+    if (text === null) return { ok: false, error: `${path}: no such config file` };
+    return { ok: true, value: text };
+  } catch (error) {
+    return { ok: false, error: `${path}: cannot read config file: ${String(error)}` };
+  }
+};
+
+// A file named outright, as `harness run --config` does: its name need not be one of CONFIG_FILES.
+export const loadConfigAt = async (path: string): Promise<Result<LoadedConfig>> => {
+  const text = await readConfigAt(path);
+  if (!text.ok) return text;
+  const loaded = parseConfigFile({ path, text: text.value });
+  return loaded.ok ? loaded : { ok: false, error: loaded.error.message };
+};
+
+export const defaultConfig = (): Config => ConfigSchema.parse({ version: 2 });
 
 export const loadConfig = async (repoRoot: string): Promise<Result<Config, ConfigError>> => {
   const loaded = await loadConfigFile(repoRoot);
@@ -213,7 +237,7 @@ export const loadConfigOrDefault = async (root: string): Promise<Result<Config>>
   const loaded = await loadConfig(root);
   if (loaded.ok) return loaded;
   if (loaded.error.code === "CONFIG_MISSING") {
-    return { ok: true, value: ConfigSchema.parse({ version: 2 }) };
+    return { ok: true, value: defaultConfig() };
   }
   return { ok: false, error: loaded.error.message };
 };
