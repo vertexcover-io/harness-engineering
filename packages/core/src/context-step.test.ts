@@ -15,13 +15,18 @@ import {
   type IAgentProvider,
   type ITerminal,
   type LaunchOptions,
+  type NodeRun,
   noopLogger,
   type RunRef,
   runDirOf,
   type State,
 } from "@harness/sdk";
 import { appendRunEvent, createRegistry, jsonlEventStore } from "@harness/sdk/internal";
-import { completeContextOnSessionStart, runContextStep } from "./context-step.ts";
+import {
+  completeContextOnSessionStart,
+  findOpenContextRun,
+  runContextStep,
+} from "./context-step.ts";
 
 const RESUME = "/orchestrate-v2 --resume feat-x";
 const IDLE = "❯ ";
@@ -407,5 +412,26 @@ describe("runContextStep: guards", () => {
       output: { action: "compact", applied: false, reason: "tmux timed out after 10s" },
     });
     expect(typesOf(fake.typed)).toEqual(["C-u", RESUME, "Enter"]);
+  });
+});
+
+describe("findOpenContextRun", () => {
+  const nodeRun = (nodeType: string, status: string, nodes?: Record<string, unknown>) =>
+    ({
+      nodeRunId: `${nodeType}-${status}`,
+      nodeType,
+      status,
+      startedAt: null,
+      completedAt: null,
+      artifacts: [],
+      ...(nodes === undefined ? {} : { nodes }),
+    }) as unknown as NodeRun;
+
+  test("SC15: a running context step is found at the top level and inside a loop, a completed one is not", () => {
+    const inLoop = { loop: nodeRun("loop", "running", { c: nodeRun("context", "running") }) };
+    const done = { c: nodeRun("context", "completed"), a: nodeRun("agent", "running") };
+    expect(findOpenContextRun(inLoop)?.nodeRunId).toBe("context-running");
+    expect(findOpenContextRun({ c: nodeRun("context", "running") })).toBeDefined();
+    expect(findOpenContextRun(done)).toBeUndefined();
   });
 });

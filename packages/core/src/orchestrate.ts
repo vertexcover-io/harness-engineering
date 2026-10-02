@@ -24,9 +24,10 @@ import {
   runDirOf,
   stopRunningOnSignal,
 } from "@harness/sdk";
-import { createRegistry, type StepOutcome } from "@harness/sdk/internal";
+import { AgentStatusSchema, createRegistry, type StepOutcome } from "@harness/sdk/internal";
 import { agentAdapters, agentProvider, findSessionAgent, HOOK_AGENTS } from "./agents/index.ts";
 import { currentTerminal, harnessTerminalHost } from "./agents/tmux.ts";
+import { commentRepliedEvent, isOpen, readComments, replyToComment } from "./comments.ts";
 import { runContextStep } from "./context-step.ts";
 import { findEnvRun } from "./hooks/common.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
@@ -537,6 +538,53 @@ const limitWaitCommand = () =>
       }).catch((error: unknown) => log.error({ err: error }, "limit wait threw"));
     });
 
+const commentsCommand = () => {
+  const comments = new Command("comments").description("Review comments from the viewer on a run");
+  comments
+    .command("list")
+    .description("Print the run's open comments (sent or delivered) as JSON")
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
+    .option("--all", "include answered, changed and declined comments")
+    .action(async (opts) => {
+      const run = await requireRun(runInputFromFlags(opts));
+      if (!run.ok) return fail(run.error);
+      const { cwd, name } = run.value;
+      const read = await readComments(runDirOf(cwd, name));
+      if (!read.ok) return fail(read.error);
+      printJson({ comments: read.value.comments.filter((c) => opts.all || isOpen(c)) });
+    });
+  comments
+    .command("reply")
+    .description("Answer a comment and record the reply in the run's event log")
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
+    .requiredOption("--id <id>", "comment id from the message, e.g. c4")
+    .addOption(
+      new Option("--status <status>", "what you did about it")
+        .choices(AgentStatusSchema.options)
+        .makeOptionMandatory(),
+    )
+    .requiredOption("--text <text>", "the reply; - reads stdin")
+    .action(async (opts) => {
+      const picked = await requireRun(runInputFromFlags(opts));
+      if (!picked.ok) return fail(picked.error);
+      const run = picked.value;
+      const text = await readValue(opts.text);
+      const replied = await replyToComment(
+        runDirOf(run.cwd, run.name),
+        opts.id,
+        { status: opts.status, text },
+        new Date(),
+      );
+      if (!replied.ok) return fail(replied.error);
+      const logged = await emitRunEvent(run, commentRepliedEvent("orchestrate", replied.value));
+      if (!logged.ok) return fail(logged.error);
+      printJson(replied.value);
+    });
+  return comments;
+};
+
 stopRunningOnSignal();
 
 await new Command()
@@ -554,5 +602,6 @@ await new Command()
   .addCommand(statuslineCommand())
   .addCommand(contextCommand())
   .addCommand(limitWaitCommand())
+  .addCommand(commentsCommand())
   .parseAsync(process.argv)
   .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));

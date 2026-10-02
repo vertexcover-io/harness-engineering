@@ -11,6 +11,7 @@ import {
 } from "@harness/sdk";
 import * as z from "zod";
 import {
+  canTypeComment,
   claudeArgs,
   claudeProvider,
   claudeRunArgs,
@@ -499,5 +500,22 @@ describe("claudeProvider.promptWhenReady", () => {
       result: { ok: true, value: "not-ready" },
       typed: [],
     });
+  });
+});
+
+describe("canTypeComment", () => {
+  const box = (line: string): string => `${RULE}\n${line}\n${RULE}`;
+  test.each([
+    ["idle empty box", PROMPT, true],
+    [
+      "spinner above an empty box",
+      `· Ionizing… (6s · ↓ 359 tokens)\n${box("❯")}\n  Model: Opus`,
+      true,
+    ],
+    ["menu footer", `${PROMPT}\nEnter to select · ↑/↓ to navigate · Esc to cancel`, false],
+    ["half-typed text", box("❯ half a sentence"), false],
+    ["queued-messages hint", box("❯ Press up to edit queued messages"), false],
+  ])("SC14: %s -> %p", (_name, screen, expected) => {
+    expect(canTypeComment(screen)).toBe(expected);
   });
 });

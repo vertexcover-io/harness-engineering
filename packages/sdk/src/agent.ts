@@ -30,7 +30,7 @@ export type TerminalSpec = Readonly<{
 
 // One pane of a terminal: what an agent's screen is read from and typed into.
 export interface ITerminal {
-  // typed literally, so words like "Enter" stay text
+  // typed literally, so words like "Enter" stay text; text with a newline is pasted as one block
   sendText(text: string): Promise<Result<void>>;
   // key names such as "Enter", "Escape"
   sendKeys(keys: readonly string[]): Promise<Result<void>>;
@@ -105,8 +105,13 @@ export interface IAgentProvider {
   // error message or else its screen; null when neither names a time
   limitResetWait(terminal: ITerminal, message: string, now: Date): Promise<ResetWait | null>;
   // types `text` and submits it only at an empty input: a usage-limit menu is answered with
-  // "wait" first, and Enter is never pressed into any other menu or dialog
-  promptWhenReady(terminal: ITerminal, text: string): Promise<Result<"sent" | "not-ready">>;
+  // "wait" first, and Enter is never pressed into any other menu or dialog. With whileBusy, it
+  // also submits while the agent works, which queues the message for its next turn.
+  promptWhenReady(
+    terminal: ITerminal,
+    text: string,
+    options?: Readonly<{ whileBusy?: boolean }>,
+  ): Promise<Result<"sent" | "not-ready">>;
   stop(terminal: ITerminal): Promise<Result<void>>;
   // headless: waits for the answer
   run<T = string>(request: RunRequest<T>): Promise<AgentResult<T>>;

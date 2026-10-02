@@ -60,6 +60,12 @@ const findArtifactsDir = async (runDir: string): Promise<string | undefined> => 
   }
 };
 
+// Whether `child` sits inside `parent`. Pass real paths (realpath) so a symlink cannot lead out.
+export const isInsideDir = (parent: string, child: string): boolean => {
+  const fromParent = relative(parent, child);
+  return !(isAbsolute(fromParent) || fromParent === ".." || fromParent.startsWith("../"));
+};
+
 const fileIssue = async (
   runDir: string,
   artifactsDir: string,
@@ -69,9 +75,7 @@ const fileIssue = async (
   const { name } = artifact;
   try {
     const actual = await realpath(path);
-    const fromArtifacts = relative(artifactsDir, actual);
-    const outside =
-      isAbsolute(fromArtifacts) || fromArtifacts === ".." || fromArtifacts.startsWith("../");
+    const outside = !isInsideDir(artifactsDir, actual);
     if (!outside && (await stat(actual)).isFile()) return [];
     const reason = outside ? "outside-run" : "not-file";
     const message = `artifact ${name}: ${path} must be a file inside artifacts/`;

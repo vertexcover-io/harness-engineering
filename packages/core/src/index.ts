@@ -3,6 +3,20 @@ export { type CodexProviderOptions, codexProvider } from "./agents/codex.ts";
 export { type AgentProviderOptions, agentProvider } from "./agents/index.ts";
 export { harnessTerminalHost } from "./agents/tmux.ts";
 export {
+  addComments,
+  addUserReply,
+  type Comment,
+  commentRepliedEvent,
+  commentsAddedEvent,
+  commentsPath,
+  deliveryMessage,
+  isOpen,
+  markDelivered,
+  readComments,
+  replyToComment,
+} from "./comments.ts";
+export { findOpenContextRun } from "./context-step.ts";
+export {
   DOCTOR_TIMEOUT_MS,
   type DoctorJson,
   DoctorJsonSchema,
@@ -33,4 +47,5 @@ export {
   type Stage,
   StageSchema,
 } from "./stage.ts";
+export { isInsideDir } from "./workflow/done.ts";
 export * from "./workflow/index.ts";

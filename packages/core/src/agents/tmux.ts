@@ -1,4 +1,5 @@
 /// <reference path="./tmux-conf.d.ts" />
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
@@ -146,11 +147,37 @@ const showStatusLine = async (
   await runTmux(socket, commands);
 };
 
+// A newline typed with send-keys is Enter, which submits a half-written message. A bracketed
+// paste (-p) keeps the whole text in the input box as one message until Enter is sent.
+const pasteText = async (
+  socket: TmuxSocket,
+  target: string,
+  text: string,
+): Promise<Result<string>> => {
+  const buffer = `harness-${randomUUID()}`;
+  const loaded = await runTmux(socket, ["set-buffer", "-b", buffer, "--", text]);
+  if (!loaded.ok) return loaded;
+  return runTmux(socket, ["paste-buffer", "-p", "-d", "-b", buffer, "-t", target]);
+};
+
+// Text typed into a pane can come from outside the harness (a review comment). A raw ESC or CR in
+// it could end a bracketed paste early and press keys of its own, so only tab and newline survive.
+const isControl = (code: number): boolean =>
+  (code < 0x20 && code !== 0x09 && code !== 0x0a) || (code >= 0x7f && code <= 0x9f);
+
+const withoutControls = (text: string): string =>
+  Array.from(text)
+    .filter((char) => !isControl(char.codePointAt(0) ?? 0))
+    .join("");
+
 // One pane, at a tmux target that every command takes: a pane id such as %3, which survives a
 // session rename, or =name: for the pane of the session named exactly `name`.
 const tmuxPane = (socket: TmuxSocket, target: string): ITerminal => ({
-  sendText: async (text) => {
-    const result = await runTmux(socket, ["send-keys", "-t", target, "-l", "--", text]);
+  sendText: async (raw) => {
+    const text = withoutControls(raw);
+    const result = text.includes("\n")
+      ? await pasteText(socket, target, text)
+      : await runTmux(socket, ["send-keys", "-t", target, "-l", "--", text]);
     if (result.ok)
       socket.log.debug(
         { session: labelOf(target), chars: text.length },
