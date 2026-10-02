@@ -306,10 +306,21 @@ const hookEntry = (hookCommand: readonly string[], event: string, handler: strin
   timeout: HOOK_TIMEOUT_S,
 });
 
-// Settings for `claude --settings`: one command per registered handler, grouped by matcher.
-export const claudeHookSettings = (hookCommand: readonly string[]) => {
+const STATUSLINE_REFRESH_S = 5;
+
+// The status line command is the hook command with its last word, `hook`, swapped for `statusline`.
+const statusLineEntry = (hookCommand: readonly string[]) => ({
+  type: "command",
+  command: [...hookCommand.slice(0, -1), "statusline"].map(shellQuote).join(" "),
+  refreshInterval: STATUSLINE_REFRESH_S,
+});
+
+// Settings for `claude --settings`: the status line, and one hook command per registered handler,
+// grouped by matcher.
+export const claudeSettings = (hookCommand: readonly string[]) => {
   const registered = claudeHooks();
   return {
+    statusLine: statusLineEntry(hookCommand),
     hooks: {
       SessionStart: registered.SessionStart.map(({ handlers }) => ({
         hooks: handlers.map((handler) => hookEntry(hookCommand, "session-start", handler.name)),
