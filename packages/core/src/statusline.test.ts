@@ -25,7 +25,6 @@ const node = (status: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-// One agent node of a workflow.yaml, indented to sit in a `nodes:` list.
 const agentYaml = (id: string, indent: number, stage?: string): string => {
   const pad = " ".repeat(indent);
   const body = stage === undefined ? "prompt: do it" : `stage: ${stage}`;
@@ -152,6 +151,20 @@ describe("renderStatusline", () => {
     expect(await lineOf(at(45 * SECOND))).toEndWith(" · 45s");
     expect(await lineOf(at(12 * MINUTE))).toEndWith(" · 12m");
     expect(await lineOf(at(65 * MINUTE))).toEndWith(" · 1h05m");
+  });
+
+  test("elapsed time rolls over to minutes at 60s and to hours at 60m", async () => {
+    const at = (ms: number) =>
+      makeRun({ nodeRuns: { a: node("running", { startedAt: ago(ms) }) } });
+    expect(await lineOf(at(59 * SECOND))).toEndWith(" · 59s");
+    expect(await lineOf(at(60 * SECOND))).toEndWith(" · 1m");
+    expect(await lineOf(at(59 * MINUTE))).toEndWith(" · 59m");
+    expect(await lineOf(at(60 * MINUTE))).toEndWith(" · 1h00m");
+  });
+
+  test("a running run between nodes shows the bar without a node or elapsed time", async () => {
+    const between = makeRun({ nodeRuns: { a: node("completed") } });
+    expect(await lineOf(between)).toBe("harness feat-x [▓▓▓░░░░░░░] 1/4");
   });
 
   test("SC5: model and context use appear when present and are left out otherwise", async () => {
