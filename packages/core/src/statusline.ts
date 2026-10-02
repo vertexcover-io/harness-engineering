@@ -1,15 +1,16 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type NodeRun,
   parseJson,
+  parseYaml,
   type RunRef,
+  readIfExists,
   readState,
   runDirOf,
   type State,
 } from "@harness/sdk";
-import { parse } from "yaml";
 import * as z from "zod";
+import { type WorkflowNode, WorkflowSchema } from "./workflow/types.ts";
 
 const BAR_CELLS = 10;
 const GREEN = "\x1b[32m";
@@ -23,13 +24,6 @@ const StatuslineInputSchema = z.looseObject({
 });
 type StatuslineInput = z.infer<typeof StatuslineInputSchema>;
 
-const WorkflowNodeSchema = z.looseObject({
-  id: z.string(),
-  stage: z.string().optional(),
-  nodes: z.array(z.unknown()).optional(),
-});
-const WorkflowSchema = z.looseObject({ nodes: z.array(z.unknown()) });
-
 type Workflow = Readonly<{ total: number; stages: ReadonlyMap<string, string> }>;
 
 const paint = (color: string, text: string): string => `${color}${text}${RESET}`;
@@ -40,25 +34,33 @@ const parseInput = (stdin: string): StatuslineInput => {
   return parsed.success ? parsed.data : {};
 };
 
-const stagesOf = (nodes: readonly unknown[], parents: readonly string[]): [string, string][] =>
-  nodes.flatMap((raw) => {
-    const node = WorkflowNodeSchema.safeParse(raw);
-    if (!node.success) return [];
-    const path = [...parents, node.data.id];
-    return [
-      ...(node.data.stage === undefined
-        ? []
-        : [[path.join("/"), node.data.stage] as [string, string]]),
-      ...stagesOf(node.data.nodes ?? [], path),
-    ];
+// The node lists a node holds, keyed as state.json keys their runs: under the container's id.
+// An include's nodes live in another file, so they get no stage label.
+const listChildren = (node: WorkflowNode): readonly (readonly WorkflowNode[])[] => {
+  if (node.type === "loop") return [node.nodes];
+  if (node.type !== "switch") return [];
+  return [...node.cases.map((c) => c.nodes), ...(node.default === undefined ? [] : [node.default])];
+};
+
+const collectStages = (
+  nodes: readonly WorkflowNode[],
+  parents: readonly string[],
+): [string, string][] =>
+  nodes.flatMap((node) => {
+    const path = [...parents, node.id];
+    const own: [string, string][] =
+      node.type === "agent" && node.stage !== undefined ? [[path.join("/"), node.stage]] : [];
+    return [...own, ...listChildren(node).flatMap((children) => collectStages(children, path))];
   });
 
 const readWorkflow = async (runDir: string): Promise<Workflow | null> => {
-  const text = await readFile(join(runDir, "workflow.yaml"), "utf8").catch(() => null);
+  const path = join(runDir, "workflow.yaml");
+  const text = await readIfExists(path);
   if (text === null) return null;
-  const parsed = WorkflowSchema.safeParse(parse(text));
+  const yaml = parseYaml(text, path);
+  const parsed = WorkflowSchema.safeParse(yaml.ok ? yaml.value : null);
   if (!parsed.success) return null;
-  return { total: parsed.data.nodes.length, stages: new Map(stagesOf(parsed.data.nodes, [])) };
+  return { total: parsed.data.nodes.length, stages: new Map(collectStages(parsed.data.nodes, [])) };
 };
 
 // The running node and every container above it, outermost first.

@@ -25,6 +25,13 @@ const node = (status: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+// One agent node of a workflow.yaml, indented to sit in a `nodes:` list.
+const agentYaml = (id: string, indent: number, stage?: string): string => {
+  const pad = " ".repeat(indent);
+  const body = stage === undefined ? "prompt: do it" : `stage: ${stage}`;
+  return `${pad}- id: ${id}\n${pad}  type: agent\n${pad}  input: {}\n${pad}  ${body}\n`;
+};
+
 type Fixture = Readonly<{
   status?: string;
   nodeRuns?: Record<string, unknown>;
@@ -35,7 +42,7 @@ type Fixture = Readonly<{
 const makeRun = ({
   status = "running",
   nodeRuns = {},
-  workflow = "name: w\nnodes:\n  - id: a\n  - id: b\n  - id: c\n  - id: d\n",
+  workflow = `name: w\nnodes:\n${["a", "b", "c", "d"].map((id) => agentYaml(id, 2)).join("")}`,
   state,
 }: Fixture = {}): RunRef => {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "statusline-")));
@@ -81,7 +88,7 @@ describe("renderStatusline", () => {
 
   test("shows (stage S) only when the stage differs from the node id", async () => {
     const workflow =
-      "name: w\nnodes:\n  - id: design\n    stage: design\n  - id: plan\n    stage: planning\n";
+      `name: w\nnodes:\n${agentYaml("design", 2, "design")}${agentYaml("plan", 2, "planning")}`;
     const same = makeRun({ nodeRuns: { design: node("running") }, workflow });
     const differs = makeRun({ nodeRuns: { plan: node("running") }, workflow });
     expect(await lineOf(same)).toStartWith("harness feat-x ▸ design [");
@@ -90,7 +97,7 @@ describe("renderStatusline", () => {
 
   test("SC2: walks nested nodes to the deepest running node and shows the loop pass", async () => {
     const workflow =
-      "name: w\nnodes:\n  - id: build\n    type: loop\n    nodes:\n      - id: code\n        stage: coder\n";
+      `name: w\nnodes:\n  - id: build\n    type: loop\n    until: \"{{ false }}\"\n    maxIterations: 5\n    input: {}\n    nodes:\n${agentYaml("code", 6, "coder")}`;
     const nodeRuns = {
       build: node("running", {
         nodeType: "loop",
@@ -104,6 +111,18 @@ describe("renderStatusline", () => {
     const loopOnly = { build: node("running", { nodeType: "loop", iteration: 3 }) };
     expect(await lineOf(makeRun({ nodeRuns: loopOnly, workflow }))).toStartWith(
       "harness feat-x ▸ build #3 [",
+    );
+  });
+
+  test("a stage node inside a switch case or its default keeps its stage label", async () => {
+    const workflow = `name: w\nnodes:\n  - id: pick\n    type: switch\n    expression: "{{ inputs.kind }}"\n    input: {}\n    cases:\n      - id: big\n        value: big\n        nodes:\n${agentYaml("plan", 10, "planning")}    default:\n${agentYaml("fix", 6, "implement")}`;
+    const inCase = { pick: node("running", { nodeType: "switch", nodes: { plan: node("running") } }) };
+    const inDefault = { pick: node("running", { nodeType: "switch", nodes: { fix: node("running") } }) };
+    expect(await lineOf(makeRun({ nodeRuns: inCase, workflow }))).toStartWith(
+      "harness feat-x ▸ pick › plan (stage planning) [",
+    );
+    expect(await lineOf(makeRun({ nodeRuns: inDefault, workflow }))).toStartWith(
+      "harness feat-x ▸ pick › fix (stage implement) [",
     );
   });
 
