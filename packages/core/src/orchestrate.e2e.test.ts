@@ -2183,7 +2183,6 @@ describe("orchestrate hook stop-failure", () => {
 });
 
 describe("orchestrate statusline", () => {
-  // A run `init` made, with a running node in its state and a four-node workflow.
   const runWithRunningNode = () => {
     const repo = tempRepo();
     const home = tempDir();
