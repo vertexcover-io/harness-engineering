@@ -314,6 +314,52 @@ const OrchestrateDoneEvent = z.object({
 
 const OrchestrateVerifierEvent = z.object({ payload: VerifierRunSchema });
 
+// Where a comment points: the quote with the words around it, plus the Markdown source lines and
+// section, or the element path inside an HTML artifact.
+export const AnchorSchema = z.strictObject({
+  quote: NonEmptyStringSchema,
+  before: z.string(),
+  after: z.string(),
+  lines: z.tuple([z.int().positive(), z.int().positive()]).optional(),
+  heading: z.string().optional(),
+  selector: z.string().optional(),
+});
+export type Anchor = z.infer<typeof AnchorSchema>;
+
+export const CommentStatusSchema = z.enum(["sent", "delivered", "answered", "changed", "declined"]);
+export const AgentStatusSchema = CommentStatusSchema.extract(["answered", "changed", "declined"]);
+
+export const CommentFieldsSchema = z.strictObject({
+  // relative to the run folder (.harness/NAME), always under artifacts/: "artifacts/design.md"
+  file: NonEmptyStringSchema,
+  kind: z.enum(["comment", "delete", "replace", "global"]),
+  text: z.string(),
+  anchor: AnchorSchema.optional(),
+});
+
+export const CommentDraftSchema = CommentFieldsSchema.refine(
+  (c) => c.kind === "global" || c.anchor !== undefined,
+  "a comment on part of a file needs an anchor",
+).refine((c) => c.kind === "delete" || c.text.trim() !== "", "the comment has no text");
+export type CommentDraft = z.infer<typeof CommentDraftSchema>;
+
+const CommentAddedEvent = z.object({
+  payload: z.strictObject({
+    comments: z.array(CommentFieldsSchema.extend({ id: NonEmptyStringSchema })).min(1),
+  }),
+});
+const CommentDeliveredEvent = z.object({
+  payload: z.strictObject({ ids: z.array(NonEmptyStringSchema).min(1) }),
+});
+const CommentRepliedEvent = z.object({
+  payload: CommentFieldsSchema.omit({ kind: true, text: true }).extend({
+    id: NonEmptyStringSchema,
+    by: z.enum(["user", "agent"]),
+    status: CommentStatusSchema.exclude(["delivered"]),
+    text: NonEmptyStringSchema,
+  }),
+});
+
 const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.started": WorkflowStartedEvent,
   "workflow.completed": WorkflowEndedEvent,
@@ -344,6 +390,9 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "agent.limit.reached": LimitReachedEvent,
   "agent.limit.waiting": LimitWaitingEvent,
   "agent.limit.resumed": LimitResumedEvent,
+  "artifact.comment.added": CommentAddedEvent,
+  "artifact.comment.delivered": CommentDeliveredEvent,
+  "artifact.comment.replied": CommentRepliedEvent,
 };
 
 // An event before the emitter fills runId, ts and (when not given) id. Built from the shape,

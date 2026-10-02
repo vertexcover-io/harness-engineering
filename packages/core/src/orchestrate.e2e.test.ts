@@ -2476,3 +2476,79 @@ describe("orchestrate hook --agent codex", () => {
     });
   });
 });
+
+describe("orchestrate comments", () => {
+  test("SC27: the agent lists open comments and replies from the command line", async () => {
+    const repo = tempRepo();
+    const home = tempDir();
+    initializedRun(home, repo);
+    const anchor = { quote: "one file", before: "a", after: "b", lines: [14, 16] };
+    const base = { file: "artifacts/design.md", kind: "comment", text: "Why?", anchor };
+    const user = { by: "user", text: "Why?", at: "2026-01-01T00:00:00.000Z" };
+    const at = "2026-01-01T00:00:00.000Z";
+    writeFileSync(
+      join(runDirOf(repo, "feat-x"), "comments.json"),
+      JSON.stringify({
+        version: 1,
+        comments: [
+          { ...base, id: "c1", status: "delivered", createdAt: at, thread: [user] },
+          { ...base, id: "c2", status: "answered", createdAt: at, thread: [user] },
+        ],
+      }),
+    );
+    const ids = (stdout: string): string[] =>
+      JSON.parse(stdout).comments.map((c: { id: string }) => c.id);
+
+    const open = orchestrate(repo, home, ["comments", "list", "--run", "feat-x"]);
+    const all = orchestrate(repo, home, ["comments", "list", "--run", "feat-x", "--all"]);
+    const reply = orchestrate(
+      repo,
+      home,
+      ["comments", "reply", "--run", "feat-x", "--id", "c1", "--status", "changed", "--text", "-"],
+      {},
+      "Bundled it.\n",
+    );
+    const missing = orchestrate(repo, home, [
+      "comments",
+      "reply",
+      "--run",
+      "feat-x",
+      "--id",
+      "c9",
+      "--status",
+      "answered",
+      "--text",
+      "x",
+    ]);
+    const badStatus = orchestrate(repo, home, [
+      "comments",
+      "reply",
+      "--run",
+      "feat-x",
+      "--id",
+      "c1",
+      "--status",
+      "maybe",
+      "--text",
+      "x",
+    ]);
+
+    expect([ids(open.stdout), ids(all.stdout)]).toEqual([["c1"], ["c1", "c2"]]);
+    expect(reply.code).toBe(0);
+    expect(JSON.parse(reply.stdout)).toMatchObject({ id: "c1", status: "changed" });
+    const replied = (await eventsOf(repo)).filter((e) => e.type === "artifact.comment.replied");
+    expect(replied.map((e) => e.payload)).toEqual([
+      {
+        id: "c1",
+        by: "agent",
+        status: "changed",
+        text: "Bundled it.",
+        file: "artifacts/design.md",
+        anchor,
+      },
+    ]);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain("c9");
+    expect(badStatus.code).toBe(1);
+  });
+});

@@ -201,7 +201,9 @@ const compact = async (
   return { ok: true, value: undefined };
 };
 
-const findOpenContextRun = (nodeRuns: Readonly<Record<string, NodeRun>>): NodeRun | undefined => {
+export const findOpenContextRun = (
+  nodeRuns: Readonly<Record<string, NodeRun>>,
+): NodeRun | undefined => {
   for (const nodeRun of Object.values(nodeRuns)) {
     if (nodeRun.status !== "running") continue;
     if (nodeRun.nodeType === "context") return nodeRun;

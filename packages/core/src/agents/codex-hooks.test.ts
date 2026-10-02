@@ -10,6 +10,7 @@ import { codexAdapter, readCodexTranscript } from "./codex-hooks.ts";
 const NO_RUNS: RegistryReader = {
   findRun: async () => undefined,
   findRunsByName: async () => [],
+  listRuns: async () => [],
 };
 const deps = { registry: NO_RUNS, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
 

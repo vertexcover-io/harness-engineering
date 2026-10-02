@@ -53,6 +53,11 @@ const hasEmptyInputBox = (screen: string): boolean =>
 const isAwaitingInput = (screen: string): boolean =>
   hasEmptyInputBox(screen) && !isClaudeBusy(screen) && !DIALOG_FOOTER.test(screen);
 
+// Claude queues a message submitted while it works, so a comment only needs the empty box and no
+// menu; waiting for idle would hold it for the length of the agent's task.
+export const canTypeComment = (screen: string): boolean =>
+  hasEmptyInputBox(screen) && !DIALOG_FOOTER.test(screen);
+
 // On some versions Claude's limit menu has "Upgrade your plan" selected, so a bare Enter would buy
 // an upgrade; this picks "Stop and wait" instead. Returns the screen to judge next: unchanged when
 // no limit menu is open, re-read after answering it, or null for a menu it cannot answer safely.
@@ -74,19 +79,24 @@ const limitResetWait = async (terminal: ITerminal, message: string, now: Date) =
   return readResetWait({ message, screen: screen.ok ? screen.value : "", now });
 };
 
+// While busy the empty box is the only proof Enter submits; clearing it would wipe nothing, and a
+// user typing in the box makes it non-empty, so nothing of theirs is overwritten.
 const promptWhenReady = async (
   terminal: ITerminal,
   text: string,
+  options: Readonly<{ whileBusy?: boolean }> = {},
 ): Promise<Result<"sent" | "not-ready">> => {
+  const whileBusy = options.whileBusy === true;
   const captured = await terminal.capture();
   if (!captured.ok) return captured;
   const screen = await answerLimitMenu(terminal, captured.value);
   if (!screen.ok) return screen;
-  if (screen.value === null || !isAwaitingInput(screen.value)) {
-    return { ok: true, value: "not-ready" };
+  const ready = whileBusy ? canTypeComment : isAwaitingInput;
+  if (screen.value === null || !ready(screen.value)) return { ok: true, value: "not-ready" };
+  if (!whileBusy) {
+    const cleared = await terminal.sendKeys([CLAUDE_CLEAR_INPUT_KEY]);
+    if (!cleared.ok) return cleared;
   }
-  const cleared = await terminal.sendKeys([CLAUDE_CLEAR_INPUT_KEY]);
-  if (!cleared.ok) return cleared;
   const typed = await typeLine(terminal, text);
   return typed.ok ? { ok: true, value: "sent" } : typed;
 };

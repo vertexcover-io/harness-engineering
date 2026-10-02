@@ -46,9 +46,12 @@ const countingExec = (real: Exec): { exec: Exec; sourceFileCalls: () => number }
   return { exec: wrapped, sourceFileCalls: () => count };
 };
 
-const waitFor = async (predicate: () => boolean, timeoutMs = 5000): Promise<void> => {
+const waitFor = async (
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 5000,
+): Promise<void> => {
   const start = Date.now();
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() - start > timeoutMs) throw new Error("timed out waiting for condition");
     await sleep(20);
   }
@@ -192,6 +195,48 @@ describe("tmuxHost against a real tmux", () => {
     await pane.sendKeys(["Enter"]);
 
     await waitFor(() => readLines(outFile).some((record) => record.line === "Enter hello"));
+    await pane.kill();
+  });
+
+  test("SC21: multi-line text lands in the pane in one piece and leaves no paste buffer behind", async () => {
+    const { host, socketName } = makeTerminal();
+    const pane = await created(host, {
+      name: `s-${randomUUID()}`,
+      cwd: process.cwd(),
+      argv: ["sh", "-c", "printf '\\033[?2004h'; cat"],
+      env: {},
+    });
+
+    await pane.sendText("line one\nline two");
+
+    // A program that asked for bracketed paste, as Claude does, sees the text between 200~ and 201~
+    await waitFor(async () => {
+      const screen = await pane.capture();
+      return screen.ok && /200~line one[\s\S]*line two[\s\S]*201~/.test(screen.value);
+    });
+    const buffers = await exec("tmux", ["-L", socketName, "list-buffers"], process.cwd());
+    expect(buffers.stdout).not.toContain("harness-");
+    await pane.kill();
+  });
+
+  test("a pasted end-of-paste sequence cannot press keys: control characters never reach the pane", async () => {
+    const { host } = makeTerminal();
+    const out = join(mkdtempSync(join(tmpdir(), "paste-out-")), "received");
+    const pane = await created(host, {
+      name: `s-${randomUUID()}`,
+      cwd: process.cwd(),
+      argv: ["sh", "-c", `printf '\\033[?2004h'; cat > ${out}`],
+      env: {},
+    });
+
+    await pane.sendText("line one\nhello\x1b[201~INJECT\rAFTER");
+    await pane.sendKeys(["Enter"]);
+
+    await waitFor(async () => existsSync(out) && readFileSync(out, "utf8").includes("AFTER"));
+    const received = readFileSync(out, "utf8");
+    // Only the two markers tmux adds around the paste carry an ESC; the embedded one was dropped.
+    expect(received.split("\x1b").length - 1).toBe(2);
+    expect(received).toContain("hello[201~INJECTAFTER");
     await pane.kill();
   });
 

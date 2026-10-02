@@ -13,6 +13,7 @@ const claudePreToolUse = claudeAdapter.preToolUse;
 const NO_RUNS: RegistryReader = {
   findRun: async () => undefined,
   findRunsByName: async () => [],
+  listRuns: async () => [],
 };
 
 const line = (value: unknown): string => JSON.stringify(value);
@@ -69,6 +70,7 @@ describe("claudeAdapter.stop", () => {
         throw new Error("findRun must not be called");
       },
       findRunsByName: async () => [],
+      listRuns: async () => [],
     };
     const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
 

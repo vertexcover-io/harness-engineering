@@ -101,6 +101,7 @@ const namedNewestFirst = (registry: RegistryFile, name: string): readonly Workfl
 export type RegistryReader = Readonly<{
   findRun: (runId: string) => Promise<WorkflowRun | undefined>;
   findRunsByName: (name: string) => Promise<readonly WorkflowRun[]>;
+  listRuns: () => Promise<readonly WorkflowRun[]>;
 }>;
 
 export type Registry = RegistryReader &
@@ -121,6 +122,7 @@ const readRegistry = async (path: string): Promise<RegistryFile> => {
 export const createRegistryReader = (path: string): RegistryReader => ({
   findRun: async (runId) => (await readRegistry(path)).runs[runId],
   findRunsByName: async (name) => namedNewestFirst(await readRegistry(path), name),
+  listRuns: async () => Object.values((await readRegistry(path)).runs),
 });
 
 export const createRegistry = (path: string, parentLog: ILogger = noopLogger): Registry => {

@@ -112,9 +112,6 @@ export const resolveRun = async ({ registry, root, name }: RunLookup): Promise<R
   return toRunRef(run, name);
 };
 
-// A run id is unique everywhere; a run name only within a repo, so it comes with that repo's root.
-export type RunTarget = Readonly<{ runId: string } | { name: string; root: string }>;
-
 const findRunById = async (
   registry: RegistryReader,
   runId: string,
@@ -123,17 +120,6 @@ const findRunById = async (
   return run === undefined
     ? { ok: false, error: `run ${runId} not found` }
     : { ok: true, value: run };
-};
-
-// A name resolves the way orchestrate resolves it (resolveRun), so a run started in a linked
-// worktree or a sub-repo of `root` is found too.
-export const findRunByIdOrName = async (
-  registry: RegistryReader,
-  target: RunTarget,
-): Promise<Result<WorkflowRun>> => {
-  if ("runId" in target) return findRunById(registry, target.runId);
-  const found = await resolveRun({ registry, root: target.root, name: target.name });
-  return found.ok ? findRunById(registry, found.value.id) : found;
 };
 
 const findInitializedRun = async (

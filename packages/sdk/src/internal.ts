@@ -7,7 +7,14 @@ export {
   memoryEventStore,
 } from "./event-store.ts";
 export {
+  AgentStatusSchema,
+  type Anchor,
+  AnchorSchema,
   builtInHandlers,
+  type CommentDraft,
+  CommentDraftSchema,
+  CommentFieldsSchema,
+  CommentStatusSchema,
   type DoneStatus,
   DoneStatusSchema,
   emitEvent,
@@ -23,7 +30,6 @@ export {
   type RegistryFile,
   RegistryFileSchema,
 } from "./registry.ts";
-export { findRunByIdOrName, type RunTarget } from "./runs.ts";
 export {
   appendRunEvent,
   appendRunEventIf,
