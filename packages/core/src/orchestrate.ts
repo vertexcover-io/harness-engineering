@@ -23,6 +23,8 @@ import {
   requireRun,
   runDirOf,
   stopRunningOnSignal,
+  tierLaunch,
+  type WorkflowRun,
 } from "@harness/sdk";
 import { AgentStatusSchema, createRegistry, type StepOutcome } from "@harness/sdk/internal";
 import { agentAdapters, agentProvider, findSessionAgent, HOOK_AGENTS } from "./agents/index.ts";
@@ -458,8 +460,11 @@ const statuslineCommand = () =>
       process.stdout.write(`${line}\n`);
     });
 
-const sessionProvider = async (run: RunRef, sessionId: string, helperLog: ILogger) => {
-  const linked = await registry().findRun(run.id);
+const sessionProvider = (
+  linked: WorkflowRun | undefined,
+  sessionId: string,
+  helperLog: ILogger,
+) => {
   const agent = findSessionAgent(linked?.sessions ?? [], sessionId);
   if (agent === undefined) return undefined;
   const host = harnessTerminalHost(process.env, helperLog);
@@ -480,7 +485,8 @@ const contextCommand = () =>
       if (!picked.ok) return fail(picked.error);
       const run = picked.value;
       const helperLog = helperLogger(run, "harness-context", "context.log");
-      const provider = await sessionProvider(run, opts.sessionId, helperLog);
+      const linked = await registry().findRun(run.id);
+      const provider = sessionProvider(linked, opts.sessionId, helperLog);
       if (provider === undefined) {
         return helperLog.error(
           { sessionId: opts.sessionId },
@@ -498,6 +504,7 @@ const contextCommand = () =>
           cwd: run.cwd,
           env: { HARNESS_RUN_ID: run.id, HARNESS_HOME: harnessHome() },
           orchestrateArgv: orchestrateArgv(),
+          ...tierLaunch(linked?.tier ?? null),
         },
         log: helperLog,
       });
@@ -526,7 +533,8 @@ const limitWaitCommand = () =>
       if (!picked.ok) return fail(picked.error);
       const run = picked.value;
       const log = helperLogger(run, "harness-limit-wait", "limit-wait.log");
-      const provider = await sessionProvider(run, opts.sessionId, log);
+      const linked = await registry().findRun(run.id);
+      const provider = sessionProvider(linked, opts.sessionId, log);
       await runLimitWait({
         run,
         sessionId: opts.sessionId,

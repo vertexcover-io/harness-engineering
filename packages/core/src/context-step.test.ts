@@ -86,6 +86,7 @@ const setUp = async (node: string) => {
     name: "feat-x",
     terminal: "claude-feat-x-r-1",
     config: null,
+    tier: null,
     createdAt: new Date().toISOString(),
   });
   return { run, runDir, registry };

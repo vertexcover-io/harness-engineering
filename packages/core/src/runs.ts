@@ -11,9 +11,8 @@ import {
   type ILogger,
   type ITerminal,
   type JsonValue,
-  loadCheckoutConfig,
-  loadNamedConfig,
   loadRecordedConfig,
+  loadStartConfig,
   type NodeRun,
   type Result,
   type RunRef,
@@ -155,9 +154,7 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
   if ((await git.repoRoot(run.cwd)) === null) {
     return { ok: false, error: `${run.cwd} is not inside a git repository` };
   }
-  const loaded = await (run.config === null
-    ? loadCheckoutConfig(run.cwd)
-    : loadNamedConfig(run.config));
+  const loaded = await loadStartConfig(run.config, run.cwd);
   if (!loaded.ok) return loaded;
   const { config, path, root } = loaded.value;
   return {

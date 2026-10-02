@@ -1,6 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
-import { runDoctor, verdict, workflowChecks } from "@harness/core";
+import { type DoctorReport, runDoctor, verdict, workflowChecks } from "@harness/core";
 import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
 import {
@@ -19,6 +19,15 @@ const collectInput = (pair: string, acc: Record<string, string>): Record<string,
   if (index === -1) throw new Error(`--input must be KEY=VALUE, got "${pair}"`);
   return { ...acc, [pair.slice(0, index)]: pair.slice(index + 1) };
 };
+
+// The verdict alone names the failing checks; each one's detail says what to fix.
+const blockedText = (report: DoctorReport): string =>
+  [
+    verdict(report),
+    ...report.results
+      .filter((row) => row.status === "fail")
+      .map((row) => `${row.name}: ${row.detail}`),
+  ].join("\n");
 
 export const runCommand = () =>
   new Command("run")
@@ -55,7 +64,7 @@ export const runCommand = () =>
       });
       const doctorVerdict = verdict(report);
       log.debug({ verdict: doctorVerdict }, "doctor finished");
-      if (doctorVerdict.startsWith("BLOCKED")) return fail(doctorVerdict);
+      if (doctorVerdict.startsWith("BLOCKED")) return fail(blockedText(report));
 
       const repoRoot = await createGit().repoRoot(cwd);
       if (repoRoot === null) return fail("not inside a git repository");
@@ -67,6 +76,7 @@ export const runCommand = () =>
         inputs: { prompt: opts.prompt, ...opts.input } satisfies JsonObject,
         cwd: repoRoot,
         agent: plan.agent,
+        ...(plan.tier === undefined ? {} : { tier: plan.tier }),
         ...(opts.name === undefined ? {} : { name: opts.name }),
         ...(config === undefined ? {} : { config }),
       });

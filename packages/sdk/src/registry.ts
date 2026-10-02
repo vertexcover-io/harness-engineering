@@ -3,6 +3,7 @@ import { rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import * as z from "zod";
+import { NameSchema, TierModelSchema } from "./config.ts";
 import {
   AbsolutePathSchema,
   JsonObjectSchema,
@@ -32,9 +33,17 @@ export const WorkflowRunSchema = z.strictObject({
   terminal: NonEmptyStringSchema.nullable().default(null),
   // the config file `harness run --config` named; init settles the run's config from it
   config: AbsolutePathSchema.nullable().default(null),
+  // the workflow's tier and the model it mapped to at launch; a new session relaunches with it
+  tier: TierModelSchema.extend({ name: NameSchema }).nullable().default(null),
   createdAt: z.iso.datetime(),
 });
 export type WorkflowRun = z.infer<typeof WorkflowRunSchema>;
+
+// The model and effort a run's tier launches its sessions with; none leaves the agent's defaults.
+export const tierLaunch = (tier: WorkflowRun["tier"]) =>
+  tier === null
+    ? {}
+    : { model: tier.model, ...(tier.effort === undefined ? {} : { effort: tier.effort }) };
 export type SessionRef = z.infer<typeof SessionRefSchema>;
 
 export const RegistryFileSchema = z.strictObject({

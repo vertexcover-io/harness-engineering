@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import * as z from "zod";
-import { EffortSchema } from "./agent.ts";
+import { type AgentType, AgentTypeSchema, EffortSchema } from "./agent.ts";
 import {
   EventHandlerRefSchema,
   EventTypeSchema,
@@ -55,10 +55,14 @@ const CommandSchema = z
 // null means the project has no such command (NOT_APPLICABLE); callers never fall back to another key.
 const CommandsSchema = recordOf(NameSchema, CommandSchema.nullable());
 
-const TierSchema = z.strictObject({
-  agent: SlugSchema,
-  model: NonEmptyStringSchema.optional(),
+export const TierModelSchema = z.strictObject({
+  model: NonEmptyStringSchema,
   effort: EffortSchema.optional(),
+});
+export type TierModel = z.infer<typeof TierModelSchema>;
+
+const AgentConfigSchema = z.strictObject({
+  tiers: recordOf(NameSchema, TierModelSchema).default({}),
 });
 
 const PackageSchema = z.strictObject({
@@ -109,7 +113,7 @@ export const ConfigSchema = z.strictObject({
   version: z.literal(2),
   doctor: NonEmptyStringSchema.optional(),
   baseline: CommandSchema.optional(),
-  tiers: recordOf(NameSchema, TierSchema).default({}),
+  agents: z.partialRecord(AgentTypeSchema, AgentConfigSchema).default({}),
   packages: recordOf(NameSchema, PackageSchema).default({}),
   environments: EnvironmentsSchema.optional(),
   extensions: recordOf(SkillNameSchema, ExtensionSchema).default({}),
@@ -120,6 +124,20 @@ export const ConfigSchema = z.strictObject({
 
 export type ConfigInput = z.input<typeof ConfigSchema>;
 export type Config = z.output<typeof ConfigSchema>;
+
+export const findTierModel = (
+  config: Config,
+  agent: AgentType,
+  tier: string,
+): Result<TierModel> => {
+  const tiers = config.agents[agent]?.tiers ?? {};
+  const found = Object.hasOwn(tiers, tier) ? tiers[tier] : undefined;
+  if (found !== undefined) return { ok: true, value: found };
+  return {
+    ok: false,
+    error: `tier "${tier}" has no model for ${agent}: add agents.${agent}.tiers.${tier} to the config`,
+  };
+};
 
 export const unknownPackage = (config: Config, names: readonly string[]): string | undefined =>
   names.find((name) => !Object.hasOwn(config.packages, name));

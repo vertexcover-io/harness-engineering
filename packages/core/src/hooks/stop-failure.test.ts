@@ -31,6 +31,7 @@ const setUp = async () => {
     name: "feat-x",
     terminal: null,
     config: null,
+    tier: null,
     createdAt: "2026-09-26T10:00:00Z",
   });
   const runDir = runDirOf(cwd, "feat-x");

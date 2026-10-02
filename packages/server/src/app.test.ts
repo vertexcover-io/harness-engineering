@@ -138,6 +138,7 @@ describe("POST /runs", () => {
       `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify({ a: 1 })}`,
     );
     expect(launchOptions?.env?.HARNESS_RUN_ID).toBe(json.run.id);
+    expect(launchOptions?.model).toBeUndefined();
 
     expect((await deps.registry.findRun(json.run.id))?.terminal).toBe("session-xyz");
   });
@@ -263,6 +264,69 @@ describe("POST /runs", () => {
     expect(withConfig.config).toBe(config);
     expect((await deps.registry.findRun(withConfig.id))?.config).toBe(config);
     expect(without.config).toBeNull();
+  });
+
+  test("a workflow tier launches the session with the model and effort the config maps it to", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    const config = join(cwd, "tiers.yaml");
+    writeFileSync(
+      config,
+      "version: 2\nagents:\n  codex:\n    tiers:\n      deep: { model: gpt-5-codex, effort: high }\n",
+    );
+    const seen: LaunchOptions[] = [];
+    const deps = await buildDeps((options) => {
+      seen.push(options);
+      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
+    });
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workflow: "ok",
+        workflowPath,
+        inputs: {},
+        cwd,
+        agent: "codex",
+        tier: "deep",
+        config,
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(seen.map(({ model, effort }) => ({ model, effort }))).toEqual([
+      { model: "gpt-5-codex", effort: "high" },
+    ]);
+    const { run } = z.object({ run: WorkflowRunSchema }).parse(await res.json());
+    expect((await deps.registry.findRun(run.id))?.tier).toEqual({
+      name: "deep",
+      model: "gpt-5-codex",
+      effort: "high",
+    });
+  });
+
+  test("a workflow tier the config does not map for the agent is 400 and launches nothing", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    const config = join(cwd, "tiers.yaml");
+    writeFileSync(config, "version: 2\nagents:\n  codex:\n    tiers:\n      deep: { model: o3 }\n");
+    let launched = false;
+    const deps = await buildDeps(() => {
+      launched = true;
+      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
+    });
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, tier: "deep", config }),
+    });
+
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: { code: string; message: string } };
+    expect(error.code).toBe("bad-request");
+    expect(error.message).toContain("agents.claude.tiers.deep");
+    expect(launched).toBe(false);
+    expect(await deps.registry.listRuns()).toEqual([]);
   });
 
   test("SC11: a failing provider is 502 agent-failed and records no run", async () => {

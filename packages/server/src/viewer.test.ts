@@ -41,6 +41,7 @@ const runRecord = (id: string, cwd: string, name: string | null): WorkflowRun =>
   name,
   terminal: null,
   config: null,
+  tier: null,
   createdAt: "2026-01-01T00:00:00.000Z",
 });
 

@@ -48,6 +48,7 @@ const savedRun = (cwd: string, overrides: Partial<WorkflowRun> = {}): WorkflowRu
     name: null,
     terminal: null,
     config: null,
+    tier: null,
     createdAt: new Date().toISOString(),
     ...overrides,
   };
@@ -434,12 +435,16 @@ describe("orchestrate skill", () => {
 });
 
 // A run named feat-x in a fresh repo, started from SOURCE the way `harness run` + init leave it.
-const startedRun = (source: string, config?: object): Readonly<{ repo: string; home: string }> => {
+const startedRun = (
+  source: string,
+  config?: object,
+  overrides: Partial<WorkflowRun> = {},
+): Readonly<{ repo: string; home: string }> => {
   const repo = config === undefined ? tempRepo() : configuredRepo(config);
   const home = tempDir();
   const workflowPath = join(repo, "steps.yaml");
   writeFileSync(workflowPath, source);
-  writeRegistry(home, [savedRun(repo, { workflowPath })]);
+  writeRegistry(home, [savedRun(repo, { workflowPath, ...overrides })]);
   const init = orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"]);
   if (init.code !== 0) throw new Error(init.stderr);
   return { repo, home };
@@ -2179,8 +2184,12 @@ const FAKE_AGENT = join(import.meta.dir, "agents", "fixtures", "fake-agent.ts");
 const RESUME = "/orchestrate-v2 --resume feat-x";
 
 // A run whose agent is the fake agent in a private tmux pane, driven to its context node.
-const runToContextNode = async (node: string, socket: string) => {
-  const run = startedRun(withContext(node));
+const runToContextNode = async (
+  node: string,
+  socket: string,
+  overrides: Partial<WorkflowRun> = {},
+) => {
+  const run = startedRun(withContext(node), undefined, overrides);
   const out = join(tempDir(), "agent.jsonl");
   const tmux = (...args: string[]) =>
     execFileSync("tmux", ["-L", socket, "-f", "/dev/null", ...args], { encoding: "utf8" });
@@ -2262,6 +2271,23 @@ describe("context node through a real tmux pane", () => {
         output: { action: "new", applied: true, sessionId },
       });
       expect(flow.next()).toMatchObject({ kind: "agent", nodeId: "second" });
+    } finally {
+      spawnSync("tmux", ["-L", socket, "kill-server"]);
+    }
+  }, 30_000);
+
+  test("new: the restarted session keeps the model and effort of the run's tier", async () => {
+    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    try {
+      const tier = { name: "deep", model: "opus", effort: "high" } as const;
+      const flow = await runToContextNode("action: new", socket, { tier });
+
+      expect(flow.stop()).toMatchObject({ code: 0, stdout: "" });
+      await waitFor(() => flow.launches().length === 2);
+
+      const argv = flow.launches()[1]?.argv as string[];
+      expect(argv[argv.indexOf("--model") + 1]).toBe("opus");
+      expect(argv[argv.indexOf("--effort") + 1]).toBe("high");
     } finally {
       spawnSync("tmux", ["-L", socket, "kill-server"]);
     }
