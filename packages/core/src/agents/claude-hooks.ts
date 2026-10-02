@@ -298,9 +298,9 @@ const claudeHooks = () =>
 
 const shellQuote = (arg: string): string => `'${arg.replaceAll("'", `'\\''`)}'`;
 
-const hookEntry = (hookCommand: readonly string[], event: string, handler: string) => ({
+const hookEntry = (orchestrateArgv: readonly string[], event: string, handler: string) => ({
   type: "command",
-  command: [...hookCommand, event, "--agent", "claude", "--handler", handler]
+  command: [...orchestrateArgv, "hook", event, "--agent", "claude", "--handler", handler]
     .map(shellQuote)
     .join(" "),
   timeout: HOOK_TIMEOUT_S,
@@ -308,33 +308,32 @@ const hookEntry = (hookCommand: readonly string[], event: string, handler: strin
 
 const STATUSLINE_REFRESH_S = 5;
 
-// The status line command is the hook command with its last word, `hook`, swapped for `statusline`.
-const statusLineEntry = (hookCommand: readonly string[]) => ({
+const statusLineEntry = (orchestrateArgv: readonly string[]) => ({
   type: "command",
-  command: [...hookCommand.slice(0, -1), "statusline"].map(shellQuote).join(" "),
+  command: [...orchestrateArgv, "statusline"].map(shellQuote).join(" "),
   refreshInterval: STATUSLINE_REFRESH_S,
 });
 
 // Settings for `claude --settings`: the status line, and one hook command per registered handler,
 // grouped by matcher.
-export const claudeSettings = (hookCommand: readonly string[]) => {
+export const claudeSettings = (orchestrateArgv: readonly string[]) => {
   const registered = claudeHooks();
   return {
-    statusLine: statusLineEntry(hookCommand),
+    statusLine: statusLineEntry(orchestrateArgv),
     hooks: {
       SessionStart: registered.SessionStart.map(({ handlers }) => ({
-        hooks: handlers.map((handler) => hookEntry(hookCommand, "session-start", handler.name)),
+        hooks: handlers.map((handler) => hookEntry(orchestrateArgv, "session-start", handler.name)),
       })),
       Stop: registered.Stop.map(({ handlers }) => ({
-        hooks: handlers.map((handler) => hookEntry(hookCommand, "stop", handler.name)),
+        hooks: handlers.map((handler) => hookEntry(orchestrateArgv, "stop", handler.name)),
       })),
       StopFailure: registered.StopFailure.map(({ matcher, handlers }) => ({
         matcher,
-        hooks: handlers.map((handler) => hookEntry(hookCommand, "stop-failure", handler.name)),
+        hooks: handlers.map((handler) => hookEntry(orchestrateArgv, "stop-failure", handler.name)),
       })),
       PreToolUse: registered.PreToolUse.map(({ matcher, handlers }) => ({
         matcher,
-        hooks: handlers.map((handler) => hookEntry(hookCommand, "pre-tool-use", handler.name)),
+        hooks: handlers.map((handler) => hookEntry(orchestrateArgv, "pre-tool-use", handler.name)),
       })),
     },
   };

@@ -26,7 +26,7 @@ export { getConsumed, getNodeFacts, getNodeRun } from "./runs.ts";
 export {
   type LoadedStage,
   loadStage,
-  orchestrateHookCommand,
+  orchestrateArgv,
   type SchemaRegistry,
   type Stage,
   StageSchema,

@@ -105,7 +105,7 @@ export type ClaudeArgOptions = Readonly<{
   permissionMode?: PermissionMode;
   systemPrompt?: string;
   prompt?: string;
-  hookCommand?: readonly string[];
+  orchestrateArgv?: readonly string[];
 }>;
 
 export const claudeArgs = (sessionId: string, options: ClaudeArgOptions): string[] => [
@@ -115,8 +115,8 @@ export const claudeArgs = (sessionId: string, options: ClaudeArgOptions): string
   ...(options.effort !== undefined ? ["--effort", options.effort] : []),
   ...(options.permissionMode !== undefined ? ["--permission-mode", options.permissionMode] : []),
   ...(options.systemPrompt !== undefined ? ["--append-system-prompt", options.systemPrompt] : []),
-  ...(options.hookCommand !== undefined
-    ? ["--settings", JSON.stringify(claudeSettings(options.hookCommand))]
+  ...(options.orchestrateArgv !== undefined
+    ? ["--settings", JSON.stringify(claudeSettings(options.orchestrateArgv))]
     : []),
   ...(options.prompt !== undefined ? [options.prompt] : []),
 ];

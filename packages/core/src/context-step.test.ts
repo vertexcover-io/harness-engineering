@@ -156,7 +156,7 @@ afterEach(() => {
   mock.restore();
 });
 
-const LAUNCH = { cwd: "/repo", env: { HARNESS_RUN_ID: "r-1" }, hookCommand: ["hook"] };
+const LAUNCH = { cwd: "/repo", env: { HARNESS_RUN_ID: "r-1" }, orchestrateArgv: ["/o.ts"] };
 
 type Context = Awaited<ReturnType<typeof setUp>>;
 

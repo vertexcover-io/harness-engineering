@@ -45,7 +45,7 @@ import {
 } from "./runs.ts";
 import {
   harnessSkillsDir,
-  orchestrateHookCommand,
+  orchestrateArgv,
   resolveExtension,
   resolveReference,
   resolveReferencePath,
@@ -477,7 +477,7 @@ const contextCommand = () =>
         launch: {
           cwd: run.cwd,
           env: { HARNESS_RUN_ID: run.id, HARNESS_HOME: harnessHome() },
-          hookCommand: orchestrateHookCommand(),
+          orchestrateArgv: orchestrateArgv(),
         },
         log: helperLog,
       });
