@@ -2235,4 +2235,13 @@ describe("orchestrate statusline", () => {
 
     expect(result).toMatchObject({ code: 0, stdout: "harness feat-x\n" });
   });
+
+  test("SC9: a corrupt registry prints the starting line and exits 0", () => {
+    const { repo, home } = runWithRunningNode();
+    writeFileSync(join(home, "registry.json"), "{ corrupt");
+
+    const result = orchestrate(repo, home, ["statusline"], { HARNESS_RUN_ID: "r-1" }, "{}");
+
+    expect(result).toMatchObject({ code: 0, stdout: "harness · starting\n" });
+  });
 });
