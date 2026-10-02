@@ -64,7 +64,7 @@ describe("harness attach", () => {
     expect(noTerminal.stderr).toContain("no terminal yet");
   }, 40_000);
 
-  test("takes a run id only through --run-id, and exactly one of a name or --run-id", async () => {
+  test("takes a run id only through --run-id, and refuses a name and --run-id that disagree", async () => {
     const cwd = makeRepo();
     const home = mkdtempSync(join(tmpdir(), "harness-attach-home-"));
     const registry = createRegistry(registryPath(home));
@@ -84,7 +84,9 @@ describe("harness attach", () => {
     expect(unknownId.stderr).toContain("r-00000000");
 
     expect(attach(cwd, home).code).toBe(1);
-    expect(attach(cwd, home, "fix-login", "--run-id", "r-1a2b3c4d").code).toBe(1);
+    const mismatched = attach(cwd, home, "other-run", "--run-id", "r-1a2b3c4d");
+    expect(mismatched.code).toBe(1);
+    expect(mismatched.stderr).toContain("name different runs");
   }, 40_000);
 
   test("finds a run started in a linked worktree of this repo, as orchestrate does", async () => {

@@ -118,3 +118,45 @@ export const ensureServer = async (home: string = harnessHome()): Promise<void> 
     throw new Error(`harness server did not start within ${HEALTH_TIMEOUT_MS / 1000}s\n${tail}`);
   });
 };
+
+type OpenDecision = Readonly<{
+  noOpen: boolean;
+  isTTY: boolean;
+  env: NodeJS.ProcessEnv;
+  platform: NodeJS.Platform;
+}>;
+
+// On Linux without a display (an SSH session), xdg-open can start a text browser inside the
+// user's terminal and take it over.
+export const shouldOpenBrowser = ({ noOpen, isTTY, env, platform }: OpenDecision): boolean => {
+  if (noOpen || !isTTY) return false;
+  if (env.CI !== undefined && env.CI !== "" && env.CI !== "false") return false;
+  if (platform !== "linux") return true;
+  return Boolean(env.DISPLAY) || Boolean(env.WAYLAND_DISPLAY);
+};
+
+const openerFor = (
+  platform: NodeJS.Platform,
+  url: string,
+): readonly [string, readonly string[]] => {
+  if (platform === "darwin") return ["open", [url]];
+  if (platform === "win32") return ["cmd", ["/c", "start", "", url]];
+  return ["xdg-open", [url]];
+};
+
+// The URL is always printed as well, so a failed open is only logged.
+export const openInBrowser = (url: string): void => {
+  const [command, args] = openerFor(process.platform, url);
+  try {
+    spawnDetached(command, args, { cwd: process.cwd(), output: "ignore" });
+  } catch (error) {
+    cliLog().debug({ err: error, command }, "could not open the browser");
+  }
+};
+
+export const openForPerson = (url: string, noOpen: boolean): void => {
+  const isTTY = process.stdout.isTTY === true;
+  if (shouldOpenBrowser({ noOpen, isTTY, env: process.env, platform: process.platform })) {
+    openInBrowser(url);
+  }
+};

@@ -11,6 +11,7 @@ import {
   ensureServer,
   fail,
   harnessClient,
+  openForPerson,
 } from "./client.ts";
 
 const collectInput = (pair: string, acc: Record<string, string>): Record<string, string> => {
@@ -27,6 +28,7 @@ export const runCommand = () =>
     .option("--input <key=value>", "extra input, repeatable", collectInput, {})
     .option("--attach", "attach to the session's terminal once it starts")
     .option("--config <file>", "orchestrate config file the run reads (default: the checkout's)")
+    .option("--no-open", "do not open the run's page in the browser")
     .action(async (workflowArg, opts) => {
       const log = commandLog("run");
       const cwd = process.cwd();
@@ -75,6 +77,8 @@ export const runCommand = () =>
 
       console.log(run.id);
       console.log(`harness attach --run-id ${run.id}`);
+      console.log(`view: ${result.value.view}`);
+      openForPerson(result.value.view, opts.open === false);
 
       if (opts.attach === true) {
         const [command, ...args] = result.value.attach;
