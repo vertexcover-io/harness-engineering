@@ -66,8 +66,9 @@ export type LaunchOptions = Readonly<{
   permissionMode?: PermissionMode;
   model?: string;
   effort?: Effort;
-  // argv that runs `orchestrate hook`; the provider registers the agent's hooks with it
-  hookCommand?: readonly string[];
+  // argv that runs the orchestrate script; the provider registers the agent's hooks and status
+  // line as its subcommands
+  orchestrateArgv?: readonly string[];
 }>;
 
 export type RunRequest<T = string> = {

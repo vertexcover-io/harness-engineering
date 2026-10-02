@@ -80,7 +80,7 @@ describe("claudeAdapter.stop", () => {
 
 describe("claudeSettings", () => {
   test("SC18 — the settings run the hook command with every argument quoted", () => {
-    const settings = claudeSettings(["/usr/bin/bun", "/opt/it's here/orchestrate.ts", "hook"]);
+    const settings = claudeSettings(["/usr/bin/bun", "/opt/it's here/orchestrate.ts"]);
     expect(settings.hooks.Stop[0]?.hooks[0]).toEqual({
       type: "command",
       command:
@@ -92,7 +92,7 @@ describe("claudeSettings", () => {
 
 describe("claudeSettings statusLine", () => {
   test("SC8 — the status line runs the same script as the hooks, ending in statusline, every 5 seconds", () => {
-    const settings = claudeSettings(["/usr/bin/bun", "/opt/it's here/orchestrate.ts", "hook"]);
+    const settings = claudeSettings(["/usr/bin/bun", "/opt/it's here/orchestrate.ts"]);
     expect(settings.statusLine).toEqual({
       type: "command",
       command: "'/usr/bin/bun' '/opt/it'\\''s here/orchestrate.ts' 'statusline'",
@@ -136,7 +136,7 @@ describe("claudeAdapter.preToolUse", () => {
 
 describe("claudeSettings SessionStart", () => {
   test("SC13: SessionStart runs link-session with no matcher, and Stop and PreToolUse are unchanged", () => {
-    const settings = claudeSettings(["/usr/bin/bun", "/o.ts", "hook"]);
+    const settings = claudeSettings(["/usr/bin/bun", "/o.ts"]);
 
     expect(settings.hooks.SessionStart).toEqual([
       {
@@ -157,7 +157,7 @@ describe("claudeSettings SessionStart", () => {
 
 describe("claudeSettings PreToolUse", () => {
   test("SC15 — each registered handler gets its own command, grouped by matcher", () => {
-    const settings = claudeSettings(["/usr/bin/bun", "/o.ts", "hook"]);
+    const settings = claudeSettings(["/usr/bin/bun", "/o.ts"]);
     const command = (handler: string) =>
       `'/usr/bin/bun' '/o.ts' 'hook' 'pre-tool-use' '--agent' 'claude' '--handler' '${handler}'`;
     expect(settings.hooks.PreToolUse).toEqual([
@@ -213,7 +213,7 @@ describe("claudeAdapter.stopFailure", () => {
 
 describe("claudeSettings StopFailure", () => {
   test("StopFailure runs resume-after-limit only for rate_limit, the error a usage limit ends a turn with", () => {
-    const settings = claudeSettings(["/usr/bin/bun", "/o.ts", "hook"]);
+    const settings = claudeSettings(["/usr/bin/bun", "/o.ts"]);
     expect(settings.hooks.StopFailure).toEqual([
       {
         matcher: "rate_limit",
@@ -231,7 +231,7 @@ describe("claudeSettings StopFailure", () => {
 });
 
 describe("claudeSettings handlers", () => {
-  const settings = claudeSettings(["bun", "orchestrate.ts", "hook"]);
+  const settings = claudeSettings(["bun", "orchestrate.ts"]);
   const handlerNames = (groups: readonly { hooks: readonly { command: string }[] }[]): string[] =>
     groups.flatMap((group) =>
       group.hooks.map((hook) => /'--handler' '([^']+)'/.exec(hook.command)?.[1] ?? ""),

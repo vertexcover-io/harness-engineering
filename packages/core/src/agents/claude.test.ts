@@ -49,10 +49,10 @@ describe("claudeArgs", () => {
   });
 
   test("SC24 — a hook command adds Claude settings with the Stop hook before the prompt", () => {
-    const hookCommand = ["/b", "/o.ts", "hook"];
-    const args = claudeArgs("id-1", { hookCommand, prompt: "go" });
+    const orchestrateArgv = ["/b", "/o.ts"];
+    const args = claudeArgs("id-1", { orchestrateArgv, prompt: "go" });
     expect(args).toEqual(["--session-id", "id-1", "--settings", expect.any(String), "go"]);
-    expect(JSON.parse(args[3] ?? "")).toEqual(claudeSettings(hookCommand));
+    expect(JSON.parse(args[3] ?? "")).toEqual(claudeSettings(orchestrateArgv));
   });
 });
 
@@ -198,7 +198,7 @@ describe("claudeProvider.relaunch", () => {
       cwd: "/repo",
       prompt: "/orchestrate-v2 --resume feat-x",
       env: { HARNESS_RUN_ID: "r-1" },
-      hookCommand: ["/usr/bin/bun", "/o.ts", "hook"],
+      orchestrateArgv: ["/usr/bin/bun", "/o.ts"],
     });
 
     expect(result).toEqual({ ok: true, value: undefined });

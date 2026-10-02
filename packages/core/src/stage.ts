@@ -127,11 +127,7 @@ export const spawnOrchestrateHelper = ({
 };
 
 // The server that asks for this runs under bun, so execPath is bun.
-export const orchestrateHookCommand = (): readonly string[] => [
-  process.execPath,
-  ORCHESTRATE_SCRIPT,
-  "hook",
-];
+export const orchestrateArgv = (): readonly string[] => [process.execPath, ORCHESTRATE_SCRIPT];
 
 // A stage name is one of the harness's own skills; a stage with a "/" is a skill folder in the
 // project at `root`.
