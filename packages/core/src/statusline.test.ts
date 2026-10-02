@@ -99,7 +99,7 @@ describe("renderStatusline", () => {
       }),
     };
     expect(await lineOf(makeRun({ nodeRuns, workflow }))).toStartWith(
-      "harness feat-x ▸ build › code (stage coder) [░░░░░░░░░░] 0/1",
+      "harness feat-x ▸ build #2 › code (stage coder) [░░░░░░░░░░] 0/1",
     );
     const loopOnly = { build: node("running", { nodeType: "loop", iteration: 3 }) };
     expect(await lineOf(makeRun({ nodeRuns: loopOnly, workflow }))).toStartWith(

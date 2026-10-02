@@ -61,29 +61,22 @@ const readWorkflow = async (runDir: string): Promise<Workflow | null> => {
   return { total: parsed.data.nodes.length, stages: new Map(stagesOf(parsed.data.nodes, [])) };
 };
 
-type Running = Readonly<{ path: readonly string[]; run: NodeRun }>;
+// The running node and every container above it, outermost first.
+type Running = readonly (readonly [string, NodeRun])[];
 
-const runningEntry = (nodes: Readonly<Record<string, NodeRun>>): [string, NodeRun] | undefined =>
-  Object.entries(nodes).find(([, run]) => run.status === "running");
-
-const deepestRunning = (
-  nodes: Readonly<Record<string, NodeRun>>,
-  parents: readonly string[] = [],
-): Running | undefined => {
-  const entry = runningEntry(nodes);
-  if (entry === undefined) return undefined;
-  const [id, run] = entry;
-  const path = [...parents, id];
-  return (run.nodes && deepestRunning(run.nodes, path)) || { path, run };
+const findRunning = (nodes: Readonly<Record<string, NodeRun>>): Running => {
+  const entry = Object.entries(nodes).find(([, run]) => run.status === "running");
+  if (entry === undefined) return [];
+  return [entry, ...findRunning(entry[1].nodes ?? {})];
 };
 
-const nodeLabel = ({ path, run }: Running, workflow: Workflow | null): string => {
+const nodeLabel = (running: Running, workflow: Workflow | null): string => {
+  const path = running.map(([id]) => id);
   const id = path.at(-1);
-  const stage = run.stage ?? workflow?.stages.get(path.join("/"));
-  const ids = path.map((part, index) =>
-    index === path.length - 1 && run.iteration !== undefined ? `${part} #${run.iteration}` : part,
-  );
-  const label = ids.join(" › ");
+  const stage = workflow?.stages.get(path.join("/"));
+  const label = running
+    .map(([part, run]) => (run.iteration === undefined ? part : `${part} #${run.iteration}`))
+    .join(" › ");
   return stage === undefined || stage === id ? label : `${label} (stage ${stage})`;
 };
 
@@ -106,24 +99,21 @@ const FINISHED: Readonly<Record<string, string>> = {
   cancelled: paint(RED, "✗ cancelled"),
 };
 
-const runPart = (
-  state: State,
-  running: Running | undefined,
-  workflow: Workflow | null,
-): string[] => {
+const runPart = (state: State, running: Running, workflow: Workflow | null): string[] => {
   const finished = FINISHED[state.status];
   if (finished !== undefined) return [`▸ ${finished}`];
-  if (running === undefined) return [];
+  if (running.length === 0) return [];
   return [`▸ ${paint(GREEN, nodeLabel(running, workflow))}`];
 };
 
 const trailing = (
   state: State,
-  running: Running | undefined,
+  running: Running,
   input: StatuslineInput,
   now: number,
 ): string[] => {
-  const showElapsed = state.status === "running" && running?.run.startedAt;
+  const startedAt = running.at(-1)?.[1].startedAt;
+  const showElapsed = state.status === "running" && startedAt;
   const percentage = input.context_window?.used_percentage;
   return [
     ...(showElapsed ? [elapsed(showElapsed, now)] : []),
@@ -132,25 +122,21 @@ const trailing = (
   ];
 };
 
-const readStateOrNull = (runDir: string): Promise<State | null> =>
-  readState(runDir).catch(() => null);
-
 // The line Claude Code shows for a harness run session. Reads the run's saved state without a
 // lock and never writes; the caller prints it.
 export const renderStatusline = async (stdin: string, run: RunRef | undefined): Promise<string> => {
   if (run === undefined) return "harness · starting";
   const runDir = runDirOf(run.cwd, run.name);
   const [state, workflow] = await Promise.all([
-    readStateOrNull(runDir),
+    readState(runDir).catch(() => null),
     readWorkflow(runDir).catch(() => null),
   ]);
   const head = `harness ${run.name}`;
   if (state === null) return head;
-  const now = Date.now();
-  const running = deepestRunning(state.nodeRuns);
+  const running = findRunning(state.nodeRuns);
   const done = Object.values(state.nodeRuns).filter((node) => node.status !== "running").length;
   const total = workflow?.total ?? 0;
   const progress = total === 0 ? [] : [progressBar(done, total)];
   const first = [head, ...runPart(state, running, workflow), ...progress].join(" ");
-  return [first, ...trailing(state, running, parseInput(stdin), now)].join(" · ");
+  return [first, ...trailing(state, running, parseInput(stdin), Date.now())].join(" · ");
 };
