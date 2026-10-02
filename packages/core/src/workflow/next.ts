@@ -63,7 +63,7 @@ const CONTINUE: Step = { kind: "continue" };
 type Walk = Readonly<{
   emit: Emit;
   inputs: JsonValue;
-  loop: Readonly<{ index: number; previous: JsonValue }> | undefined;
+  loop: Readonly<{ index: number; max: number; previous: JsonValue }> | undefined;
 }>;
 
 // Top-level nodes carry no `parents`; state.json puts them at the root of its tree.
@@ -381,7 +381,8 @@ const executeInclude = async (
 };
 
 // A loop's node run holds only its current pass: `iteration` numbers it, and `output` is the output
-// of the pass before it (its last body node's), which the pass reads as `iteration.previous`. Once a pass ends, until
+// of the pass before it (its last body node's), which the pass reads as `iteration.previous`; `iteration.max` is its
+// maxIterations. Once a pass ends, until
 // decides: stop, fail, or record the next pass (which clears the children) and walk it.
 const executeLoop = async (
   node: PlanLoopNode,
@@ -397,7 +398,8 @@ const executeLoop = async (
   }
   const index = nodeRun.iteration ?? 1;
   const previous = nodeRun.output ?? null;
-  const inside: Walk = { ...walk, inputs: nodeRun.input ?? null, loop: { index, previous } };
+  const max = node.maxIterations;
+  const inside: Walk = { ...walk, inputs: nodeRun.input ?? null, loop: { index, max, previous } };
   const walked = await executeNodes(node.nodes, inside, state);
   if (walked.step.kind !== "continue") return walked;
   const results = findNodeRuns(walked.state.nodeRuns, [...node.parents, node.id]);
@@ -406,7 +408,7 @@ const executeLoop = async (
     return endContainer(node, nodeRun, walk, walked.state, ending);
   }
   try {
-    const iteration = { index, previous, nodes: results };
+    const iteration = { index, max, previous, nodes: results };
     if (evaluateBoolean(node.until, { inputs: inside.inputs, nodes: {}, iteration })) {
       return endContainer(node, nodeRun, walk, walked.state, ending);
     }
@@ -414,7 +416,7 @@ const executeLoop = async (
     if (!(error instanceof NodeFailure)) throw error;
     return endContainer(node, nodeRun, walk, walked.state, { ...ending, failure: error });
   }
-  if (index >= node.maxIterations) {
+  if (index >= max) {
     const message = `${node.id} ran ${node.maxIterations} times and until never held`;
     const failure = new NodeFailure("exhausted", message);
     return endContainer(node, nodeRun, walk, walked.state, { ...ending, failure });

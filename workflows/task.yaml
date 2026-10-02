@@ -58,3 +58,29 @@ nodes:
     dependsOn: [implement]
     input:
       workspace: "{{ nodes.create-workspace.output }}"
+
+  - id: qa-loop
+    type: loop
+    dependsOn: [code-review]
+    until: "{{ iteration.nodes.qa.output.status != 'FAIL' }}"
+    maxIterations: 4
+    input:
+      workspace: "{{ nodes.create-workspace.output }}"
+      task: "{{ nodes.ticket-fetcher.output.task }}"
+    nodes:
+      - id: fix
+        type: agent
+        stage: implement
+        when: "{{ iteration.index > 1 }}"
+        input:
+          workspace: "{{ inputs.workspace }}"
+          feedback: "{{ iteration.previous.bugs }}"
+
+      - id: qa
+        type: agent
+        stage: qa
+        input:
+          workspace: "{{ inputs.workspace }}"
+          task: "{{ inputs.task }}"
+          round: "{{ iteration.index }}"
+          rounds: "{{ iteration.max }}"

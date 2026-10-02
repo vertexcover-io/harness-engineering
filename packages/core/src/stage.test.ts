@@ -9,6 +9,7 @@ import {
   CreateWorkspaceInputSchema,
   CreateWorkspaceOutputSchema,
 } from "../../../skills/create-workspace/scripts/workspace.ts";
+import { schemas as qaSchemas } from "../../../skills/qa/scripts/qa.ts";
 import { schemas as ticketSchemas } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import {
   loadStage,
@@ -429,5 +430,28 @@ describe("the real design skill", () => {
     );
     const plan = await compileWorkflow(path, { cwd: dir });
     expect(plan.nodes.map((node) => node.id)).toEqual(["fetch", "design"]);
+  });
+});
+
+describe("the real qa skill", () => {
+  const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "qa");
+
+  test("SC5: loads as an inline stage with qa.output.v1, an optional proof-report artifact and its five references", async () => {
+    const result = await loadStage(skillDir, qaSchemas);
+    if (!result.ok) throw new Error(result.error);
+    const { stage } = result.value;
+    expect([stage.name, stage.mode, stage.outputs?.schema]).toEqual([
+      "qa",
+      "inline",
+      "qa.output.v1",
+    ]);
+    expect(stage.produces).toEqual([{ artifact: "proof-report", optional: true }]);
+    expect(Object.keys(stage.references).sort()).toEqual([
+      "driving-the-browser",
+      "headless-verification",
+      "report-template",
+      "visual-verification",
+      "writing-the-report",
+    ]);
   });
 });

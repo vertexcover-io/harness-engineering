@@ -107,7 +107,7 @@ Four levels:
 - `e2e` — a browser or full system driving the feature as an actor would
 - `qa-agent` — a property no automated assertion can check: visual correctness, copy tone,
   "does this feel right" judgments. These rows are not coder-written tests — the QA agent
-  (the `functional-verify` skill) drives the running app after all phases land and films
+  (the `qa` stage) drives the running app after all phases land and films
   the proof. Use it for what genuinely needs eyes, never as an overflow bucket.
 
 Pick the **lowest level that gives confidence** (heuristic:

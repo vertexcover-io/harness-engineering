@@ -570,6 +570,19 @@ nodes:
     expect(expectLeaf(second.stop).input).toBeNull();
   });
 
+  test("IW46 — a loop's body and its until read iteration.max as the loop's maxIterations", async () => {
+    const plan = await compilePlan(
+      loop("{{ iteration.index == iteration.max }}", 2).replace(
+        'input: "pass {{ iteration.index }}"',
+        'input: "pass {{ iteration.index }} of {{ iteration.max }}"',
+      ),
+    );
+    const { state, inputs } = await runLeaves(plan, start(), ["completed", "completed"]);
+    expect(inputs).toEqual(["pass 1 of 2", "pass 2 of 2"]);
+    const done = await advance(plan, state);
+    expect(done.stop).toEqual({ kind: "finished", status: "completed" });
+  });
+
   test("IW25 — a loop whose until never holds fails as exhausted after maxIterations passes", async () => {
     const plan = await compilePlan(loop("{{ false }}", 2));
     const { state, inputs } = await runLeaves(plan, start(), ["completed", "completed"]);
@@ -855,5 +868,97 @@ nodes:
       state = end(handed.state, leaf.nodeRunId, "completed", { output: {} });
     }
     expect(new Set(ids).size).toBe(2);
+  });
+});
+
+describe("the shipped task workflow's qa loop", () => {
+  const TASK_WORKFLOW = join(import.meta.dir, "..", "..", "..", "..", "workflows", "task.yaml");
+  const bug = { scenario: "SC1", cause: "the total skips refunds", fix: "subtract refunds" };
+  const report = "artifacts/verification/proof-report.html";
+  const VERDICTS: Readonly<Record<string, JsonObject>> = {
+    PASS: { status: "PASS", report, gaps: [], bugs: [] },
+    PARTIAL: { status: "PARTIAL", reason: "SC2 not verified", report, gaps: [], bugs: [] },
+    FAIL: {
+      status: "FAIL",
+      reason: "SC1 failed",
+      report: null,
+      gaps: [],
+      bugs: [{ ...bug, needsDecision: false }],
+    },
+  };
+  const OUTPUTS: Readonly<Record<string, JsonObject>> = { "ticket-fetcher": { task: "do X" } };
+  // Every artifact a stage in task.yaml consumes, listed on each finished node so none is blocked.
+  const artifacts = ["design", "plan", "implementation"].map((name) => ({
+    name,
+    path: `artifacts/${name}.md`,
+  }));
+
+  type Handed = Readonly<{ id: string; input: JsonValue }>;
+  type Walked = Readonly<{ state: State; stop: Stop; handed: readonly Handed[] }>;
+
+  // Walks task.yaml as the session would, answering each qa pass with the next verdict, and keeps
+  // the fix and qa leaves it was handed.
+  const walkTask = async (
+    plan: WorkflowPlan,
+    state: State,
+    verdicts: readonly string[],
+    handed: readonly Handed[] = [],
+  ): Promise<Walked> => {
+    const next = await advance(plan, state);
+    if (next.stop.kind !== "leaf") return { state: next.state, stop: next.stop, handed };
+    const { node, nodeRunId, input } = next.stop;
+    const isQa = node.id === "qa";
+    const output = isQa ? (VERDICTS[verdicts[0] ?? ""] ?? null) : (OUTPUTS[node.id] ?? {});
+    const ended = end(next.state, nodeRunId, "completed", { nodeType: "agent", output, artifacts });
+    const inLoop = isQa || node.id === "fix";
+    return walkTask(
+      plan,
+      ended,
+      isQa ? verdicts.slice(1) : verdicts,
+      inLoop ? [...handed, { id: node.id, input }] : handed,
+    );
+  };
+
+  test("SC13: a first PASS runs qa once, as round 1 of 4, and its verdict is the loop's output", async () => {
+    const { state, stop, handed } = await walkTask(
+      await compileWorkflow(TASK_WORKFLOW),
+      start({ prompt: "p" }),
+      ["PASS"],
+    );
+
+    expect(handed).toMatchObject([{ id: "qa", input: { task: "do X", round: 1, rounds: 4 } }]);
+    expect(findRun(state, "qa-loop")).toMatchObject({ status: "completed", output: VERDICTS.PASS });
+    expect(stop).toEqual({ kind: "finished", status: "completed" });
+  });
+
+  test("SC14: a FAIL hands its bugs to fix as feedback, then qa runs again as round 2", async () => {
+    const { state, handed } = await walkTask(
+      await compileWorkflow(TASK_WORKFLOW),
+      start({ prompt: "p" }),
+      ["FAIL", "PARTIAL"],
+    );
+
+    expect(handed.map((leaf) => leaf.id)).toEqual(["qa", "fix", "qa"]);
+    expect(handed[1]?.input).toMatchObject({ feedback: [{ ...bug, needsDecision: false }] });
+    expect(handed[2]?.input).toMatchObject({ round: 2, rounds: 4 });
+    expect(findRun(state, "qa-loop")).toMatchObject({
+      status: "completed",
+      output: VERDICTS.PARTIAL,
+    });
+  });
+
+  test("SC15: four FAILs fail the loop on its fourth pass, after three fix rounds, and the run fails", async () => {
+    const { state, stop, handed } = await walkTask(
+      await compileWorkflow(TASK_WORKFLOW),
+      start({ prompt: "p" }),
+      ["FAIL", "FAIL", "FAIL", "FAIL"],
+    );
+
+    expect(handed.map((leaf) => leaf.id)).toEqual(["qa", "fix", "qa", "fix", "qa", "fix", "qa"]);
+    expect(findRun(state, "qa-loop")).toMatchObject({
+      status: "failed",
+      iteration: 4,
+    });
+    expect(stop).toEqual({ kind: "finished", status: "failed" });
   });
 });

@@ -123,7 +123,7 @@ why nothing needs re-running after it acts.
 
 Hunted a "Smoke Test" section no template ever defined, so it INFO-passed on every run.
 The number is retired, not reused; runnable end-to-end proof is Check 9's job, and
-human-observable properties are functional-verify's job, not the gate's.
+human-observable properties are the qa stage's job, not the gate's.
 
 ### Check 9: E2E Report Verification
 
