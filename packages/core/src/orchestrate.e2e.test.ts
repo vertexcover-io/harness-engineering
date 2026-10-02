@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { type JsonValue, runDirOf, type WorkflowRun } from "@harness/sdk";
 import { jsonlEventStore, RegistryFileSchema } from "@harness/sdk/internal";
 import { validateTicketDir } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
@@ -2179,4 +2180,59 @@ describe("orchestrate hook stop-failure", () => {
       () => existsSync(log) && readFileSync(log, "utf8").includes("no terminal to type into"),
     );
   }, 20_000);
+});
+
+describe("orchestrate statusline", () => {
+  // A run `init` made, with a running node in its state and a four-node workflow.
+  const runWithRunningNode = () => {
+    const repo = tempRepo();
+    const home = tempDir();
+    writeRegistry(home, [savedRun(repo)]);
+    orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"]);
+    const dir = runDirOf(repo, "feat-x");
+    const statePath = join(dir, "state.json");
+    const state = JSON.parse(readFileSync(statePath, "utf8"));
+    state.nodeRuns = {
+      design: {
+        nodeRunId: "nr-1",
+        nodeType: "agent",
+        status: "running",
+        startedAt: new Date().toISOString(),
+        completedAt: null,
+        artifacts: [],
+      },
+    };
+    writeFileSync(statePath, JSON.stringify(state));
+    writeFileSync(join(dir, "workflow.yaml"), "name: ok\nnodes:\n  - id: design\n  - id: plan\n");
+    return { repo, home, statePath };
+  };
+
+  test("SC9: prints the run and its running node from Claude's stdin, and exits 0", () => {
+    const { repo, home } = runWithRunningNode();
+    const stdin = JSON.stringify({ model: { display_name: "Opus" } });
+
+    const result = orchestrate(repo, home, ["statusline"], { HARNESS_RUN_ID: "r-1" }, stdin);
+
+    expect(result.code).toBe(0);
+    expect(stripVTControlCharacters(result.stdout)).toMatch(
+      /^harness feat-x ▸ design \[░░░░░░░░░░\] 0\/2 · \d+s · Opus\n$/,
+    );
+  });
+
+  test("SC9: with HARNESS_RUN_ID unset it prints nothing and exits 0", () => {
+    const { repo, home } = runWithRunningNode();
+
+    const result = orchestrate(repo, home, ["statusline"], {}, "{}");
+
+    expect(result).toMatchObject({ code: 0, stdout: "" });
+  });
+
+  test("SC9: a corrupt state.json prints the run name alone and exits 0", () => {
+    const { repo, home, statePath } = runWithRunningNode();
+    writeFileSync(statePath, "{ corrupt");
+
+    const result = orchestrate(repo, home, ["statusline"], { HARNESS_RUN_ID: "r-1" }, "{}");
+
+    expect(result).toMatchObject({ code: 0, stdout: "harness feat-x\n" });
+  });
 });

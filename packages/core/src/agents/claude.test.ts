@@ -17,7 +17,7 @@ import {
   interpretOutput,
   isClaudeBusy,
 } from "./claude.ts";
-import { claudeHookSettings } from "./claude-hooks.ts";
+import { claudeSettings } from "./claude-hooks.ts";
 
 describe("claudeArgs", () => {
   test("SC1: every option present puts the flags in order with prompt last", () => {
@@ -52,7 +52,7 @@ describe("claudeArgs", () => {
     const hookCommand = ["/b", "/o.ts", "hook"];
     const args = claudeArgs("id-1", { hookCommand, prompt: "go" });
     expect(args).toEqual(["--session-id", "id-1", "--settings", expect.any(String), "go"]);
-    expect(JSON.parse(args[3] ?? "")).toEqual(claudeHookSettings(hookCommand));
+    expect(JSON.parse(args[3] ?? "")).toEqual(claudeSettings(hookCommand));
   });
 });
 

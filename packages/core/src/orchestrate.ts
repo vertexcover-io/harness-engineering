@@ -26,6 +26,7 @@ import { claudeProvider } from "./agents/claude.ts";
 import { agentAdapters, HOOK_AGENTS } from "./agents/index.ts";
 import { currentTerminal, harnessTerminalHost } from "./agents/tmux.ts";
 import { runContextStep } from "./context-step.ts";
+import { findEnvRun } from "./hooks/common.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "./hooks/session-start.ts";
 import { stopHandlers } from "./hooks/stop.ts";
@@ -49,6 +50,7 @@ import {
   resolveReference,
   resolveReferencePath,
 } from "./stage.ts";
+import { renderStatusline } from "./statusline.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
 const ROOT_HELP = "repo holding orchestrate.config.json and the run (default: main checkout)";
@@ -430,6 +432,23 @@ const hookCommand = () => {
   return hook;
 };
 
+// Always exits 0: Claude shows whatever this prints, and a failure here must not reach the run.
+const statuslineCommand = () =>
+  new Command("statusline")
+    .description("Print the status line Claude Code shows for this run's session")
+    .action(async () => {
+      if (!process.env.HARNESS_RUN_ID) return;
+      const stdin = await Bun.stdin.text().catch(() => "");
+      const deps = { registry: registry(), env: process.env, log };
+      const line = await findEnvRun(deps)
+        .then((found) => renderStatusline(stdin, found?.ref))
+        .catch((error: unknown) => {
+          log.error({ err: error }, "statusline failed");
+          return "harness · starting";
+        });
+      process.stdout.write(`${line}\n`);
+    });
+
 const contextCommand = () =>
   new Command("context")
     .description(
@@ -517,6 +536,7 @@ await new Command()
   .addCommand(nodeCommand())
   .addCommand(skillCommand())
   .addCommand(hookCommand())
+  .addCommand(statuslineCommand())
   .addCommand(contextCommand())
   .addCommand(limitWaitCommand())
   .parseAsync(process.argv)
