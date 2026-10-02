@@ -12,6 +12,7 @@ import {
   emitRunEvent,
   type HookDeps,
   harnessHome,
+  type ILogger,
   type JsonValue,
   loadPickedConfig,
   type PickRunInput,
@@ -24,8 +25,7 @@ import {
   stopRunningOnSignal,
 } from "@harness/sdk";
 import { createRegistry, type StepOutcome } from "@harness/sdk/internal";
-import { claudeProvider } from "./agents/claude.ts";
-import { agentAdapters, HOOK_AGENTS } from "./agents/index.ts";
+import { agentAdapters, agentProvider, findSessionAgent, HOOK_AGENTS } from "./agents/index.ts";
 import { currentTerminal, harnessTerminalHost } from "./agents/tmux.ts";
 import { runContextStep } from "./context-step.ts";
 import { findEnvRun } from "./hooks/common.ts";
@@ -442,10 +442,12 @@ const hookCommand = () => {
 const statuslineCommand = () =>
   new Command("statusline")
     .description("Print the status line Claude Code shows for this run's session")
-    .action(async () => {
-      if (!process.env.HARNESS_RUN_ID) return;
-      const stdin = await Bun.stdin.text().catch(() => "");
-      const deps = { registry: registry(), env: process.env, log };
+    .option("--run-id <id>", "look the run up by id and read no stdin (the tmux status bar)")
+    .action(async (options: { runId?: string }) => {
+      const runId = options.runId ?? process.env.HARNESS_RUN_ID;
+      if (!runId) return;
+      const stdin = options.runId === undefined ? await Bun.stdin.text().catch(() => "") : "";
+      const deps = { registry: registry(), env: { ...process.env, HARNESS_RUN_ID: runId }, log };
       const line = await findEnvRun(deps)
         .then((found) => renderStatusline(stdin, found?.ref))
         .catch((error: unknown) => {
@@ -454,6 +456,14 @@ const statuslineCommand = () =>
         });
       process.stdout.write(`${line}\n`);
     });
+
+const sessionProvider = async (run: RunRef, sessionId: string, helperLog: ILogger) => {
+  const linked = await registry().findRun(run.id);
+  const agent = findSessionAgent(linked?.sessions ?? [], sessionId);
+  if (agent === undefined) return undefined;
+  const host = harnessTerminalHost(process.env, helperLog);
+  return agentProvider({ agent, host, env: process.env, log: helperLog });
+};
 
 const contextCommand = () =>
   new Command("context")
@@ -469,17 +479,20 @@ const contextCommand = () =>
       if (!picked.ok) return fail(picked.error);
       const run = picked.value;
       const helperLog = helperLogger(run, "harness-context", "context.log");
+      const provider = await sessionProvider(run, opts.sessionId, helperLog);
+      if (provider === undefined) {
+        return helperLog.error(
+          { sessionId: opts.sessionId },
+          "no provider for the session's agent",
+        );
+      }
       await runContextStep({
         run,
         nodeRunId,
         oldSessionId: opts.sessionId,
         terminal: currentTerminal(process.env, helperLog),
         registry: registry(),
-        provider: claudeProvider({
-          host: harnessTerminalHost(process.env, helperLog),
-          binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
-          log: helperLog,
-        }),
+        provider,
         launch: {
           cwd: run.cwd,
           env: { HARNESS_RUN_ID: run.id, HARNESS_HOME: harnessHome() },
@@ -512,16 +525,12 @@ const limitWaitCommand = () =>
       if (!picked.ok) return fail(picked.error);
       const run = picked.value;
       const log = helperLogger(run, "harness-limit-wait", "limit-wait.log");
-      const claude = claudeProvider({
-        host: harnessTerminalHost(process.env, log),
-        binary: process.env.HARNESS_CLAUDE_BIN ?? "claude",
-        log,
-      });
+      const provider = await sessionProvider(run, opts.sessionId, log);
       await runLimitWait({
         run,
         sessionId: opts.sessionId,
         limitEventId,
-        agents: { claude },
+        agents: provider === undefined ? {} : { [provider.type]: provider },
         // the hook that started this helper ran inside the agent's terminal, and left it in env
         terminal: currentTerminal(process.env, log),
         log,

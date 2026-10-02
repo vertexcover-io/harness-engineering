@@ -45,7 +45,10 @@ export const runCommand = () =>
       const report = await runDoctor({
         cwd,
         config,
-        extraChecks: [...runtimeChecks(), ...workflowChecks(plan.doctor, dirname(workflowPath))],
+        extraChecks: [
+          ...runtimeChecks(plan.agent),
+          ...workflowChecks(plan.doctor, dirname(workflowPath)),
+        ],
         log: cliLog(),
       });
       const doctorVerdict = verdict(report);
@@ -61,13 +64,14 @@ export const runCommand = () =>
         workflowPath,
         inputs: { prompt: opts.prompt, ...opts.input } satisfies JsonObject,
         cwd: repoRoot,
+        agent: plan.agent,
         ...(opts.name === undefined ? {} : { name: opts.name }),
         ...(config === undefined ? {} : { config }),
       });
       if (!result.ok) return fail(apiErrorText(result.error));
       const { run } = result.value;
-      const sessionId = run.sessions[0]?.sessionId;
-      log.info({ runId: run.id, workflow: run.workflow, cwd: run.cwd, sessionId }, "run started");
+      const { terminal } = run;
+      log.info({ runId: run.id, workflow: run.workflow, cwd: run.cwd, terminal }, "run started");
 
       console.log(run.id);
       console.log(`harness attach --run-id ${run.id}`);
@@ -79,7 +83,7 @@ export const runCommand = () =>
           cwd,
           env: { TMUX: undefined },
         });
-        log.info({ runId: run.id, sessionId, exitCode }, "detached from the session");
+        log.info({ runId: run.id, terminal, exitCode }, "detached from the session");
         process.exitCode = exitCode;
       }
     });

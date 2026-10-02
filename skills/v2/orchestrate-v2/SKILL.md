@@ -1,9 +1,9 @@
 ---
 name: orchestrate-v2
 description: >
-  Runs a harness v2 workflow from inside the Claude Code session `harness run` launches. Not
-  triggered by a user request — the harness server starts this skill directly as the session's
-  first message, passing --workflow and --inputs.
+  Runs a harness v2 workflow from inside the Claude Code or Codex session `harness run` launches.
+  Not triggered by a user request — the harness server starts this skill directly as the
+  session's first message, passing --workflow and --inputs.
 ---
 
 # orchestrate-v2
@@ -11,12 +11,16 @@ description: >
 `harness run` launches this session with `HARNESS_RUN_ID` and `HARNESS_HOME` already set in its
 environment, then sends this skill as the first message.
 
+Read the reference for the agent you are before Step 1: `references/claude-code.md` in Claude
+Code, `references/codex.md` in Codex. It names the tools this skill refers to by what they do:
+asking the user, running a long command in the background, keeping a task list, and resuming.
+
 ## Arguments
 
 `--workflow PATH --inputs JSON [--name NAME]`, or `--resume NAME`
 
 With `--resume NAME`, skip Step 1 (no `init`): tell the user the run is resuming, and go straight
-to Step 2's loop with that `NAME`.
+to Step 2's loop with that `NAME`. The reference says how a resumed session receives it.
 
 ## Step 1: initialize the run
 
@@ -41,14 +45,14 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
 2. Act on the reply's `kind`:
    - `exec`: tell the user `▶ NODE_ID` (the reply's `nodeId`). Then run the reply's `command`
      exactly as printed.
-     - `mode: inline`: run it in the foreground, with a 10-minute Bash timeout. When it
+     - `mode: inline`: run it in the foreground, with a 10-minute timeout. When it
        returns, tell the user `✓ NODE_ID completed` or `✗ NODE_ID failed: MESSAGE`, from the
        printed JSON's `status` and `error.message`. A failed node exits non-zero; that is
-       expected, so go back to 1. If the Bash call times out instead, no result was
+       expected, so go back to 1. If the command times out instead, no result was
        recorded and the node is still running: run the same `command` again as a
-       background task, then go back to 1.
+       background task (see the reference), then go back to 1.
      - `mode: background`: the step is long, so run it as a background task to get past
-       the Bash timeout. Nothing else runs meanwhile: wait for the task-finished notice, log
+       the timeout. Nothing else runs meanwhile: wait for the task to finish, log
        `✓` or `✗` the same way, then go back to 1.
    - `stage`: tell the user `▶ NODE_ID (stage STAGE)`. Read the file at `skill`, then the file
      at `extension` when it is not null; where the extension conflicts with the skill, the
@@ -88,7 +92,8 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      `↻ fresh: new`), then end the turn at once, without running any other command. The work
      starts once the turn is over: for `new` the harness replaces this session with a fresh one,
      and for `compact` it compacts this session. Either way the session then receives
-     `/orchestrate-v2 --resume NAME` and carries on.
+     the skill's `--resume NAME` message and carries on. Codex has no context steps: the Stop
+     hook completes the node as not applied and sends you back to `next`.
    - `blocked`: the stage `stage` needs artifacts in `missing` that no finished node wrote.
      Tell the user which, and stop.
    - `waiting`: a step is still running, and only one step runs at a time. Wait for your
@@ -96,10 +101,9 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      still running, stop and report `nodeRunId`: its process ended
      without recording a result.
    - `finished`: tell the user the run ended with `status`, then stop.
-3. Mirror each `exec`, `stage` and `agent` node into Claude Code's task list (`TaskCreate` and
-   `TaskUpdate`, or `TodoWrite` where those are absent), without spending a turn on it: send each
-   task call in the same message as a command you run anyway. Create a task named `NODE_ID` with
-   `activeForm: "Running NODE_ID"` beside the `▶` log, set it `in_progress` beside the node's
+3. Mirror each `exec`, `stage` and `agent` node into your task list (the reference names the
+   tool), without spending a turn on it: make each task call in the same step as a command you run
+   anyway. Create a task named `NODE_ID` beside the `▶` log, mark it in progress beside the node's
    first command, and mark it completed beside the next `next`. On `✗`, leave it open with a note
    that it failed. After `--resume` the list starts empty.
 4. On any non-zero exit from `next`, show its error output and stop.
@@ -109,6 +113,6 @@ never edit `.harness/NAME/state.json`, `.harness/NAME/event.jsonl` or the harnes
 yourself: a hook refuses any tool call that writes, moves or deletes them, and its message names
 the command to use instead. Reading them is fine.
 
-When you need the user's input, ask with `AskUserQuestion`. Never end your turn with a question
-in plain text: a Stop hook checks the run when your turn ends, and a turn that ends with a node
-still open, or before `next`, is sent back to you with the command you still owe.
+When you need the user's input, ask the way the reference says. A Stop hook checks the run when
+your turn ends, and a turn that ends with a node still open, or before `next`, is sent back to
+you with the command you still owe.

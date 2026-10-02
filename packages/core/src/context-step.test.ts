@@ -123,10 +123,11 @@ const fakeProvider = (relaunchOk = true) => {
   const relaunches: Relaunch[] = [];
   const provider: IAgentProvider = {
     type: "claude",
+    skillPrefix: "/",
     checks: [],
     launch: async () => ({
       ok: true,
-      value: { sessionId: "unused", terminal: fakeTerminal(() => IDLE).terminal },
+      value: { terminalName: "unused", terminal: fakeTerminal(() => IDLE).terminal },
     }),
     relaunch: async (terminal, sessionId, options) => {
       relaunches.push({ terminal, sessionId, options });

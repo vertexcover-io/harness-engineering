@@ -1,26 +1,28 @@
 import { harnessHome, registryPath, type SessionStartHandler } from "@harness/sdk";
 import { appendRunEvent, createRegistry } from "@harness/sdk/internal";
 import { completeContextOnSessionStart } from "../context-step.ts";
-import { findEnvRun } from "./common.ts";
 
-// A new session has a new id, so the run's other hooks would stop recognizing it until it is
-// linked. This cannot use findSessionRun: the new id is not linked yet. A session starting is
-// also the moment an open context node's action is done, so the node is completed here.
+// Links by HARNESS_RUN_ID even before `init` names the run: an agent's first SessionStart comes
+// before it runs `init`.
 export const linkSession: SessionStartHandler = {
   name: "link-session",
   run: async (input, deps) => {
-    const run = await findEnvRun(deps);
+    const runId = deps.env.HARNESS_RUN_ID;
+    if (!runId) return;
+    const run = await deps.registry.findRun(runId);
     if (run === undefined) return;
     const { agent, sessionId, source } = input;
     // HookDeps only reads the registry; linking a session is this hook's own write.
     const registry = createRegistry(registryPath(harnessHome(deps.env)), deps.log);
-    await registry.linkSession(run.ref.id, { agent, sessionId });
-    await appendRunEvent(run.ref, {
+    await registry.linkSession(run.id, { agent, sessionId });
+    if (run.name === null) return;
+    const ref = { id: run.id, cwd: run.cwd, name: run.name };
+    await appendRunEvent(ref, {
       type: "hooks.session-start.called",
       source: "hooks",
       payload: { agent, sessionId, source },
     });
-    await completeContextOnSessionStart(run.ref, sessionId, source);
+    await completeContextOnSessionStart(ref, sessionId, source);
   },
 };
 

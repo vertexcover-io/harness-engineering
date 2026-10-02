@@ -93,7 +93,7 @@ export const doctorCommand = () =>
       if (declared === null) return;
       const report = await runDoctor({
         cwd: process.cwd(),
-        extraChecks: [...runtimeChecks(), ...declared],
+        extraChecks: [...runtimeChecks("claude"), ...declared],
         log: cliLog(),
       });
       commandLog("doctor").debug(

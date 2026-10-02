@@ -19,8 +19,8 @@ import {
   CLAUDE_CLEAR_INPUT_KEY,
   CLAUDE_NOTHING_TO_COMPACT,
   isClaudeBusy,
-  typeLine,
 } from "./agents/claude.ts";
+import { typeLine } from "./agents/common.ts";
 import { currentTerminal } from "./agents/tmux.ts";
 import { completeContextStep, findContextPlanNode } from "./runs.ts";
 import { spawnOrchestrateHelper } from "./stage.ts";

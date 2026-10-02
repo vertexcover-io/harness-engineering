@@ -2138,7 +2138,7 @@ describe("orchestrate hook session-start", () => {
     expect((await eventsOf(run.repo)).at(-1)?.type).toBe("hooks.stop.called");
   });
 
-  test("SC11: a session with no run, or a run with no name yet, is left alone", async () => {
+  test("SC11: a session with no run is left alone, and one on a run with no name yet is linked without an event", async () => {
     const run = startedRun(ONE_AGENT);
     const before = (await eventsOf(run.repo)).length;
     const registryBefore = readRegistry(run.home);
@@ -2155,7 +2155,8 @@ describe("orchestrate hook session-start", () => {
     const home = tempDir();
     writeRegistry(home, [savedRun(run.repo)]);
     expect(sessionStart({ repo: run.repo, home })).toMatchObject({ code: 0, stdout: "" });
-    expect(readRegistry(home).runs["r-1"]?.sessions).toEqual([]);
+    expect(readRegistry(home).runs["r-1"]?.sessions).toEqual([{ agent: "claude", sessionId: "B" }]);
+    expect(await eventsOf(run.repo)).toHaveLength(before);
   });
 
   test("SC12: input that is not JSON prints nothing and exits 0", () => {
@@ -2367,6 +2368,25 @@ describe("orchestrate statusline", () => {
     );
   });
 
+  test("SC14, SC17: --run-id prints the running node of that run with empty stdin and no HARNESS_RUN_ID", () => {
+    const { repo, home } = runWithRunningNode();
+
+    const result = orchestrate(repo, home, ["statusline", "--run-id", "r-1"], {}, "");
+
+    expect(result.code).toBe(0);
+    expect(stripVTControlCharacters(result.stdout)).toMatch(
+      /^harness feat-x ▸ design \[░░░░░░░░░░\] 0\/2 · \d+s\n$/,
+    );
+  });
+
+  test("SC14: --run-id with an unknown id prints the starting line and exits 0", () => {
+    const { repo, home } = runWithRunningNode();
+
+    const result = orchestrate(repo, home, ["statusline", "--run-id", "r-nope"], {}, "");
+
+    expect(result).toMatchObject({ code: 0, stdout: "harness · starting\n" });
+  });
+
   test("SC9: with HARNESS_RUN_ID unset it prints nothing and exits 0", () => {
     const { repo, home } = runWithRunningNode();
 
@@ -2391,5 +2411,68 @@ describe("orchestrate statusline", () => {
     const result = orchestrate(repo, home, ["statusline"], { HARNESS_RUN_ID: "r-1" }, "{}");
 
     expect(result).toMatchObject({ code: 0, stdout: "harness · starting\n" });
+  });
+});
+
+describe("orchestrate hook --agent codex", () => {
+  const RUN_ENV = { HARNESS_RUN_ID: "r-1" };
+  const common = { cwd: "/x", hook_event_name: "X", model: "gpt-5", permission_mode: "default" };
+
+  const hook = (
+    run: Readonly<{ repo: string; home: string }>,
+    event: string,
+    handler: string,
+    stdin: Record<string, unknown>,
+  ) =>
+    orchestrate(
+      run.repo,
+      run.home,
+      ["hook", event, "--agent", "codex", "--handler", handler],
+      RUN_ENV,
+      JSON.stringify({ ...common, transcript_path: null, ...stdin }),
+    );
+
+  test("SC12: session-start links the Codex session, pre-tool-use denies a state.json write, stop blocks an open node", async () => {
+    const run = startedRun(ONE_AGENT);
+
+    const start = hook(run, "session-start", "link-session", {
+      session_id: "c1",
+      source: "startup",
+    });
+    expect(start).toMatchObject({ code: 0, stdout: "" });
+    expect(readRegistry(run.home).runs["r-1"]?.sessions).toEqual([
+      { agent: "codex", sessionId: "c1" },
+    ]);
+
+    const next = JSON.parse(orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]).stdout);
+    expect(next).toMatchObject({ kind: "agent", nodeId: "plan" });
+
+    const denied = hook(run, "pre-tool-use", "record-guard", {
+      session_id: "c1",
+      tool_name: "apply_patch",
+      tool_input: {
+        command: "*** Begin Patch\n*** Update File: .harness/feat-x/state.json\n*** End Patch",
+      },
+      cwd: run.repo,
+    });
+    expect(JSON.parse(denied.stdout).hookSpecificOutput).toMatchObject({
+      permissionDecision: "deny",
+      permissionDecisionReason: expect.stringContaining("orchestrate next --run feat-x"),
+    });
+
+    const stopped = hook(run, "stop", "continue-workflow", {
+      session_id: "c1",
+      stop_hook_active: false,
+      last_assistant_message: "done",
+      turn_id: "t1",
+    });
+    expect(JSON.parse(stopped.stdout)).toEqual({
+      decision: "block",
+      reason: expect.stringContaining("orchestrate done"),
+    });
+    expect((await eventsOf(run.repo)).at(-1)).toMatchObject({
+      type: "hooks.stop.called",
+      payload: { agent: "codex", sessionId: "c1", decision: "continue" },
+    });
   });
 });

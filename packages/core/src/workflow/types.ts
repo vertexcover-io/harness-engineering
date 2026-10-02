@@ -1,4 +1,5 @@
 import {
+  AgentTypeSchema,
   type JsonValue,
   NodeTypeSchema,
   NonEmptyStringSchema,
@@ -195,9 +196,14 @@ export const DoctorDeclarationSchema = z.strictObject({
   fix: NonEmptyStringSchema,
 });
 
+// Only the agents that have a provider; AgentTypeSchema also lists ones that do not.
+export const WorkflowAgentSchema = AgentTypeSchema.extract(["claude", "codex"]);
+export type WorkflowAgent = z.infer<typeof WorkflowAgentSchema>;
+
 export const WorkflowSchema = z.strictObject({
   name: NonEmptyStringSchema,
   version: z.union([z.string(), z.number()]).optional(),
+  agent: WorkflowAgentSchema.default("claude"),
   doctor: z.array(DoctorDeclarationSchema).default([]),
   inputs: z.record(NodeIdSchema, InputDeclarationSchema).default({}),
   nodes: z.array(NodeSchema).min(1),
@@ -329,6 +335,7 @@ export type PlanNode =
 
 export type WorkflowPlan = Readonly<{
   name: string;
+  agent: WorkflowAgent;
   inputs: InputDeclarations;
   doctor: readonly DoctorDeclaration[];
   nodes: readonly PlanNode[];

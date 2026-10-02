@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import {
   type AgentAdapter,
   type HookDeps,
-  type HookReply,
   NonEmptyStringSchema,
   type PreToolUseHandler,
   parseJson,
@@ -12,14 +11,15 @@ import {
   type StopHandler,
   type ToolCall,
   type ToolUse,
-  type ToolVerdict,
   type TranscriptEntry,
 } from "@harness/sdk";
 import * as z from "zod";
+import { parseStdin, preToolUseReply, runNoReplyHook, stopReply } from "../hooks/common.ts";
 import { bashAntipatterns, recordGuard, runPreToolUse } from "../hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "../hooks/session-start.ts";
 import { continueWorkflow, runStop } from "../hooks/stop.ts";
 import { resumeAfterLimit } from "../hooks/stop-failure.ts";
+import { shellQuote } from "./common.ts";
 
 const HOOK_TIMEOUT_S = 30;
 // Claude's tools that write a file, and the input field that names it; Bash is parsed separately.
@@ -116,20 +116,6 @@ export const readClaudeTranscript = async (
     .flatMap(toEntries);
 };
 
-// Claude's hook input, read from stdin against the event's schema.
-const parseStdin = <T>(stdin: string, schema: z.ZodType<T>): Result<T> => {
-  const json = parseJson(stdin);
-  if (!json.ok) return { ok: false, error: `hook input: ${json.error}` };
-  const parsed = schema.safeParse(json.value);
-  return parsed.success
-    ? { ok: true, value: parsed.data }
-    : { ok: false, error: z.prettifyError(parsed.error) };
-};
-
-// Claude ends the turn on empty output, and keeps going with `reason` on a block.
-const claudeStopReply = (reply: HookReply): string =>
-  reply.kind === "allow" ? "" : `${JSON.stringify({ decision: "block", reason: reply.message })}\n`;
-
 const claudeStop = async (stdin: string, deps: HookDeps, handler: StopHandler): Promise<string> => {
   const parsed = parseStdin(stdin, ClaudeStopInputSchema);
   if (!parsed.ok) {
@@ -138,38 +124,16 @@ const claudeStop = async (stdin: string, deps: HookDeps, handler: StopHandler): 
   }
   const { session_id: sessionId, transcript_path: transcriptPath } = parsed.value;
   const reply = await runStop(
-    { agent: "claude", sessionId, readTranscript: () => readClaudeTranscript(transcriptPath) },
+    {
+      agent: "claude",
+      sessionId,
+      contextSteps: true,
+      readTranscript: () => readClaudeTranscript(transcriptPath),
+    },
     handler,
     deps,
   );
-  return claudeStopReply(reply);
-};
-
-type NoReplyHook<ClaudeInput, HandlerInput> = Readonly<{
-  stdin: string;
-  deps: HookDeps;
-  // the hook's name in log lines
-  event: string;
-  schema: z.ZodType<ClaudeInput>;
-  toHandlerInput: (parsed: ClaudeInput) => HandlerInput;
-  handler: Readonly<{ name: string; run: (input: HandlerInput, deps: HookDeps) => Promise<void> }>;
-}>;
-
-// For hooks that send Claude no reply (SessionStart, StopFailure). Bad input or a failing handler
-// is only logged: a hook that throws could break the session.
-const runNoReplyHook = async <ClaudeInput, HandlerInput>(
-  hook: NoReplyHook<ClaudeInput, HandlerInput>,
-): Promise<string> => {
-  const { deps, event, handler } = hook;
-  const parsed = parseStdin(hook.stdin, hook.schema);
-  if (!parsed.ok) {
-    deps.log.warn({ error: parsed.error }, `${event} ignored: hook input not understood`);
-    return "";
-  }
-  await handler.run(hook.toHandlerInput(parsed.value), deps).catch((error: unknown) => {
-    deps.log.error({ err: error }, `${event}: ${handler.name} failed`);
-  });
-  return "";
+  return stopReply(reply);
 };
 
 const claudeSessionStart = (
@@ -236,18 +200,6 @@ const toToolCall = (toolName: string, toolInput: Readonly<Record<string, unknown
   return typeof path === "string" ? { kind: "file-write", path } : OTHER_TOOL;
 };
 
-// Claude runs its own permission prompt on empty output, so a call is never answered "allow".
-const claudePreToolUseReply = (verdict: ToolVerdict): string =>
-  verdict.kind === "allow"
-    ? ""
-    : `${JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: verdict.message,
-        },
-      })}\n`;
-
 const parsePreToolUseInput = (stdin: string): Result<ToolUse> => {
   const parsed = parseStdin(stdin, ClaudePreToolUseInputSchema);
   if (!parsed.ok) return parsed;
@@ -269,7 +221,7 @@ const claudePreToolUse = async (
     deps.log.warn({ error: use.error }, "pre-tool-use allowed: hook input not understood");
     return "";
   }
-  return claudePreToolUseReply(await runPreToolUse(use.value, handler, deps));
+  return preToolUseReply(await runPreToolUse(use.value, handler, deps));
 };
 
 // What Claude answers; every event is supported.
@@ -295,8 +247,6 @@ const claudeHooks = () =>
       { matcher: "Bash", handlers: [bashAntipatterns] },
     ],
   }) as const;
-
-const shellQuote = (arg: string): string => `'${arg.replaceAll("'", `'\\''`)}'`;
 
 const hookEntry = (orchestrateArgv: readonly string[], event: string, handler: string) => ({
   type: "command",
