@@ -97,10 +97,11 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      without recording a result.
    - `finished`: tell the user the run ended with `status`, then stop.
 3. Mirror each `exec`, `stage` and `agent` node into Claude Code's task list (`TaskCreate` and
-   `TaskUpdate`, or `TodoWrite` where those are absent): create one task named `NODE_ID` when the
-   node starts and set it `in_progress` with `activeForm: "Running NODE_ID"`. Mark it completed
-   when you log `✓`; on `✗`, leave it open with a note that it failed. After `--resume` the list
-   starts empty.
+   `TaskUpdate`, or `TodoWrite` where those are absent), without spending a turn on it: send each
+   task call in the same message as a command you run anyway. Create a task named `NODE_ID` with
+   `activeForm: "Running NODE_ID"` beside the `▶` log, set it `in_progress` beside the node's
+   first command, and mark it completed beside the next `next`. On `✗`, leave it open with a note
+   that it failed. After `--resume` the list starts empty.
 4. On any non-zero exit from `next`, show its error output and stop.
 
 `exec` and `done` record how each node ended. Never run `bun run orchestrate emit` for a node, and
