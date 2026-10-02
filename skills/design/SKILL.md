@@ -1,9 +1,10 @@
 ---
 name: design
 description: >
-  Understand what to build before anyone plans how. Reads the code, grills the user on the open
-  design forks round by round, weighs approaches, draws the chosen design with mermaid diagrams,
-  and gets the user's approval. Writes design.md. Runs as the pipeline's design stage; also use it
+  Understand what to build before anyone plans how. Reads the code, grills the user on the forks
+  that change the shape of the build, weighs approaches, and writes a one-page design.md the user
+  approves in a minute: problem, approach, what changes, the few decisions and risks that matter,
+  and what is hard to undo. Runs as the pipeline's design stage; also use it
   for "design this", "grill me on this", "help me think this through".
 mode: inline
 allowed-tools: [Agent, AskUserQuestion, Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch]
@@ -18,22 +19,26 @@ references:
     description: The coverage map and lenses that find the questions worth asking.
   design-doc:
     path: references/design-doc.md
-    description: The design.md format and the diagrams it draws.
+    description: The one-page design.md format, its caps, and the diagram it may draw.
 ---
 
 # Design
 
-Reach a shared understanding of what gets built, then get it approved. The user leaves this
-stage having confirmed the problem, the scope, every decision that shapes the build, and a
-picture of the design.
+Reach a shared understanding of what gets built, then get it approved. This is the first gate:
+one page the user reads in under a minute and approves fast, so no one builds a full plan for the
+wrong shape. The user leaves this stage having confirmed the problem, the scope, the few
+decisions that shape the build, and what the build is hard to walk back from.
 
 The input holds `task`: a plain prompt, or a ticket's text with its local files. The stage's
 work is one file, `.harness/RUN/artifacts/design.md`, where RUN is the run's spec name.
 Standalone, use a short kebab-case name for the topic as RUN.
 
-This stage stops at the design. It writes no code, cuts no phases, and lists no file-by-file
-steps; the planning stage that follows does that. A design names components, boundaries,
-contracts, data and what happens on failure. It never names the lines to change.
+This stage stops at the shape. It writes no code, cuts no phases, and lists no file-by-file
+steps; the planning stage that follows does that. One test decides what the design holds: **if
+this answer changed, would the plan look different?** New components, libraries, contracts,
+stored data and choices that are hard to undo pass. Field names, function names, file lists and
+most edge cases fail, and wait for the plan. The design-doc reference sets hard caps (500 words,
+one diagram, 3 decisions, 3 risks); a doc over a cap is not done.
 
 **Never assume.** State a claim about the code only after you read the code, the user confirmed
 it, or you labeled it an assumption.
@@ -71,14 +76,22 @@ Read the two references with `bun run orchestrate skill ref design.coverage` and
 If the task holds several subsystems that ship on their own, say so now and ask which one to
 design first. Design one.
 
+**Atomic route.** Decided only now, never before the sweep comes back. When all hold: one file ·
+one obvious edit · no new behavior a user or caller sees · nothing stored or shared changes.
+Then there is no shape to approve. Write `design.md` with `Problem`, `Approach` and
+`Hard to undo: nothing`, set `status: approved` and `route: atomic` in the front matter, tell the
+user in one line why it is atomic, and go to step 8. A doubt means the full route.
+
 **Done when:** you can state the problem, who has it, the outcome they want, and what exists in
 the code today, each cited or labeled an assumption.
 
 ## Step 2 — Map what is unknown
 
 Walk the coverage map in the coverage reference. Mark each area **clear**, **partial** or
-**missing** for this task. Every partial or missing area whose answer would change what gets
-built becomes a decision. Skip the rest without a note.
+**missing** for this task. Every partial or missing area whose answer would change the shape of
+what gets built becomes a decision: a component, boundary, contract, dependency or stored data
+would differ. An area whose answer changes only the code inside a shape is planning's; skip it
+without a note. Skip the clear areas too.
 
 Keep the tree written in `design.md`'s `## Open questions`, one line per decision:
 
@@ -140,21 +153,24 @@ a question, or a named risk.
 
 **Done when:** one approach is chosen and every lens finding has a home.
 
-## Step 5 — Draw the design
+## Step 5 — Write the page
 
-Fill `design.md` per the design-doc reference: the diagrams, the component table, the
-contracts, the failure behavior. Draw a diagram only when it shows how something works that a
-paragraph would hide. A small change may need one diagram or none.
+Fill `design.md` per the design-doc reference. Add a section only when it holds something that
+would change the plan; drop the header otherwise. Draw the one diagram only when it shows how
+something works that a paragraph would hide; a small change has none.
 
-**Done when:** every design-doc section is filled or left out by its rule, every component row
-names what it does and what it depends on, and every outside dependency has a Failure behavior
-row.
+Then count. Run the word count from the reference and check each cap: 500 body words, 1 diagram,
+6 `What changes` rows, 3 decisions, 3 risks. Over a cap, cut: a decision that changes code but
+not shape, a risk that is a checklist item, a row that is `none`. Never cut `Hard to undo`.
+
+**Done when:** `Problem`, `Approach` and `Hard to undo` are present, every other section is
+present or dropped by its rule, and every cap holds.
 
 ## Step 6 — Review it before the user does
 
-**Self-review.** Re-read `design.md` as a stranger. Fix any TBD or placeholder, two sections
-that contradict, a sentence that reads two ways, a component without a purpose or a dependency
-named, and a mermaid block whose syntax is broken.
+**Self-review.** Re-read `design.md` as a stranger who has one minute. Fix any TBD or
+placeholder, two sections that contradict, a sentence that reads two ways, a line that fails the
+"would the plan look different" test, and a mermaid block whose syntax is broken.
 
 **Fresh-eyes review.** Dispatch one sub-agent with the path to `design.md` and the task, never
 this conversation. It checks every claim about the code against the code, in about 15 targeted
@@ -165,33 +181,31 @@ refuted claim before step 7.
 
 ## Step 7 — Confirm with the user
 
-Mermaid does not render in a terminal, so present the design in two parts:
-
-1. In the reply: the problem in two sentences, the approach in six or fewer, the decisions as
-   one line each (flag every `inferred` one with *(inferred — confirm)*), and the risks.
-2. The path to `design.md` as a `file://` link, saying the diagrams render in a markdown preview
-   (VS Code, GitHub).
-
-For a large design, confirm it in blocks (scope, then components and flows, then decisions)
-before the final question.
+The doc is one page, so show it whole. In the reply, paste `design.md` from `# TITLE` down,
+minus the mermaid block (it does not render in a terminal) and minus `## Open questions`. Flag
+every `inferred` decision with *(inferred — confirm)*. Below it, the path to `design.md` as a
+`file://` link, saying the diagram renders in a markdown preview (VS Code, GitHub).
 
 Then `AskUserQuestion`: header `Approve?`, options `Approve the design (Recommended)` and
-`Revise`. A revision is not an approval: apply it to `design.md`, re-run the self-review, show
-what changed and ask again. When the same decision is revised twice, stop and ask about that
-decision directly; it is unresolved, not badly worded.
+`Revise`. A revision is not an approval: apply it to `design.md`, re-run step 5's count and
+step 6's self-review, show what changed and ask again. When the same decision is revised twice,
+stop and ask about that decision directly; it is unresolved, not badly worded.
 
 **Done when:** the user approved.
 
 ## Step 8 — Finish
 
-Set `status: approved` in `design.md`'s front matter. The stage has no output: `design.md` is
-all it hands on. Finish it with `--artifact design=artifacts/design.md` and an empty output.
+Set `status: approved` in `design.md`'s front matter and delete `## Open questions`. The stage
+has no output: `design.md` is all it hands on. Finish it with
+`--artifact design=artifacts/design.md` and an empty output.
 
 ## Rationalizations
 
 | Excuse | Reality |
 |---|---|
-| "This is too simple to need a design" | Simple work is where unchecked assumptions waste the most. The design can be three sentences, but the user still approves it. |
+| "This is too simple to need a design" | Simple work is where unchecked assumptions waste the most. The design can be three sentences, but the user still approves it. Only the atomic route in step 1 skips the question, and only after the sweep. |
+| "The planner will want this detail, I'll leave it in" | The planner reads the code. The user reads this page. A detail that does not change the shape costs the user's minute and buys the planner nothing. |
+| "Four decisions all matter" | Then one of them changes code, not shape. Move it to planning. The cap is the point. |
 | "The user seems impatient" | A wrong design costs more than one more question. Ask the highest-impact one. |
-| "The planning stage can settle this" | The planner has less context than you. Resolve it or ask. |
-| "The summary can skip this decision" | The summary is what the user approves. A decision missing from it was never approved. |
+| "The planning stage can settle this" | True for a detail inside a shape. False for a component, contract, dependency or stored data: resolve it or ask. |
+| "The page can skip this decision, it's in the chat" | The page is what the user approves and all the planner gets. A decision missing from it was never made. |

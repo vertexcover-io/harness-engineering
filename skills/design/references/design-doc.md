@@ -1,17 +1,41 @@
 # design.md — format
 
-Path: `.harness/RUN/artifacts/design.md`. A person approves it and the planning stage builds
-from it, so it must be complete without the conversation that produced it.
+Path: `.harness/RUN/artifacts/design.md`. The first gate: a person reads it in under a minute
+and says whether the shape is right, before anyone builds a full plan. The planning stage
+builds from it, so it must stand without the conversation that produced it.
 
-## Contents
+## What belongs
 
-- [Template](#template)
-- [Diagrams](#diagrams)
-- [Section rules](#section-rules)
+One test decides every line: **if this answer changed, would the plan look different?** Passes:
+a new component, library or service; a changed boundary or contract; stored data added or
+altered; a choice that is hard to undo. Fails, and waits for the plan: field names, function
+names, file lists, step order, test plans, edge cases, options nobody weighed.
+
+Cite `file:line` for a claim about the code as it is today. Never list the files to change.
+
+Say each thing once. A fact that appears in two sections is cut from one.
+
+## Caps
+
+Hard caps. Count before showing the doc; over a cap, something belongs to planning.
+
+| Thing | Cap |
+|---|---|
+| Body words, front matter and mermaid excluded | 500 |
+| Diagrams | 1 |
+| `What changes` rows | 6 |
+| `Decisions` rows | 3 |
+| `Risks` bullets | 3 |
+
+```bash
+sed '/^---$/,/^---$/d; /^```/,/^```/d' design.md | wc -w
+```
 
 ## Template
 
-Write it in this order. Omit a section that would be empty; never pad with "None".
+Write it in this order. `Problem`, `Approach` and `Hard to undo` are always present. Every
+other section appears only when it holds something that passes the test; otherwise drop it,
+header included, never "None". A one-line fix gets a 60-word doc; a new subsystem gets the page.
 
 ````markdown
 ---
@@ -22,44 +46,32 @@ task: One line naming what is being designed
 # TITLE
 
 ## Problem
-Why this exists, who has the problem, and the outcome they want. Two to four sentences.
+Why this exists, who has the problem, and the outcome they want. Two sentences.
 
 ## Scope
 - **In:** …
 - **Out:** …
 
-## Success criteria
-- How the user will judge that it works, one per line.
-
 ## Approach
-The chosen approach in six sentences or fewer: what gets built, where it sits, what it reuses.
+The one idea, in five sentences or fewer: what gets built, where it sits, what it reuses.
 
-**Rejected:** one line per approach not taken, with the reason.
+**Rejected:** one line per whole approach the user turned down, with the reason.
 
 ## Design
-
-### Context
 ```mermaid
 flowchart LR
   …
 ```
 
-### Components
-| Component | New / changed / reused | Does | Depends on | Where |
-|---|---|---|---|---|
-
-### Main flow
-```mermaid
-sequenceDiagram
-  …
-```
-
-### Data and contracts
-The shapes that cross a boundary: payloads, records, events. A typed sketch or a diagram.
-
-### Failure behavior
-| When | Then |
-|---|---|
+## What changes
+| Area | Added / changed / none | One phrase why |
+|---|---|---|
+| Stored data | | |
+| API or contract | | |
+| New dependency | | |
+| New component or service | | |
+| Config | | |
+| User surface | | |
 
 ## Decisions
 | # | What we do | Instead of | Because |
@@ -67,11 +79,14 @@ The shapes that cross a boundary: payloads, records, events. A typed sketch or a
 | D1 | … | … | … |
 | D2 | … — *inferred* | … | … |
 
-## Clarifications
-- Q: … → A: …
-
 ## Risks
-- What could go wrong, and what it costs.
+- What the task did not say that changes the design, and what it costs.
+
+## Hard to undo
+One line: what this locks in (a table, a public contract, a dependency), or "nothing".
+
+## Unsure
+- What you could not settle about the task itself, and what you assumed.
 
 ## Open questions
 D3: … — blocked-by: D1 · open
@@ -80,38 +95,26 @@ D3: … — blocked-by: D1 · open
 - …
 ````
 
-## Diagrams
-
-Pick the diagram by the question it answers. Draw it only when it shows how something works
-that a paragraph would hide.
-
-| Question | Mermaid type |
-|---|---|
-| What talks to what, and what is outside the system? | `flowchart LR` |
-| In what order do the parts act on the main path, or a failure path? | `sequenceDiagram` |
-| What states can a thing be in, and what moves it between them? | `stateDiagram-v2` |
-| How do the records relate? | `erDiagram` |
-| Which choice leads where? | `flowchart TD` |
-
-Rules:
-
-- Name boxes after real components, using the names the code uses.
-- Show new parts apart from existing ones:
-  `classDef new fill:#e6f4ea,stroke:#1e8e3e` and `class NodeId new`.
-- Keep a diagram to about 12 nodes. Past that, split it by concern.
-- Quote any label holding punctuation: `A["POST /runs (retry)"]`. Use `<br>` for a line break,
-  never `\n`.
-- One diagram, one idea. A context diagram does not also show order; a sequence does not also
-  show states.
-
 ## Section rules
 
-- **Components**: every row answers what it does, how it is used and what it depends on.
-  `Where` is a path for changed or reused parts, and the intended folder for new ones.
-- **Decisions**: one row per fork taken. Name the mechanism concretely: the service, the
-  field, the value. Mark forks closed on the user's behalf `inferred`. Cite the ticket or a
-  `file:line` in `Because` where one drives the fork.
-- **Clarifications**: one line per answer, appended as each round lands.
-- **Open questions**: empty at approval. Every node is by then resolved, inferred or moved to
-  `## Deferred`.
-- No code steps, phases or test plans. Those belong to the planning stage.
+- **Scope**: `Out` is what stops the plan from growing. Two or three lines each.
+- **Rejected**: only approaches the user was shown in step 4 and turned down, or an obvious
+  path a reader would ask "why not?" about. An alternative to one decision goes in that
+  decision's `Instead of` cell, not here.
+- **Design**: one diagram, only when it shows what a paragraph would hide; a small change has
+  none. `flowchart LR` for what talks to what, `sequenceDiagram` for order, `stateDiagram-v2`
+  for states, `erDiagram` for records. Name boxes as the code does. Show only new or changed
+  parts plus what they touch, about 10 nodes, new parts marked
+  `classDef new fill:#e6f4ea,stroke:#1e8e3e` and `class NodeId new`. Quote labels holding
+  punctuation: `A["POST /runs (retry)"]`.
+- **What changes**: keep the `added` and `changed` rows, plus `Stored data` even when `none`.
+  No field names, no paths. Point at a decision or at `Hard to undo` instead of restating it.
+- **Decisions**: one row per fork that changes the shape; a fork that changes only code is
+  planning's. Name the mechanism: the service, the key, the value. Mark forks closed on the
+  user's behalf `inferred`. Cite the ticket or a `file:line` in `Because` where one drives it.
+- **Risks**: gaps in the task that bite, not a checklist. Each says what it costs if ignored.
+- **Hard to undo**: a changed contract every caller sees, a new table, a new runtime dependency.
+- **Unsure**: the agent's own gaps in reading the task, not risks in the system.
+- **Open questions**: working state, removed at approval.
+- No component table, contract sketches, failure tables, phases or test plans. Those belong to
+  planning.

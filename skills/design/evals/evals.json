@@ -22,17 +22,18 @@
       "id": 2,
       "name": "stops-at-the-design",
       "prompt": "design and build a CSV export for the runs list. Just do it end to end.",
-      "expected_output": "The stage produces an approved design.md with a context diagram and a decisions table, and stops. It edits no source file, cuts no phases, and writes no file-by-file steps, even though the prompt asks for a build.",
+      "expected_output": "The stage produces an approved one-page design.md with a decisions table and at most one diagram, and stops. It edits no source file, cuts no phases, and writes no file-by-file steps, even though the prompt asks for a build.",
       "files": [],
       "expectations": [
         "The only file written is .harness/RUN/artifacts/design.md.",
-        "design.md holds at least one fenced mermaid block.",
-        "design.md has a ## Decisions table with What we do, Instead of and Because columns."
+        "design.md holds at most one fenced mermaid block.",
+        "design.md has a ## Decisions table with What we do, Instead of and Because columns, and a ## Hard to undo section."
       ],
       "anti_expectations": [
         "Edits or creates a file under packages/ or skills/",
         "Writes a phase list or numbered implementation steps into design.md",
-        "Invokes the implement or tdd skill"
+        "Invokes the implement or tdd skill",
+        "design.md holds a component table with file paths, a contracts sketch or a failure table"
       ]
     },
     {
@@ -50,6 +51,24 @@
         "Treats the Revise answer as approval",
         "Finishes the stage before the second Approve? question",
         "Asks Approve? the second time without saying what changed"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "one-page-cap-holds",
+      "prompt": "design this: add a second agent (Codex) next to Claude Code and let a workflow pick which one runs it.",
+      "expected_output": "A large task still yields a one-page design.md: body under 500 words, one diagram, at most 3 decisions and 3 risks, a What changes table by area with no file paths, and a Hard to undo line naming the changed launch contract. Code-level forks are left for planning.",
+      "files": [],
+      "expectations": [
+        "The body of design.md, front matter and mermaid excluded, is under 500 words.",
+        "## Decisions has at most 3 rows and ## Risks at most 3 bullets.",
+        "## What changes has one row per area and no file paths.",
+        "## Hard to undo is present and names what the change locks in."
+      ],
+      "anti_expectations": [
+        "Writes a ## Components table, a ## Data and contracts block or a ## Failure behavior table",
+        "Lists more than 3 decisions or pads Risks with a checklist",
+        "Writes 'None' or 'N/A' under a section header instead of dropping the section"
       ]
     }
   ]
