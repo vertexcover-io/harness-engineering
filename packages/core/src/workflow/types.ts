@@ -1,6 +1,7 @@
 import {
   AgentTypeSchema,
   type JsonValue,
+  NameSchema,
   NodeTypeSchema,
   NonEmptyStringSchema,
   type ProcessRecord,
@@ -204,6 +205,8 @@ export const WorkflowSchema = z.strictObject({
   name: NonEmptyStringSchema,
   version: z.union([z.string(), z.number()]).optional(),
   agent: WorkflowAgentSchema.default("claude"),
+  // looked up under agents.AGENT.tiers in the config to pick the model the session launches with
+  tier: NameSchema.optional(),
   doctor: z.array(DoctorDeclarationSchema).default([]),
   inputs: z.record(NodeIdSchema, InputDeclarationSchema).default({}),
   nodes: z.array(NodeSchema).min(1),
@@ -336,6 +339,7 @@ export type PlanNode =
 export type WorkflowPlan = Readonly<{
   name: string;
   agent: WorkflowAgent;
+  tier?: string | undefined;
   inputs: InputDeclarations;
   doctor: readonly DoctorDeclaration[];
   nodes: readonly PlanNode[];

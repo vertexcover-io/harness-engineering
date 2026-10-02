@@ -33,12 +33,14 @@ export {
   type ConfigError,
   type ConfigInput,
   ConfigSchema,
+  findTierModel,
   type LoadedConfig,
   loadConfig,
   loadConfigAt,
   loadConfigFile,
   loadConfigOrDefault,
   NameSchema,
+  type TierModel,
   unknownPackage,
 } from "./config.ts";
 export {
@@ -178,6 +180,7 @@ export {
   type RegistryReader,
   registryPath,
   type SessionRef,
+  tierLaunch,
   type WorkflowRun,
   WorkflowRunSchema,
 } from "./registry.ts";
@@ -190,6 +193,7 @@ export {
   loadPickedConfig,
   loadRecordedConfig,
   loadRunConfig,
+  loadStartConfig,
   type PickRunInput,
   pickRun,
   type RunLookup,

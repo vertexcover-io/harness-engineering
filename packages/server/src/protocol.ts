@@ -1,6 +1,6 @@
 import { isAbsolute, join } from "node:path";
 import { WorkflowAgentSchema } from "@harness/core";
-import { harnessHome, JsonObjectSchema, SlugSchema } from "@harness/sdk";
+import { harnessHome, JsonObjectSchema, NameSchema, SlugSchema } from "@harness/sdk";
 import * as z from "zod";
 
 export const socketPath = (home: string = harnessHome()): string => join(home, "harness.sock");
@@ -28,6 +28,7 @@ export const StartRunBodySchema = z.strictObject({
   cwd: AbsolutePathSchema,
   name: SlugSchema.optional(),
   agent: WorkflowAgentSchema.default("claude"),
+  tier: NameSchema.optional(),
   // the config file harness run --config named; the run reads it instead of its checkout's
   config: AbsolutePathSchema.optional(),
 });

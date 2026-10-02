@@ -21,6 +21,7 @@ test("SC26: a restarted server types the comments an earlier one left behind, wi
     name: "demo",
     terminal: "s1",
     config: null,
+    tier: null,
     createdAt: "2026-01-01T00:00:00.000Z",
   };
   writeFileSync(join(home, "registry.json"), JSON.stringify({ version: 1, runs: { "r-1": run } }));

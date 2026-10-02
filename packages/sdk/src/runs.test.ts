@@ -196,6 +196,7 @@ const savedRun = (id: string, cwd: string, name: string | null): WorkflowRun => 
   name,
   terminal: null,
   config: null,
+  tier: null,
   createdAt: new Date().toISOString(),
 });
 

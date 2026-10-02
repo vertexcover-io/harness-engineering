@@ -400,6 +400,7 @@ async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
   return Object.freeze({
     name: workflow.name,
     agent: workflow.agent,
+    tier: workflow.tier,
     inputs: workflow.inputs,
     doctor,
     nodes,

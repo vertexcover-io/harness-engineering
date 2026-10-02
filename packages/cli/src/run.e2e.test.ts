@@ -195,6 +195,68 @@ describe("harness run", () => {
   );
 
   test(
+    "a workflow tier launches the session on the model the checkout's config maps it to",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+      writeFileSync(
+        join(repo, "orchestrate.config.json"),
+        JSON.stringify({ version: 2, agents: { claude: { tiers: { deep: { model: "opus" } } } } }),
+      );
+      writeFileSync(join(repo, "deep.yaml"), `tier: deep\n${OK_WORKFLOW}`);
+
+      expect(harness(repo, env, "run", "deep.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
+      waitFor(() => readLines(fakeOut).some(isLaunch));
+      const argv = readLines(fakeOut).find(isLaunch)?.argv;
+      const args = Array.isArray(argv) ? argv.map(String) : [];
+
+      expect(args[args.indexOf("--model") + 1]).toBe("opus");
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a workflow tier the config does not map for the agent fails the run before any session starts",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+      writeFileSync(join(repo, "deep.yaml"), `tier: deep\n${OK_WORKFLOW}`);
+
+      const result = harness(repo, env, "run", "deep.yaml", "--prompt", "hi", "--no-open");
+
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("agents.claude.tiers.deep");
+      expect(readLines(fakeOut).some(isLaunch)).toBe(false);
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a run the doctor blocks prints why each failing check failed",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+      writeFileSync(
+        join(repo, "orchestrate.config.json"),
+        JSON.stringify({ version: 2, tiers: { deep: { agent: "claude", model: "opus" } } }),
+      );
+
+      const result = harness(repo, env, "run", "ok.yaml", "--prompt", "hi", "--no-open");
+
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("BLOCKED orchestrate-config");
+      expect(result.stderr).toContain("orchestrate-config: ");
+      expect(result.stderr).toContain('Unrecognized key: "tiers"');
+      expect(readLines(fakeOut).some(isLaunch)).toBe(false);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "SC23: the agent the server launched can init its run with orchestrate, using only its own environment",
     () => {
       const repo = makeRepo();

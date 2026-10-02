@@ -19,6 +19,7 @@ const setup = async (name: string | null) => {
     name,
     terminal: null,
     config: null,
+    tier: null,
     createdAt: new Date().toISOString(),
   };
   const registry = createRegistry(registryPath(home), noopLogger);

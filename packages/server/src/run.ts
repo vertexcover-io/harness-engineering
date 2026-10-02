@@ -1,7 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { orchestrateArgv, type WorkflowAgent } from "@harness/core";
-import type { IAgentProvider, WorkflowRun } from "@harness/sdk";
+import {
+  findTierModel,
+  type IAgentProvider,
+  loadStartConfig,
+  type Result,
+  tierLaunch,
+  type WorkflowRun,
+} from "@harness/sdk";
 import type { Registry } from "@harness/sdk/internal";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -17,12 +24,30 @@ export type RunDeps = Readonly<{
 
 const viewUrl = (deps: RunDeps, runId: string): string => `${deps.viewerOrigin}/runs/${runId}`;
 
+const resolveTier = async (body: StartRunBody): Promise<Result<WorkflowRun["tier"]>> => {
+  const { tier, agent, config, cwd } = body;
+  if (tier === undefined) return { ok: true, value: null };
+  const loaded = await loadStartConfig(config ?? null, cwd);
+  if (!loaded.ok) return loaded;
+  const found = findTierModel(loaded.value.config, agent, tier);
+  return found.ok ? { ok: true, value: { name: tier, ...found.value } } : found;
+};
+
 const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: StartRunBody) => {
   const log = c.get("log").child({ component: "runs" });
   const { workflow, workflowPath, inputs, cwd, name, agent, config } = body;
 
   if (!existsSync(workflowPath) || !existsSync(cwd)) {
     return errorResponse(c, 400, "bad-request", "workflowPath and cwd must exist");
+  }
+
+  const tier = await resolveTier(body);
+  if (!tier.ok) {
+    log.error(
+      { err: tier.error, workflow, agent },
+      "run not started: the workflow tier has no model",
+    );
+    return errorResponse(c, 400, "bad-request", tier.error);
   }
 
   const provider = deps.providerFor(agent);
@@ -40,6 +65,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     name: null,
     terminal: null,
     config: config ?? null,
+    tier: tier.value,
     createdAt: new Date().toISOString(),
   };
   await deps.registry.addRun(pending);
@@ -52,6 +78,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
       prompt: `${provider.skillPrefix}orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
       env: { HARNESS_RUN_ID: id, HARNESS_HOME: deps.home },
       orchestrateArgv: orchestrateArgv(),
+      ...tierLaunch(tier.value),
     })
     .catch(async (error: unknown) => {
       await deps.registry.removeRun(id);

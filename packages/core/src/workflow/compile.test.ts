@@ -52,6 +52,12 @@ describe("compile", () => {
     expect((await rejection(`agent: pi\n${workflow(script("a"))}`)).code).toBe("schema");
   });
 
+  test("a top-level tier reaches the plan, a missing key leaves it out, and a non-camelCase tier is a schema error", async () => {
+    expect((await compile(`tier: deep\n${workflow(script("a"))}`)).tier).toBe("deep");
+    expect((await compile(workflow(script("a")))).tier).toBeUndefined();
+    expect((await rejection(`tier: deep-think\n${workflow(script("a"))}`)).code).toBe("schema");
+  });
+
   test("resolves workflow.yaml output schemas before an exec or agent runs", async () => {
     const modulePath = join(workflowDir, "compile-output-schemas.ts");
     writeFileSync(

@@ -64,6 +64,13 @@ export const loadCheckoutConfig = async (cwd: string): Promise<Result<CheckoutCo
   return { ok: true, value: { config: defaultConfig(), path: null, root: root.value } };
 };
 
+// The config a run starting in cwd reads: the file `harness run --config` named, else the checkout's.
+export const loadStartConfig = (
+  config: string | null,
+  cwd: string,
+): Promise<Result<CheckoutConfig>> =>
+  config === null ? loadCheckoutConfig(cwd) : loadNamedConfig(config);
+
 // The config init recorded in state.json. A recorded file that is gone is an error, never a
 // fallback, since reading another config would hide the mistake.
 export const loadRunConfig = async (run: RunRef): Promise<Result<CheckoutConfig>> =>

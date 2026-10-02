@@ -4,15 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import * as z from "zod";
-import { type Config, ConfigSchema, loadConfig, loadConfigAt } from "./config.ts";
+import type { AgentType } from "./agent.ts";
+import { type Config, ConfigSchema, findTierModel, loadConfig, loadConfigAt } from "./config.ts";
 
 const exampleYaml = `version: 2
 doctor: bun bin/doctor.ts
 
-tiers:
-  deep: { agent: claude, model: opus, effort: high }
-  standard: { agent: claude, model: sonnet }
-  fast: { agent: claude, model: haiku }
+agents:
+  claude:
+    tiers:
+      deep: { model: opus, effort: high }
+      standard: { model: sonnet }
+      fast: { model: haiku }
 
 packages:
   root:
@@ -69,12 +72,35 @@ const errorOf = (value: unknown): string => {
   return z.prettifyError(parsed.error);
 };
 
+describe("findTierModel", () => {
+  const config = ConfigSchema.parse({
+    version: 2,
+    agents: { claude: { tiers: { deep: { model: "opus", effort: "high" } } } },
+  });
+
+  test("gives the model and effort the agent maps the tier to", () => {
+    expect(findTierModel(config, "claude", "deep")).toEqual({
+      ok: true,
+      value: { model: "opus", effort: "high" },
+    });
+  });
+
+  test.each([
+    ["a tier the agent does not map", "claude", "fast"],
+    ["an agent the config does not list", "codex", "deep"],
+  ])("fails for %s, naming the missing key", (_label, agent, tier) => {
+    const found = findTierModel(config, agent as AgentType, tier);
+    if (found.ok) throw new Error("expected a failure");
+    expect(found.error).toContain(`agents.${agent}.tiers.${tier}`);
+  });
+});
+
 describe("ConfigSchema", () => {
   test("SC1 — a file holding only version 2 loads with every map empty and a mono workspace", () => {
     const config = ConfigSchema.parse({ version: 2 });
     expect(config).toEqual({
       version: 2,
-      tiers: {},
+      agents: {},
       packages: {},
       extensions: {},
       env: {},
@@ -114,7 +140,7 @@ describe("ConfigSchema", () => {
 
   test("SC2 — a full example loads with defaults filled", async () => {
     const config = await load("orchestrate.config.yaml", exampleYaml);
-    expect(config.tiers.deep).toEqual({ agent: "claude", model: "opus", effort: "high" });
+    expect(config.agents.claude?.tiers.deep).toEqual({ model: "opus", effort: "high" });
     expect(config.packages.root).toEqual({
       path: ".",
       timeoutSeconds: 300,
@@ -140,7 +166,7 @@ describe("ConfigSchema", () => {
   test.each([
     ["command", { packages: { root: { path: ".", commands: { test_all: "x" } } } }, "test_all"],
     ["package", { packages: { "my-api": { path: "api" } } }, "my-api"],
-    ["tier", { tiers: { "deep-think": { agent: "claude" } } }, "deep-think"],
+    ["tier", { agents: { claude: { tiers: { "deep-think": { model: "opus" } } } } }, "deep-think"],
     [
       "environment",
       { environments: { default: "my-local", entries: { "my-local": {} } } },
@@ -210,7 +236,12 @@ describe("ConfigSchema", () => {
       { version: 2, packages: { api: { path: "api", timeoutSecond: 5 } } },
       "timeoutSecond",
     ],
-    ["tier", { version: 2, tiers: { deep: { agent: "claude", modle: "opus" } } }, "modle"],
+    [
+      "tier",
+      { version: 2, agents: { claude: { tiers: { deep: { model: "opus", efort: "high" } } } } },
+      "efort",
+    ],
+    ["agent", { version: 2, agents: { gemini: { tiers: {} } } }, "gemini"],
   ])("SC8 — an unknown key in a %s is rejected, not dropped", (_label, value, key) => {
     expect(errorOf(value)).toContain(key);
   });
@@ -218,11 +249,14 @@ describe("ConfigSchema", () => {
   test("SC9 — a tier's effort must be one of the agent effort levels", () => {
     const valid = ConfigSchema.parse({
       version: 2,
-      tiers: { deep: { agent: "claude", effort: "max" } },
+      agents: { claude: { tiers: { deep: { model: "opus", effort: "max" } } } },
     });
-    expect(valid.tiers.deep?.effort).toBe("max");
+    expect(valid.agents.claude?.tiers.deep?.effort).toBe("max");
     expect(
-      errorOf({ version: 2, tiers: { deep: { agent: "claude", effort: "extreme" } } }),
+      errorOf({
+        version: 2,
+        agents: { claude: { tiers: { deep: { model: "opus", effort: "extreme" } } } },
+      }),
     ).toContain("effort");
   });
 
@@ -368,8 +402,8 @@ describe("loadConfig", () => {
     [
       "a schema violation",
       "orchestrate.config.json",
-      '{"version": 2, "tiers": {"deep": {}}}',
-      "agent",
+      '{"version": 2, "agents": {"claude": {"tiers": {"deep": {}}}}}',
+      "model",
     ],
     ["a file that is not an object", "orchestrate.config.yaml", "- version\n", "version: 2"],
   ])(
