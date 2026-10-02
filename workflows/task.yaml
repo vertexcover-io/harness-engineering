@@ -29,3 +29,32 @@ nodes:
     stage: baseline
     dependsOn: [create-workspace]
     input: {}
+
+  - id: design
+    type: agent
+    stage: design
+    dependsOn: [baseline]
+    input:
+      task: "{{ nodes.ticket-fetcher.output.task }}"
+
+  - id: planning
+    type: agent
+    stage: planning
+    dependsOn: [design]
+    input:
+      task: "{{ nodes.ticket-fetcher.output.task }}"
+      workspace: "{{ nodes.create-workspace.output }}"
+
+  - id: implement
+    type: agent
+    stage: implement
+    dependsOn: [planning]
+    input:
+      workspace: "{{ nodes.create-workspace.output }}"
+
+  - id: code-review
+    type: agent
+    stage: code-review
+    dependsOn: [implement]
+    input:
+      workspace: "{{ nodes.create-workspace.output }}"

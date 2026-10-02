@@ -934,4 +934,43 @@ describe("the shipped task workflow", () => {
       input: { request: "{{ nodes.ticket-fetcher.output.task }}" },
     });
   });
+
+  test("runs the design stage after the baseline, fed the ticket-fetcher's task", async () => {
+    const plan = await compileWorkflow(
+      join(import.meta.dir, "..", "..", "..", "..", "workflows", "task.yaml"),
+    );
+
+    expect(plan.nodes.find((node) => node.id === "design")).toMatchObject({
+      dependsOn: ["baseline"],
+      input: { task: "{{ nodes.ticket-fetcher.output.task }}" },
+    });
+  });
+
+  test("ends with planning, implement and code-review in that order, each in the run's workspace", async () => {
+    const plan = await compileWorkflow(
+      join(import.meta.dir, "..", "..", "..", "..", "workflows", "task.yaml"),
+    );
+    const workspace = "{{ nodes.create-workspace.output }}";
+
+    expect(plan.nodes.slice(-3)).toMatchObject([
+      {
+        id: "planning",
+        stage: { ref: "planning" },
+        dependsOn: ["design"],
+        input: { task: "{{ nodes.ticket-fetcher.output.task }}", workspace },
+      },
+      {
+        id: "implement",
+        stage: { ref: "implement" },
+        dependsOn: ["planning"],
+        input: { workspace },
+      },
+      {
+        id: "code-review",
+        stage: { ref: "code-review" },
+        dependsOn: ["implement"],
+        input: { workspace },
+      },
+    ]);
+  });
 });

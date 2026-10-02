@@ -3,14 +3,52 @@ name: code-review
 description: >
   Deep code review that hunts for subtle bugs and for code that works but should have been
   written differently. Runs eight reviewer personas in parallel, aggregates their findings
-  into a report, then applies the fixes and records them in it. Use when the user says
-  "/code-review", "review my code", "review this change", or "review this against the plan".
+  into a report, then applies the fixes and records them in it. Runs as the pipeline's
+  code-review stage, after implement; also use it when the user says "/code-review", "review my
+  code", "review this change", or "review this against the plan".
+mode: inline
+allowed-tools: [Agent, Bash, Read, Write, Edit, Grep, Glob, Skill]
+tier: deep
+consumes:
+  - artifact: plan
+    optional: true
+  - artifact: design
+    optional: true
+produces:
+  - artifact: review
+protocols: []
+scopes: []
+references:
+  defects:
+    path: references/persona-defects.md
+    description: Finds bugs such as wrong logic, unhandled cases and broken error paths.
+  spec:
+    path: references/persona-spec.md
+    description: Checks the change does what the plan and design asked.
+  security:
+    path: references/persona-security.md
+    description: Finds inputs, endpoints and trust decisions an attacker can abuse.
+  testing:
+    path: references/persona-testing.md
+    description: Checks the tests prove the behavior, at the right level.
+  reuse:
+    path: references/persona-reuse.md
+    description: Finds code that rebuilds something the repo already has.
+  simplification:
+    path: references/persona-simplification.md
+    description: Finds code that could say the same thing with less.
+  efficiency:
+    path: references/persona-efficiency.md
+    description: Finds wasted work on a path that matters.
+  altitude:
+    path: references/persona-altitude.md
+    description: Finds code sitting at the wrong layer or level of abstraction.
 ---
 
 # Code Review
 
-Load the `writing-style` skill before you write `.harness/review.md`. Run its ship-check
-before you hand the report back. Each reviewer persona gets the same instruction in its
+Load the `writing-style` skill before you write the report. Run its ship-check before you hand
+the report back. Each reviewer persona gets the same instruction in its
 dispatch prompt.
 
 You are the **dispatcher**, not a reviewer. Between dispatch and aggregation you run no tools:
@@ -34,7 +72,7 @@ Read these in order, highest priority first. A higher source may **add** rules o
 contradicts a default. What it cannot do is silently remove a rule by not mentioning it:
 absence is a gap, filled by the next source down.
 
-1. `$ARGUMENTS`, when it is a path to an existing file
+1. The input's `standards`, or `$ARGUMENTS` standalone, when it is a path to an existing file
 2. `.claude/rules/*` and `.claude/harness/code-review-reference.md` in the project root
 3. Any standards the repo documents — `CODING_STANDARDS.md`, `CONTRIBUTING.md`,
    `STYLE_GUIDE.md`, `docs/` equivalents, or the conventions section of `CLAUDE.md`/`AGENTS.md`
@@ -45,22 +83,22 @@ absence is a gap, filled by the next source down.
 the rule down. A rung-4 finding is a **judgement call**: it may be right, but it can never
 block on its own.
 
-## Invocation
+## Input
 
-```
-/code-review [--plan PATH] [--pr NUMBER] [--commits RANGE] [--output PATH]
-```
+In a run, the input may hold these fields. RUN is the run's spec name. Standalone, the same
+names are flags: `/code-review [--plan PATH] [--pr NUMBER] [--commits RANGE] [--output PATH]`.
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `--plan PATH` | No | The plan or design doc the change was written from. Goes to the Spec agent, which checks the change against it. Omitted → it infers intent from the commits, PR description, and branch name. |
-| `--pr NUMBER` | No | Review a PR diff (uses `gh pr diff NUMBER`). |
-| `--commits RANGE` | No | Review a commit range (e.g. `HEAD~3..HEAD`). |
-| `--output PATH` | No | Where to write the report. Omitted → `.harness/review.md` and the review also prints inline (see Step 3). |
+| Field | Meaning |
+|---|---|
+| `workspace` | the create-workspace stage's output. Review inside each repo's `worktreeDir`; without it, the current checkout. |
+| `plan` | the plan or design doc the change was written from, for the Spec agent. In a run it defaults to `.harness/RUN/artifacts/plan.md`, with `design.md` beside it. With neither, the Spec agent infers intent from the commits, PR description and branch name. |
+| `pr` | review a PR diff (`gh pr diff NUMBER`). |
+| `commits` | review a commit range, such as `HEAD~3..HEAD`. |
+| `output` | where to write the report. In a run it is always `.harness/RUN/artifacts/review.md`. |
 
-**Scope resolution** (first match wins): `--pr NUMBER` → PR diff · `--commits RANGE` → that
-range, three-dot against its start ref · neither → working tree (`git diff HEAD`, staged +
-unstaged).
+**Scope** (first match wins): `pr` → the PR diff · `commits` → that range, three-dot against its
+start ref · in a run → the run's branch against its merge-base with the base branch · none →
+the working tree (`git diff HEAD`, staged and unstaged).
 
 ## Step 1 — Preflight
 
@@ -72,8 +110,9 @@ Every failure below stops here, not inside the sub-agent fan-out.
    of it. Confirm the ref resolves (`git rev-parse`). For PRs, also read the description
    (`gh pr view NUMBER`).
 2. **Stop and report** on: empty diff (write no report), unresolvable ref, PR not found or
-   `gh` unauthenticated (suggest `gh auth login`), a `--plan` path that doesn't exist, or —
-   under `--pr` — `git rev-parse HEAD` not matching the PR's `headRefOid` (name both SHAs).
+   `gh` unauthenticated (suggest `gh auth login`), a `plan` path that doesn't exist, or —
+   under `pr` — `git rev-parse HEAD` not matching the PR's `headRefOid` (name both SHAs). In a
+   run, finish the stage with `--error -` and that reason.
 3. **Commit the tree before dispatch.** `git status --porcelain` decides: commit any dirty
    tracked file as a WIP commit, fold it into the reviewed range, and note it in the report
    header — this is what makes a persona's edit-and-revert experiment recoverable.
@@ -85,20 +124,24 @@ present, and the paths of the governance sources you found on rungs 1–3. Skip 
 
 ## Step 2 — Dispatch in parallel
 
-`references/` holds one `persona-*.md` file per axis. Spawn **one `general-purpose` sub-agent
-per axis, eight in a single message** so they run concurrently. One agent holding every axis at
-once matches shallowly across all of them.
+Each axis has one persona reference. Spawn **one `general-purpose` sub-agent per axis, eight in
+a single message** so they run concurrently. One agent holding every axis at once matches
+shallowly across all of them.
 
-| Agent | File | Also give it |
+| Agent | Reference | Also give it |
 |---|---|---|
-| Defects | `references/persona-defects.md` | — |
-| Spec | `references/persona-spec.md` | the full text of the `--plan` file, when there is one |
-| Security | `references/persona-security.md` | — |
-| Testing | `references/persona-testing.md` | — |
-| Reuse | `references/persona-reuse.md` | — |
-| Simplification | `references/persona-simplification.md` | — |
-| Efficiency | `references/persona-efficiency.md` | — |
-| Altitude | `references/persona-altitude.md` | — |
+| Defects | `defects` | — |
+| Spec | `spec` | the full text of the plan and `design.md`, when they exist |
+| Security | `security` | — |
+| Testing | `testing` | — |
+| Reuse | `reuse` | — |
+| Simplification | `simplification` | — |
+| Efficiency | `efficiency` | — |
+| Altitude | `altitude` | — |
+
+Get each persona file's path with `bun run --silent orchestrate skill ref --path
+code-review.NAME`, which honors a project's replacement. Outside a run, the files are this
+skill's `references/persona-NAME.md`.
 
 **All eight run on every review.** There is no gate and no team selection: an axis with nothing
 to report returns nothing, and that emptiness is a result you present.
@@ -158,14 +201,14 @@ rung 4 is still rung 4.
 Close with one line per axis: total findings, and the worst issue *within that axis*. Don't
 pick a single winner across axes.
 
-**Where it goes** — always write the file, and let `--output` tell you which caller you have:
+**Where it goes** — always write the file:
 
-- **`--output PATH` given** (the orchestrate pipeline, which passes
-  `.harness/<SPEC_NAME>/review/review.md`) → write there and report the verdict plus every
-  blocking finding.
-- **No `--output`** (invoked directly) → write `.harness/review.md`, falling back to
-  `./REVIEW.md` when there's no `.harness/`, **and** print the full review inline. A human
-  asked; make them open a file to see the answer and they won't.
+- **In a run** → `.harness/RUN/artifacts/review.md`.
+- **Standalone with `--output PATH`** → write there and report the verdict plus every blocking
+  finding.
+- **Standalone without it** → write `.harness/review.md`, falling back to `./REVIEW.md` when
+  there's no `.harness/`, **and** print the full review inline. A human asked; make them open a
+  file to see the answer and they won't.
 
 ## Step 4 — Apply the fixes
 
@@ -186,4 +229,9 @@ unfixed** with the failure it caused.
 axis by axis and account for each one, then restate the verdict. `REQUEST CHANGES` still stands
 when a blocking finding is one you left.
 
-Runs only when explicitly invoked — never trigger it on context clues.
+## Finish
+
+In a run, finish the stage with `--artifact review=artifacts/review.md`. The output is the final
+verdict on its first line, then one line per finding left unfixed.
+
+Standalone, this skill runs only when explicitly invoked — never trigger it on context clues.

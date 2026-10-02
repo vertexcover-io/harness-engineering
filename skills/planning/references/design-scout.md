@@ -6,10 +6,9 @@ Backend-only work — a webhook, a job, a schema migration — never triggers it
 This scout's job is to put every design asset on disk, where the plan can point at it. It
 collects; it does not interpret.
 
-The ticket is the one the run was given: `TASK_CONTEXT` carries its URL when orchestrate fetched
-it, and a standalone run names it in the prompt. Read it through the project's own tracker reader
-— the skill or hook the project documents for fetching a task, the same one orchestrate's setup
-stage uses — and collect, from the ticket's attachments and any design links in its body:
+The ticket is the one the run was given: the `task` input quotes it and names its local files,
+and a standalone run names it in the prompt. Collect, from the ticket's attachments and any
+design links in its body:
 
 - **Screenshots and images** — saved as-is
 - **HTML mockups** — saved as-is, with any assets they reference, plus one PNG screenshot per
@@ -17,8 +16,8 @@ stage uses — and collect, from the ticket's attachments and any design links i
   what INDEX names and what the plan embeds; the HTML stays beside it for reference
 - **Figma frames** — exported to PNG through the Figma MCP, one file per frame
 
-Images and exported frames land directly in `.harness/<name>/design/`. An HTML mockup keeps its
-own folder — `design/<slug>/index.html` beside the assets it references — so its relative links
+Images and exported frames land directly in `.harness/RUN/design/`. An HTML mockup keeps its
+own folder — `design/SLUG/index.html` beside the assets it references — so its relative links
 resolve without rewriting the document. `design/INDEX.md` sits alongside:
 
 | Screen | Local file | Source | Source of truth for |

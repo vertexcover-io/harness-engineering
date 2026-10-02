@@ -1,21 +1,19 @@
 # plan.md and phases/phase-N.md — the contract
 
-Paths: `.harness/<name>/plan.md` · `.harness/<name>/phases/phase-N.md`.
+Paths: `.harness/RUN/artifacts/plan.md` · `.harness/RUN/artifacts/phases/phase-N.md`.
 
-Both files are agent-facing. `plan.html` is the human review surface; these are extracted from
-it and are never rendered to a person. Examples below use a neutral domain, user auth,
-unrelated to the feature being planned.
+The planner writes both directly. The user approves them and a coder builds from them, so they
+are the whole record of the plan. Examples below use a neutral domain, user auth, unrelated to
+the feature being planned.
 
 ## Who reads them
 
 | Consumer | Reads | Uses it for |
 |---|---|---|
-| `orchestrate` | `plan.md`, the `## Phases` section | parses the digraph, dispatches coder waves |
+| `implement` | `plan.md`, the `## Phases` section | reads the digraph, builds the phases in order |
 | a coder | one `phases/phase-N.md`, plus `plan.md` | what it builds, and the scenarios that prove it |
 | `quality-gate` | `plan.md` and every phase file | resolves scenario ids against the matrix |
 | `code-review`, spec persona | `design.md` and `plan.md` | the intent to review the diff against |
-
-A reviewer can open these directly. They are handed `plan.html` first.
 
 ## Contents
 
@@ -34,10 +32,10 @@ fails without saying why.
 
 | Item | Read by | Rule |
 |---|---|---|
-| the `## Phases` heading | orchestrate | exact text |
-| the digraph inside it | orchestrate | `digraph phases { … }`, one node per phase id, `pN -> pM` edges |
+| the `## Phases` heading | implement | exact text |
+| the digraph inside it | implement | `digraph phases { … }`, one node per phase id, `pN -> pM` edges |
 | the `## Acceptance` heading | the coder | exact text |
-| `# Phase N: <title>` and `Depends on:` | the coder | the first two lines of every phase file |
+| `# Phase N: TITLE` and `Depends on:` | the coder | the first two lines of every phase file |
 | scenario ids | quality-gate | the format in `test-scenarios.md`, unique across the whole plan |
 
 Everything else is prose. The rules below govern it.
@@ -73,19 +71,19 @@ a complete plan.
 
 | plan.md section | Include when |
 |---|---|
-| `## Inputs` | upstream documents exist — name them, plus one line on what this plan adds |
+| `## Inputs` | always in a run — `design.md` and the ticket, plus one line on what this plan adds |
 | `## Requirements` | there is no requirements document, so planning established the ids itself |
-| `## Design corrections` | the code contradicted an input: what was assumed, what the code shows, what changes |
+| `## Design corrections` | the code contradicted `design.md`, and the user's answer changed it: what it assumed, what the code shows, what it says now |
 | `## Phases` | always — capability title, repos touched, builds/needs, *why the cut is there*, and the digraph |
 | `## Global constraints` | something binds every phase and is invisible to one built in isolation — fixed values, verbatim copy, platform limits. A value used in one phase belongs in that step. |
 | `## Signature index` | a name is defined in one phase and used in another |
 | `## Design References` | a phase builds a user-facing surface a design already defines — one row per screen, from `design/INDEX.md` |
-| `## ADRs` | the docs scout returned ADRs that bind this work, or step 7 wrote a new ADR |
+| `## ADRs` | the docs scout returned ADRs that bind this work, or this stage wrote a new ADR |
 | `## Project Docs` | the docs scout returned docs under `docs/`, outside `docs/adr/`, that bind this work |
 | `## Blockers in existing code` | existing code must be repaired or worked around to build **or test** this |
 | `## Test Matrix` | requirements exist — one row per requirement |
 | `## Acceptance` | something is provable only after every phase lands |
-| `## Deferred` | work was deliberately excluded, the user chose to defer an open question, or `--auto` deferred one (marked `auto`) |
+| `## Deferred` | work was deliberately excluded, or the design deferred it |
 | `## Design System` | a project extension produced a component inventory — that extension owns the section's shape |
 
 No status fields — progress derives from git and the digraph. No file inventory, no patterns
@@ -94,12 +92,12 @@ table: those belong in the steps they govern. A component inventory appears only
 
 ### The phase digraph
 
-One node per phase id. An edge means "must land first". orchestrate reads this to compute which
-phases are ready in each wave.
+One node per phase id. An edge means "must land first". `implement` reads this to order the
+phases.
 
     digraph phases {
-      p1 [label="1: <capability>"]
-      p2 [label="2: <capability>"]
+      p1 [label="1: CAPABILITY"]
+      p2 [label="2: CAPABILITY"]
       p1 -> p2
     }
 
@@ -128,7 +126,7 @@ in isolation who needs to know that the checkout screen is already drawn, and wh
 The step that builds the surface carries the instruction — *build to `design/checkout-empty.png`* —
 and the index carries the paths. A screen here that no step builds is a finding, as in the
 signature index; where that is deliberate, the row records it as
-`design/<file> — not built: <reason>`, the one form `verify-plan.ts` reads as accounted for.
+`design/FILE — not built: REASON`.
 
 Omit the section when no design exists — and **say so in the step instead**, per `step-card.md`.
 
@@ -143,7 +141,7 @@ One row per ADR the coder must follow. The coder never sees the docs scout's res
     | docs/adr/0008-semantic-search-adds-vector-arm.md | new | keep the tsquery arm; add the vector arm beside it |
 
 - **existing** — every ADR the docs scout returned.
-- **new** — every ADR the `adr` skill wrote in step 7's Record the ADRs. A `covered by` result
+- **new** — every ADR the `adr` skill wrote in this stage. A `covered by` result
   lists that existing ADR; a `dropped` result adds nothing.
 
 ### Project Docs
@@ -172,7 +170,7 @@ a paragraph describing it does not.
 
 ## phase-N.md
 
-Header: `# Phase N: <the capability title>`, then a `Depends on:` line.
+Header: `# Phase N: THE CAPABILITY TITLE`, then a `Depends on:` line.
 
 | Section | Answers only | Must not contain |
 |---|---|---|
@@ -187,9 +185,8 @@ are the definition of done. Content restating another section is cut.
 
 ## Implementation steps
 
-A step is a **card**: a fixed set of parts, rendered here and again in `plan.html`'s phase
-drill-down. `step-card.md` carries the parts, their triggers, and the register — read it before
-writing the `## Implementation` section, and write to it.
+A step is a **card**: a fixed set of parts. `step-card.md` carries the parts, their triggers,
+and the register — read it before writing the `## Implementation` section, and write to it.
 
 The card governs where things go and what they are called. It never governs how much a step says,
 or which part carries the weight.

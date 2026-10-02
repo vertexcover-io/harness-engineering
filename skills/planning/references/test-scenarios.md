@@ -67,7 +67,7 @@ file in the setup is fine; the expectations assert only what an actor observes.
 
 ## Format
 
-Heading `**SC<n> — <observable outcome>** · <trace ids>` — the id is globally unique across
+Heading `**SCn — OBSERVABLE OUTCOME** · TRACE_IDS` — the id is globally unique across
 the plan; `tdd` carries it in the test title and `quality-gate` resolves it against the
 phase file. A scenario tracing to nothing is dropped, or flags a missing requirement.
 
@@ -89,14 +89,9 @@ One `Given` is one scene: every outcome observable in it belongs to that scenari
 however many facts that is. A second scenario is earned by a different starting state or a
 different trigger — never by a further fact visible in the same scene.
 
-The heading is also the reviewer-facing line: `plan.html`'s scenario table transcribes it
-verbatim. It states one observable outcome, present tense, and carries no rationale clause —
-the `Given` and the outcomes supply the why by being concrete.
-
-Transcribed into that table, each scenario becomes one `<td>`: the heading in
-`<strong class="sc">`, each `Given …:` line in `<span class="given">`, its outcomes in a
-`<ul>`. A staged setup keeps its numbering in an `<ol>` and its `Expected:` label is a
-`.given` span. A filmed scenario is the `.given` span alone.
+The heading is the line the user reads at the plan gate. It states one observable outcome,
+present tense, and carries no rationale clause — the `Given` and the outcomes supply the why by
+being concrete.
 
 In the phase file, group the scenarios under level subsections — `### Unit` ·
 `### Integration` · `### E2E` · `### QA Agent` — including only the subsections the phase
@@ -134,6 +129,5 @@ navigation, a cross-service journey. Two checks before accepting any climb:
 fact keeps its row; anything else traces to a named Blocker.
 
 The strategy column tells the coder what the scenario leaves open: what is faked, what is
-diffed, what is data-driven. It stays in the matrix — `plan.html` shows the scenarios, not
-the strategy. A requirement with no row means the plan is incomplete or the requirement is
+diffed, what is data-driven. A requirement with no row means the plan is incomplete or the requirement is
 not real — both are findings.
