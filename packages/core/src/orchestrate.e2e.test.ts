@@ -2203,7 +2203,10 @@ describe("orchestrate statusline", () => {
       },
     };
     writeFileSync(statePath, JSON.stringify(state));
-    writeFileSync(join(dir, "workflow.yaml"), "name: ok\nnodes:\n  - id: design\n    type: agent\n    input: {}\n    prompt: do it\n  - id: plan\n    type: agent\n    input: {}\n    prompt: do it\n");
+    writeFileSync(
+      join(dir, "workflow.yaml"),
+      "name: ok\nnodes:\n  - id: design\n    type: agent\n    input: {}\n    prompt: do it\n  - id: plan\n    type: agent\n    input: {}\n    prompt: do it\n",
+    );
     return { repo, home, statePath };
   };
 
