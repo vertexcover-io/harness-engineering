@@ -9,6 +9,9 @@ workspace:
   baseBranch: v2
   setup: bun install
 
+notifier:
+  type: slack
+
 packages:
   sdk:
     path: packages/sdk
