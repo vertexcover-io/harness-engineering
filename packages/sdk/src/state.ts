@@ -7,6 +7,7 @@ import {
   type EventHandlerRefs,
   EventSchema,
   type GitState,
+  type HookRefs,
   type Result,
   SlugSchema,
   type State,
@@ -16,6 +17,7 @@ import { type IEventStore, jsonlEventStore } from "./event-store.ts";
 import { builtInHandlers, type EmitInput, emitEvent, type RunRef, runDirOf } from "./events.ts";
 import { loadFunction, parseYaml, readIfExists, readText, runLockPath, withLock } from "./files.ts";
 import { createGit } from "./git.ts";
+import { triggerHooks } from "./run-hooks.ts";
 
 export type EventHandler = (state: State, event: Event) => State;
 export type EventHandlers = Readonly<Record<string, EventHandler>>;
@@ -103,12 +105,14 @@ export const createState = async ({
   runDir,
   version,
   eventHandlers,
+  hooks,
   config,
 }: Readonly<{
   runId: string;
   runDir: string;
   version: string;
   eventHandlers: EventHandlerRefs;
+  hooks?: HookRefs;
   config?: State["config"];
 }>): Promise<State> => {
   const cwd = dirname(dirname(runDir));
@@ -133,6 +137,7 @@ export const createState = async ({
     nodeRuns: {},
     activeSessions: [],
     eventHandlers,
+    hooks: hooks ?? {},
     ...(config === undefined ? {} : { config }),
   };
   await withLock(lockOf(runDir), () => writeStateAtomically(runDir, state));
@@ -171,6 +176,7 @@ const projectLog = async (
 ): Promise<State> => {
   const events = await store.read();
   const next = projectEvents({ state: current, events, handlers: builtInHandlers, extensions });
+  if (next.lastEventSeq === current.lastEventSeq) return next;
   await writeStateAtomically(runDir, next);
   return next;
 };
@@ -224,16 +230,15 @@ const tryEvent = async (
   }
 };
 
-// Stores an event in a run's own folder, CWD/.harness/NAME/event.jsonl, then brings its
-// state.json up to date, so every reader of the state sees the change. The state lock is held
-// throughout, so the event is checked against the same state it is then applied to. It also hands
-// back the state.json it wrote (null when the folder has none yet), so a caller storing many
-// events need not read the log again after each one.
-export const appendRunEventIf = (
+type Appended = Readonly<{ event: Event; state: State | null; fresh: boolean }>;
+
+// Stores the event and brings state.json up to date under the state lock, so the event is checked
+// against the same state it is then applied to. fresh: the event was not already in the log.
+const appendUnderLock = (
   run: RunRef,
   input: EmitInput,
   allowed: (state: State | null) => boolean,
-): Promise<Result<Readonly<{ event: Event; state: State | null }>>> => {
+): Promise<Result<Appended>> => {
   const runDir = runDirOf(run.cwd, run.name);
   const store = jsonlEventStore(runDir);
   return withLock(lockOf(runDir), async () => {
@@ -241,7 +246,9 @@ export const appendRunEventIf = (
     if (current === null) {
       if (!allowed(null)) return { ok: false, error: "condition-failed" };
       const stored = await emitEvent(store, run.id, input);
-      return stored.ok ? { ok: true, value: { event: stored.value, state: null } } : stored;
+      return stored.ok
+        ? { ok: true, value: { event: stored.value, state: null, fresh: true } }
+        : stored;
     }
     const extensions = await loadEventHandlers(current.eventHandlers);
     if (!extensions.ok) return extensions;
@@ -263,8 +270,25 @@ export const appendRunEventIf = (
     if (synced instanceof Error) {
       return { ok: false, error: `event stored, but state.json not updated: ${synced.message}` };
     }
-    return { ok: true, value: { event: stored.value, state: synced } };
+    const fresh = stored.value.seq > latest.lastEventSeq;
+    return { ok: true, value: { event: stored.value, state: synced, fresh } };
   });
+};
+
+// Stores an event in a run's own folder, CWD/.harness/NAME/event.jsonl, brings its state.json up
+// to date, then calls the hooks that listen to it, outside the lock. It hands back the state.json
+// it wrote (null when the folder has none yet), so a caller storing many events need not read
+// the log again after each one.
+export const appendRunEventIf = async (
+  run: RunRef,
+  input: EmitInput,
+  allowed: (state: State | null) => boolean,
+): Promise<Result<Readonly<{ event: Event; state: State | null }>>> => {
+  const appended = await appendUnderLock(run, input, allowed);
+  if (!appended.ok) return appended;
+  const { event, state, fresh } = appended.value;
+  if (fresh && state !== null) await triggerHooks(run, event, state);
+  return { ok: true, value: { event, state } };
 };
 
 export const appendRunEvent = (
@@ -279,7 +303,7 @@ export const appendRunEvent = (
 const ENGINE_OWNED: readonly (readonly [prefix: string, reason: string])[] = [
   ["workflow.", "is engine-owned; use next, exec, or done for workflow lifecycle"],
   ["orchestrate.", "is written only by the orchestrate script"],
-  ["hooks.", "is written only by the agent's hooks"],
+  ["hooks.", "is written only by the agent's hooks and the run's hooks"],
 ];
 
 export const emitRunEvent = async (run: RunRef, input: EmitInput): Promise<Result<Event>> => {

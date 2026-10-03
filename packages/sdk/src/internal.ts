@@ -1,5 +1,6 @@
 // The engine's side of the sdk: core, server and cli import these. Extension code uses
 // @harness/sdk; a skill script never imports this file.
+export { uniqueNames } from "./config.ts";
 export {
   type EventDraft,
   type IEventStore,
