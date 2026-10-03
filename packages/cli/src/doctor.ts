@@ -1,9 +1,10 @@
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
 import {
   type DoctorJson,
   type DoctorReport,
   type DoctorRow,
+  loadStartEnv,
   runDoctor,
   verdict,
   workflowChecks,
@@ -79,7 +80,8 @@ const declaredChecks = async (workflowArg: string | undefined) => {
   const cwd = process.cwd();
   const path = resolve(cwd, workflowArg);
   const plan = await compileOrFail(path, cwd);
-  return plan === null ? null : workflowChecks(plan.doctor, dirname(path));
+  if (plan === null) return null;
+  return workflowChecks(plan.doctor, await loadStartEnv(null, cwd, plan));
 };
 
 export const doctorCommand = () =>

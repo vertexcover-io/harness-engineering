@@ -1,6 +1,7 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --env-file=/dev/null
 // Test double for the claude binary: records its own launch, then echoes every line it reads
 // back to $FAKE_AGENT_OUT as JSON, so a test can assert on what a real terminal sent it.
+// --env-file=/dev/null: Bun would load the repo's .env itself, hiding what the harness passed.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 

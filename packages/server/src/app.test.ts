@@ -96,7 +96,7 @@ describe("POST /runs", () => {
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath: "ok.yaml", inputs: {}, cwd }),
+      body: JSON.stringify({ workflow: "ok", env: {}, workflowPath: "ok.yaml", inputs: {}, cwd }),
     });
 
     expect(res.status).toBe(400);
@@ -119,7 +119,7 @@ describe("POST /runs", () => {
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: { a: 1 }, cwd }),
+      body: JSON.stringify({ workflow: "ok", env: {}, workflowPath, inputs: { a: 1 }, cwd }),
     });
 
     expect(res.status).toBe(201);
@@ -152,7 +152,14 @@ describe("POST /runs", () => {
     const res = await createApp(deps).request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, agent: "codex" }),
+      body: JSON.stringify({
+        workflow: "ok",
+        env: {},
+        workflowPath,
+        inputs: {},
+        cwd,
+        agent: "codex",
+      }),
     });
 
     expect(res.status).toBe(201);
@@ -172,7 +179,14 @@ describe("POST /runs", () => {
     const res = await createApp(deps).request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, agent: "codex" }),
+      body: JSON.stringify({
+        workflow: "ok",
+        env: {},
+        workflowPath,
+        inputs: {},
+        cwd,
+        agent: "codex",
+      }),
     });
 
     expect(res.status).toBe(201);
@@ -192,6 +206,7 @@ describe("POST /runs", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         workflow: "ok",
+        env: {},
         workflowPath,
         inputs: { prompt: "different" },
         cwd,
@@ -216,7 +231,14 @@ describe("POST /runs", () => {
     const res = await createApp(deps).request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, name: "Bad/Name" }),
+      body: JSON.stringify({
+        workflow: "ok",
+        env: {},
+        workflowPath,
+        inputs: {},
+        cwd,
+        name: "Bad/Name",
+      }),
     });
 
     expect(res.status).toBe(400);
@@ -235,7 +257,7 @@ describe("POST /runs", () => {
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+      body: JSON.stringify({ workflow: "ok", env: {}, workflowPath, inputs: {}, cwd }),
     });
 
     expect(res.status).toBe(201);
@@ -253,7 +275,7 @@ describe("POST /runs", () => {
       app.request("/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, ...extra }),
+        body: JSON.stringify({ workflow: "ok", env: {}, workflowPath, inputs: {}, cwd, ...extra }),
       });
 
     const runOf = async (extra: object) =>
@@ -284,6 +306,7 @@ describe("POST /runs", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         workflow: "ok",
+        env: {},
         workflowPath,
         inputs: {},
         cwd,
@@ -305,6 +328,53 @@ describe("POST /runs", () => {
     });
   });
 
+  test("the session starts with the env the request carries, under the harness's own variables", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    const seen: LaunchOptions[] = [];
+    const deps = await buildDeps((options) => {
+      seen.push(options);
+      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
+    });
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workflow: "ok",
+        workflowPath,
+        inputs: {},
+        cwd,
+        env: { API_URL: "http://x", HARNESS_RUN_ID: "spoofed" },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const { run } = z.object({ run: WorkflowRunSchema }).parse(await res.json());
+    expect(seen[0]?.env).toEqual({
+      API_URL: "http://x",
+      HARNESS_RUN_ID: run.id,
+      HARNESS_HOME: deps.home,
+    });
+  });
+
+  test("a request without env is 400 and launches nothing", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    let launched = false;
+    const deps = await buildDeps(() => {
+      launched = true;
+      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
+    });
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(launched).toBe(false);
+  });
+
   test("a workflow tier the config does not map for the agent is 400 and launches nothing", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     const config = join(cwd, "tiers.yaml");
@@ -318,7 +388,15 @@ describe("POST /runs", () => {
     const res = await createApp(deps).request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, tier: "deep", config }),
+      body: JSON.stringify({
+        workflow: "ok",
+        env: {},
+        workflowPath,
+        inputs: {},
+        cwd,
+        tier: "deep",
+        config,
+      }),
     });
 
     expect(res.status).toBe(400);
@@ -337,7 +415,7 @@ describe("POST /runs", () => {
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+      body: JSON.stringify({ workflow: "ok", env: {}, workflowPath, inputs: {}, cwd }),
     });
 
     expect(res.status).toBe(502);
@@ -358,7 +436,7 @@ describe("POST /runs", () => {
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+      body: JSON.stringify({ workflow: "ok", env: {}, workflowPath, inputs: {}, cwd }),
     });
 
     expect(res.status).toBe(500);
@@ -371,6 +449,30 @@ describe("POST /runs", () => {
 });
 
 describe("POST /runs logging", () => {
+  test("no log line carries an env value from the request", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    const { log, lines } = captureLogger();
+    const deps = await buildDeps(
+      () => Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } }),
+      log,
+    );
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workflow: "ok",
+        workflowPath,
+        inputs: {},
+        cwd,
+        env: { API_KEY: "top-secret-value" },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(JSON.stringify(lines)).not.toContain("top-secret-value");
+  });
+
   test("SC36: a working provider logs 'run started' and an http 201 line with x-request-id", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     const { log, lines, at } = captureLogger();
@@ -383,7 +485,7 @@ describe("POST /runs logging", () => {
     const res = await app.request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+      body: JSON.stringify({ workflow: "ok", env: {}, workflowPath, inputs: {}, cwd }),
     });
 
     expect(res.headers.get("x-request-id")).toBeString();
@@ -405,7 +507,7 @@ describe("POST /runs logging", () => {
     await app.request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+      body: JSON.stringify({ workflow: "ok", env: {}, workflowPath, inputs: {}, cwd }),
     });
 
     const failures = at("error").filter(
@@ -433,11 +535,12 @@ describe("createHarnessClient", () => {
       const health = await client.health();
       expect(health).toEqual({ ok: true, value: { pid: 4242, version: "0.0.0-test" } });
 
-      const started = await client.run({ workflow: "ok", workflowPath, inputs: {}, cwd });
+      const started = await client.run({ workflow: "ok", env: {}, workflowPath, inputs: {}, cwd });
       expect(started.ok && started.value.run.sessions).toEqual([]);
 
       const refused = await client.run({
         workflow: "ok",
+        env: {},
         workflowPath: join(cwd, "missing.yaml"),
         inputs: {},
         cwd,
@@ -486,7 +589,7 @@ describe("run page URL", () => {
     const started = await app.request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd }),
+      body: JSON.stringify({ workflow: "ok", env: {}, workflowPath, inputs: {}, cwd }),
     });
     const { run, view } = (await started.json()) as { run: { id: string }; view: string };
     expect(view).toBe(`http://localhost:4321/runs/${run.id}`);

@@ -13,6 +13,7 @@ import {
   type RunRef,
   readState,
   runDirOf,
+  sessionEnv,
 } from "@harness/sdk";
 import { appendRunEvent, jsonlEventStore, type Registry, runLockPath } from "@harness/sdk/internal";
 import {
@@ -22,7 +23,7 @@ import {
 } from "./agents/claude.ts";
 import { typeLine } from "./agents/common.ts";
 import { currentTerminal } from "./agents/tmux.ts";
-import { completeContextStep, findContextPlanNode } from "./runs.ts";
+import { completeContextStep, findContextPlanNode, loadSessionEnv } from "./runs.ts";
 import { spawnOrchestrateHelper } from "./stage.ts";
 
 const IDLE_TIMEOUT_MS = 30_000;
@@ -46,8 +47,9 @@ export type ContextStepOptions = Readonly<{
   terminal: ITerminal | undefined;
   registry: Registry;
   provider: IAgentProvider;
-  // how the agent was launched; relaunching adds the resume prompt
-  launch: Omit<LaunchOptions, "prompt">;
+  // how the agent was launched; relaunching adds the session's env and the resume prompt
+  launch: Omit<LaunchOptions, "prompt" | "env">;
+  home: string;
   log: ILogger;
 }>;
 
@@ -163,13 +165,19 @@ const startNewSession = async (
   terminal: ITerminal,
 ): Promise<Result<void>> => {
   const { run, registry, provider, oldSessionId, log } = options;
+  const env = await loadSessionEnv(run, provider.type);
+  if (!env.ok) return env;
   const idle = await waitForIdle(terminal);
   if (!idle.ok) return idle;
   const sessionId = randomUUID();
   await registry.linkSession(run.id, { agent: "claude", sessionId });
   await replaceSession(options, oldSessionId, sessionId);
   await recordStarted(options, "new", sessionId);
-  const launch = { ...options.launch, prompt: resumePrompt(run) };
+  const launch = {
+    ...options.launch,
+    env: sessionEnv(env.value, run.id, options.home),
+    prompt: resumePrompt(run),
+  };
   const relaunched = await catchThrow(log, provider.relaunch(terminal, sessionId, launch));
   if (!relaunched.ok) {
     await replaceSession(options, sessionId, oldSessionId);

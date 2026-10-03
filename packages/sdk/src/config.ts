@@ -105,6 +105,15 @@ const ExtensionSchema = z.strictObject({
   references: recordOf(SlugSchema, ReferenceExtensionSchema).default({}),
 });
 
+// Env vars a run's agent sessions start with, set by the config and by the workflow. envFile is
+// read beneath env; a relative one resolves against the config's folder or the folder the run
+// starts in, and a missing file fails when it is read.
+export const EnvLayerSchema = z.object({
+  env: recordOf(EnvNameSchema, z.string()).default({}),
+  envFile: NonEmptyStringSchema.optional(),
+});
+export type EnvLayer = z.output<typeof EnvLayerSchema>;
+
 // Each event type's handlers run in list order, after the built-in handler for that type.
 const EventHandlerSchema = EventHandlerRefSchema.extend({ module: RepoPathSchema });
 
@@ -117,7 +126,7 @@ export const ConfigSchema = z.strictObject({
   packages: recordOf(NameSchema, PackageSchema).default({}),
   environments: EnvironmentsSchema.optional(),
   extensions: recordOf(SkillNameSchema, ExtensionSchema).default({}),
-  env: recordOf(EnvNameSchema, z.string()).default({}),
+  ...EnvLayerSchema.shape,
   workspace: WorkspaceConfigSchema.prefault({}),
   eventHandlers: recordOf(EventTypeSchema, z.array(EventHandlerSchema)).default({}),
 });

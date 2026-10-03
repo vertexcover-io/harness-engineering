@@ -1,17 +1,22 @@
 import { access, copyFile, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
+  type AgentType,
   type ArtifactRef,
   type CheckoutConfig,
   type Config,
+  createGit,
   type EmitInput,
+  type EnvLayer,
   type EventHandlerRefs,
   eventError,
   type IGit,
   type ILogger,
   type ITerminal,
   type JsonValue,
+  loadEnv,
   loadRecordedConfig,
+  loadRunConfig,
   loadStartConfig,
   type NodeRun,
   type Result,
@@ -317,6 +322,27 @@ type RunDirRef = Pick<RunRef, "cwd" | "name">;
 
 const compileWorkflowPlan = (run: RunDirRef): Promise<WorkflowPlan> =>
   compileWorkflow(join(runDirOf(run.cwd, run.name), "workflow.yaml"), { cwd: run.cwd });
+
+// The env the first session of a run started from cwd gets. harness run builds it once, for its
+// doctor and for the server; agent is the one the session launches.
+export const loadStartEnv = async (
+  config: string | null,
+  cwd: string,
+  workflow: EnvLayer & Readonly<{ agent: AgentType }>,
+): Promise<Result<Record<string, string>>> => {
+  const root = (await createGit().repoRoot(cwd)) ?? cwd;
+  const checkout = await loadStartConfig(config, root);
+  return checkout.ok ? loadEnv(checkout.value, workflow, root) : checkout;
+};
+
+// Read afresh, so a session started mid-run sees the same files the first one did, edits included.
+export const loadSessionEnv = async (
+  run: RunRef,
+  agent: AgentType,
+): Promise<Result<Record<string, string>>> => {
+  const [config, plan] = await Promise.all([loadRunConfig(run), compileWorkflowPlan(run)]);
+  return config.ok ? loadEnv(config.value, { ...plan, agent }, run.cwd) : config;
+};
 
 const buildLeafReply = (
   decision: Extract<Decision, { kind: "leaf" }>,

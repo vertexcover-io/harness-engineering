@@ -13,7 +13,6 @@ import {
   loadPickedConfig,
   loadRunConfig,
   pickRun,
-  readProjectEnv,
   requireRun,
 } from "./runs.ts";
 import { createState } from "./state.ts";
@@ -282,96 +281,5 @@ describe("loadPickedConfig", () => {
 
     expect(unwrap(await loadPickedConfig(run, repo)).path).toBe(recorded);
     expect(unwrap(await loadPickedConfig(undefined, repo)).path).toBe(checkout);
-  });
-});
-
-describe("readProjectEnv", () => {
-  const withKey = async (check: () => Promise<void>) => {
-    delete process.env.PROJECT_ENV_PICK;
-    await check();
-  };
-
-  test("a worktree with its own .env reads only that file, never main's", async () => {
-    const main = makeRepo();
-    writeFileSync(join(main, ".env"), "PROJECT_ENV_PICK=main\nPROJECT_ENV_ONLY_MAIN=1\n");
-    const worktree = addWorktree(main);
-    writeFileSync(join(worktree, ".env"), "PROJECT_ENV_PICK=worktree\n");
-
-    await withKey(async () => {
-      expect(await readProjectEnv(join(worktree), "PROJECT_ENV_PICK")).toBe("worktree");
-      expect(await readProjectEnv(worktree, "PROJECT_ENV_ONLY_MAIN")).toBeUndefined();
-    });
-  });
-
-  test("a worktree with no .env reads main's", async () => {
-    const main = makeRepo();
-    writeFileSync(join(main, ".env"), "PROJECT_ENV_PICK=main\n");
-    const worktree = addWorktree(main);
-    mkdirSync(join(worktree, "src"));
-
-    await withKey(async () => {
-      expect(await readProjectEnv(join(worktree, "src"), "PROJECT_ENV_PICK")).toBe("main");
-    });
-  });
-
-  test("a sub-repo of a multi-layout meta folder reads the meta folder's .env, not its own", async () => {
-    const meta = tempDir();
-    writeConfig(meta, { workspace: { layout: "multi" }, packages: { api: { path: "api" } } });
-    writeFileSync(join(meta, ".env"), "PROJECT_ENV_PICK=meta\n");
-    const api = makeRepo(join(meta, "api"));
-    writeFileSync(join(api, ".env"), "DATABASE_URL=x\n");
-
-    await withKey(async () => {
-      expect(await readProjectEnv(api, "PROJECT_ENV_PICK")).toBe("meta");
-    });
-  });
-});
-
-describe("readProjectEnv outside a git repo", () => {
-  const withEnv = async (content: string | null, run: (root: string) => Promise<void>) => {
-    const root = mkdtempSync(join(tmpdir(), "project-env-"));
-    if (content !== null) writeFileSync(join(root, ".env"), content);
-    try {
-      await run(root);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  };
-
-  test("parses plain, exported and quoted values, skipping comments and blanks", async () => {
-    const content = ["# note", "", "A=1", "export B=two", 'C="three four"', "D='five'"].join("\n");
-    await withEnv(content, async (root) => {
-      expect(await readProjectEnv(root, "A")).toBe("1");
-      expect(await readProjectEnv(root, "B")).toBe("two");
-      expect(await readProjectEnv(root, "C")).toBe("three four");
-      expect(await readProjectEnv(root, "D")).toBe("five");
-    });
-  });
-
-  test("strips an inline comment and expands an escaped newline in a double-quoted value", async () => {
-    await withEnv('E=six # note\nF="a\\nb"\n', async (root) => {
-      expect(await readProjectEnv(root, "E")).toBe("six");
-      expect(await readProjectEnv(root, "F")).toBe("a\nb");
-    });
-  });
-
-  test("a key the file sets wins over the process environment", async () => {
-    process.env.PROJECT_ENV_TEST_KEY = "from-process";
-    await withEnv("PROJECT_ENV_TEST_KEY=from-file\n", async (root) => {
-      expect(await readProjectEnv(root, "PROJECT_ENV_TEST_KEY")).toBe("from-file");
-    });
-    delete process.env.PROJECT_ENV_TEST_KEY;
-  });
-
-  test("a key the file lacks, or a missing file, falls back to the process environment", async () => {
-    process.env.PROJECT_ENV_TEST_KEY = "from-process";
-    await withEnv("OTHER=1\n", async (root) => {
-      expect(await readProjectEnv(root, "PROJECT_ENV_TEST_KEY")).toBe("from-process");
-    });
-    await withEnv(null, async (root) => {
-      expect(await readProjectEnv(root, "PROJECT_ENV_TEST_KEY")).toBe("from-process");
-      expect(await readProjectEnv(root, "PROJECT_ENV_TEST_ABSENT")).toBeUndefined();
-    });
-    delete process.env.PROJECT_ENV_TEST_KEY;
   });
 });

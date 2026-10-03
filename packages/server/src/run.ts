@@ -6,6 +6,7 @@ import {
   type IAgentProvider,
   loadStartConfig,
   type Result,
+  sessionEnv,
   tierLaunch,
   type WorkflowRun,
 } from "@harness/sdk";
@@ -76,7 +77,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     .launch({
       cwd,
       prompt: `${provider.skillPrefix}orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
-      env: { HARNESS_RUN_ID: id, HARNESS_HOME: deps.home },
+      env: sessionEnv(body.env, id, deps.home),
       orchestrateArgv: orchestrateArgv(),
       ...tierLaunch(tier.value),
     })

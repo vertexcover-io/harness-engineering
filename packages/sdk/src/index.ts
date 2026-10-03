@@ -33,6 +33,8 @@ export {
   type ConfigError,
   type ConfigInput,
   ConfigSchema,
+  type EnvLayer,
+  EnvLayerSchema,
   findTierModel,
   type LoadedConfig,
   loadConfig,
@@ -94,6 +96,7 @@ export {
   type Workspace,
   WorkspaceSchema,
 } from "./contracts.ts";
+export { loadEnv, readProjectEnv, sessionEnv } from "./env.ts";
 export {
   ContextStartedEvent,
   type EmitInput,
@@ -197,7 +200,6 @@ export {
   type PickRunInput,
   pickRun,
   type RunLookup,
-  readProjectEnv,
   requireRun,
   resolveRun,
 } from "./runs.ts";

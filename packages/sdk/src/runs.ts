@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { parseEnv } from "node:util";
+import { dirname, resolve } from "node:path";
 import {
   type Config,
   defaultConfig,
@@ -10,7 +9,6 @@ import {
 } from "./config.ts";
 import type { Result, State } from "./contracts.ts";
 import { type RunRef, runDirOf } from "./events.ts";
-import { readIfExists } from "./files.ts";
 import { createGit } from "./git.ts";
 import type { RegistryReader, WorkflowRun } from "./registry.ts";
 import { readState } from "./state.ts";
@@ -189,18 +187,3 @@ export const loadPickedConfig = (
   cwd: string,
 ): Promise<Result<CheckoutConfig>> =>
   run === undefined ? loadCheckoutConfig(cwd) : loadRunConfig(run);
-
-// The checkout's .env when it has one, else the main checkout's: the whole file, never merged.
-// The checkout's folder is its config folder, so a multi-layout sub-repo reads the meta folder's.
-const readEnvFile = async (cwd: string): Promise<string | null> => {
-  const folder = await findConfigRoot(cwd);
-  const own = await readIfExists(join(folder.ok ? folder.value : cwd, ".env"));
-  if (own !== null) return own;
-  const main = await findRoot(cwd);
-  return main.ok ? readIfExists(join(main.value, ".env")) : null;
-};
-
-// Read on every call so a long-running process never sees stale values. A key the file sets
-// wins; otherwise the process environment supplies it.
-export const readProjectEnv = async (cwd: string, key: string): Promise<string | undefined> =>
-  parseEnv((await readEnvFile(cwd)) ?? "")[key] ?? process.env[key];

@@ -502,10 +502,10 @@ const contextCommand = () =>
         provider,
         launch: {
           cwd: run.cwd,
-          env: { HARNESS_RUN_ID: run.id, HARNESS_HOME: harnessHome() },
           orchestrateArgv: orchestrateArgv(),
           ...tierLaunch(linked?.tier ?? null),
         },
+        home: harnessHome(),
         log: helperLog,
       });
     });

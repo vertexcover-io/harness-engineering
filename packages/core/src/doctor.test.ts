@@ -3,7 +3,14 @@ import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Check, checkBinary, type Exec, execWithTimeout, fail } from "@harness/sdk";
+import {
+  type Check,
+  checkBinary,
+  type Exec,
+  execWithTimeout,
+  fail,
+  type Result,
+} from "@harness/sdk";
 import { evaluate, runDoctor, summarize, verdict, workflowChecks } from "./doctor.ts";
 
 const V2 = JSON.stringify({ version: 2 });
@@ -531,9 +538,9 @@ describe("workflowChecks", () => {
   const run = async (
     declaration: { check: "env" | "binary" | "package" | "file"; key: string },
     root: string,
-    workflowDir = root,
+    env: Result<Readonly<Record<string, string>>> = { ok: true, value: {} },
   ) => {
-    const [check] = workflowChecks([{ ...declaration, fix: "do the fix" }], workflowDir);
+    const [check] = workflowChecks([{ ...declaration, fix: "do the fix" }], env);
     if (check === undefined) throw new Error("no check built");
     return { check, row: await evaluate(check, { root, exec: fakeExec({}) }) };
   };
@@ -550,31 +557,40 @@ describe("workflowChecks", () => {
     });
   });
 
-  test("env is ok from .env, never prints the value, and a .env value beats the process", async () => {
+  test("env is ok when the run's env sets it, never prints the value, and an empty value is missing", async () => {
     const root = await makeRoot();
-    process.env.DOCTOR_TEST_KEY = "from-process";
-    await writeFile(join(root, ".env"), "DOCTOR_TEST_KEY=secret-value\n");
-    const fromFile = await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root);
-    expect(fromFile.row.status).toBe("ok");
-    expect(fromFile.row.detail).not.toContain("secret-value");
+    const set = await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root, {
+      ok: true,
+      value: { DOCTOR_TEST_KEY: "secret-value" },
+    });
+    expect(set.row.status).toBe("ok");
+    expect(set.row.detail).not.toContain("secret-value");
 
-    await writeFile(join(root, ".env"), "DOCTOR_TEST_KEY=\n");
-    expect((await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root)).row.status).toBe("fail");
-    delete process.env.DOCTOR_TEST_KEY;
+    const empty = await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root, {
+      ok: true,
+      value: { DOCTOR_TEST_KEY: "" },
+    });
+    expect(empty.row.status).toBe("fail");
   });
 
-  test("env from a linked worktree reads .env in the main checkout, where linear.ts reads it", async () => {
-    const main = await makeRoot();
-    const git = (cwd: string, ...args: string[]) =>
-      Bun.spawnSync(["git", "-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd });
-    git(main, "init", "-q");
-    git(main, "commit", "-q", "--allow-empty", "-m", "init");
-    const worktree = join(main, "linked");
-    git(main, "worktree", "add", "-q", worktree);
-    await writeFile(join(main, ".env"), "DOCTOR_TEST_WORKTREE_KEY=set\n");
-    expect(
-      (await run({ check: "env", key: "DOCTOR_TEST_WORKTREE_KEY" }, worktree)).row.status,
-    ).toBe("ok");
+  test("an empty value the run's env sets is missing, even when the process has the key", async () => {
+    const root = await makeRoot();
+    process.env.DOCTOR_TEST_KEY = "from-process";
+    const { row } = await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root, {
+      ok: true,
+      value: { DOCTOR_TEST_KEY: "" },
+    });
+    delete process.env.DOCTOR_TEST_KEY;
+    expect(row.status).toBe("fail");
+  });
+
+  test("a run env that failed to load fails the check with its error, not as a missing key", async () => {
+    const root = await makeRoot();
+    const { row } = await run({ check: "env", key: "DOCTOR_TEST_KEY" }, root, {
+      ok: false,
+      error: "/repo/gone.env: cannot read file",
+    });
+    expect(row).toMatchObject({ status: "fail", detail: "/repo/gone.env: cannot read file" });
   });
 
   test("env falls back to the process environment", async () => {
@@ -592,7 +608,7 @@ describe("workflowChecks", () => {
     );
   });
 
-  test("package resolves from the workflow directory", async () => {
+  test("package resolves from the repo root, where the run's code loads it from", async () => {
     const root = await makeRoot();
     const pkg = join(root, "node_modules", "declared-pkg");
     await mkdir(pkg, { recursive: true });
@@ -600,7 +616,7 @@ describe("workflowChecks", () => {
     await writeFile(join(pkg, "index.js"), "module.exports = 1;");
     expect((await run({ check: "package", key: "declared-pkg" }, root)).row.status).toBe("ok");
     const elsewhere = await makeRoot();
-    expect((await run({ check: "package", key: "declared-pkg" }, root, elsewhere)).row.status).toBe(
+    expect((await run({ check: "package", key: "declared-pkg" }, elsewhere)).row.status).toBe(
       "fail",
     );
   });

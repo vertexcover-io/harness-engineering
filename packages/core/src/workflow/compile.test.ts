@@ -58,6 +58,32 @@ describe("compile", () => {
     expect((await rejection(`tier: deep-think\n${workflow(script("a"))}`)).code).toBe("schema");
   });
 
+  test("a top-level env and envFile reach the plan, a missing env is empty, and a lowercase env name is a schema error", async () => {
+    const plan = await compile(
+      `env: { API_URL: "http://x" }\nenvFile: ../shared/dev.env\n${workflow(script("a"))}`,
+    );
+    expect(plan.env).toEqual({ API_URL: "http://x" });
+    expect(plan.envFile).toBe("../shared/dev.env");
+    expect((await compile(workflow(script("a")))).env).toEqual({});
+    expect((await rejection(`env: { apiUrl: x }\n${workflow(script("a"))}`)).code).toBe("schema");
+    expect((await compile(`envFile: /etc/x.env\n${workflow(script("a"))}`)).envFile).toBe(
+      "/etc/x.env",
+    );
+  });
+
+  test("an included workflow's env and envFile are ignored: the plan keeps only the top workflow's", async () => {
+    const childPath = join(workflowDir, "child-with-env.yml");
+    writeFileSync(
+      childPath,
+      `name: child\nenvFile: child.env\nenv: { FOO_TOKEN: abc }\nnodes:${script("c")}\n`,
+    );
+    const plan = await compile(
+      `env: { TOP: "1" }\n${workflow(`\n  - id: child\n    type: include\n    workflow: ${childPath}\n    input: null`)}`,
+    );
+    expect(plan.env).toEqual({ TOP: "1" });
+    expect(plan.envFile).toBeUndefined();
+  });
+
   test("resolves workflow.yaml output schemas before an exec or agent runs", async () => {
     const modulePath = join(workflowDir, "compile-output-schemas.ts");
     writeFileSync(

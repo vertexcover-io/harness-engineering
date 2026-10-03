@@ -2188,8 +2188,9 @@ const runToContextNode = async (
   node: string,
   socket: string,
   overrides: Partial<WorkflowRun> = {},
+  header = "",
 ) => {
-  const run = startedRun(withContext(node), undefined, overrides);
+  const run = startedRun(header + withContext(node), undefined, overrides);
   const out = join(tempDir(), "agent.jsonl");
   const tmux = (...args: string[]) =>
     execFileSync("tmux", ["-L", socket, "-f", "/dev/null", ...args], { encoding: "utf8" });
@@ -2271,6 +2272,30 @@ describe("context node through a real tmux pane", () => {
         output: { action: "new", applied: true, sessionId },
       });
       expect(flow.next()).toMatchObject({ kind: "agent", nodeId: "second" });
+    } finally {
+      spawnSync("tmux", ["-L", socket, "kill-server"]);
+    }
+  }, 30_000);
+
+  test("new: the restarted session starts with the project's .env and the workflow's env", async () => {
+    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    try {
+      const flow = await runToContextNode(
+        "action: new",
+        socket,
+        {},
+        "env:\n  E2E_FLOW: workflow\n",
+      );
+      writeFileSync(join(flow.run.repo, ".env"), "E2E_DOTENV=dotenv\n");
+
+      expect(flow.stop()).toMatchObject({ code: 0, stdout: "" });
+      await waitFor(() => flow.launches().length === 2);
+
+      expect(flow.launches()[1]?.env).toMatchObject({
+        E2E_FLOW: "workflow",
+        E2E_DOTENV: "dotenv",
+        HARNESS_RUN_ID: "r-1",
+      });
     } finally {
       spawnSync("tmux", ["-L", socket, "kill-server"]);
     }
