@@ -189,18 +189,27 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .diff-line.hljs-addition::first-letter { color: var(--syn-add); font-weight: 600; }
 .diff-line.hljs-deletion::first-letter { color: var(--syn-del); font-weight: 600; }
 .diff-line.hljs-meta { color: var(--muted); background: var(--panel-2); }
-.copy-btn { position: absolute; top: 6px; right: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; padding: 1px 8px; font: 500 11.5px/1.6 var(--ui); opacity: 0; transition: opacity .15s; }
+.copy-btn, .open-btn { position: absolute; top: 6px; right: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; padding: 1px 8px; font: 500 11.5px/1.6 var(--ui); opacity: 0; transition: opacity .15s; }
 .copy-btn::before { content: "Copy"; }
 .copy-btn[data-state="copied"]::before { content: "Copied"; }
 .copy-btn[data-state="failed"]::before { content: "Copy failed"; }
-.doc pre:hover > .copy-btn, .copy-btn:focus-visible, .copy-btn[data-state] { opacity: 1; }
-.copy-btn:hover { color: var(--fg); }
+.doc pre:hover > :is(.copy-btn, .open-btn), :is(.copy-btn, .open-btn):focus-visible, .copy-btn[data-state] { opacity: 1; }
+:is(.copy-btn, .open-btn):hover { color: var(--fg); }
 .doc pre.folded { max-height: calc(30 * 1.55em + 12px); overflow: hidden; }
 .doc pre.folded::after { content: ""; position: absolute; inset: auto 0 0; height: 72px; background: linear-gradient(transparent, var(--code-bg)); pointer-events: none; }
 .fold-btn { position: absolute; z-index: 1; left: 50%; bottom: 10px; transform: translateX(-50%); border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 999px; padding: 2px 12px; font: 500 12px/1.6 var(--ui); }
 .fold-btn::before { content: "Show " attr(data-more) " more lines"; }
 .doc pre:not(.folded) > .fold-btn { position: static; transform: none; display: block; margin: 10px auto 0; }
 .doc pre:not(.folded) > .fold-btn::before { content: "Show less"; }
+.open-btn { right: 62px; }
+.open-btn::before { content: "Open"; }
+.doc code[data-path] { cursor: pointer; text-decoration: underline dotted color-mix(in srgb, var(--fg) 45%, transparent); text-underline-offset: 3px; }
+.doc code[data-path]:hover { color: var(--accent); }
+.expand-btn { display: block; box-sizing: border-box; width: calc(100% + 32px); margin: 0 -16px; padding: 2px 16px; border: 0; text-align: left; background: color-mix(in srgb, var(--info-soft) 70%, transparent); color: var(--info); font: 500 11.5px/1.7 var(--ui); }
+.expand-btn:hover { background: var(--info-soft); }
+.expand-btn[hidden] { display: none; }
+.expand-btn[data-dir="up"]::before { content: "↑ Show " attr(data-count) " more lines"; }
+.expand-btn[data-dir="down"]::before { content: "↓ Show " attr(data-count) " more lines"; }
 .anchor { margin-left: .35em; color: var(--muted); font-weight: 400; text-decoration: none; opacity: 0; }
 .anchor::before { content: "#"; }
 .doc :is(h1, h2, h3, h4):hover > .anchor, .anchor:focus-visible { opacity: 1; }
@@ -343,6 +352,7 @@ mark.hl.pulse { animation: pulseMark 1.2s ease-out; }
       <span class="spacer"></span>
       <button class="btn mode-btn" type="button" id="modeBtn" aria-pressed="false"><span class="knob" aria-hidden="true"></span>Comment mode <kbd>C</kbd></button>
       <button class="btn" type="button" id="globalBtn" hidden>Comment on whole file</button>
+      <button class="btn" type="button" id="editBtn" title="Open this file in your editor">Open in editor</button>
     </div>
     <div id="docHost"></div>
   </main>
@@ -629,8 +639,96 @@ function foldButton(pre, lines) {
   return btn;
 }
 
+async function openInEditor(path, line) {
+  const res = await fetch(`/runs/${runId}/open`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(line ? { path, line } : { path }),
+  });
+  toast(res.ok ? `Opened ${base(path)} in your editor` : await res.text());
+}
+
+function openButton(pre) {
+  const btn = el("button", "open-btn");
+  btn.type = "button";
+  btn.setAttribute("aria-label", `Open ${pre.dataset.file} in your editor`);
+  const line = Number(pre.querySelector(".hunk[data-from]")?.dataset.from) || null;
+  btn.addEventListener("click", () => openInEditor(pre.dataset.file, line));
+  return btn;
+}
+
+const EXPAND_STEP = 10;
+
+function hunkLimits(pre, hunk) {
+  const hunks = [...pre.querySelectorAll(".hunk[data-from]")];
+  const at = hunks.indexOf(hunk);
+  return {
+    floor: at > 0 ? Number(hunks[at - 1].dataset.to) + 1 : 1,
+    ceiling: at < hunks.length - 1 ? Number(hunks[at + 1].dataset.from) - 1 : Number(pre.dataset.total),
+  };
+}
+
+function updateExpanders(pre) {
+  for (const hunk of pre.querySelectorAll(".hunk[data-from]")) {
+    const { floor, ceiling } = hunkLimits(pre, hunk);
+    const above = Number(hunk.dataset.from) - floor;
+    const below = ceiling - Number(hunk.dataset.to);
+    const [up, down] = [...hunk.querySelectorAll(":scope > .expand-btn")];
+    up.hidden = above <= 0;
+    up.dataset.count = String(Math.min(EXPAND_STEP, above));
+    down.hidden = below <= 0;
+    down.dataset.count = String(Math.min(EXPAND_STEP, below));
+  }
+}
+
+async function expandHunk(pre, hunk, dir) {
+  const { floor, ceiling } = hunkLimits(pre, hunk);
+  const [from, to] = [Number(hunk.dataset.from), Number(hunk.dataset.to)];
+  const [first, last] = dir === "up"
+    ? [Math.max(floor, from - EXPAND_STEP), from - 1]
+    : [to + 1, Math.min(ceiling, to + EXPAND_STEP)];
+  if (first > last) return;
+  const res = await fetch(`/runs/${runId}/source?path=${encodeURIComponent(pre.dataset.file)}&from=${first}&to=${last}`);
+  if (!res.ok) {
+    toast(`Could not read ${pre.dataset.file}`);
+    return;
+  }
+  const rows = (await res.json()).lines.map((html) => `<span class="diff-line"> ${html}</span>`).join("\n");
+  const [up, down] = hunk.querySelectorAll(":scope > .expand-btn");
+  if (dir === "up") {
+    up.insertAdjacentHTML("afterend", `${rows}\n`);
+    hunk.dataset.from = String(first);
+  } else {
+    down.insertAdjacentHTML("beforebegin", `\n${rows}`);
+    hunk.dataset.to = String(last);
+  }
+  updateExpanders(pre);
+}
+
+function expandButton(pre, hunk, dir) {
+  const btn = el("button", "expand-btn");
+  btn.type = "button";
+  btn.dataset.dir = dir;
+  btn.setAttribute("aria-label", dir === "up" ? "Show more lines above" : "Show more lines below");
+  btn.addEventListener("click", () => expandHunk(pre, hunk, dir));
+  return btn;
+}
+
 function addCodeTools(article) {
+  for (const pre of article.querySelectorAll("pre[data-total]")) {
+    for (const hunk of pre.querySelectorAll(".hunk[data-from]")) {
+      hunk.prepend(expandButton(pre, hunk, "up"));
+      hunk.append(expandButton(pre, hunk, "down"));
+    }
+    updateExpanders(pre);
+  }
+  article.addEventListener("click", (event) => {
+    const chip = event.target.closest?.("code[data-path]");
+    if (!chip || String(getSelection()).length > 0) return;
+    openInEditor(chip.dataset.path, Number(chip.dataset.line) || null);
+  });
   for (const pre of article.querySelectorAll("pre:not(.mermaid)")) {
+    if (pre.dataset.file) pre.append(openButton(pre));
     pre.append(copyButton(pre));
     const lines = (pre.querySelector("code")?.textContent ?? "").replace(/\n$/, "").split("\n").length;
     if (lines > FOLD_OVER) pre.append(foldButton(pre, lines));
@@ -1206,6 +1304,7 @@ $("#composer").addEventListener("submit", (e) => {
 });
 
 $("#globalBtn").addEventListener("click", (e) => openComposer("global", null, e.currentTarget.getBoundingClientRect()));
+$("#editBtn").addEventListener("click", () => current && openInEditor(current, null));
 
 function toggleMode() {
   const file = currentFile();
