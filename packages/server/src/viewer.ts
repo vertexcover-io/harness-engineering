@@ -21,6 +21,7 @@ import type {
 } from "@harness/sdk";
 import { emitRunEvent, runDirOf } from "@harness/sdk";
 import { CommentDraftSchema, type Registry } from "@harness/sdk/internal";
+import hljs from "highlight.js/lib/common";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { type SSEStreamingApi, streamSSE } from "hono/streaming";
@@ -51,13 +52,73 @@ export type Viewer = Readonly<{ origin: string; port: number; stop: () => Promis
 
 const lineRange = (map: readonly [number, number]): string => `${map[0] + 1}-${map[1]}`;
 
-const markdown = new MarkdownIt({ html: false, linkify: true });
+// hljs closes a span only where its token ends, so a comment or string that spans lines leaves
+// spans open across "\n"; close them at each line end and reopen them on the next line.
+const splitHighlighted = (html: string): readonly string[] => {
+  const open: string[] = [];
+  return html.split("\n").map((raw) => {
+    const reopened = open.join("");
+    for (const tag of raw.match(/<span[^>]*>|<\/span>/g) ?? []) {
+      if (tag === "</span>") open.pop();
+      else open.push(tag);
+    }
+    return reopened + raw + "</span>".repeat(open.length);
+  });
+};
+
+const DIFF_MARK = /^[+\- ]/;
+// A diff fence names no language. Guessing among every grammar reads TypeScript as PHP or Java,
+// so the guess is limited to languages a plan is likely to show.
+const DIFF_GUESSES = [
+  "typescript",
+  "javascript",
+  "json",
+  "yaml",
+  "bash",
+  "python",
+  "css",
+  "xml",
+  "markdown",
+  "sql",
+  "go",
+  "rust",
+];
+const DIFF_CLASS: Readonly<Record<string, string>> = {
+  "+": " hljs-addition",
+  "-": " hljs-deletion",
+};
+
+const highlightDiff = (source: string): string => {
+  const lines = source.replace(/\n$/, "").split("\n");
+  const isHunk = (line: string): boolean => line.startsWith("@@");
+  const body = lines.filter((line) => !isHunk(line)).map((line) => line.replace(DIFF_MARK, ""));
+  const coded = splitHighlighted(hljs.highlightAuto(body.join("\n"), DIFF_GUESSES).value)[
+    Symbol.iterator
+  ]();
+  const rendered = lines.map((line) => {
+    if (isHunk(line))
+      return `<span class="diff-line hljs-meta">${markdown.utils.escapeHtml(line)}</span>`;
+    const mark = DIFF_MARK.test(line) ? line.charAt(0) : "";
+    return `<span class="diff-line${DIFF_CLASS[mark] ?? ""}">${mark}${coded.next().value ?? ""}</span>`;
+  });
+  return `${rendered.join("\n")}\n`;
+};
+
+const highlight = (code: string, lang: string): string => {
+  if (lang === "diff") return highlightDiff(code);
+  return hljs.getLanguage(lang)
+    ? hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
+    : "";
+};
+
+const markdown: MarkdownIt = new MarkdownIt({ html: false, linkify: true, highlight });
 markdown.core.ruler.push("source-lines", (state) => {
   for (const token of state.tokens) {
     if (token.nesting === 1 && token.map) token.attrSet("data-lines", lineRange(token.map));
   }
   return true;
 });
+
 const defaultFence = markdown.renderer.rules.fence;
 markdown.renderer.rules.fence = (tokens, index, options, env, self) => {
   const token = tokens[index];

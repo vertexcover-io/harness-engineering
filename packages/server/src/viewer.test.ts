@@ -76,6 +76,64 @@ describe("renderMarkdown", () => {
     expect(html).toContain('<code class="language-ts">');
     expect(html.match(/class="mermaid"/g)).toHaveLength(1);
   });
+
+  test("a ts fence comes back with its keywords marked for color, and an unknown language stays plain", () => {
+    const html = renderMarkdown("```ts\nconst a = 1;\n```\n\n```nosuchlang\n<i>\n```\n");
+    expect(html).toContain('<span class="hljs-keyword">const</span>');
+    expect(html).toContain('<code class="language-nosuchlang">&lt;i&gt;\n</code>');
+  });
+
+  test("a diff fence colors the code on each line, keeps a comment spanning lines whole, and marks every @@ line as a hunk", () => {
+    const html = renderMarkdown(
+      [
+        "```diff",
+        "@@",
+        ' import { z } from "zod";',
+        "-const old = <b>;",
+        "+/* first",
+        "+   second */",
+        "+export const next = 2;",
+        "@@ -1,2 +1,3 @@",
+        "```",
+        "",
+      ].join("\n"),
+    );
+    const lines = html.split("\n");
+    expect(lines[0]).toContain('<span class="diff-line hljs-meta">@@</span>');
+    expect(lines[1]).toContain('<span class="diff-line"> <span class="hljs-keyword">import</span>');
+    expect(lines[2]).toContain(
+      '<span class="diff-line hljs-deletion">-<span class="hljs-keyword">const</span>',
+    );
+    expect(lines[2]).toContain("&lt;b&gt;");
+    expect(lines[3]).toBe(
+      '<span class="diff-line hljs-addition">+<span class="hljs-comment">/* first</span></span>',
+    );
+    expect(lines[4]).toBe(
+      '<span class="diff-line hljs-addition">+<span class="hljs-comment">   second */</span></span>',
+    );
+    expect(lines[5]).toContain(
+      '<span class="diff-line hljs-addition">+<span class="hljs-keyword">export</span>',
+    );
+    expect(lines[6]).toContain('<span class="diff-line hljs-meta">@@ -1,2 +1,3 @@</span>');
+  });
+
+  test("a diff of zod schema code that a full guess would read as PHP is colored as TypeScript", () => {
+    const html = renderMarkdown(
+      [
+        "```diff",
+        "+export const AskedQuestionSchema = z.strictObject({",
+        "+  question: NonEmptyStringSchema,",
+        "+  options: z.array(z.string()),",
+        "+});",
+        "```",
+        "",
+      ].join("\n"),
+    );
+    expect(html).toContain(
+      '+<span class="hljs-keyword">export</span> <span class="hljs-keyword">const</span>',
+    );
+    expect(html).not.toContain("hljs-variable");
+  });
 });
 
 describe("listArtifacts", () => {
