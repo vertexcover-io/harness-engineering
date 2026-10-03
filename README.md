@@ -374,7 +374,8 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
 | `/implement` | Manual coding entry point: TDD + code-quality, review when green |
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md, then applies the fixes |
-| `/git-commit` | Groups changes into logical conventional commits |
+| `/git-commit` | Groups changes into logical conventional commits; squashes a branch's commits first when asked |
+| `/visual-pr` | Creates or updates a PR with a visual change outline and validation evidence |
 | `/resolve-merge-conflict` | Resolves merge and rebase conflicts, locally or on an open PR |
 | `/tech-debt-finder` | Finds code smells, creates GitHub issues |
 | `/coverage-guard` | Enforces minimum test coverage |

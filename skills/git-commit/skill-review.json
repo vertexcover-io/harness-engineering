@@ -1,0 +1,106 @@
+{
+  "skill": "git-commit",
+  "path": "/Users/vertexcover/Projects/harness-engineering/skills/git-commit",
+  "findings": [
+    {
+      "id": "I1",
+      "category": "integrity",
+      "finding_type": "tool_not_allowed",
+      "severity": "blocker",
+      "deterministic": true,
+      "location": "SKILL.md:11",
+      "evidence": "allowed-tools: [Bash, Read]",
+      "fix": "False positive: Read is listed. check.py reads the flow-style list as one string. No change to the skill."
+    },
+    {
+      "id": "I8",
+      "category": "integrity",
+      "finding_type": "workflow_incoherent",
+      "severity": "blocker",
+      "deterministic": false,
+      "location": "SKILL.md:115",
+      "evidence": "## Squashing a branch ... So undo the checkpoints before Step 1",
+      "fix": "Fixed: the squash is now Step 0, before reconnaissance, and the regroup rules sit in Step 2 where LOG is read."
+    },
+    {
+      "id": "I9",
+      "category": "integrity",
+      "finding_type": "contradiction",
+      "severity": "major",
+      "deterministic": false,
+      "location": "SKILL.md:135",
+      "evidence": "needs `git push --force-with-lease`, which refuses when the remote holds a commit this checkout has not fetched",
+      "fix": "Fixed: removed. The fetch two lines later made the claim false; the stop rule and visual-pr's exact lease carry the guarantee."
+    },
+    {
+      "id": "I9",
+      "category": "integrity",
+      "finding_type": "contradiction",
+      "severity": "major",
+      "deterministic": false,
+      "location": "SKILL.md:44",
+      "evidence": "Generated files: leave them out / Commit every tracked change",
+      "fix": "Fixed: after a squash, tracked generated files the old commits held are committed; Step 2 says so."
+    },
+    {
+      "id": "C9",
+      "category": "content",
+      "finding_type": "duplicated_meaning",
+      "severity": "major",
+      "deterministic": false,
+      "location": "SKILL.md:31",
+      "evidence": "--working-commits named at lines 31, 85 and 119",
+      "fix": "Fixed: named once, in the two-ways-in list."
+    },
+    {
+      "id": "C9",
+      "category": "content",
+      "finding_type": "duplicated_meaning",
+      "severity": "minor",
+      "deterministic": false,
+      "location": "SKILL.md:137",
+      "evidence": "Note whether the branch is on the remote, for the summary / When the branch was on the remote before the squash, say",
+      "fix": "Fixed: one line in Step 5's summary."
+    },
+    {
+      "id": "I3",
+      "category": "integrity",
+      "finding_type": "nonexistent_reference",
+      "severity": "minor",
+      "deterministic": false,
+      "location": "SKILL.md:132",
+      "evidence": "git symbolic-ref --short refs/remotes/origin/HEAD",
+      "fix": "Fixed: falls back to origin/main when origin/HEAD is unset, as in a CI clone."
+    },
+    {
+      "id": "T2",
+      "category": "test_coverage",
+      "finding_type": "guardrail_without_eval",
+      "severity": "blocker",
+      "deterministic": false,
+      "location": "evals/evals.json:1",
+      "evidence": "Six evals, none squashes a branch: no eval for the divergent-remote stop, the staged-differs skip, the force-added file, or the tree check",
+      "fix": "Fixed: evals 7-10 added with fixtures for a pushed branch, a diverged remote, staged-only content and a force-added ignored file."
+    },
+    {
+      "id": "T5",
+      "category": "test_coverage",
+      "finding_type": "baseline_stale",
+      "severity": "major",
+      "deterministic": false,
+      "location": "evals/baseline.md:1",
+      "evidence": "Baseline \u2014 2026-09-14 ... commit message rules ... that section was cut",
+      "fix": "Fixed for the squash path: baseline.md records none vs skill on evals 7-10. Open: evals 1-6 were not re-run, and the subject-only message rule is unmeasured."
+    },
+    {
+      "id": "T6",
+      "category": "test_coverage",
+      "finding_type": "out_of_rubric",
+      "severity": "major",
+      "deterministic": false,
+      "location": "evals/baseline.md:1",
+      "evidence": "Sonnet 5 only",
+      "fix": "Fixed: evals 7-10 ran on Haiku, Sonnet and Opus. Haiku fails 9 and 10, so the stage now declares tier: deep."
+    }
+  ]
+}

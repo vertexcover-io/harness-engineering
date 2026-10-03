@@ -10,6 +10,9 @@ doctor:
   - check: binary
     key: bun
     fix: Install Bun
+  - check: binary
+    key: gh
+    fix: Install the GitHub CLI and run gh auth login
 nodes:
   - id: ticket-fetcher
     type: agent
@@ -84,3 +87,20 @@ nodes:
           task: "{{ inputs.task }}"
           round: "{{ iteration.index }}"
           rounds: "{{ iteration.max }}"
+
+  - id: commit
+    type: agent
+    stage: git-commit
+    dependsOn: [qa-loop]
+    # A BLOCKED qa could not verify the change, so nothing is published; pr is skipped with it.
+    when: "{{ nodes.qa-loop.output.status != 'BLOCKED' }}"
+    input:
+      workspace: "{{ nodes.create-workspace.output }}"
+
+  - id: pr
+    type: agent
+    stage: visual-pr
+    dependsOn: [commit]
+    input:
+      workspace: "{{ nodes.create-workspace.output }}"
+      task: "{{ nodes.ticket-fetcher.output.task }}"

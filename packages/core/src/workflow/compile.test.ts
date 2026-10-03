@@ -933,6 +933,7 @@ describe("the shipped task workflow", () => {
     expect(plan.doctor.map((d) => `${d.check}:${d.key}`)).toEqual([
       "env:LINEAR_API_KEY",
       "binary:bun",
+      "binary:gh",
     ]);
     const workspace = plan.nodes.find((node) => node.id === "create-workspace");
     expect(workspace).toMatchObject({
@@ -954,7 +955,7 @@ describe("the shipped task workflow", () => {
     const plan = await compileWorkflow(TASK_WORKFLOW);
     const workspace = "{{ nodes.create-workspace.output }}";
 
-    expect(plan.nodes.slice(-4, -1)).toMatchObject([
+    expect(plan.nodes.slice(-6, -3)).toMatchObject([
       {
         id: "planning",
         stage: { ref: "planning" },
@@ -976,10 +977,10 @@ describe("the shipped task workflow", () => {
     ]);
   });
 
-  test("SC8: ends with a qa loop after code-review that re-runs implement with qa's bugs until qa stops failing", async () => {
+  test("SC8: runs a qa loop after code-review that re-runs implement with qa's bugs until qa stops failing", async () => {
     const plan = await compileWorkflow(TASK_WORKFLOW);
 
-    expect(plan.nodes.at(-1)).toMatchObject({
+    expect(plan.nodes.at(-3)).toMatchObject({
       id: "qa-loop",
       type: "loop",
       dependsOn: ["code-review"],
@@ -1010,5 +1011,26 @@ describe("the shipped task workflow", () => {
         },
       ],
     });
+  });
+
+  test("ends with git-commit then visual-pr after the qa loop, each in the run's workspace", async () => {
+    const plan = await compileWorkflow(TASK_WORKFLOW);
+    const workspace = "{{ nodes.create-workspace.output }}";
+
+    expect(plan.nodes.slice(-2)).toMatchObject([
+      {
+        id: "commit",
+        stage: { ref: "git-commit" },
+        dependsOn: ["qa-loop"],
+        when: "{{ nodes.qa-loop.output.status != 'BLOCKED' }}",
+        input: { workspace },
+      },
+      {
+        id: "pr",
+        stage: { ref: "visual-pr" },
+        dependsOn: ["commit"],
+        input: { workspace, task: "{{ nodes.ticket-fetcher.output.task }}" },
+      },
+    ]);
   });
 });

@@ -6,6 +6,8 @@ id="$1"
 dir="$2"
 mkdir -p "$dir"
 cd "$dir"
+# Absolute, so the bare origin lands beside the repo and never inside it.
+dir="$(pwd)"
 git init -q -b main
 git config user.email eval@example.com
 git config user.name eval
@@ -68,6 +70,34 @@ EOF
   rm src/cart.test.ts.bak
 }
 
+# A bare origin beside the repo, with main pushed and origin/HEAD set, so the base can be found.
+with_origin() {
+  local remote="${dir%/}.origin.git"
+  rm -rf "$remote"
+  git init -q --bare -b main "$remote"
+  git remote add origin "$remote"
+  git push -q -u origin main
+  git remote set-head origin main
+}
+
+# The branch a pipeline run leaves behind: two features, then review, verify and WIP checkpoints.
+checkpoint_branch() {
+  git checkout -qb feat/checkout
+  add_discount
+  git add -A && git commit -qm "feat(cart): add percentage discounts"
+  printf 'import { cartTotal, Item } from "./cart";\n\nexport function checkout(items: Item[]): number {\n  return cartTotal(items);\n}\n' > src/checkout.ts
+  printf 'import { test, expect } from "vitest";\nimport { checkout } from "./checkout";\n\ntest("checkout totals the cart", () => {\n  expect(checkout([{ sku: "a", price: 5, qty: 2 }])).toBe(10);\n});\n' > src/checkout.test.ts
+  git add -A && git commit -qm "feat(checkout): add checkout total"
+  sed -i.bak 's|  return total - (total \* percent) / 100;|  const capped = Math.min(Math.max(percent, 0), 100);\n  return total - (total * capped) / 100;|' src/cart.ts
+  rm src/cart.ts.bak
+  git commit -qam "fix: address review findings"
+  sed -i.bak 's/  return cartTotal(items);/  if (items.length === 0) return 0;\n  return cartTotal(items);/' src/checkout.ts
+  rm src/checkout.ts.bak
+  git commit -qam "fix: verify round 1 fix"
+  printf '# Shop\n\nA tiny shopping cart with discounts and checkout.\n' > README.md
+  git commit -qam "chore: wip before review"
+}
+
 case "$id" in
   1)
     add_discount
@@ -94,21 +124,8 @@ EOF
     printf 'remember to ask about coupons\n' > notes.txt
     ;;
   4)
-    git checkout -qb feat/checkout
     base="$(git rev-parse HEAD)"
-    add_discount
-    git add -A && git commit -qm "feat(cart): add percentage discounts"
-    printf 'import { cartTotal, Item } from "./cart";\n\nexport function checkout(items: Item[]): number {\n  return cartTotal(items);\n}\n' > src/checkout.ts
-    printf 'import { test, expect } from "vitest";\nimport { checkout } from "./checkout";\n\ntest("checkout totals the cart", () => {\n  expect(checkout([{ sku: "a", price: 5, qty: 2 }])).toBe(10);\n});\n' > src/checkout.test.ts
-    git add -A && git commit -qm "feat(checkout): add checkout total"
-    sed -i.bak 's|  return total - (total \* percent) / 100;|  const capped = Math.min(Math.max(percent, 0), 100);\n  return total - (total * capped) / 100;|' src/cart.ts
-    rm src/cart.ts.bak
-    git commit -qam "fix: address review findings"
-    sed -i.bak 's/  return cartTotal(items);/  if (items.length === 0) return 0;\n  return cartTotal(items);/' src/checkout.ts
-    rm src/checkout.ts.bak
-    git commit -qam "fix: verify round 1 fix"
-    printf '# Shop\n\nA tiny shopping cart with discounts and checkout.\n' > README.md
-    git commit -qam "chore: wip before review"
+    checkpoint_branch
     pre="$(git rev-parse HEAD)"
     mkdir -p .harness/demo
     git log --reverse --format='%h %s%n%b' "$base..$pre" > .harness/demo/working-commits.txt
@@ -127,6 +144,36 @@ EOF
     printf 'import { z } from "zod";\n\nexport const ItemSchema = z.object({ sku: z.string(), price: z.number(), qty: z.number().int() });\n' > src/validate.ts
     printf 'import { test, expect } from "vitest";\nimport { ItemSchema } from "./validate";\n\ntest("rejects a fractional qty", () => {\n  expect(ItemSchema.safeParse({ sku: "a", price: 1, qty: 1.5 }).success).toBe(false);\n});\n' > src/validate.test.ts
     printf '# Shop\n\nA tiny shopping cart.\n' > README.md
+    ;;
+  7|8|9|10)
+    with_origin
+    checkpoint_branch
+    case "$id" in
+      7)
+        git push -q -u origin feat/checkout
+        printf '# Shop\n\nA tiny shopping cart with discounts and checkout. Totals round to cents.\n' > README.md
+        ;;
+      8)
+        git push -q -u origin feat/checkout
+        printf 'export const VERSION = "1.1.0";\n' > src/version.ts
+        git add src/version.ts && git commit -qm "chore: bump version"
+        git push -q origin feat/checkout
+        git reset -q --hard HEAD~1
+        git fetch -q origin
+        ;;
+      9)
+        printf '# Shop\n\nA tiny shopping cart with discounts, checkout and coupons.\n' > README.md
+        git add README.md
+        git restore --worktree --source=HEAD README.md
+        ;;
+      10)
+        printf 'node_modules/\n.harness/*\n!.harness/knowledge/\ndist/\n' > .gitignore
+        mkdir -p dist
+        printf 'export{};\n' > dist/bundle.js
+        git add .gitignore && git add -f dist/bundle.js
+        git commit -qm "build: ship the bundle"
+        ;;
+    esac
     ;;
   *)
     echo "unknown eval id: $id" >&2

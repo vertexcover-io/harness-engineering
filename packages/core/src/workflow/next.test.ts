@@ -547,6 +547,33 @@ nodes:
     expect(findRun(done.state, "fix")).toMatchObject({ status: "completed", output: "out 2" });
   });
 
+  test("a qa loop that ends BLOCKED skips the commit gated on its verdict, and the pr after it", async () => {
+    const plan = await compilePlan(`name: t
+nodes:
+  - id: qa-loop
+    type: loop
+    until: "{{ iteration.nodes.qa.output.status != 'FAIL' }}"
+    maxIterations: 4
+    input: {}
+    nodes:
+      - { id: qa, type: exec, runtime: sh, script: "true", input: {} }${exec("commit", `\n    dependsOn: [qa-loop]\n    when: "{{ nodes.qa-loop.output.status != 'BLOCKED' }}"\n    input: {}`)}${exec("pr", "\n    dependsOn: [commit]\n    input: {}")}
+`);
+    const qa = await advance(plan, start());
+    const blocked = end(qa.state, expectLeaf(qa.stop).nodeRunId, "completed", {
+      output: { status: "BLOCKED" },
+    });
+    const done = await advance(plan, blocked);
+    expect(done.stop).toEqual({ kind: "finished", status: "completed" });
+    expect(findRun(done.state, "commit")).toMatchObject({
+      status: "skipped",
+      output: { reason: "when-false" },
+    });
+    expect(findRun(done.state, "pr")).toMatchObject({
+      status: "skipped",
+      output: { reason: "dependency-skipped", proof: { dependencies: ["commit"] } },
+    });
+  });
+
   test("IW45 — a loop whose last body node did not complete hands null to its next pass", async () => {
     const plan = await compilePlan(`name: t
 nodes:
