@@ -486,6 +486,32 @@ describe("harness run", () => {
   );
 
   test(
+    "a notifier without the Slack keys blocks the run; the same keys in the workflow's env let it start",
+    () => {
+      const repo = makeRepo();
+      const { env } = makeEnv();
+      const { SLACK_BOT_TOKEN: _token, SLACK_CHANNEL_ID: _channel, ...withoutKeys } = env;
+      const notifierWorkflow = `notifier: {}\n${OK_WORKFLOW}`;
+      writeFileSync(join(repo, "bare.yaml"), notifierWorkflow);
+      writeFileSync(
+        join(repo, "keyed.yaml"),
+        `env:\n  SLACK_BOT_TOKEN: xoxb-e2e\n  SLACK_CHANNEL_ID: C1\n${notifierWorkflow}`,
+      );
+
+      const blocked = harness(repo, withoutKeys, "run", "bare.yaml", "--prompt", "x");
+      expect(blocked.code).toBe(1);
+      expect(blocked.stderr).toContain("BLOCKED notifier");
+
+      const started = harness(repo, withoutKeys, "run", "keyed.yaml", "--prompt", "x", "--no-open");
+      expect(started.stderr).not.toContain("BLOCKED");
+      expect(started.code).toBe(0);
+
+      stopServer(repo, withoutKeys);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "--config FILE, resolved against the current folder, is saved on the run and recorded by init, even with no config in the repo",
     () => {
       const repo = makeRepo();

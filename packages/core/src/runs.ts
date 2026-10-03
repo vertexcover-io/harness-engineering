@@ -1,5 +1,5 @@
 import { access, copyFile, mkdir, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   type AgentType,
   type ArtifactRef,
@@ -10,6 +10,11 @@ import {
   type EnvLayer,
   type EventHandlerRefs,
   eventError,
+  HOOK_TIMEOUT_S,
+  type HookEntry,
+  type HookRef,
+  type HookRefs,
+  type Hooks,
   type IGit,
   type ILogger,
   type ITerminal,
@@ -40,11 +45,13 @@ import {
   type StepOutcome,
   type StepReport,
   syncState,
+  uniqueNames,
 } from "@harness/sdk/internal";
 import * as z from "zod";
 import corePackage from "../package.json";
+import { buildNotifierHooks, pickNotifier } from "./notifier-hooks.ts";
 import { extensionPath } from "./stage.ts";
-import { compileWorkflow } from "./workflow/compile.ts";
+import { compileWorkflow, readWorkflowFile } from "./workflow/compile.ts";
 import {
   type CompletionIssue,
   CompletionIssueSchema,
@@ -104,8 +111,63 @@ const renameTerminal = async (run: WorkflowRun, options: InitOptions): Promise<v
 type CheckedInit = Readonly<{
   run: WorkflowRun;
   eventHandlers: EventHandlerRefs;
+  hooks: HookRefs;
   config: NonNullable<State["config"]>;
 }>;
+
+const resolveHook = (entry: HookEntry, base: string): HookRef => {
+  const blocking = entry.blocking ?? true;
+  const fields = {
+    name: entry.name,
+    blocking,
+    timeoutSeconds: entry.timeoutSeconds ?? HOOK_TIMEOUT_S[blocking ? "blocking" : "detached"],
+  };
+  if ("module" in entry) {
+    return { ...fields, module: resolve(base, entry.module), handler: entry.handler };
+  }
+  return { ...fields, command: entry.command, cwd: resolve(base, entry.cwd ?? ".") };
+};
+
+const resolveHooks = (hooks: Hooks, base: string): HookRefs =>
+  Object.fromEntries(
+    Object.entries(hooks).map(([type, list]) => [
+      type,
+      list.map((entry) => resolveHook(entry, base)),
+    ]),
+  );
+
+// A name both give one event type would never be recorded twice: its call id would already exist.
+const mergeHooks = (first: HookRefs, second: HookRefs): Result<HookRefs> => {
+  const types = [...new Set([...Object.keys(first), ...Object.keys(second)])];
+  const merged = Object.fromEntries(
+    types.map((type) => [type, [...(first[type] ?? []), ...(second[type] ?? [])]]),
+  );
+  const clash = Object.entries(merged).find(([, list]) => !uniqueNames(list));
+  if (clash === undefined) return { ok: true, value: merged };
+  return {
+    ok: false,
+    error: `hooks for ${clash[0]}: the config and the workflow name the same hook`,
+  };
+};
+
+// Config hooks first, then the workflow's, then the notifier, whose workflow block replaces the
+// config's whole. Relative paths resolve against the file declaring them.
+export const freezeHooks = async (
+  run: WorkflowRun,
+  config: Config,
+  root: string,
+): Promise<Result<HookRefs>> => {
+  const workflow = await readWorkflowFile(run.workflowPath);
+  const project = mergeHooks(
+    resolveHooks(config.hooks, root),
+    resolveHooks(workflow.hooks, dirname(run.workflowPath)),
+  );
+  if (!project.ok) return project;
+  return mergeHooks(
+    project.value,
+    buildNotifierHooks(pickNotifier(workflow.notifier, config.notifier)),
+  );
+};
 
 const frozenHandlers = (config: Config, root: string): EventHandlerRefs =>
   Object.fromEntries(
@@ -116,12 +178,12 @@ const frozenHandlers = (config: Config, root: string): EventHandlerRefs =>
   );
 
 const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<State> => {
-  const { run, eventHandlers, config } = checked;
+  const { run, eventHandlers, hooks, config } = checked;
   const { name } = options;
   const dir = runDirOf(run.cwd, name);
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
   const version = String(corePackage.version);
-  await createState({ runId: run.id, runDir: dir, version, eventHandlers, config });
+  await createState({ runId: run.id, runDir: dir, version, eventHandlers, hooks, config });
   const appended = await appendRunEvent(
     { id: run.id, cwd: run.cwd, name },
     {
@@ -162,9 +224,16 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
   const loaded = await loadStartConfig(run.config, run.cwd);
   if (!loaded.ok) return loaded;
   const { config, path, root } = loaded.value;
+  const hooks = await freezeHooks(run, config, root);
+  if (!hooks.ok) return hooks;
   return {
     ok: true,
-    value: { run, eventHandlers: frozenHandlers(config, root), config: { path, root } },
+    value: {
+      run,
+      eventHandlers: frozenHandlers(config, root),
+      hooks: hooks.value,
+      config: { path, root },
+    },
   };
 };
 

@@ -48,6 +48,7 @@ const start = (input: JsonObject = {}): State => ({
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},
+  hooks: {},
 });
 
 // Stores one event the way emitRunEvent would: next seq, then the core reducers.
@@ -365,6 +366,29 @@ nodes:${stage("use", "consumer", "\n    dependsOn: [make]\n    input: {}")}${sta
       ...PLAN_ARTIFACT,
     });
     expect(expectLeaf((await advance(plan, withPlan)).stop).node.id).toBe("use");
+  });
+
+  test("a blocked stage records workflow.blocked with its node, stage and missing artifacts, under an id fixed per node", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${stage("use", "consumer", "\n    dependsOn: [make]\n    input: {}")}${stage("make", "producer", "\n    input: {}")}
+`);
+    const first = await advance(plan, start());
+    const make = expectLeaf(first.stop);
+
+    const blocked = await advance(
+      plan,
+      end(first.state, make.nodeRunId, "completed", { output: {} }),
+    );
+
+    expect(blocked.events).toEqual([
+      {
+        id: "workflow-blocked:use",
+        type: "workflow.blocked",
+        source: "workflow",
+        nodeId: "use",
+        payload: { nodeId: "use", stage: "stages/consumer", missing: ["plan"] },
+      },
+    ]);
   });
 
   test("IW15 — an optional consumed artifact never blocks its stage", async () => {

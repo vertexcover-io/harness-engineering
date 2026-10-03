@@ -1,10 +1,13 @@
 import {
   AgentTypeSchema,
   EnvLayerSchema,
+  HooksSchema,
   type JsonValue,
   NameSchema,
   NodeTypeSchema,
   NonEmptyStringSchema,
+  type Notifier,
+  NotifierSchema,
   type ProcessRecord,
   ProcessRecordSchema,
 } from "@harness/sdk";
@@ -213,6 +216,8 @@ export const WorkflowSchema = z.strictObject({
   ...EnvLayerSchema.shape,
   doctor: z.array(DoctorDeclarationSchema).default([]),
   inputs: z.record(NodeIdSchema, InputDeclarationSchema).default({}),
+  hooks: HooksSchema,
+  notifier: NotifierSchema.optional(),
   nodes: z.array(NodeSchema).min(1),
 });
 
@@ -348,6 +353,8 @@ export type WorkflowPlan = Readonly<{
   envFile?: string | undefined;
   inputs: InputDeclarations;
   doctor: readonly DoctorDeclaration[];
+  // the workflow's own block; pickNotifier weighs it against the config's
+  notifier: Notifier | undefined;
   nodes: readonly PlanNode[];
 }>;
 

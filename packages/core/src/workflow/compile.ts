@@ -209,6 +209,9 @@ const readWorkflow = async (path: string): Promise<string> => {
   }
 };
 
+export const readWorkflowFile = async (path: string): Promise<Workflow> =>
+  parseWorkflow(await readWorkflow(path));
+
 const MAX_INCLUDE_DEPTH = 8;
 const MAX_EXPANDED_NODES = 1000;
 
@@ -390,7 +393,7 @@ const uniqueDeclarations = (
 };
 
 async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
-  const workflow = parseWorkflow(await readWorkflow(path));
+  const workflow = await readWorkflowFile(path);
   const nodes = await compileNodes(validateScope(workflow.nodes, ""), at);
   const size = countNodes(nodes);
   if (size > MAX_EXPANDED_NODES) {
@@ -405,6 +408,7 @@ async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
     envFile: workflow.envFile,
     inputs: workflow.inputs,
     doctor,
+    notifier: workflow.notifier,
     nodes,
   });
 }

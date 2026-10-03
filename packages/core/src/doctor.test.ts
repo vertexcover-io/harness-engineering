@@ -1,17 +1,26 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type Check,
+  type CheckStatus,
   checkBinary,
   type Exec,
   execWithTimeout,
   fail,
+  type Notifier,
   type Result,
 } from "@harness/sdk";
-import { evaluate, runDoctor, summarize, verdict, workflowChecks } from "./doctor.ts";
+import {
+  buildNotifierCheck,
+  evaluate,
+  runDoctor,
+  summarize,
+  verdict,
+  workflowChecks,
+} from "./doctor.ts";
 
 const V2 = JSON.stringify({ version: 2 });
 
@@ -196,7 +205,7 @@ describe("runDoctor", () => {
     expect(row?.fix[0]).toBe("npm i -g samskara");
   });
 
-  test("SC15: the report lists ten built-in rows in v1's order", async () => {
+  test("SC15: the report lists v1's ten built-in rows in v1's order", async () => {
     const report = await runDoctor({ cwd: cleanRoot, exec: fakeExec(allToolsOk(cleanRoot)) });
     expect(report.results.map((row) => row.name)).toEqual(BUILT_IN_NAMES);
     expect(report.results.some((row) => row.name === "harness-version")).toBe(false);
@@ -289,6 +298,83 @@ describe("runDoctor (integration)", () => {
       status: "ok",
     });
     expect(report.results.find((row) => row.name === "project-doctor")).toBeUndefined();
+  });
+
+  describe("the notifier row", () => {
+    const SLACK_KEYS = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"] as const;
+    const saved = Object.fromEntries(SLACK_KEYS.map((name) => [name, process.env[name]]));
+
+    beforeEach(() => {
+      for (const name of SLACK_KEYS) delete process.env[name];
+    });
+
+    afterEach(() => {
+      for (const name of SLACK_KEYS) {
+        const value = saved[name];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    });
+
+    type RunEnv = Result<Readonly<Record<string, string>>>;
+    const NO_ENV: RunEnv = { ok: true, value: {} };
+    const BOTH_KEYS: RunEnv = {
+      ok: true,
+      value: { SLACK_BOT_TOKEN: "xoxb-test", SLACK_CHANNEL_ID: "C1" },
+    };
+
+    test.each<[string, object, Notifier | undefined, RunEnv, [CheckStatus, readonly string[]]]>([
+      [
+        "a config notifier with no Slack variables in the run's env fails naming both",
+        { notifier: {} },
+        undefined,
+        NO_ENV,
+        ["fail", SLACK_KEYS],
+      ],
+      [
+        "a config notifier with both variables in the run's env is ok",
+        { notifier: {} },
+        undefined,
+        BOTH_KEYS,
+        ["ok", []],
+      ],
+      ["no notifier block is ok and off", {}, undefined, NO_ENV, ["ok", []]],
+      [
+        "a workflow's enabled: false over a config notifier, with no Slack variables, is ok and off",
+        { notifier: {} },
+        { enabled: false, type: "slack" },
+        NO_ENV,
+        ["ok", []],
+      ],
+      [
+        "a workflow notifier with no config notifier and no Slack variables fails",
+        {},
+        { enabled: true, type: "slack" },
+        NO_ENV,
+        ["fail", SLACK_KEYS],
+      ],
+      [
+        "a workflow notifier whose run env failed to load fails with the load error",
+        {},
+        { enabled: true, type: "slack" },
+        { ok: false, error: "cannot read /repo/gone.env" },
+        ["fail", ["gone.env"]],
+      ],
+    ])("SC214: %s", async (_label, config, workflowNotifier, env, [status, named]) => {
+      const dir = await makeDir("doctor-notifier-");
+      await exec("git", ["init"], dir);
+      await writeFile(
+        join(dir, "orchestrate.config.json"),
+        JSON.stringify({ version: 2, ...config }),
+      );
+
+      const extraChecks = [buildNotifierCheck(workflowNotifier, env)];
+      const report = await runDoctor({ cwd: dir, exec, extraChecks });
+
+      const row = report.results.find((result) => result.name === "notifier");
+      expect(row?.status).toBe(status);
+      for (const key of named) expect(row?.detail).toContain(key);
+    });
   });
 
   test("a YAML config passes the config check and names its file", async () => {

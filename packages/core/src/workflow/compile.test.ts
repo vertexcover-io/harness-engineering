@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Notifier } from "@harness/sdk";
 import { compileWorkflow } from "./compile.ts";
 import { evaluateBoolean, resolveValue, type Scope } from "./evaluate.ts";
 import { DEMO_STAGES, writeStages } from "./test-stages.ts";
@@ -450,6 +451,20 @@ describe("workflow doctor declarations", () => {
     );
     expect(plan.doctor.map((d) => `${d.check}:${d.key}`)).toEqual(["env:A", "binary:bun"]);
   });
+
+  test.each<[string, Notifier | undefined]>([
+    ["notifier: { type: slack }", { enabled: true, type: "slack" }],
+    ["notifier: { enabled: false }", { enabled: false, type: "slack" }],
+    ["", undefined],
+  ])(
+    "SC208: a workflow with %p carries its notifier on the plan and declares nothing to the doctor",
+    async (block, expected) => {
+      const plan = await compile(`name: test\n${block}\nnodes:${script("a")}\n`);
+
+      expect(plan.notifier).toEqual(expected);
+      expect(plan.doctor).toEqual([]);
+    },
+  );
 
   test.each([
     ["an unknown check kind", "  - check: network\n    key: x\n    fix: y\n"],

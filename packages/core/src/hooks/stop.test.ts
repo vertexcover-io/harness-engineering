@@ -52,6 +52,7 @@ const seed: State = {
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},
+  hooks: {},
 };
 
 const RUN: RunRef = { id: "r-1", cwd: "/repo", name: "feat-x" };
@@ -287,8 +288,23 @@ describe("runStopHook", () => {
         touchedRun: null,
       }),
       expect.objectContaining({ decision: "allow", reason: "max-blocks-reached", blockStreak: 1 }),
+      { agent: "claude", sessionId: "s1" },
     ]);
     expect((await readState(runDir))?.stopHook).toEqual({ blockStreak: 1, seq: 2 });
+  });
+
+  test("a stop that gives up records agent.stuck for the session, which is not progress, so the next stop also lets the turn end", async () => {
+    const { deps, runDir } = await setUp(planOpen);
+
+    const kinds = [];
+    for (const _ of [1, 2, 3]) kinds.push((await runStopHook(input(undefined), deps)).kind);
+
+    expect(kinds).toEqual(["continue", "allow", "allow"]);
+    const stuck = (await jsonlEventStore(runDir).read()).filter((e) => e.type === "agent.stuck");
+    expect(stuck.map((event) => [event.source, event.payload])).toEqual([
+      ["hooks", { agent: "claude", sessionId: "s1" }],
+      ["hooks", { agent: "claude", sessionId: "s1" }],
+    ]);
   });
 
   test("a tool call between two stops is not progress, and any other event is", async () => {

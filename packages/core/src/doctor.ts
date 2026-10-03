@@ -17,6 +17,7 @@ import {
   loadConfigFile,
   NOT_FOUND,
   NonEmptyStringSchema,
+  type Notifier,
   noopLogger,
   type Outcome,
   ok,
@@ -24,6 +25,8 @@ import {
   warn,
 } from "@harness/sdk";
 import * as z from "zod";
+import { findMissingNotifierKeys } from "./notifier.ts";
+import { pickNotifier } from "./notifier-hooks.ts";
 import type { DoctorDeclaration } from "./workflow/types.ts";
 
 export const DoctorRowSchema = z.object({
@@ -118,6 +121,34 @@ const checkSamskara = async (context: CheckContext): Promise<Outcome> => {
     ? ok(`v${installed.detail} paired`)
     : warn(`v${installed.detail} installed but not paired`);
 };
+
+// What the run's session will start with; the process environment fills the rest.
+type RunEnv = Result<Readonly<Record<string, string>>>;
+
+const checkNotifier = async (
+  context: CheckContext,
+  workflowNotifier: Notifier | undefined,
+  env: RunEnv,
+): Promise<Outcome> => {
+  const config = await readConfig(context);
+  const configNotifier = config.ok ? config.value.config.notifier : undefined;
+  const notifier = pickNotifier(workflowNotifier, configNotifier);
+  if (notifier?.enabled !== true) return ok("off");
+  if (!env.ok) return fail(env.error);
+  const missing = findMissingNotifierKeys({ ...process.env, ...env.value });
+  if (missing.length === 0) return ok(`${notifier.type} on`);
+  return fail(`${notifier.type} on, but ${missing.join(" and ")} not set`);
+};
+
+// The notifier a run would use: the workflow's block, else the config's.
+export const buildNotifierCheck = (workflowNotifier: Notifier | undefined, env: RunEnv): Check => ({
+  name: "notifier",
+  fix: [
+    "set SLACK_BOT_TOKEN and SLACK_CHANNEL_ID in .env or in the workflow's or config's env",
+    "or turn it off in the workflow or the config: notifier: { enabled: false }",
+  ],
+  run: (context) => checkNotifier(context, workflowNotifier, env),
+});
 
 export const CHECKS: readonly Check[] = [
   { name: "git", fix: ["brew install git", "apt install git"], run: checkBinary("git") },

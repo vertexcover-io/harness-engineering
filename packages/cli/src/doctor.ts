@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
 import {
+  buildNotifierCheck,
   type DoctorJson,
   type DoctorReport,
   type DoctorRow,
@@ -75,13 +76,18 @@ export const renderJson = (report: DoctorReport): string => {
 
 export const exitCodeFor = (report: DoctorReport): number => (report.failed.length > 0 ? 1 : 0);
 
-const declaredChecks = async (workflowArg: string | undefined) => {
-  if (workflowArg === undefined) return [];
+// Without a workflow, the env a run would get from the .env and the config alone.
+const declaredChecks = async (workflowPath: string | undefined) => {
   const cwd = process.cwd();
-  const path = resolve(cwd, workflowArg);
-  const plan = await compileOrFail(path, cwd);
+  if (workflowPath === undefined) {
+    const env = await loadStartEnv(null, cwd, { env: {}, agent: "claude" });
+    return [buildNotifierCheck(undefined, env)];
+  }
+  const absolutePath = resolve(cwd, workflowPath);
+  const plan = await compileOrFail(absolutePath, cwd);
   if (plan === null) return null;
-  return workflowChecks(plan.doctor, await loadStartEnv(null, cwd, plan));
+  const env = await loadStartEnv(null, cwd, plan);
+  return [...workflowChecks(plan.doctor, env), buildNotifierCheck(plan.notifier, env)];
 };
 
 export const doctorCommand = () =>
