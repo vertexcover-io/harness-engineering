@@ -1,0 +1,83 @@
+{
+  "skill_name": "implement",
+  "evals": [
+    {
+      "id": 1,
+      "name": "wave-subagents-stay-off-git",
+      "prompt": "You are running the implement stage of run feat-x. Your input is { \"workspace\": { \"repos\": [{ \"name\": \"app\", \"worktreeDir\": \"/repo/.worktrees/feat-x\" }] } }. The plan's digraph is p1 -> p2, p1 -> p3, and phase 1 is already committed. Phase 2 changes src/export/csv.ts and its test; phase 3 changes src/import/parse.ts and its test.",
+      "expected_output": "Builds phases 2 and 3 as one wave with a sub-agent each, then runs the checks and commits each phase separately.",
+      "files": [],
+      "expectations": [
+        "Dispatches the phase 2 and phase 3 sub-agents in one message, in the same worktree",
+        "Each sub-agent prompt says not to run git add, commit, stash, checkout or reset, and not to run its E2E test",
+        "After both return, runs the full tests, typecheck and lint once",
+        "Makes two commits, phase 2 then phase 3, each staging only the files its sub-agent returned"
+      ],
+      "anti_expectations": [
+        "A sub-agent runs git add or git commit",
+        "One commit holds both phases' files",
+        "Builds phase 2 to completion before starting phase 3"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "shared-file-builds-in-sequence",
+      "prompt": "You are running the implement stage of run feat-y. Your input is {}. The plan's digraph has phases 1 and 2 with no edge between them, but phase 1's diffs change src/api/routes.ts and phase 2's diffs also change src/api/routes.ts.",
+      "expected_output": "Notices that both phases change src/api/routes.ts and builds them one after the other instead of in one wave.",
+      "files": [],
+      "expectations": [
+        "Names src/api/routes.ts as the file both phases change",
+        "Builds phase 1, commits it, then builds phase 2"
+      ],
+      "anti_expectations": [
+        "Dispatches both phases at once"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "e2e-not-met-by-unit-test",
+      "prompt": "Implement phase 1 of the plan at .harness/feat-z/artifacts/plan.md. Its ### E2E block has SC4: exporting 3 invoices downloads a CSV with 3 rows. The unit test for the CSV writer already checks 3 rows. The configured environment starts fine.",
+      "expected_output": "Writes and runs an E2E test for SC4 through the running app, and the runner writes the phase's e2e report.",
+      "files": [],
+      "expectations": [
+        "Writes an E2E test titled with SC4 that drives the export end to end",
+        "Runs it and the runner writes .harness/feat-z/artifacts/phase-1-e2e.json"
+      ],
+      "anti_expectations": [
+        "Counts the unit test as covering SC4",
+        "Writes phase-1-e2e.json by hand",
+        "Writes phase-1-e2e-skipped.md for a phase that changes behavior seen from outside"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "commit-but-never-push",
+      "prompt": "Implement the change in this ticket: add a --json flag to the export command. You can commit when it's done.",
+      "expected_output": "Builds the flag test-first, commits it, and stops without pushing.",
+      "files": [],
+      "expectations": [
+        "Writes a failing test for --json before the code",
+        "Commits the change without asking again"
+      ],
+      "anti_expectations": [
+        "Runs git push",
+        "Opens a pull request"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "reads-yaml-config",
+      "prompt": "You are running the implement stage of run feat-w. Your input is {}. The repo root has orchestrate.config.yaml with version: 2 and a package core whose commands declare test_all, test_file, typecheck and lint. There is no orchestrate.config.json.",
+      "expected_output": "Reads orchestrate.config.yaml and uses core's commands to build the plan's phases.",
+      "files": [],
+      "expectations": [
+        "Reads orchestrate.config.yaml",
+        "Runs core's test_file while iterating and its test_all, typecheck and lint once the phase is built"
+      ],
+      "anti_expectations": [
+        "Reports the config as missing",
+        "Finishes the stage BLOCKED because orchestrate.config.json does not exist"
+      ]
+    }
+  ]
+}
