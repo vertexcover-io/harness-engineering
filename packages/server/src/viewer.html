@@ -84,9 +84,19 @@ button { cursor: pointer; }
 .pill[hidden] { display: none; }
 
 /* files */
-.files { grid-area: files; border-right: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 14px 10px; display: flex; flex-direction: column; gap: 6px; }
+.files { grid-area: files; border-right: 1px solid var(--line); background: var(--panel); overflow: hidden; padding: 14px 10px; display: flex; flex-direction: column; gap: 6px; }
 .side-label { font-family: var(--mono); font-size: 11.5px; color: var(--muted); padding: 0 8px 4px; }
 .file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+#fileList { flex: 0 1 auto; min-height: 0; overflow: auto; }
+.files:has(.outline:not([hidden])) #fileList { max-height: 45%; }
+.outline { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.outline[hidden] { display: none; }
+.outline-list { list-style: none; margin: 0; padding: 0; }
+.outline-btn { width: 100%; text-align: left; border: 0; background: transparent; padding: 4px 8px; border-radius: 6px; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+.outline-btn.d1 { color: var(--fg); font-weight: 600; }
+.outline-btn.d3 { padding-left: 20px; font-size: 12px; }
+.outline-btn:hover { background: var(--panel-2); color: var(--fg); }
+.outline-btn[aria-current="true"] { background: var(--accent-soft); color: var(--accent); }
 .file-btn { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; text-align: left; padding: 6px 8px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--fg); }
 .file-btn:hover { background: var(--panel-2); }
 .file-btn[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
@@ -179,6 +189,22 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .diff-line.hljs-addition::first-letter { color: var(--syn-add); font-weight: 600; }
 .diff-line.hljs-deletion::first-letter { color: var(--syn-del); font-weight: 600; }
 .diff-line.hljs-meta { color: var(--muted); background: var(--panel-2); }
+.copy-btn { position: absolute; top: 6px; right: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 6px; padding: 1px 8px; font: 500 11.5px/1.6 var(--ui); opacity: 0; transition: opacity .15s; }
+.copy-btn::before { content: "Copy"; }
+.copy-btn[data-state="copied"]::before { content: "Copied"; }
+.copy-btn[data-state="failed"]::before { content: "Copy failed"; }
+.doc pre:hover > .copy-btn, .copy-btn:focus-visible, .copy-btn[data-state] { opacity: 1; }
+.copy-btn:hover { color: var(--fg); }
+.doc pre.folded { max-height: calc(30 * 1.55em + 12px); overflow: hidden; }
+.doc pre.folded::after { content: ""; position: absolute; inset: auto 0 0; height: 72px; background: linear-gradient(transparent, var(--code-bg)); pointer-events: none; }
+.fold-btn { position: absolute; z-index: 1; left: 50%; bottom: 10px; transform: translateX(-50%); border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 999px; padding: 2px 12px; font: 500 12px/1.6 var(--ui); }
+.fold-btn::before { content: "Show " attr(data-more) " more lines"; }
+.doc pre:not(.folded) > .fold-btn { position: static; transform: none; display: block; margin: 10px auto 0; }
+.doc pre:not(.folded) > .fold-btn::before { content: "Show less"; }
+.anchor { margin-left: .35em; color: var(--muted); font-weight: 400; text-decoration: none; opacity: 0; }
+.anchor::before { content: "#"; }
+.doc :is(h1, h2, h3, h4):hover > .anchor, .anchor:focus-visible { opacity: 1; }
+.anchor:hover { color: var(--accent); }
 .table-wrap { overflow: visible; }
 .table-wrap > table { display: block; overflow-x: auto; }
 .doc, .doc > * { overflow-wrap: anywhere; }
@@ -273,7 +299,7 @@ mark.hl.pulse { animation: pulseMark 1.2s ease-out; }
   .files { border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 16px; }
   .file-list { flex-direction: row; flex-wrap: wrap; gap: 6px; }
   .file-btn { width: auto; border: 1px solid var(--line); }
-  .side-note { display: none; }
+  .side-note, .outline { display: none; }
   .doc-head { padding: 10px 16px; position: static; }
   .mode-btn, .file-btn, #sendBtn, .composer .btn { min-height: 44px; }
   .doc { padding: 20px 16px 32px; }
@@ -302,6 +328,10 @@ mark.hl.pulse { animation: pulseMark 1.2s ease-out; }
   <nav class="files" aria-label="Artifacts">
     <div class="side-label" id="sideLabel">artifacts/</div>
     <ul class="file-list" id="fileList"></ul>
+    <section class="outline" id="outline" aria-label="On this page" hidden>
+      <div class="side-label">On this page</div>
+      <ul class="outline-list" id="outlineList"></ul>
+    </section>
     <p class="side-note">Every file under the run's <code>artifacts/</code>. New files and edits appear on their own.</p>
   </nav>
 
@@ -525,12 +555,96 @@ function iframeLoaded(iframe) {
   refresh();
 }
 
+/* ---------- sections and code tools ---------- */
+
+// Every control added inside the article takes its label from CSS, so the page's text, which
+// comments are anchored to, stays exactly the rendered markdown.
+const FOLD_OVER = 40;
+const FOLD_KEEP = 30;
+
+const slug = (text) => text.toLowerCase().trim().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s+/g, "-");
+
+const parseHash = () => {
+  const [path = "", section = ""] = decodeURIComponent(location.hash.slice(1)).split("#");
+  return { path, section };
+};
+
+function goToSection(name) {
+  const target = docRoot()?.querySelector(`[data-anchor="${CSS.escape(name)}"]`);
+  if (!target || !current) return;
+  history.replaceState(null, "", `#${current}#${name}`);
+  const pane = $("#docPane");
+  const top = Math.max(pane.getBoundingClientRect().top, $("#docHead").getBoundingClientRect().bottom);
+  pane.scrollTop += target.getBoundingClientRect().top - top - 8;
+}
+
+function sectionLink(path, name) {
+  const link = el("a", "anchor");
+  link.href = `#${path}#${name}`;
+  link.setAttribute("aria-label", "Link to this section");
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    goToSection(name);
+    navigator.clipboard?.writeText(link.href).then(() => toast("Link copied"), () => {});
+  });
+  return link;
+}
+
+function addSectionLinks(article, path) {
+  const seen = new Map();
+  for (const heading of article.querySelectorAll("h1, h2, h3, h4")) {
+    const name = slug(heading.textContent) || "section";
+    const n = (seen.get(name) ?? 0) + 1;
+    seen.set(name, n);
+    heading.dataset.anchor = n === 1 ? name : `${name}-${n}`;
+    heading.append(sectionLink(path, heading.dataset.anchor));
+  }
+}
+
+function copyButton(pre) {
+  const btn = el("button", "copy-btn");
+  btn.type = "button";
+  btn.setAttribute("aria-label", "Copy code");
+  btn.addEventListener("click", async () => {
+    const text = pre.querySelector("code")?.textContent ?? "";
+    const copied = await navigator.clipboard.writeText(text).then(() => true, () => false);
+    btn.dataset.state = copied ? "copied" : "failed";
+    setTimeout(() => btn.removeAttribute("data-state"), 1500);
+  });
+  return btn;
+}
+
+function foldButton(pre, lines) {
+  pre.classList.add("folded");
+  const btn = el("button", "fold-btn");
+  btn.type = "button";
+  btn.dataset.more = String(lines - FOLD_KEEP);
+  btn.setAttribute("aria-expanded", "false");
+  btn.setAttribute("aria-label", "Show all lines");
+  btn.addEventListener("click", () => {
+    const folded = pre.classList.toggle("folded");
+    btn.setAttribute("aria-expanded", String(!folded));
+    btn.setAttribute("aria-label", folded ? "Show all lines" : "Show fewer lines");
+  });
+  return btn;
+}
+
+function addCodeTools(article) {
+  for (const pre of article.querySelectorAll("pre:not(.mermaid)")) {
+    pre.append(copyButton(pre));
+    const lines = (pre.querySelector("code")?.textContent ?? "").replace(/\n$/, "").split("\n").length;
+    if (lines > FOLD_OVER) pre.append(foldButton(pre, lines));
+  }
+}
+
 function docView(reply) {
   if (reply.type === "md") {
     const article = el("article", "doc");
     article.id = "docRoot";
     article.innerHTML = reply.html;
     withLineLabels(article);
+    addSectionLinks(article, reply.path);
+    addCodeTools(article);
     drawMermaid(article);
     return article;
   }
@@ -563,6 +677,43 @@ function docView(reply) {
   return el("p", "empty", "No preview for this file type.");
 }
 
+/* ---------- outline ---------- */
+
+let outlineHeadings = [];
+let outlineFrame = 0;
+
+function outlineItem(heading) {
+  const li = el("li");
+  const btn = el("button", `outline-btn d${heading.tagName[1]}`, heading.textContent);
+  btn.type = "button";
+  btn.addEventListener("click", () => goToSection(heading.dataset.anchor));
+  li.append(btn);
+  return li;
+}
+
+function renderOutline(view) {
+  outlineHeadings = view?.id === "docRoot" ? [...view.querySelectorAll("h1, h2, h3")] : [];
+  $("#outlineList").replaceChildren(...outlineHeadings.map(outlineItem));
+  $("#outline").hidden = outlineHeadings.length === 0;
+  markOutline();
+}
+
+function markOutline() {
+  const top = Math.max($("#docPane").getBoundingClientRect().top, $("#docHead").getBoundingClientRect().bottom);
+  const line = top + 24;
+  const at = Math.max(outlineHeadings.filter((h) => h.getBoundingClientRect().top <= line).length - 1, 0);
+  $("#outlineList").querySelectorAll("button").forEach((btn, i) => {
+    const now = i === at;
+    if (now && btn.getAttribute("aria-current") !== "true") btn.scrollIntoView({ block: "nearest" });
+    btn.setAttribute("aria-current", String(now));
+  });
+}
+
+$("#docPane").addEventListener("scroll", () => {
+  cancelAnimationFrame(outlineFrame);
+  outlineFrame = requestAnimationFrame(markOutline);
+}, { passive: true });
+
 const docRoot = () => {
   const article = $("#docRoot");
   if (article) return article;
@@ -584,6 +735,7 @@ async function showFile(path, { keepScroll }) {
   if (current !== path) return;
   if (!res.ok) {
     $("#docHost").replaceChildren(el("p", "empty", "This file could not be read."));
+    renderOutline(null);
     return;
   }
   currentReply = await res.json();
@@ -598,6 +750,7 @@ async function showFile(path, { keepScroll }) {
     if (keepScroll) flashChanged(view, before);
   }
   pane.scrollTop = keepScroll ? top : 0;
+  renderOutline(view);
   refresh();
 }
 
@@ -689,6 +842,7 @@ function focusComment(id, target) {
   if (target === "doc") {
     const mark = docRoot()?.querySelector(`mark[data-cid="${id}"]`);
     if (!mark) return;
+    mark.closest("pre.folded")?.classList.remove("folded");
     mark.scrollIntoView({ block: "center", behavior: "smooth" });
     pulse(mark);
     return;
@@ -1095,9 +1249,11 @@ async function applyFiles(body) {
     if (!current) $("#docHost").replaceChildren(emptyState(body.state === "starting"));
     return;
   }
-  const wanted = decodeURIComponent(location.hash.slice(1));
+  const wanted = parseHash();
   if (!current || !files.some((f) => f.path === current)) {
-    await select(files.some((f) => f.path === wanted) ? wanted : files[0].path);
+    const found = files.some((f) => f.path === wanted.path);
+    await select(found ? wanted.path : files[0].path);
+    if (found && wanted.section) goToSection(wanted.section);
   }
 }
 
@@ -1138,9 +1294,10 @@ async function load() {
   connect();
 }
 
-addEventListener("hashchange", () => {
-  const path = decodeURIComponent(location.hash.slice(1));
-  if (path !== current && files.some((f) => f.path === path)) select(path);
+addEventListener("hashchange", async () => {
+  const { path, section } = parseHash();
+  if (path !== current && files.some((f) => f.path === path)) await select(path);
+  if (section) goToSection(section);
 });
 
 load();

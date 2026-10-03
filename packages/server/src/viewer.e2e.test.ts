@@ -72,6 +72,16 @@ const CODE = [
   "",
 ].join("\n");
 
+const FILLER = "A paragraph that pushes the next heading further down the page. ".repeat(12);
+const OUTLINE = [
+  "# Outline",
+  ...["One", "Two", "Three"].flatMap((name) => ["", `## ${name}`, "", FILLER, "", FILLER]),
+  "",
+  "### Three detail",
+  "",
+  ...Array.from({ length: 6 }, () => [FILLER, ""]).flat(),
+].join("\n");
+
 const MOCKUP = `<!doctype html><html><body>
 <div class="mk-card"><h2 class="mk-title">Sign in</h2><button id="go">Loading</button></div>
 <script>document.getElementById("go").textContent = "Continue";</script>
@@ -123,6 +133,13 @@ const selectText = (inFrame: boolean, text: string): void => {
   })()`);
 };
 
+const belowHead = (heading: string): string => `(() => {
+  const head = document.querySelector('#docHead').getBoundingClientRect().bottom;
+  const target = [...document.querySelectorAll('#docRoot h1, #docRoot h2, #docRoot h3')].find((h) => h.textContent === ${JSON.stringify(heading)});
+  const gap = target.getBoundingClientRect().top - head;
+  return gap >= 0 && gap < 40;
+})()`;
+
 const barShown = "!document.querySelector('#selbar').hidden";
 
 describe("viewer in a browser", () => {
@@ -141,6 +158,7 @@ describe("viewer in a browser", () => {
     writeFileSync(join(runDir, "artifacts", "design.md"), DESIGN);
     writeFileSync(join(runDir, "artifacts", "mock.html"), MOCKUP);
     writeFileSync(join(runDir, "artifacts", "code.md"), CODE);
+    writeFileSync(join(runDir, "artifacts", "outline.md"), OUTLINE);
     const registry = createRegistry(join(home, "registry.json"), noopLogger);
     const run: WorkflowRun = {
       id: "r1",
@@ -310,5 +328,60 @@ describe("viewer in a browser", () => {
       hangs: true,
       cellWordWhole: true,
     });
+  }, 30000);
+
+  test("the outline lists the file's headings, jumps to one on click, and marks the section in view", async () => {
+    browser("open", `${url}#artifacts/outline.md`);
+    await until("document.querySelectorAll('#outline button').length > 0");
+    expect(
+      evaluate("[...document.querySelectorAll('#outline button')].map((b) => b.textContent)"),
+    ).toEqual(["Outline", "One", "Two", "Three", "Three detail"]);
+
+    browser("set", "viewport", "1000", "800");
+    browser("click", "#outline li:nth-child(4) button");
+    await until(belowHead("Three"));
+    expect(evaluate("location.hash")).toBe("#artifacts/outline.md#three");
+    await until(
+      "document.querySelector('#outline button[aria-current=\"true\"]')?.textContent === 'Three'",
+    );
+  }, 30000);
+
+  test("a link to a section opens the file at that section, and a heading's # link points at it", async () => {
+    browser("set", "viewport", "1280", "800");
+    browser("open", `${url}#artifacts/outline.md#three-detail`);
+    await until("!!document.querySelector('#docRoot')");
+    await until(belowHead("Three detail"));
+    expect(
+      evaluate(
+        "[...document.querySelectorAll('#docRoot h2')].find((h) => h.textContent === 'Two').querySelector('a.anchor').getAttribute('href')",
+      ),
+    ).toBe("#artifacts/outline.md#two");
+  }, 30000);
+
+  test("a code block copies its code, and one over 40 lines opens folded until asked", async () => {
+    browser("open", `${url}#artifacts/code.md`);
+    await until("!!document.querySelector('#docRoot pre .copy-btn')");
+    const fold =
+      "document.querySelector('#docRoot pre.language-ts, #docRoot pre:has(code.language-ts)')";
+    expect(
+      evaluate(
+        `${fold}.classList.contains('folded') && ${fold}.clientHeight < ${fold}.scrollHeight`,
+      ),
+    ).toBe(true);
+    expect(evaluate("document.querySelector('#docRoot .fold-btn').dataset.more")).toBe("20");
+    browser("click", "#docRoot .fold-btn");
+    expect(evaluate(`${fold}.classList.contains('folded')`)).toBe(false);
+
+    // The test browser denies clipboard reads, so record what the page writes instead.
+    evaluate(`(() => {
+      const write = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = (text) => { window.copiedText = text; return write(text); };
+      ${fold}.scrollIntoView({ block: 'center' });
+    })()`);
+    browser("click", "#docRoot pre:has(code.language-ts) .copy-btn");
+    await until(
+      "document.querySelector('#docRoot pre:has(code.language-ts) .copy-btn').dataset.state === 'copied'",
+    );
+    expect(evaluate("window.copiedText")).toContain("const line50 = 50;");
   }, 30000);
 });
