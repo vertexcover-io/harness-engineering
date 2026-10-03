@@ -16,6 +16,7 @@ import { createRegistry } from "@harness/sdk/internal";
 import { stopDeliveries } from "./delivery.ts";
 import { claudeOver, EMPTY_BOX, fakeHost, RULE } from "./fake-host.ts";
 import {
+  editorCommand,
   listArtifacts,
   renderMarkdown,
   resolveArtifactPath,
@@ -134,6 +135,105 @@ describe("renderMarkdown", () => {
     );
     expect(html).not.toContain("hljs-variable");
   });
+
+  test("a diff fence takes its language from the file named on the line before it, where a guess reads YAML", () => {
+    const html = renderMarkdown(
+      [
+        "`packages/sdk/src/hooks.ts` — after `HookCall`",
+        "",
+        "```diff",
+        "+const questionCall = {",
+        "+  agent: AgentTypeSchema,",
+        "+};",
+        "```",
+        "",
+      ].join("\n"),
+    );
+    expect(html).toContain('<pre data-lines="3-7" data-file="packages/sdk/src/hooks.ts">');
+    expect(html).toContain('+<span class="hljs-keyword">const</span> questionCall = {');
+  });
+
+  test("a diff's file is the path that starts the line before it, range and all, or else the first path in its step's title", () => {
+    const html = renderMarkdown(
+      [
+        "1. **Post the moments, in `src/notifier.ts` and `src/other.ts`**",
+        "",
+        "   `src/hooks.ts:13-18`, `:43-62`",
+        "",
+        "   ```diff",
+        "   +const a = 1;",
+        "   ```",
+        "",
+        "   Questions follow v1's format (`skills/notify.ts:166`): the question in bold.",
+        "",
+        "   ```diff",
+        "   +const b = 2;",
+        "   ```",
+        "",
+      ].join("\n"),
+    );
+    expect([...html.matchAll(/data-file="([^"]+)"/g)].map(([, file]) => file)).toEqual([
+      "src/hooks.ts",
+      "src/notifier.ts",
+    ]);
+  });
+
+  test("each diff hunk is placed in the file it changes: by its new lines once applied, by its old lines before, and not at all when it matches twice", () => {
+    const file = [
+      "import x;",
+      "",
+      "const a = 1;",
+      "const b = 2;",
+      "const c = 3;",
+      "",
+      "export {};",
+    ];
+    const repo = {
+      read: (path: string) => (path === "src/a.ts" ? file.join("\n") : null),
+      exists: (path: string) => path === "src/a.ts",
+    };
+    const step = (path: string, diff: readonly string[]) =>
+      renderMarkdown([`\`${path}\``, "", "```diff", ...diff, "```", ""].join("\n"), repo);
+    const hunks = (html: string) =>
+      [...html.matchAll(/<span class="hunk"(?: data-from="(\d+)" data-to="(\d+)")?>/g)].map(
+        ([, from, to]) => (from ? [Number(from), Number(to)] : null),
+      );
+
+    const applied = step("src/a.ts", [
+      "@@",
+      " const a = 1;",
+      "-const b = 9;",
+      "+const b = 2;",
+      "@@",
+      "+export {};",
+    ]);
+    expect(hunks(applied)).toEqual([
+      [3, 4],
+      [7, 7],
+    ]);
+    expect(applied).toContain('data-file="src/a.ts" data-total="7"');
+
+    const pending = step("src/a.ts", [" const b = 2;", "-const c = 3;", "+const c = 4;"]);
+    expect(hunks(pending)).toEqual([[4, 5]]);
+
+    expect(hunks(step("src/a.ts", ["+"]))).toEqual([null]);
+    const missing = step("src/gone.ts", ["+const z = 1;"]);
+    expect(hunks(missing)).toEqual([null]);
+    expect(missing).not.toContain("data-total");
+  });
+
+  test("inline code naming a repo file links to it, with the line after a colon, and other code stays plain", () => {
+    const repo = { read: () => null, exists: (path: string) => path === "src/a.ts" };
+    const html = renderMarkdown(
+      "`src/a.ts`, `src/a.ts:12`, `src/a.ts:13-18`, `src/gone.ts` and `const a`\n",
+      repo,
+    );
+    expect(html).toContain('<code data-path="src/a.ts">src/a.ts</code>');
+    expect(html).toContain('<code data-path="src/a.ts" data-line="12">src/a.ts:12</code>');
+    expect(html).toContain('<code data-path="src/a.ts" data-line="13">src/a.ts:13-18</code>');
+    expect(html).toContain("<code>src/gone.ts</code>");
+    expect(html).toContain("<code>const a</code>");
+  });
 });
 
 describe("listArtifacts", () => {
@@ -195,6 +295,7 @@ const setup = async (screen?: string, alive = true) => {
   await registry.addRun(runRecord("r-empty", cwd, "bare"));
   const { host, calls } = fakeHost(screen ?? "", alive);
   const now = () => new Date("2026-01-01T00:00:00.000Z");
+  const opened: { file: string; line: number | null }[] = [];
   const app = viewerRoutes({
     registry,
     log: noopLogger,
@@ -202,6 +303,10 @@ const setup = async (screen?: string, alive = true) => {
     providerFor: () => claudeOver(host),
     host,
     now,
+    openInEditor: (target) => {
+      opened.push(target);
+      return { ok: true, value: null };
+    },
   });
   const get = (path: string, headers: Record<string, string> = { host: "localhost:4000" }) =>
     app.request(path, { headers });
@@ -211,7 +316,7 @@ const setup = async (screen?: string, alive = true) => {
       headers: { host: "localhost:4000", "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  return { cwd, registry, app, get, post, calls, runDir: join(cwd, ".harness", "demo") };
+  return { cwd, registry, app, get, post, calls, opened, runDir: join(cwd, ".harness", "demo") };
 };
 
 const until = async (check: () => Promise<boolean>): Promise<void> => {
@@ -309,6 +414,51 @@ describe("viewer routes", () => {
     );
     expect((await get(d.raw as string)).headers.get("content-type")).toBe("image/png");
     expect([e.html, e.text, e.raw]).toEqual([undefined, undefined, undefined]);
+  });
+
+  test("a range of a repo file comes back as colored lines, an artifact's diffs are placed in the repo, and a path outside the repo is 404", async () => {
+    const { get, cwd, runDir } = await setup();
+    put(cwd, "src/a.ts", "const a = 1;\nconst b = 2;\nconst c = 3;\n");
+    put(runDir, "artifacts/p.md", "`src/a.ts`\n\n```diff\n+const b = 2;\n```\n");
+
+    const source = await (await get("/runs/r-named/source?path=src/a.ts&from=2&to=9")).json();
+    expect(source).toEqual({
+      from: 2,
+      to: 3,
+      total: 3,
+      lines: [
+        '<span class="hljs-keyword">const</span> b = <span class="hljs-number">2</span>;',
+        '<span class="hljs-keyword">const</span> c = <span class="hljs-number">3</span>;',
+      ],
+    });
+    const page = (await (await get("/runs/r-named/file?path=artifacts/p.md")).json()) as {
+      html: string;
+    };
+    expect(page.html).toContain('<span class="hunk" data-from="2" data-to="2">');
+    for (const path of ["../outside.ts", "/etc/hosts", "src/missing.ts"]) {
+      expect(
+        (await get(`/runs/r-named/source?path=${encodeURIComponent(path)}&from=1&to=2`)).status,
+      ).toBe(404);
+    }
+  });
+
+  test("opening a repo file or an artifact hands the editor its full path and line, and a path outside the run is refused", async () => {
+    const { post, cwd, runDir, opened } = await setup();
+    put(cwd, "src/a.ts", "x");
+    put(runDir, "artifacts/plan.md", "# p");
+
+    const statuses = [
+      (await post("/runs/r-named/open", { path: "src/a.ts", line: 4 })).status,
+      (await post("/runs/r-named/open", { path: "artifacts/plan.md" })).status,
+      (await post("/runs/r-named/open", { path: "../outside.ts" })).status,
+      (await post("/runs/r-named/open", { path: "src/missing.ts" })).status,
+      (await post("/runs/r-named/open", { path: 5 })).status,
+    ];
+    expect(statuses).toEqual([200, 200, 404, 404, 400]);
+    expect(opened).toEqual([
+      { file: join(cwd, "src/a.ts"), line: 4 },
+      { file: join(runDir, "artifacts/plan.md"), line: null },
+    ]);
   });
 
   test("a path outside artifacts, or a missing file, is 404", async () => {
@@ -630,4 +780,21 @@ describe("anchor script", () => {
     ]);
     expect(quoteContext(text, 0, "retry")).toEqual({ before: "", after: text.slice(5, 37) });
   });
+});
+
+describe("editorCommand", () => {
+  test.each([
+    ["zed", 12, ["zed", "/r/a.ts:12"]],
+    ["code --wait", 12, ["code", "-g", "/r/a.ts:12"]],
+    ["/usr/local/bin/cursor", null, ["/usr/local/bin/cursor", "/r/a.ts"]],
+    ["subl", 3, ["subl", "/r/a.ts:3"]],
+    ["idea", 3, ["idea", "--line", "3", "/r/a.ts"]],
+    ["mystery -x", 3, ["mystery", "-x", "/r/a.ts"]],
+    ["nvim", 3, null],
+  ] as const)(
+    "%p at line %p opens the file in the editor's own syntax, and a terminal editor gets no command",
+    (editor, line, command) => {
+      expect(editorCommand({ editor, file: "/r/a.ts", line })).toEqual(command);
+    },
+  );
 });

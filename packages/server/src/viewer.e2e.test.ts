@@ -82,6 +82,24 @@ const OUTLINE = [
   ...Array.from({ length: 6 }, () => [FILLER, ""]).flat(),
 ].join("\n");
 
+const SAMPLE = Array.from({ length: 40 }, (_, i) => `export const v${i + 1} = ${i + 1};`);
+const STEPS = [
+  "# Steps",
+  "",
+  "See `src/sample.ts:5` for the first value.",
+  "",
+  "`src/sample.ts` — around line 20",
+  "",
+  "```diff",
+  "@@",
+  " export const v19 = 19;",
+  "-export const v20 = 0;",
+  "+export const v20 = 20;",
+  " export const v21 = 21;",
+  "```",
+  "",
+].join("\n");
+
 const MOCKUP = `<!doctype html><html><body>
 <div class="mk-card"><h2 class="mk-title">Sign in</h2><button id="go">Loading</button></div>
 <script>document.getElementById("go").textContent = "Continue";</script>
@@ -148,6 +166,7 @@ describe("viewer in a browser", () => {
   let runDir: string;
   let viewer: Viewer;
   let url: string;
+  const opened: { file: string; line: number | null }[] = [];
 
   beforeAll(async () => {
     home = tempDir();
@@ -159,6 +178,9 @@ describe("viewer in a browser", () => {
     writeFileSync(join(runDir, "artifacts", "mock.html"), MOCKUP);
     writeFileSync(join(runDir, "artifacts", "code.md"), CODE);
     writeFileSync(join(runDir, "artifacts", "outline.md"), OUTLINE);
+    writeFileSync(join(runDir, "artifacts", "steps.md"), STEPS);
+    mkdirSync(join(cwd, "src"));
+    writeFileSync(join(cwd, "src", "sample.ts"), `${SAMPLE.join("\n")}\n`);
     const registry = createRegistry(join(home, "registry.json"), noopLogger);
     const run: WorkflowRun = {
       id: "r1",
@@ -181,6 +203,10 @@ describe("viewer in a browser", () => {
       providerFor: () => claudeOver(host),
       host,
       log: noopLogger,
+      openInEditor: (target) => {
+        opened.push(target);
+        return { ok: true, value: null };
+      },
     });
     url = `${viewer.origin}/runs/r1`;
   });
@@ -383,5 +409,46 @@ describe("viewer in a browser", () => {
       "document.querySelector('#docRoot pre:has(code.language-ts) .copy-btn').dataset.state === 'copied'",
     );
     expect(evaluate("window.copiedText")).toContain("const line50 = 50;");
+  }, 30000);
+
+  test("a diff shows more of its file above and below on request, until the file runs out", async () => {
+    browser("open", `${url}#artifacts/steps.md`);
+    await until("!!document.querySelector('#docRoot .hunk .expand-btn')");
+    const hunk = "document.querySelector('#docRoot .hunk')";
+    const shown = `[${hunk}.dataset.from, ${hunk}.dataset.to].join('-')`;
+    expect(evaluate(shown)).toBe("19-21");
+
+    browser("click", "#docRoot .expand-btn[data-dir=up]");
+    await until(`${shown} === '9-21'`);
+    expect(evaluate(`${hunk}.querySelector('.diff-line').textContent`)).toBe(
+      " export const v9 = 9;",
+    );
+    expect(evaluate(`!!${hunk}.querySelector('.diff-line .hljs-keyword')`)).toBe(true);
+
+    browser("click", "#docRoot .expand-btn[data-dir=up]");
+    await until(`${shown} === '1-21'`);
+    expect(evaluate(`${hunk}.querySelector('.expand-btn[data-dir=up]').hidden`)).toBe(true);
+    for (const expected of ["1-31", "1-40"]) {
+      browser("click", "#docRoot .expand-btn[data-dir=down]");
+      await until(`${shown} === '${expected}'`);
+    }
+    expect(evaluate(`${hunk}.querySelector('.expand-btn[data-dir=down]').hidden`)).toBe(true);
+  }, 30000);
+
+  test("a file path, a diff and the open artifact each open in the editor at their line", async () => {
+    browser("open", `${url}#artifacts/steps.md`);
+    await until("!!document.querySelector('#docRoot code[data-path]')");
+    opened.length = 0;
+    browser("click", "#docRoot code[data-path]");
+    await until("!document.querySelector('#toast').hidden");
+    browser("click", "#docRoot pre[data-file] .open-btn");
+    browser("click", "#editBtn");
+    const sample = join(cwd, "src", "sample.ts");
+    for (let i = 0; i < 30 && opened.length < 3; i++) await Bun.sleep(100);
+    expect(opened).toEqual([
+      { file: sample, line: 5 },
+      { file: sample, line: 19 },
+      { file: join(runDir, "artifacts", "steps.md"), line: null },
+    ]);
   }, 30000);
 });
