@@ -1,0 +1,60 @@
+{
+  "skill_name": "visual-pr",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Raise a PR for the pushed payment retry fix. The branch was reused after its previous PR merged. The change checks for an existing payment before charging again. Local payment tests passed; integration tests were not run. The run artifacts are in .harness/payment-retry.",
+      "expected_output": "A new PR explaining duplicate-charge prevention, with a focused behavior outline and accurate validation, plus its confirmed URL and number.",
+      "expectations": [
+        "Inspects the pushed diff and does not use the merged PR as the update target",
+        "Creates a PR with explicit head and base and returns PR_ACTION=created",
+        "Uses the description template and a relevant visual outline",
+        "Reports integration tests as not run and local tests as local",
+        "Saves the description in the supplied harness directory and reads back the published PR",
+        "Does not commit, push, merge, assign reviewers, or change labels"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Improve the description of the current branch's draft PR. Keep its title. The author added a deployment note saying the database migration must run before rollout. The branch is pushed; I also have an unrelated uncommitted UI experiment locally. No verification report is available.",
+      "expected_output": "The same draft PR has a clearer description, preserving the deployment note and title while explaining only the pushed change.",
+      "expectations": [
+        "Updates the matching open PR without creating another and returns PR_ACTION=updated",
+        "Preserves the title, draft state, and relevant human deployment note",
+        "Excludes the uncommitted UI experiment from the description",
+        "States that validation evidence was not provided",
+        "Confirms the published body by reading it back"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Create the PR for this pushed branch. The PR lookup returns an authentication error.",
+      "expected_output": "Stops at the lookup error without interpreting it as absence of a PR.",
+      "expectations": [
+        "Reports the lookup failure",
+        "Does not attempt PR creation or editing",
+        "Does not return a success action or invent a PR URL"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Run the PR step. Setup explicitly recorded a doctor-approved skip because gh is unavailable.",
+      "expected_output": "An explicit skipped result with null URL and number and the supplied reason.",
+      "expectations": [
+        "Returns PR_ACTION=skipped with null PR_URL and PR_NUMBER",
+        "Reports the supplied skip reason without claiming an open PR",
+        "Does not try to publish"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Create a PR for the pushed change. Creation returns a PR URL, but the follow-up readback fails with a network timeout.",
+      "expected_output": "Reports that creation occurred but confirmation failed, preserving the URL for recovery.",
+      "expectations": [
+        "Reports the failed readback and known PR URL",
+        "Does not blindly create a second PR",
+        "Does not claim confirmed success"
+      ]
+    }
+  ]
+}
