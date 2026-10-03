@@ -1,6 +1,13 @@
 import { resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
-import { type DoctorReport, loadStartEnv, runDoctor, verdict, workflowChecks } from "@harness/core";
+import {
+  buildNotifierCheck,
+  type DoctorReport,
+  loadStartEnv,
+  runDoctor,
+  verdict,
+  workflowChecks,
+} from "@harness/core";
 import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
 import {
@@ -58,7 +65,11 @@ export const runCommand = () =>
       const report = await runDoctor({
         cwd,
         config,
-        extraChecks: [...runtimeChecks(plan.agent), ...workflowChecks(plan.doctor, env)],
+        extraChecks: [
+          ...runtimeChecks(plan.agent),
+          ...workflowChecks(plan.doctor, env),
+          buildNotifierCheck(plan.notifier, env),
+        ],
         log: cliLog(),
       });
       const doctorVerdict = verdict(report);

@@ -326,7 +326,16 @@ const executeLeaf = async (
   if (node.type === "agent" && node.stage !== undefined) {
     const missing = findMissingArtifacts(node.stage, state);
     if (missing.length > 0) {
-      return { state, step: { kind: "blocked", nodeId: node.id, stage: node.stage.ref, missing } };
+      const blocked = { nodeId: node.id, stage: node.stage.ref, missing };
+      // One id per node, so the nexts that find it still blocked store the event once.
+      const recorded = await walk.emit(state, {
+        id: `workflow-blocked:${node.id}`,
+        type: "workflow.blocked",
+        source: "workflow",
+        nodeId: node.id,
+        payload: { ...blocked, missing: [...missing] },
+      });
+      return { state: recorded, step: { kind: "blocked", ...blocked } };
     }
   }
   const { input, variables } = start;

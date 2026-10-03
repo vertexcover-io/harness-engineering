@@ -88,11 +88,14 @@ const maxBlocksOf = (env: HookDeps["env"]): number => {
 const priorBlocks = (state: State, progressSinceCheck: boolean): number =>
   state.stopHook === undefined || progressSinceCheck ? 0 : state.stopHook.blockStreak;
 
-// Progress is any event after the last check except the hooks' own logs, which only observe the run.
+// Progress is any event after the last check except the hooks' own logs, which only observe the
+// run, and agent.stuck, which this hook records as it gives up.
 const progressSince = async (runDir: string, seq: number | undefined): Promise<boolean> => {
   if (seq === undefined) return false;
   const events = await jsonlEventStore(runDir).read();
-  return events.some((event) => event.seq > seq && !event.type.startsWith("hooks."));
+  return events.some(
+    (event) => event.seq > seq && !event.type.startsWith("hooks.") && event.type !== "agent.stuck",
+  );
 };
 
 const nextMessage = (run: RunRef): string =>
@@ -200,6 +203,15 @@ const decideForAgent = async (input: StopInput, check: StopCheck): Promise<StopD
   };
 };
 
+const recordStuck = async (run: RunRef, input: StopInput, deps: HookDeps): Promise<void> => {
+  const stored = await appendRunEvent(run, {
+    type: "agent.stuck",
+    source: "hooks",
+    payload: { agent: input.agent, sessionId: input.sessionId },
+  });
+  if (!stored.ok) deps.log.warn({ error: stored.error }, "agent.stuck not recorded");
+};
+
 // Decides whether the agent may end its turn and logs the call as hooks.stop.called. It never
 // throws: a hook that fails must let the turn end, or it could trap the session.
 export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<HookReply> => {
@@ -227,6 +239,7 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
     if (decision.reason === "context-node") {
       await startContextStep(run, input.sessionId, decision.nodeRunId);
     }
+    if (decision.reason === "max-blocks-reached") await recordStuck(run, input, deps);
     return replyOf(decision);
   } catch (error) {
     deps.log.error({ err: error }, "stop allowed: the stop hook failed");

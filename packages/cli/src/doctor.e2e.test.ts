@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DoctorJsonSchema } from "@harness/core";
+import type { CheckStatus } from "@harness/sdk";
 
 const CLI = join(import.meta.dir, "index.ts");
 
@@ -32,7 +33,12 @@ const doctor = (files: Record<string, string>, args: readonly string[]) => {
   dirs.push(dir);
   spawnSync("git", ["init", "-q"], { cwd: dir });
   for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
-  const { DOCTOR_E2E_KEY: _unset, ...env } = process.env;
+  const {
+    DOCTOR_E2E_KEY: _unset,
+    SLACK_BOT_TOKEN: _token,
+    SLACK_CHANNEL_ID: _channel,
+    ...env
+  } = process.env;
   const result = spawnSync("bun", [CLI, "doctor", ...args], {
     cwd: dir,
     encoding: "utf8",
@@ -95,5 +101,49 @@ describe("harness doctor --workflow", () => {
     const { code, stderr } = doctor({}, ["--workflow", "missing.yaml"]);
     expect(code).toBe(1);
     expect(stderr).toContain("missing-workflow:");
+  });
+});
+
+const NOTIFIER_WORKFLOW = WORKFLOW.replace("name: needs-key\n", "name: notifies\nnotifier: {}\n");
+const SLACK_ENV = "SLACK_BOT_TOKEN: xoxb-e2e\n  SLACK_CHANNEL_ID: C1";
+
+describe("harness doctor's notifier row", () => {
+  test.each<[string, Record<string, string>, readonly string[], CheckStatus]>([
+    [
+      "a workflow notifier with the Slack keys in the workflow's env is ok",
+      { "wf.yaml": `env:\n  ${SLACK_ENV}\n${NOTIFIER_WORKFLOW}` },
+      ["--workflow", "wf.yaml"],
+      "ok",
+    ],
+    [
+      "a workflow notifier with the Slack keys in the workflow's envFile is ok",
+      {
+        "wf.yaml": `envFile: slack.env\n${NOTIFIER_WORKFLOW}`,
+        "slack.env": "SLACK_BOT_TOKEN=xoxb-e2e\nSLACK_CHANNEL_ID=C1\n",
+      },
+      ["--workflow", "wf.yaml"],
+      "ok",
+    ],
+    [
+      "a workflow notifier with no Slack keys anywhere fails",
+      { "wf.yaml": NOTIFIER_WORKFLOW },
+      ["--workflow", "wf.yaml"],
+      "fail",
+    ],
+    [
+      "a config notifier, without --workflow, with the Slack keys in the config's env is ok",
+      {
+        "orchestrate.config.json": JSON.stringify({
+          version: 2,
+          notifier: {},
+          env: { SLACK_BOT_TOKEN: "xoxb-e2e", SLACK_CHANNEL_ID: "C1" },
+        }),
+      },
+      [],
+      "ok",
+    ],
+  ])("%s", (_label, files, args, status) => {
+    const { stdout } = doctor(files, [...args, "--json"]);
+    expect(rowOf(stdout, "notifier")?.status).toBe(status);
   });
 });

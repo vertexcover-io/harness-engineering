@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -21,9 +21,10 @@ import {
   StateSchema,
   type WorkflowRun,
 } from "@harness/sdk";
-import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
+import { createRegistry, jsonlEventStore, type Registry } from "@harness/sdk/internal";
 import corePackage from "../package.json";
 import { currentTerminal } from "./agents/tmux.ts";
+import { NOTIFIER_EVENTS, NOTIFIER_MODULE } from "./notifier.ts";
 import { type InitOptions, initializeRun, linkRunSession, terminalName } from "./runs.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
@@ -63,11 +64,14 @@ const makeRepo = (): string => {
   return dir;
 };
 
+const WORKFLOW =
+  'name: ok\nnodes:\n  - { id: a, type: exec, input: null, runtime: sh, script: "true" }\n';
+
 // A run `harness run` saved in a fresh git repo, not yet initialized.
 const savedRun = async (overrides: Partial<WorkflowRun> = {}) => {
   const cwd = overrides.cwd ?? makeRepo();
   const workflowPath = join(cwd, "ok.yaml");
-  writeFileSync(workflowPath, "name: ok\nnodes: []\n");
+  writeFileSync(workflowPath, WORKFLOW);
   const registry = createRegistry(join(tempDir(), "registry.json"));
   const run = makeRun({ cwd, workflowPath, ...overrides });
   await registry.addRun(run);
@@ -260,13 +264,202 @@ describe("initializeRun", () => {
     expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
   });
 
-  test("a step that fails after the folder is made removes the folder, so a retry can succeed", async () => {
-    const { cwd, init, registry, run } = await savedRun({ workflowPath: "/abs/missing.yaml" });
+  const hookConfig = (cwd: string, hooks: object): void =>
+    writeFileSync(join(cwd, "orchestrate.config.json"), JSON.stringify({ version: 2, hooks }));
 
-    await expect(init("fix-login")).rejects.toThrow();
+  const flowWithHooks = (cwd: string, hooks: string): string => {
+    mkdirSync(join(cwd, "flows"));
+    const path = join(cwd, "flows", "flow.yaml");
+    writeFileSync(path, `${WORKFLOW}hooks:\n${hooks}`);
+    return path;
+  };
+
+  test("SC107: init freezes config hooks, then workflow hooks, with absolute paths and defaults", async () => {
+    const cwd = makeRepo();
+    mkdirSync(join(cwd, "hooks"));
+    writeFileSync(join(cwd, "hooks", "a.ts"), "export const run = () => null;\n");
+    hookConfig(cwd, {
+      "workflow.started": [{ name: "a", module: "hooks/a.ts", handler: "run" }],
+    });
+    const workflowPath = flowWithHooks(
+      cwd,
+      "  workflow.started:\n    - { name: b, command: ./b.sh, blocking: false }\n",
+    );
+    writeFileSync(join(cwd, "flows", "b.sh"), "#!/bin/sh\n", { mode: 0o755 });
+    const { init } = await savedRun({ cwd, workflowPath });
+
+    const result = await init("fix-login");
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.state.hooks).toEqual({
+      "workflow.started": [
+        {
+          name: "a",
+          blocking: true,
+          timeoutSeconds: 20,
+          module: join(cwd, "hooks", "a.ts"),
+          handler: "run",
+        },
+        {
+          name: "b",
+          blocking: false,
+          timeoutSeconds: 60,
+          command: "./b.sh",
+          cwd: join(cwd, "flows"),
+        },
+      ],
+    });
+  });
+
+  test("SC108: a run with no hooks freezes none, and an appended event records no hook call", async () => {
+    const { cwd, init, run } = await savedRun();
+    hookConfig(cwd, {});
+
+    const result = await init("fix-login");
+    if (!result.ok) throw new Error(result.error);
+    const emitted = await emitRunEvent(
+      { id: run.id, cwd, name: "fix-login" },
+      { type: "custom.review.note", source: "test", payload: "looks good" },
+    );
+
+    expect(result.value.state.hooks).toEqual({});
+    expect(emitted.ok).toBe(true);
+    const types = (await jsonlEventStore(result.value.dir).read()).map((event) => event.type);
+    expect(types).toEqual(["workflow.started", "custom.review.note"]);
+  });
+
+  test("SC109: init refuses a hook name the config and the workflow both give one event type", async () => {
+    const cwd = makeRepo();
+    hookConfig(cwd, { "workflow.started": [{ name: "a", command: "true" }] });
+    const workflowPath = flowWithHooks(
+      cwd,
+      "  workflow.started:\n    - { name: a, command: 'true' }\n",
+    );
+    const { init } = await savedRun({ cwd, workflowPath });
+
+    const result = await init("fix-login");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "hooks for workflow.started: the config and the workflow name the same hook",
+    });
+    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+  });
+
+  test("init refuses a workflow with no nodes, since it reads the whole file, leaving no run folder", async () => {
+    const { cwd, init, workflowPath } = await savedRun();
+    writeFileSync(workflowPath, "name: ok\nnodes: []\n");
+
+    await expect(init("fix-login")).rejects.toThrow("nodes:");
+    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+  });
+
+  test("a registry that fails to name the run after the folder is filled removes the folder, so a retry can succeed", async () => {
+    const { cwd, init, registry, run } = await savedRun();
+    const failing: Registry = {
+      ...registry,
+      initRun: () => Promise.reject(new Error("registry is locked")),
+    };
+
+    await expect(init("fix-login", run.id, { registry: failing })).rejects.toThrow(
+      "registry is locked",
+    );
 
     expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
-    expect((await registry.findRun(run.id))?.name).toBeNull();
+    expect((await init("fix-login")).ok).toBe(true);
+  });
+});
+
+describe("the notifier at init", () => {
+  // The frozen notifier runs in a detached runner that inherits this environment; without these
+  // keys it can never reach Slack.
+  const SLACK_KEYS = ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "SLACK_MEMBER_ID"] as const;
+  const saved = Object.fromEntries(SLACK_KEYS.map((key) => [key, process.env[key]]));
+
+  beforeEach(() => {
+    for (const key of SLACK_KEYS) delete process.env[key];
+  });
+
+  afterEach(() => {
+    for (const key of SLACK_KEYS) {
+      const value = saved[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  const NOTIFIER_REF = {
+    name: "notifier",
+    blocking: false,
+    timeoutSeconds: 60,
+    module: NOTIFIER_MODULE,
+    handler: "slack",
+  };
+  const notifierOnly = Object.fromEntries(NOTIFIER_EVENTS.map((type) => [type, [NOTIFIER_REF]]));
+  const hookA = { name: "a", command: "true" };
+
+  const notifierRun = async (config: object, workflowNotifier: string) => {
+    const cwd = makeRepo();
+    writeFileSync(join(cwd, "orchestrate.config.json"), JSON.stringify({ version: 2, ...config }));
+    const workflowPath = join(cwd, "flow.yaml");
+    writeFileSync(workflowPath, `${WORKFLOW}${workflowNotifier}`);
+    return savedRun({ cwd, workflowPath });
+  };
+
+  test.each([
+    [
+      "a config notifier lands after the config's own hook a on workflow.started",
+      { notifier: {}, hooks: { "workflow.started": [hookA] } },
+      "",
+      (cwd: string) => ({
+        ...notifierOnly,
+        "workflow.started": [{ ...hookA, blocking: true, timeoutSeconds: 20, cwd }, NOTIFIER_REF],
+      }),
+    ],
+    [
+      "a workflow's enabled: false turns the config's notifier off",
+      { notifier: {} },
+      "notifier: { enabled: false }\n",
+      () => ({}),
+    ],
+    ["a workflow notifier alone turns it on", {}, "notifier: {}\n", () => notifierOnly],
+  ])("SC209: %s", async (_label, config, workflowNotifier, expected) => {
+    const { cwd, init } = await notifierRun(config, workflowNotifier);
+
+    const result = await init("fix-login");
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.state.hooks).toEqual(expected(cwd));
+  });
+
+  test("SC213: a notifier with no Slack variables is a failed non-blocking call naming SLACK_BOT_TOKEN, and the run keeps running", async () => {
+    const { cwd, init } = await notifierRun({ notifier: {} }, "");
+    expect(existsSync(join(cwd, ".env"))).toBe(false);
+
+    const result = await init("fix-login");
+    if (!result.ok) throw new Error(result.error);
+    const notifierCall = async () =>
+      (await jsonlEventStore(result.value.dir).read()).find(
+        (event) => event.type === "hooks.hook.called",
+      );
+    const deadline = Date.now() + 5000;
+    let call = await notifierCall();
+    while (call === undefined && Date.now() < deadline) {
+      await Bun.sleep(50);
+      call = await notifierCall();
+    }
+
+    expect(call?.payload).toMatchObject({
+      hook: "notifier",
+      eventType: "workflow.started",
+      blocking: false,
+      status: "failed",
+      error: { message: expect.stringContaining("SLACK_BOT_TOKEN") },
+    });
+    const state = StateSchema.parse(
+      JSON.parse(readFileSync(join(result.value.dir, "state.json"), "utf8")),
+    );
+    expect(state.status).toBe("running");
   });
 });
 

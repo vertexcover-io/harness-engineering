@@ -37,7 +37,10 @@ const tempRepo = (): string => makeRepo(tempDir(), ".worktrees/\n.harness/\n");
 
 const savedRun = (cwd: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => {
   const workflowPath = join(cwd, "ok.yaml");
-  writeFileSync(workflowPath, "name: ok\nnodes: []\n");
+  writeFileSync(
+    workflowPath,
+    'name: ok\nnodes:\n  - { id: a, type: exec, input: null, runtime: sh, script: "true" }\n',
+  );
   return {
     id: "r-1",
     workflow: "ok",
@@ -747,6 +750,33 @@ nodes:
     dependsOn: [make]
     input: {}
 `;
+
+describe("run hooks", () => {
+  test("SC116: a config hook on workflow.node.completed fires when done completes a node", async () => {
+    const skills = stageSkills();
+    const { repo, home } = startedRun(STAGES_WORKFLOW, {
+      hooks: { "workflow.node.completed": [{ name: "touch", command: "cat > fired.json" }] },
+    });
+    const step = (args: readonly string[]) =>
+      orchestrate(repo, home, args, { HARNESS_SKILLS_DIR: skills });
+    const make = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    writeFileSync(join(runDirOf(repo, "feat-x"), "artifacts", "plan.md"), "plan\n");
+
+    const done = step([
+      ...["done", make.nodeRunId, "--run", "feat-x", "--output", "{}"],
+      ...["--artifact", "plan=artifacts/plan.md"],
+    ]);
+
+    expect(done.code).toBe(0);
+    const fired = JSON.parse(readFileSync(join(repo, "fired.json"), "utf8"));
+    expect(fired.event).toMatchObject({ type: "workflow.node.completed", nodeId: "make" });
+    expect(fired.state).toMatchObject({ runName: "feat-x", lastEventSeq: fired.event.seq });
+    const calls = (await eventsOf(repo)).filter((event) => event.type === "hooks.hook.called");
+    expect(calls.map((call) => call.payload)).toMatchObject([
+      { hook: "touch", eventId: fired.event.id, status: "ok" },
+    ]);
+  });
+});
 
 describe("stage verifiers", () => {
   const verifiedRun = (verifiers: string | undefined, workflow = STAGES_WORKFLOW) => {
@@ -1827,7 +1857,7 @@ describe("orchestrate hook stop", () => {
     expect(stateOf(run.repo).stopHook).toEqual({ blockStreak: 1, seq: last?.seq });
   });
 
-  test("SC21 — a second stop with nothing done lets the turn end, and that call is logged too", async () => {
+  test("SC21 — a second stop with nothing done lets the turn end, logged with the agent.stuck it records", async () => {
     const run = openNodeRun();
     stop(run);
     const before = (await eventsOf(run.repo)).length;
@@ -1836,15 +1866,20 @@ describe("orchestrate hook stop", () => {
 
     expect(second).toMatchObject({ code: 0, stdout: "" });
     const events = await eventsOf(run.repo);
-    expect(events).toHaveLength(before + 1);
-    expect(events.at(-1)?.payload).toEqual({
-      agent: "claude",
-      sessionId: "s1",
-      touchedRun: null,
-      decision: "allow",
-      reason: "max-blocks-reached",
-      blockStreak: 1,
-    });
+    expect(events.slice(before).map((event) => [event.type, event.payload])).toEqual([
+      [
+        "hooks.stop.called",
+        {
+          agent: "claude",
+          sessionId: "s1",
+          touchedRun: null,
+          decision: "allow",
+          reason: "max-blocks-reached",
+          blockStreak: 1,
+        },
+      ],
+      ["agent.stuck", { agent: "claude", sessionId: "s1" }],
+    ]);
   });
 
   test("SC22 — a session that is not the run's own is never blocked", async () => {

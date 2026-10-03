@@ -66,6 +66,7 @@ const seed = (runDir: string): State => ({
   },
   activeSessions: [{ agent: "claude", sessionId: "A" }],
   eventHandlers: {},
+  hooks: {},
 });
 
 // A run whose one open step is a context node with the given fields.
