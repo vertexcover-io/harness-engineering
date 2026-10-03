@@ -140,6 +140,10 @@ ticket-fetcher → create-workspace → baseline → design → planning → imp
   → code-review → qa (loops back to implement until it passes) → git-commit → visual-pr
 ```
 
+`ticket-fetcher` reads tickets from the provider its node names: `task.yaml` sets
+`variables: { provider: linear }` (needs `LINEAR_API_KEY`); set `asana` instead to read Asana
+tasks (needs `ASANA_API_KEY`), and change the workflow's `doctor` env check to that key too.
+
 The project's settings live in `orchestrate.config.yaml` (`version: 2`) at the repository root.
 Run artifacts land in `.harness/`.
 

@@ -17,6 +17,7 @@ nodes:
   - id: ticket-fetcher
     type: agent
     stage: ticket-fetcher
+    variables: { provider: linear }
     input:
       request: "{{ inputs.prompt }}"
 
