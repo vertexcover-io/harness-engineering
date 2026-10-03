@@ -82,7 +82,7 @@ const waitForIdle = (terminal: ITerminal): Promise<Result<true>> =>
     },
   );
 
-const resumePrompt = (run: RunRef): string => `/orchestrate-v2 --resume ${run.name}`;
+const resumePrompt = (run: RunRef): string => `/orchestrate --resume ${run.name}`;
 
 // A tmux call can throw (a hung tmux times out) and so can reading a half-written event line. The
 // helper runs detached, so a throw would end it silently and leave the node open for good: it

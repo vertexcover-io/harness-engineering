@@ -104,7 +104,7 @@ describe("POST /runs", () => {
     expect(json.error.code).toBe("bad-request");
   });
 
-  test("SC10: a working provider launches with the orchestrate-v2 prompt and returns the run and attach command", async () => {
+  test("SC10: a working provider launches with the orchestrate prompt and returns the run and attach command", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     const seen: LaunchOptions[] = [];
     const deps = await buildDeps((options) => {
@@ -135,7 +135,7 @@ describe("POST /runs", () => {
     const [launchOptions] = seen;
     expect(launchOptions?.cwd).toBe(cwd);
     expect(launchOptions?.prompt).toBe(
-      `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify({ a: 1 })}`,
+      `/orchestrate --workflow ${workflowPath} --inputs ${JSON.stringify({ a: 1 })}`,
     );
     expect(launchOptions?.env?.HARNESS_RUN_ID).toBe(json.run.id);
     expect(launchOptions?.model).toBeUndefined();
@@ -168,7 +168,7 @@ describe("POST /runs", () => {
     expect(await deps.registry.findRun(run.id)).toMatchObject({ sessions: [], terminal: "t-1" });
   });
 
-  test("SC16: the first prompt invokes the skill the way the agent does: $orchestrate-v2 for codex", async () => {
+  test("SC16: the first prompt invokes the skill the way the agent does: $orchestrate for codex", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     let prompt: string | undefined;
     const deps = await buildDeps((options) => {
@@ -190,7 +190,7 @@ describe("POST /runs", () => {
     });
 
     expect(res.status).toBe(201);
-    expect(prompt).toBe(`$orchestrate-v2 --workflow ${workflowPath} --inputs {}`);
+    expect(prompt).toBe(`$orchestrate --workflow ${workflowPath} --inputs {}`);
   });
 
   test("a supplied name reaches the agent as the run name", async () => {
@@ -216,7 +216,7 @@ describe("POST /runs", () => {
 
     expect(res.status).toBe(201);
     expect(prompt).toBe(
-      `/orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify({ prompt: "different" })} --name fix-login`,
+      `/orchestrate --workflow ${workflowPath} --inputs ${JSON.stringify({ prompt: "different" })} --name fix-login`,
     );
   });
 

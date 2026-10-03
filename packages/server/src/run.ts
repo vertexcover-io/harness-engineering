@@ -76,7 +76,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
   const launched = await provider
     .launch({
       cwd,
-      prompt: `${provider.skillPrefix}orchestrate-v2 --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
+      prompt: `${provider.skillPrefix}orchestrate --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
       env: sessionEnv(body.env, id, deps.home),
       orchestrateArgv: orchestrateArgv(),
       ...tierLaunch(tier.value),

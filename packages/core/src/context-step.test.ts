@@ -28,7 +28,7 @@ import {
   runContextStep,
 } from "./context-step.ts";
 
-const RESUME = "/orchestrate-v2 --resume feat-x";
+const RESUME = "/orchestrate --resume feat-x";
 const IDLE = "❯ ";
 const BUSY = "· Vibing… (3s)";
 

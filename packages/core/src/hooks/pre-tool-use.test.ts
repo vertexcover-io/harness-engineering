@@ -212,7 +212,7 @@ describe("bashAntipatterns", () => {
     expect(verdict.kind === "deny" && verdict.message).toContain("Write tool");
   });
 
-  test("SC21 (regression) — the orchestrate-v2 done heredoc still passes", async () => {
+  test("SC21 (regression) — the orchestrate done heredoc still passes", async () => {
     const command = [
       "bun run orchestrate done n1 --run feat-x --output - <<'JSON'",
       '{ "ok": true }',

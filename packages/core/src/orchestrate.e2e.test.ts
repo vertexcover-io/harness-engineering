@@ -90,7 +90,14 @@ const orchestrate = (
     cwd,
     encoding: "utf8",
     input,
-    env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home, ...env },
+    // A FORCE_COLOR in the caller's shell would color the error text the tests parse as JSON.
+    env: {
+      ...process.env,
+      FORCE_COLOR: undefined,
+      HARNESS_RUN_ID: undefined,
+      HARNESS_HOME: home,
+      ...env,
+    },
   });
   return { code: run.status, stdout: run.stdout, stderr: run.stderr };
 };
@@ -103,7 +110,14 @@ const orchestrateAsync = async (
 ): Promise<Readonly<{ code: number; stdout: string; stderr: string }>> => {
   const child = Bun.spawn(["bun", SCRIPT, ...args], {
     cwd,
-    env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home, ...env },
+    // A FORCE_COLOR in the caller's shell would color the error text the tests parse as JSON.
+    env: {
+      ...process.env,
+      FORCE_COLOR: undefined,
+      HARNESS_RUN_ID: undefined,
+      HARNESS_HOME: home,
+      ...env,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -2216,7 +2230,7 @@ nodes:
 `;
 
 const FAKE_AGENT = join(import.meta.dir, "agents", "fixtures", "fake-agent.ts");
-const RESUME = "/orchestrate-v2 --resume feat-x";
+const RESUME = "/orchestrate --resume feat-x";
 
 // A run whose agent is the fake agent in a private tmux pane, driven to its context node.
 const runToContextNode = async (

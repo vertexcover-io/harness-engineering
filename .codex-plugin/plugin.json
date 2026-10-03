@@ -17,7 +17,6 @@
     "testing"
   ],
   "skills": "./skills/",
-  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Harness",
     "shortDescription": "Engineering discipline for AI-assisted development",
@@ -32,7 +31,6 @@
     "privacyPolicyURL": "https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement",
     "termsOfServiceURL": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
     "defaultPrompt": [
-      "Use $orchestrate to build this feature",
       "Use $tdd to fix this bug"
     ],
     "brandColor": "#2563EB",

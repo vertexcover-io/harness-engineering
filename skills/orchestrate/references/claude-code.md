@@ -1,4 +1,4 @@
-# orchestrate-v2 in Claude Code
+# orchestrate in Claude Code
 
 Read this when you are Claude Code. It names the tools that SKILL.md describes by what they do.
 
@@ -9,5 +9,5 @@ Read this when you are Claude Code. It names the tools that SKILL.md describes b
 - **Task list:** mirror nodes with `TaskCreate` and `TaskUpdate`, or `TodoWrite` where those are
   absent. Give each task `activeForm: "Running NODE_ID"`. Send each task call in the same message
   as a command you run anyway.
-- **Resume:** a resumed or replaced session receives `/orchestrate-v2 --resume NAME` as its
+- **Resume:** a resumed or replaced session receives `/orchestrate --resume NAME` as its
   first message.

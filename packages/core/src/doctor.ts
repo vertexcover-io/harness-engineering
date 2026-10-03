@@ -167,8 +167,7 @@ export const CHECKS: readonly Check[] = [
   {
     name: "orchestrate-config",
     fix: [
-      "run /setup-harness to write orchestrate.config.yaml",
-      "or keep exactly one v2 config file (version: 2) at the repository root",
+      "keep exactly one v2 config file, orchestrate.config.yaml (version: 2), at the repository root",
     ],
     run: checkOrchestrateConfig,
   },

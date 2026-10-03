@@ -62,8 +62,6 @@ Codex supports hooks. Config locations:
 
 Events: `SessionStart`, `PreToolUse`, `PostToolUse`, `PermissionRequest`, `UserPromptSubmit`, `Stop`.
 
-Note: Codex uses `Stop` where Claude Code uses `SessionEnd`. Harness's `hooks/hooks.json` is already mapped accordingly.
-
 Only `type: "command"` handlers execute today; handlers receive JSON on stdin and have a `timeout_seconds` default of 600.
 
 ## Subagents
@@ -79,7 +77,7 @@ max_depth = 1
 job_max_runtime_seconds = 1800
 ```
 
-Harness ships three agents at `.codex/agents/` to mirror the Claude Code roles used by `orchestrate` and `doc-quality-guard`: `explore.toml`, `plan.toml`, `worker.toml`.
+Harness ships three agents at `.codex/agents/` to mirror Claude Code's subagent roles: `explore.toml`, `plan.toml`, `worker.toml`.
 
 ## MCP servers
 

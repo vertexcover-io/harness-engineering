@@ -18,10 +18,10 @@ import { completeContextStep, findContextPlanNode, orchestrateCommand } from "..
 import { findSessionRun } from "./common.ts";
 
 export const DEFAULT_STOP_MAX_BLOCKS = 1;
-// `bun run orchestrate next` or `bun …/orchestrate.ts done`, but not a path like orchestrate-v2/SKILL.md
+// `bun run orchestrate next` or `bun …/orchestrate.ts done`, but not a path like orchestrate/SKILL.md
 const ORCHESTRATE = /\borchestrate(?:\.ts)?\s+(?:init|link-session|emit|next|exec|done)\b/;
 const ASK_RULE =
-  "If you need the user's input, ask the way the orchestrate-v2 skill's reference for your agent says.";
+  "If you need the user's input, ask the way the orchestrate skill's reference for your agent says.";
 
 const ALLOW: HookReply = { kind: "allow" };
 
@@ -100,7 +100,7 @@ const progressSince = async (runDir: string, seq: number | undefined): Promise<b
 
 const nextMessage = (run: RunRef): string =>
   `Harness run ${run.name} is not finished. Run \`${orchestrateCommand({ verb: "next", run })}\` ` +
-  `and do the step it prints, as the orchestrate-v2 skill says. ${ASK_RULE}`;
+  `and do the step it prints, as the orchestrate skill says. ${ASK_RULE}`;
 
 // next hands out an exec or wait node for the agent to run with exec, and an agent node for it to
 // do and then record with done; done refuses an exec node, so each gets its own command.

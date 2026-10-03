@@ -1,94 +1,118 @@
 ---
 name: orchestrate
-description: Orchestrate end-to-end development from a task to an open PR through a multi-agent pipeline. Use when the user says orchestrate, run the pipeline, or full workflow; supplies a prompt, ticket, PRD, or design document to take to a PR; or passes --auto for an unattended CI run.
-argument-hint: "<prompt, ticket URL, or path/to/document> [--auto] [--pre-release]"
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent, AskUserQuestion
+description: >
+  Runs a harness v2 workflow from inside the Claude Code or Codex session `harness run` launches.
+  Not triggered by a user request — the harness server starts this skill directly as the
+  session's first message, passing --workflow and --inputs.
 ---
 
-# Orchestrate
+# orchestrate
 
-Take a task from a prompt, ticket, or file to an open PR.
-Run nine stages in a git worktree, with a live dashboard.
-Planning determines the scope; the later stages implement, review, verify, and ship it.
+`harness run` launches this session with `HARNESS_RUN_ID` and `HARNESS_HOME` already set in its
+environment, then sends this skill as the first message.
 
-**Announce at start:** "Using the orchestrate skill to run the full development pipeline."
+Read the reference for the agent you are before Step 1: `references/claude-code.md` in Claude
+Code, `references/codex.md` in Codex. It names the tools this skill refers to by what they do:
+asking the user, running a long command in the background, keeping a task list, and resuming.
 
-## Rules across every stage
+## Arguments
 
-- After planning approval, continue through the remaining stages; each stage defines when it must stop.
-- Questions use `AskUserQuestion` so the developer can answer through the question interface.
-- Invoke the stage's configured skill.
-- Dispatches carry this run's variables; skills own the rules, keeping each contract in one place.
-- Any stage writing documents a person reads loads `writing-style` and runs its ship-check; agent-only `design.md` is exempt.
+`--workflow PATH --inputs JSON [--name NAME]`, or `--resume NAME`
 
-## Auto mode
+With `--resume NAME`, skip Step 1 (no `init`): tell the user the run is resuming, and go straight
+to Step 2's loop with that `NAME`. The reference says how a resumed session receives it.
 
-Set `MODE_ARG=--auto` when the doctor's `AUTO_MODE=true`, otherwise leave it empty.
-Pass `MODE_ARG` to invoked skills. In auto mode, apply these overrides to the stage instructions:
+## Step 1: initialize the run
 
-- Skip questions and self-approve planning's checkpoints and plan gate.
-- Use the current checkout as `WORKTREE_PATH`, capture its `BRANCH_NAME`, and skip worktree creation.
-- Skip every dashboard command; set `HARNESS_DIR=$(git rev-parse --show-toplevel)/.harness/<SPEC_NAME>` directly and omit dashboard-only variables from dispatches.
-- Produce all applicable design, plan, verification, and report artifacts for auditability.
-- Log doctor `DEGRADED` and `BLOCKED` verdicts and continue; a later stage diagnoses a prerequisite it needs.
-- Hook halts follow the auto-mode handling in [events.md](references/events.md#acting-on-a-fires-output).
+Use `--name` as the run name when supplied. Otherwise, derive a short kebab-case run name from
+`inputs.prompt` when it is present, or from the workflow's name (the `--workflow` file's basename
+without extension). Then run:
 
-Auto mode changes nothing about shipping. Nobody watching is a reason to stop asking questions,
-not a reason to leave the PR unopened, and the two callers that run unattended want opposite
-things: a review fixer is already on a PR's branch, while a scheduled repo-health job is called
-precisely to open one. The commit-pr stage tells those apart by looking, so neither needs a flag.
-
-## Stages, in order
-
-| Stage | id | Runs | Produces | Open |
-|---|---|---|---|---|
-| Setup | `setup` | main + background script | worktree, spec dir, manifest, baseline.json | [stage-setup.md](references/stage-setup.md) |
-| Design & Plan | `planning` | main | design.md, plan.html, plan.md, phases/ | [stage-planning.md](references/stage-planning.md) |
-| Coder | `coder` | one sub-agent per phase | code, tests, phase-N-e2e.json | [stage-coder.md](references/stage-coder.md) |
-| Code Review | `code-review` | main | review/review.md | [stage-code-review.md](references/stage-code-review.md) |
-| Verify | `verify` | sub-agent, plus a coder fix pass per auto-fix round on `FAIL` | proof-report.html | [stage-verify.md](references/stage-verify.md) |
-| Quality Gate | `quality-gate` | sub-agent | the gate report | [stage-quality-gate.md](references/stage-quality-gate.md) |
-| Sync Docs | `sync-docs` | main | updated docs | [stage-sync-docs.md](references/stage-sync-docs.md) |
-| Commit & PR | `commit-pr` | main | commits, PR URL | [stage-commit-pr.md](references/stage-commit-pr.md) |
-| Retro | `retro` | sub-agent | retro/report.md | [stage-retro.md](references/stage-retro.md) |
-
-The id is the stage's name everywhere else: its config key, its dashboard node, and the `--stage`
-it fires events with. Open the stage's file when you enter the stage. Do not read ahead.
-When the caller supplies `TARGETS[]` and an entry stage, use the resume procedure in
-[resumed-runs.md](references/resumed-runs.md) after the doctor's verdict.
-
-## Cross-cutting files
-
-- [config.md](references/config.md) — read when resolving a skill, model, command, environment, or hook field from `orchestrate.config.json`.
-- [dashboard.md](references/dashboard.md) — read before any dashboard command; it owns initialization, transitions, report bodies, and finalization.
-- [events.md](references/events.md) — read during setup and fire at every moment it names; it owns event commands and their output handling.
-- [resumed-runs.md](references/resumed-runs.md) — read when the caller supplies `TARGETS[]`; it owns the shared resume contract.
-
-## Summary
-
-Present after commit-pr completes and retro returns, or when a stage ends the run on failure.
-On failure, preserve the worktree and report the stage's error, completed work, and next action.
-Fire `run-interrupted` if the worktree exists, and finalize an initialized dashboard as failed.
-For a resumable pause, follow the owning stage or events.md instead of finalizing the run.
-For a resumed run, list each checkout and its results; mark stages not entered as skipped.
-
-```markdown
-**Task:** <TASK_CONTEXT summary>
-**Worktree:** <WORKTREE_PATH> (branch: <BRANCH_NAME>)
-
-| Stage | Result |
-|---|---|
-| Setup | Worktree at <path>, baseline captured |
-| Design & Plan | <plan.html path>, <phase_count> phases, or implement route |
-| Coder | <files> files, <tests> tests |
-| Code Review | <verdict> (<findings> findings) |
-| Verify | <PASS/PARTIAL/FAIL>, <N> bugs dispositioned, <N> auto-fixed over <R> round(s), <N> gaps carried |
-| Quality Gate | <PASS/BLOCKED/STAGNATION> |
-| Sync Docs | <N> updated, <N> created |
-| Commit & PR | <PR_URL, noting whether it was opened or already existed, or not created with reason> |
-| Retro | <N> issues (<M> MISSED), <report path>, or not produced with reason |
-
-**Issues:** <failures, stagnation, or None>
+```
+bun run orchestrate init NAME
 ```
 
-Finalize using [dashboard.md](references/dashboard.md#commands).
+`init` reads `HARNESS_RUN_ID` from this session's environment, so no `--run-id` flag is needed.
+Every later action on the run names it by `NAME` (`--run NAME`), not by its id. On a non-zero
+exit, show the command's error output and stop — do not retry with a different name.
+
+## Step 2: run the workflow one step at a time
+
+Tell the user the run folder `init` printed (`dir`). Then repeat:
+
+1. Run `bun run orchestrate next --run NAME`. It prints one JSON reply. Never run two `next`
+   commands at the same time.
+2. Act on the reply's `kind`:
+   - `exec`: tell the user `▶ NODE_ID` (the reply's `nodeId`). Then run the reply's `command`
+     exactly as printed.
+     - `mode: inline`: run it in the foreground, with a 10-minute timeout. When it
+       returns, tell the user `✓ NODE_ID completed` or `✗ NODE_ID failed: MESSAGE`, from the
+       printed JSON's `status` and `error.message`. A failed node exits non-zero; that is
+       expected, so go back to 1. If the command times out instead, no result was
+       recorded and the node is still running: run the same `command` again as a
+       background task (see the reference), then go back to 1.
+     - `mode: background`: the step is long, so run it as a background task to get past
+       the timeout. Nothing else runs meanwhile: wait for the task to finish, log
+       `✓` or `✗` the same way, then go back to 1.
+   - `stage`: tell the user `▶ NODE_ID (stage STAGE)`. Read the file at `skill`, then the file
+     at `extension` when it is not null; where the extension conflicts with the skill, the
+     extension wins. Follow the skill with the reply's `input` as its input, `variables` as the
+     values of the variables the skill names, and `prompt` as extra instructions when present.
+     When the skill needs one of its references, run
+     `bun run orchestrate skill ref STAGE.REF`. It needs no `--run`: it finds the run through
+     `HARNESS_RUN_ID` and reads the config that run started with. Never open a reference file by
+     its path, since that skips the project's changes to it. When the skill is done, run the reply's `done`
+     command with `--output -`, plus `--artifact NAME=artifacts/PATH` for each artifact the
+     skill wrote under `.harness/NAME/`, and pass the output on stdin in a quoted heredoc. The
+     output is JSON when the skill declares `outputs` (or the node an `output` schema), and plain
+     text otherwise:
+
+     ```bash
+     bun run orchestrate done NODE_RUN_ID --run NAME --output - <<'OUT'
+     { "the": "skill's output" }
+     OUT
+     ```
+
+     If the skill could not finish, pass `--error -` instead, with the reason in the heredoc.
+     Always use the quoted heredoc (`<<'OUT'`), never text inside `'…'` on the command line:
+     the shell leaves a quoted heredoc alone, while a single apostrophe in quoted text ends the
+     quote and lets the rest run as shell. If `done --output` exits non-zero, read its JSON error.
+     When `retryable` is `true`, fix the command input or each issue in `issues` and retry `done`
+     with the same `nodeRunId`; the node is still running. An issue of kind `verifier` or
+     `verifier-error` is a stage check that failed: read its `findings` or `message`, fix the
+     work, and call `done` again. The third rejected `done` on a node fails it for good
+     (`verify-exhausted`): log `✗` and go back to 1, since `next` decides whether that failure
+     ends the run (a node with `allowFailure` lets it go on). On any other error whose
+     `retryable` is `false`, stop and report the error. Do not call `next` until `done` reports
+     completed, reports `verify-exhausted`, or you report an unrecoverable stage error with
+     `done --error`. Log `✓` or `✗` from the printed JSON, then go back to 1.
+   - `agent`: tell the user `▶ NODE_ID`. Do what `prompt` asks, with `input` as its data,
+     then finish it with the reply's `done` command the same way as a stage.
+   - `context`: tell the user `↻ NODE_ID: ACTION` (the reply's `nodeId` and `action`, e.g.
+     `↻ fresh: new`), then end the turn at once, without running any other command. The work
+     starts once the turn is over: for `new` the harness replaces this session with a fresh one,
+     and for `compact` it compacts this session. Either way the session then receives
+     the skill's `--resume NAME` message and carries on. Codex has no context steps: the Stop
+     hook completes the node as not applied and sends you back to `next`.
+   - `blocked`: the stage `stage` needs artifacts in `missing` that no finished node wrote.
+     Tell the user which, and stop.
+   - `waiting`: a step is still running, and only one step runs at a time. Wait for your
+     background task to finish, then go back to 1. If none of your background tasks is
+     still running, stop and report `nodeRunId`: its process ended
+     without recording a result.
+   - `finished`: tell the user the run ended with `status`, then stop.
+3. Mirror each `exec`, `stage` and `agent` node into your task list (the reference names the
+   tool), without spending a turn on it: make each task call in the same step as a command you run
+   anyway. Create a task named `NODE_ID` beside the `▶` log, mark it in progress beside the node's
+   first command, and mark it completed beside the next `next`. On `✗`, leave it open with a note
+   that it failed. After `--resume` the list starts empty.
+4. On any non-zero exit from `next`, show its error output and stop.
+
+`exec` and `done` record how each node ended. Never run `bun run orchestrate emit` for a node, and
+never edit `.harness/NAME/state.json`, `.harness/NAME/event.jsonl` or the harness `registry.json`
+yourself: a hook refuses any tool call that writes, moves or deletes them, and its message names
+the command to use instead. Reading them is fine.
+
+When you need the user's input, ask the way the reference says. A Stop hook checks the run when
+your turn ends, and a turn that ends with a node still open, or before `next`, is sent back to
+you with the command you still owe.

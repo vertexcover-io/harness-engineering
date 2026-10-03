@@ -464,7 +464,7 @@ describe("harness run", () => {
       waitFor(() => readLines(fakeOut).some((record) => isLaunch(record)));
       const record = readLines(fakeOut).find(isLaunch);
       const argv = record?.argv as string[] | undefined;
-      expect(argv?.at(-1)).toContain(`/orchestrate-v2 --workflow ${join(repo, "ok.yaml")}`);
+      expect(argv?.at(-1)).toContain(`/orchestrate --workflow ${join(repo, "ok.yaml")}`);
       expect(record?.runId).toBe(runId);
 
       stopServer(repo, env);
