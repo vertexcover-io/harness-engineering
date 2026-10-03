@@ -5,14 +5,13 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  type Api,
   assetHostAllowed,
   downloadAsset,
   fetchIssue,
-  loadApiKey,
   parseIssueRef,
   searchIssues,
 } from "./linear.ts";
+import { type Api, loadApiKey } from "./ticket.ts";
 
 const ASSET_BYTES = "binary-bytes";
 const seen: { auth: (string | null)[]; queries: string[] } = { auth: [], queries: [] };
@@ -107,7 +106,7 @@ describe("loadApiKey", () => {
   test("reads the key from the project .env", async () => {
     const root = mkdtempSync(join(tmpdir(), "linear-env-"));
     writeFileSync(join(root, ".env"), "LINEAR_API_KEY=from-file\n");
-    expect(await loadApiKey(root)).toBe("from-file");
+    expect(await loadApiKey(root, "LINEAR_API_KEY")).toBe("from-file");
   });
 
   test("from a linked worktree the CLI reads .env in the main checkout, as the doctor does", async () => {
@@ -135,9 +134,9 @@ describe("loadApiKey", () => {
     const saved = process.env.LINEAR_API_KEY;
     delete process.env.LINEAR_API_KEY;
     try {
-      await expect(loadApiKey(mkdtempSync(join(tmpdir(), "linear-none-")))).rejects.toThrow(
-        "LINEAR_API_KEY",
-      );
+      await expect(
+        loadApiKey(mkdtempSync(join(tmpdir(), "linear-none-")), "LINEAR_API_KEY"),
+      ).rejects.toThrow("LINEAR_API_KEY");
     } finally {
       if (saved !== undefined) process.env.LINEAR_API_KEY = saved;
     }

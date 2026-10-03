@@ -23,10 +23,14 @@ references:
   linear:
     path: references/linear.md
     description: How to fetch a Linear ticket and its files into the ticket bundle.
+  asana:
+    path: references/asana.md
+    description: How to fetch an Asana task and its files into the ticket bundle.
 variables:
   provider:
-    description: Ticket provider; names the reference to read
-    default: linear
+    description: >
+      Ticket provider (linear, asana, or one the project adds); names the reference to read.
+      Every workflow sets it on its ticket-fetcher node.
 ---
 
 # Ticket Fetcher
@@ -47,14 +51,15 @@ this skill and the provider's reference list.
 
 ## Steps
 
-1. Decide what the request is. It is a ticket request when it holds a tracker URL, an issue key
-   like `ENG-123`, or asks to work on a ticket. Otherwise it is a plain task: reply
-   `{ "task": REQUEST }` with no artifact, and stop.
+1. Decide what the request is. It is a ticket request when it holds a tracker URL (such as
+   `linear.app/...` or `app.asana.com/...`), an issue key like `ENG-123`, or asks to work on a
+   ticket. Otherwise it is a plain task: reply `{ "task": REQUEST }` with no artifact, and stop.
 2. Read the provider's reference with `bun run orchestrate skill ref ticket-fetcher.PROVIDER`,
-   where PROVIDER is the `provider` variable. If it fails, stop and report its message. A project
-   adds a provider with a reference file registered as
-   `extensions.ticket-fetcher.references.NAME: { add: PATH }` in `orchestrate.config.yaml`, and
-   `variables: { provider: NAME }` on the workflow's ticket-fetcher node.
+   where PROVIDER is the `provider` variable. If it fails, stop and report its message. The
+   workflow's ticket-fetcher node names the provider with `variables: { provider: NAME }`;
+   `linear` and `asana` ship with this skill. A project adds another with a reference file
+   registered as `extensions.ticket-fetcher.references.NAME: { add: PATH }` in
+   `orchestrate.config.yaml`.
 3. Follow the reference. Give it:
    - the ticket hint: the URL, key or wording from the request;
    - the output folder `.harness/RUN/artifacts/ticket/`, where RUN is the run's spec name;
