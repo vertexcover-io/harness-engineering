@@ -78,6 +78,13 @@ describe("renderMarkdown", () => {
     expect(html.match(/class="mermaid"/g)).toHaveLength(1);
   });
 
+  test("a <br> in a table cell breaks the line, while <br> in code and any other HTML stay text", () => {
+    const html = renderMarkdown("| Scenario |\n|---|\n| one<br>two<BR/>three `<br>` <b>x</b> |\n");
+    expect(html).toContain(
+      "<td>one<br>\ntwo<br>\nthree <code>&lt;br&gt;</code> &lt;b&gt;x&lt;/b&gt;</td>",
+    );
+  });
+
   test("a ts fence comes back with its keywords marked for color, and an unknown language stays plain", () => {
     const html = renderMarkdown("```ts\nconst a = 1;\n```\n\n```nosuchlang\n<i>\n```\n");
     expect(html).toContain('<span class="hljs-keyword">const</span>');

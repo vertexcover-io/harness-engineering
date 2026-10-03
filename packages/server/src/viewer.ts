@@ -160,6 +160,16 @@ const highlight = (code: string, lang: string): string =>
     : "";
 
 const markdown: MarkdownIt = new MarkdownIt({ html: false, linkify: true, highlight });
+// Raw HTML stays escaped, but a markdown table cell holds one line, so <br> is the one tag let
+// through: it is how a cell breaks a line on GitHub too.
+const BR_TAG = /^<br\s*\/?>/i;
+markdown.inline.ruler.before("autolink", "br-tag", (state, silent) => {
+  const tag = BR_TAG.exec(state.src.slice(state.pos))?.[0];
+  if (tag === undefined) return false;
+  if (!silent) state.push("hardbreak", "br", 0);
+  state.pos += tag.length;
+  return true;
+});
 markdown.core.ruler.push("source-lines", (state) => {
   for (const token of state.tokens) {
     if (token.nesting === 1 && token.map) token.attrSet("data-lines", lineRange(token.map));
