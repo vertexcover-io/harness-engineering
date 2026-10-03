@@ -1,9 +1,9 @@
 ---
 name: implement
 description: >
-  Build the approved plan test-first, one phase at a time, and commit each phase. Runs as the
-  pipeline's implement stage, after planning; also use it directly to implement a requested
-  change, a plan, one phase, or review feedback.
+  Build a requested change, an approved plan, one of its phases, or review feedback test-first,
+  with independent phases in parallel, and commit each phase. Runs as the pipeline's implement
+  stage after planning; also use it directly to build any change.
 mode: inline
 allowed-tools: [Agent, AskUserQuestion, Bash, Read, Write, Edit, Grep, Glob, Skill]
 tier: deep
@@ -22,7 +22,7 @@ Build and test the assigned change, then report what was built.
 
 ## 1. Identify the assignment
 
-RUN below is the run's spec name. The input may hold:
+RUN below is the run's name. The input may hold:
 
 | Field | Meaning |
 |---|---|
@@ -38,7 +38,8 @@ The first that applies is the assignment:
 
 ## 2. Load the working instructions
 
-Read `orchestrate.config.json` at the repo root. Each package's `commands` holds its
+Read the project's orchestrate config (`orchestrate.config.yaml` or `orchestrate.config.json`
+at the repo root). Each package's `commands` holds its
 `test_all`, `test_file`, `typecheck` and `lint`; use the packages that own the assigned files.
 A missing config or a declared command that cannot run is a blocker. An omitted command is
 `NOT_APPLICABLE`, with a reason. The run's baseline, when there is one, is
@@ -62,15 +63,39 @@ feature:
   yours; the qa stage proves them.
 - `## Commit`: the commit message.
 
-## 3. Build, one phase at a time
+## 3. Build the phases in waves
 
-Order the phases from the `## Phases` digraph: a phase starts only after every phase it depends
-on is committed. Never build two phases at once in one worktree.
+A plan with one phase is built here, inline. With more, build in waves from the `## Phases`
+digraph: a wave is every phase whose dependencies are all committed. Dispatch one sub-agent per
+phase in the wave, all in one message, in the same worktree. Give each: the paths to its phase
+file and `plan.md`, the worktree, the commands, and these parts of this skill: section 2, "For
+each phase", "The E2E leg" and section 4, plus the sub-agent rules below when the wave has two
+or more phases. The rest of this section is the stage's own work.
 
-A plan with one phase is built here, inline. With more, dispatch one sub-agent per phase, one
-after another, each given: the paths to its phase file and `plan.md`, the worktree, the
-commands, and sections 2 to 4 of this skill. Read each result before starting the next, and
-stop at the first `BLOCKED`.
+Phases in one wave share the worktree, so they must not touch the same file. Planning orders any
+two phases that do; still, before dispatching, collect the files each phase's diffs name. When
+two phases in a wave share a file, the plan is wrong: build those two one after the other.
+
+A sub-agent in a wave of two or more works around the others:
+
+- It edits only its own phase's files and runs only its own test files, in place of `tdd`'s
+  full-suite and full-lint steps. A full test run, typecheck or lint would fail on the other
+  phases' half-built work.
+- It never runs `git add`, `commit`, `stash`, `checkout` or `reset`, nor a formatter or fixer
+  over the whole repo. Those touch the other phases' files.
+- It writes its E2E test but does not run it: the phases share one stack.
+- It returns `COMPLETED` or `BLOCKED` and every file it created, changed or deleted.
+
+When the wave's sub-agents have all returned:
+
+1. Run the full tests, typecheck and lint once. Fix a failure inline, inside the files of the
+   phase it belongs to. A failure you cannot fix there makes that phase `BLOCKED`.
+2. Run each phase's E2E leg, one phase at a time. Fix a failure as in step 1; one you cannot
+   fix makes that phase `BLOCKED`.
+3. Commit each `COMPLETED` phase in phase order, staging only the files its sub-agent returned.
+4. When any phase is `BLOCKED`, stop after these commits. Otherwise start the next wave.
+
+A wave of one phase builds that phase whole, checks, E2E and commit included, as below.
 
 For each phase:
 
@@ -80,12 +105,13 @@ For each phase:
   unit test" does not satisfy an integration or E2E scenario; moving one to a cheaper level is
   `BLOCKED`, not a pass.
 - Run affected tests and typecheck while iterating. Once the phase is built, run the full
-  tests, typecheck and lint. Documentation-only changes need the artifact checked, not invented
-  tests.
+  tests, typecheck and lint. In a wave of two or more, run only the affected tests; the stage
+  runs the rest after the wave. Documentation-only changes need the artifact checked, not
+  invented tests.
 - When building a screen, open the frame the step names first.
-- Commit the phase with its `## Commit` message. Stage only this phase's changes and leave
-  unrelated edits alone. In a run this commit needs no question; standalone, ask before
-  committing unless the user already allowed it. Never push.
+- Outside a wave of two or more, commit the phase with its `## Commit` message. Stage only this
+  phase's changes and leave unrelated edits alone. In a run this commit needs no question;
+  standalone, ask before committing unless the user already allowed it. Never push.
 
 ### The E2E leg
 

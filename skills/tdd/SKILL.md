@@ -1,11 +1,9 @@
 ---
 name: tdd
 description: >
-  Test-Driven Development. Use for any implementation task — features, bug fixes, refactoring —
-  whenever the project's CLAUDE.md signals TDD (mentions of TDD, test-driven, RED-GREEN-REFACTOR,
-  "tests first"), or when the user asks for test-first work. Load before writing any production
-  code. Its references are also the testing standard: skills reviewing or generating tests read
-  references/testing.md and references/anti-patterns.md.
+  The test-first method (RED-GREEN-REFACTOR) that implement loads before changing code; use it
+  directly when the user asks for TDD or test-first work. Its references are the testing
+  standard other skills read: references/testing.md and references/anti-patterns.md.
 ---
 
 # Test-Driven Development
