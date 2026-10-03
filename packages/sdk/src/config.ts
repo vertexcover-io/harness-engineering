@@ -117,6 +117,68 @@ export type EnvLayer = z.output<typeof EnvLayerSchema>;
 // Each event type's handlers run in list order, after the built-in handler for that type.
 const EventHandlerSchema = EventHandlerRefSchema.extend({ module: RepoPathSchema });
 
+const entryFields = {
+  name: SlugSchema,
+  blocking: z.boolean().optional(),
+  timeoutSeconds: z.int().positive().optional(),
+};
+
+// A hook's timeout when it names none. A blocking hook may run inside an agent's hook, which the
+// agent kills at 30 seconds, so it gets less.
+export const HOOK_TIMEOUT_S = { blocking: 20, detached: 60 } as const;
+const BLOCKING_TIMEOUT_MAX_S = 25;
+
+// A hook runs a module's export, or a shell command that reads the hook input as JSON on stdin.
+// Relative paths resolve against the config's folder, or the workflow's for a workflow's hooks.
+export const HookEntrySchema = z
+  .union(
+    [
+      z.strictObject({ ...entryFields, module: RepoPathSchema, handler: NonEmptyStringSchema }),
+      z.strictObject({
+        ...entryFields,
+        command: NonEmptyStringSchema,
+        cwd: RepoPathSchema.optional(),
+      }),
+    ],
+    {
+      error:
+        "a hook is { name, module, handler } or { name, command, cwd? }, with optional blocking: boolean and timeoutSeconds: positive integer",
+    },
+  )
+  .refine(
+    (entry) => entry.blocking === false || (entry.timeoutSeconds ?? 0) <= BLOCKING_TIMEOUT_MAX_S,
+    `a blocking hook's timeoutSeconds is at most ${BLOCKING_TIMEOUT_MAX_S}, under the agent's 30-second hook limit; set blocking: false for a longer one`,
+  );
+export type HookEntry = z.infer<typeof HookEntrySchema>;
+
+const HookTypeSchema = EventTypeSchema.refine(
+  (type) => type !== "hooks.hook.called",
+  "no hook may listen to hooks.hook.called, the record of hook calls",
+);
+// The built-in notifier's hook name, which no project hook may take.
+export const NOTIFIER_HOOK = "notifier";
+
+export const uniqueNames = (entries: readonly Readonly<{ name: string }>[]): boolean =>
+  new Set(entries.map((entry) => entry.name)).size === entries.length;
+
+export const HooksSchema = recordOf(
+  HookTypeSchema,
+  z
+    .array(HookEntrySchema)
+    .refine(uniqueNames, "hook names must be unique for one event type")
+    .refine(
+      (entries) => entries.every((entry) => entry.name !== NOTIFIER_HOOK),
+      `"${NOTIFIER_HOOK}" is the built-in notifier's name`,
+    ),
+).default({});
+export type Hooks = z.infer<typeof HooksSchema>;
+
+export const NotifierSchema = z.strictObject({
+  enabled: z.boolean().default(true),
+  type: z.enum(["slack"]).default("slack"),
+});
+export type Notifier = z.infer<typeof NotifierSchema>;
+
 // The top-level baseline runs once for the workspace; a package's commands.baseline runs for that package.
 export const ConfigSchema = z.strictObject({
   version: z.literal(2),
@@ -129,6 +191,8 @@ export const ConfigSchema = z.strictObject({
   ...EnvLayerSchema.shape,
   workspace: WorkspaceConfigSchema.prefault({}),
   eventHandlers: recordOf(EventTypeSchema, z.array(EventHandlerSchema)).default({}),
+  hooks: HooksSchema,
+  notifier: NotifierSchema.optional(),
 });
 
 export type ConfigInput = z.input<typeof ConfigSchema>;

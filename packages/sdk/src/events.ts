@@ -8,6 +8,7 @@ import {
   ErrorSchema,
   type Event,
   EventSchema,
+  EventTypeSchema,
   JsonObjectSchema,
   type JsonValue,
   LayoutSchema,
@@ -194,6 +195,85 @@ export const LimitResumedEvent = z.object({
   payload: z.strictObject({ sessionId: NonEmptyStringSchema, limitEventId: NonEmptyStringSchema }),
 });
 
+// One call of one hook for one stored event.
+export const HookCalledEvent = z.object({
+  payload: z.strictObject({
+    hook: SlugSchema,
+    eventId: NonEmptyStringSchema,
+    eventSeq: z.int().positive(),
+    eventType: EventTypeSchema,
+    blocking: z.boolean(),
+    status: z.enum(["ok", "failed"]),
+    durationMs: z.int().nonnegative(),
+    output: z.json().optional(),
+    error: ErrorSchema.optional(),
+  }),
+});
+
+export const AskedQuestionSchema = z.strictObject({
+  question: NonEmptyStringSchema,
+  header: z.string().optional(),
+  options: z.array(z.string()),
+});
+export type AskedQuestion = z.infer<typeof AskedQuestionSchema>;
+
+const questionCall = {
+  agent: AgentTypeSchema,
+  sessionId: NonEmptyStringSchema,
+  // Claude's id for the AskUserQuestion call; links an answer to its question
+  toolUseId: NonEmptyStringSchema.optional(),
+};
+
+// The agent asked the person something and is waiting for the answer.
+export const QuestionAskedEvent = z.object({
+  payload: z.strictObject({ ...questionCall, questions: z.array(AskedQuestionSchema).min(1) }),
+});
+
+export const AnsweredQuestionSchema = z.strictObject({
+  question: NonEmptyStringSchema,
+  answer: z.string(),
+  notes: z.string().optional(),
+});
+export type AnsweredQuestion = z.infer<typeof AnsweredQuestionSchema>;
+
+// The person answered the agent's questions.
+export const QuestionAnsweredEvent = z.object({
+  payload: z.strictObject({ ...questionCall, answers: z.array(AnsweredQuestionSchema).min(1) }),
+});
+
+// A turn an API error ended that waiting will not clear, such as authentication or billing.
+export const AgentStoppedEvent = z.object({ payload: LimitReachedEvent.shape.payload });
+
+// The Stop hook let the agent's turn end after sending it back too many times in a row.
+export const AgentStuckEvent = z.object({
+  payload: z.strictObject({
+    agent: AgentTypeSchema,
+    sessionId: NonEmptyStringSchema,
+    message: z.string().optional(),
+  }),
+});
+
+// next found a stage it cannot hand out until the artifacts it consumes exist.
+export const WorkflowBlockedEvent = z.object({
+  payload: z.strictObject({
+    nodeId: NonEmptyStringSchema,
+    stage: NonEmptyStringSchema,
+    missing: z.array(NonEmptyStringSchema).min(1),
+  }),
+});
+
+// The notifier opened the run's conversation; its later posts reply in this thread.
+export const NotificationThreadStartedEvent = z.object({
+  payload: z.strictObject({ provider: NonEmptyStringSchema, threadId: NonEmptyStringSchema }),
+});
+
+// Values a hook or skill keeps between calls. Each top-level key replaces the one in state.custom,
+// so a writer keeps its values under its own key.
+export const CustomStateUpdatedEvent = z.object({ payload: JsonObjectSchema });
+
+// One id per event and hook, so a call is recorded at most once.
+export const buildHookCallId = (eventId: string, hook: string): string => `hook:${eventId}:${hook}`;
+
 const workspaceEvent = <P extends z.ZodType>(payload: P) => z.object({ payload });
 
 const ShaSchema = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/, "Expected a full commit SHA");
@@ -372,6 +452,7 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.node.iterated": NodeIteratedEvent,
   "workflow.session.replaced": SessionReplacedEvent,
   "workflow.context.started": ContextStartedEvent,
+  "workflow.blocked": WorkflowBlockedEvent,
   "workspace.created": WorkspaceCreatedEvent,
   "workspace.create-failed": WorkspaceCreateFailedEvent,
   "workspace.repository.added": WorkspaceRepositoryAddedEvent,
@@ -390,6 +471,13 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "agent.limit.reached": LimitReachedEvent,
   "agent.limit.waiting": LimitWaitingEvent,
   "agent.limit.resumed": LimitResumedEvent,
+  "agent.question.asked": QuestionAskedEvent,
+  "agent.question.answered": QuestionAnsweredEvent,
+  "agent.stopped": AgentStoppedEvent,
+  "agent.stuck": AgentStuckEvent,
+  "hooks.hook.called": HookCalledEvent,
+  "notification.thread.started": NotificationThreadStartedEvent,
+  "custom.state.updated": CustomStateUpdatedEvent,
   "artifact.comment.added": CommentAddedEvent,
   "artifact.comment.delivered": CommentDeliveredEvent,
   "artifact.comment.replied": CommentRepliedEvent,
@@ -437,7 +525,6 @@ export const emitEvent = async (
       ok: false as const,
       error: `event not stored: ${error instanceof Error ? error.message : String(error)}`,
     }));
-  // TODO: trigger event hooks here once hooks exist.
   return stored;
 };
 
@@ -641,6 +728,18 @@ const onSessionReplaced: EventHandler = (state, event) => {
   return { ...state, activeSessions };
 };
 
+const onThreadStarted: EventHandler = (state, event) => {
+  const parsed = NotificationThreadStartedEvent.safeParse(event);
+  if (!parsed.success) return state;
+  return { ...state, notification: { ...state.notification, ...parsed.data.payload } };
+};
+
+const onCustomStateUpdated: EventHandler = (state, event) => {
+  const parsed = CustomStateUpdatedEvent.safeParse(event);
+  if (!parsed.success) return state;
+  return { ...state, custom: { ...state.custom, ...parsed.data.payload } };
+};
+
 export const builtInHandlers: EventHandlers = {
   "workflow.started": onWorkflowStarted,
   "workflow.completed": (state, event) => onWorkflowEnded("completed", state, event),
@@ -656,4 +755,6 @@ export const builtInHandlers: EventHandlers = {
   "workspace.repository.removed": onRepositoryRemoved,
   "hooks.stop.called": onStopCalled,
   "workflow.session.replaced": onSessionReplaced,
+  "notification.thread.started": onThreadStarted,
+  "custom.state.updated": onCustomStateUpdated,
 };

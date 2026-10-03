@@ -302,6 +302,7 @@ const seed: State = {
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},
+  hooks: {},
 };
 
 const nodeEvent = (

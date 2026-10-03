@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Event, type JsonValue, type State, StateSchema } from "./contracts.ts";
@@ -83,6 +83,7 @@ const seed: State = {
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},
+  hooks: {},
 };
 
 const event = (seq: number, type: string, payload: JsonValue = null): Event => ({
@@ -268,6 +269,20 @@ export const onRisky = (state, event) => {
 };
 export const onBadShape = (state) => ({ ...state, runName: "Not A Slug" });
 `;
+
+test("a sync with no event since the last one leaves state.json unwritten", async () => {
+  const { run, runDir } = await runWithHandlers({});
+  const appended = await appendRunEvent(run, { type: "custom.once.note", source: "t", payload: 1 });
+  if (!appended.ok) throw new Error(appended.error);
+  const path = join(runDir, "state.json");
+  const [before, text] = [await stat(path), await readFile(path, "utf8")];
+
+  await syncState(runDir);
+
+  const after = await stat(path);
+  expect([after.ino, after.mtimeMs]).toEqual([before.ino, before.mtimeMs]);
+  expect(await readFile(path, "utf8")).toBe(text);
+});
 
 // A run folder whose state.json lists the given handlers from a module written beside it.
 const runWithHandlers = async (
@@ -504,5 +519,44 @@ describe("state files written before activeSessions", () => {
     const parsed = StateSchema.parse(legacy);
 
     expect(parsed).toEqual(seed);
+  });
+});
+
+describe("what hooks keep in state.json", () => {
+  test("SC211: notification.thread.started fills state.notification, custom.state.updated merges into state.custom by key, and a call record changes neither", async () => {
+    const { run, stateJson } = await runWithHandlers({});
+
+    for (const input of [
+      { type: "custom.state.updated", source: "hooks", payload: { asana: { taskId: "555" } } },
+      {
+        type: "notification.thread.started",
+        source: "notifier",
+        payload: { provider: "slack", threadId: "171.1" },
+      },
+      { type: "custom.state.updated", source: "hooks", payload: { linear: { issue: "VER-1" } } },
+      { type: "custom.state.updated", source: "hooks", payload: { asana: { taskId: "777" } } },
+      {
+        id: "hook:evt-1:asana",
+        type: "hooks.hook.called",
+        source: "hooks",
+        payload: {
+          hook: "asana",
+          eventId: "evt-1",
+          eventSeq: 1,
+          eventType: "workflow.node.started",
+          blocking: true,
+          status: "ok",
+          durationMs: 3,
+          output: { taskId: "999" },
+        },
+      },
+    ]) {
+      const appended = await appendRunEvent(run, input);
+      if (!appended.ok) throw new Error(appended.error);
+    }
+
+    const state = await stateJson();
+    expect(state.notification).toEqual({ provider: "slack", threadId: "171.1" });
+    expect(state.custom).toEqual({ asana: { taskId: "777" }, linear: { issue: "VER-1" } });
   });
 });

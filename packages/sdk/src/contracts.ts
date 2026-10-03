@@ -167,7 +167,7 @@ export const EventTypeSchema = z
   .string()
   .refine(
     (value) =>
-      /^(workflow|artifact|hooks|workspace|forge|learning|agent|orchestrate)(\.[a-z][a-z0-9_-]*)+$/.test(
+      /^(workflow|artifact|hooks|workspace|forge|learning|agent|orchestrate|notification)(\.[a-z][a-z0-9_-]*)+$/.test(
         value,
       ) ||
       /^stage\.[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(value) ||
@@ -181,6 +181,21 @@ export const EventHandlerRefSchema = z.strictObject({
   handler: NonEmptyStringSchema,
 });
 export const EventHandlerRefsSchema = z.record(EventTypeSchema, z.array(EventHandlerRefSchema));
+
+const hookFields = {
+  name: SlugSchema,
+  // awaited before the append returns; false runs it in a detached runner
+  blocking: z.boolean(),
+  timeoutSeconds: z.int().positive(),
+};
+
+// One hook as init froze it: a module's export, or a shell command that reads the hook input as
+// JSON on stdin. Paths are absolute by then.
+export const HookRefSchema = z.union([
+  z.strictObject({ ...hookFields, module: AbsolutePathSchema, handler: NonEmptyStringSchema }),
+  z.strictObject({ ...hookFields, command: NonEmptyStringSchema, cwd: AbsolutePathSchema }),
+]);
+export const HookRefsSchema = z.record(EventTypeSchema, z.array(HookRefSchema));
 
 export const StateSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -208,6 +223,7 @@ export const StateSchema = z.strictObject({
   activeSessions: z.array(SessionRefSchema).default([]),
   custom: JsonObjectSchema.optional(),
   eventHandlers: EventHandlerRefsSchema.default({}),
+  hooks: HookRefsSchema.default({}),
   // Settled by init: the config file the run reads (null = the default config) and the folder its
   // relative paths resolve against. A run initialized before this field searched its checkout.
   config: z
@@ -267,6 +283,8 @@ export type Notification = z.infer<typeof NotificationSchema>;
 export type WorkflowRef = z.infer<typeof WorkflowRefSchema>;
 export type EventHandlerRef = z.infer<typeof EventHandlerRefSchema>;
 export type EventHandlerRefs = z.infer<typeof EventHandlerRefsSchema>;
+export type HookRef = z.infer<typeof HookRefSchema>;
+export type HookRefs = z.infer<typeof HookRefsSchema>;
 export type State = z.infer<typeof StateSchema>;
 export type Event = z.infer<typeof EventSchema>;
 
