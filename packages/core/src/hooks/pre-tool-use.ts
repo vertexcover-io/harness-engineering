@@ -12,7 +12,7 @@ import {
   type ToolVerdict,
 } from "@harness/sdk";
 import { appendRunEvent } from "@harness/sdk/internal";
-import { findSessionRun } from "./common.ts";
+import { findSessionRun, recordSessionEvent } from "./common.ts";
 import { expandPath, type PathBase, shellWriteTargets } from "./write-targets.ts";
 
 export type ProtectedRecord =
@@ -60,7 +60,7 @@ const callTargets = (call: ToolCall, base: PathBase): readonly string[] => {
 // Refuses a call that writes, moves or deletes a run's state.json or event.jsonl, or the registry.
 export const recordGuard: PreToolUseHandler = {
   name: "record-guard",
-  run: async (call, { cwd, env }) => {
+  run: async ({ cwd, call }, { env }) => {
     const base = { cwd, home: homedir(), harnessHome: harnessHome(env) };
     const record = callTargets(call, base)
       .map((target) => protectedRecordOf(target, base))
@@ -75,7 +75,7 @@ export const recordGuard: PreToolUseHandler = {
 // shell command is handed to it in that shape. Any other failure allows the call, with a warning.
 export const bashAntipatterns: PreToolUseHandler = {
   name: "bash-antipatterns",
-  run: async (call, { cwd, log }) => {
+  run: async ({ cwd, call }, { log }) => {
     if (call.kind !== "shell") return ALLOW;
     const input = JSON.stringify({ tool_name: "Bash", tool_input: { command: call.command } });
     const result = await spawn("bash", [BASH_ANTIPATTERNS], {
@@ -97,9 +97,27 @@ export const bashAntipatterns: PreToolUseHandler = {
   },
 };
 
+// Records the questions an agent puts to the person, so the notifier can post them.
+export const questionNotice: PreToolUseHandler = {
+  name: "question-notice",
+  run: async ({ agent, sessionId, toolUseId, call }, deps) => {
+    if (call.kind !== "question") return ALLOW;
+    const payload = {
+      agent,
+      sessionId,
+      ...(toolUseId === undefined ? {} : { toolUseId }),
+      questions: call.questions.map(({ header, ...question }) =>
+        header === undefined ? question : { ...question, header },
+      ),
+    };
+    await recordSessionEvent({ agent, sessionId }, { type: "agent.question.asked", payload }, deps);
+    return ALLOW;
+  },
+};
+
 // The handlers an agent can register, by the name `orchestrate hook pre-tool-use --handler` takes.
 export const preToolUseHandlers: Readonly<Record<string, PreToolUseHandler>> = Object.fromEntries(
-  [recordGuard, bashAntipatterns].map((handler) => [handler.name, handler]),
+  [recordGuard, bashAntipatterns, questionNotice].map((handler) => [handler.name, handler]),
 );
 
 const calledEvent = (use: ToolUse, handler: string, verdict: ToolVerdict): EmitInput => ({
@@ -138,12 +156,10 @@ export const runPreToolUse = async (
   handler: PreToolUseHandler,
   deps: HookDeps,
 ): Promise<ToolVerdict> => {
-  const verdict = await handler
-    .run(use.call, { cwd: use.cwd, env: deps.env, log: deps.log })
-    .catch((error: unknown): ToolVerdict => {
-      deps.log.error({ err: error }, `pre-tool-use allowed: ${handler.name} failed`);
-      return ALLOW;
-    });
+  const verdict = await handler.run(use, deps).catch((error: unknown): ToolVerdict => {
+    deps.log.error({ err: error }, `pre-tool-use allowed: ${handler.name} failed`);
+    return ALLOW;
+  });
   if (verdict.kind === "allow") return verdict;
   await logCall(use, handler.name, verdict, deps);
   return verdict;

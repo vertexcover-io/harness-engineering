@@ -177,8 +177,16 @@ describe("recordGuard through runPreToolUse", () => {
 });
 
 describe("bashAntipatterns", () => {
-  const context = { cwd: tmpdir(), env: {}, log: noopLogger };
-  const run = (command: string) => bashAntipatterns.run(shell(command), context);
+  const deps = {
+    env: {},
+    log: noopLogger,
+    registry: {
+      findRun: async () => undefined,
+      findRunsByName: async () => [],
+      listRuns: async () => [],
+    },
+  };
+  const run = (command: string) => bashAntipatterns.run(use(tmpdir(), shell(command)), deps);
 
   test("SC19 — the vendored script keeps its license and upstream pointer", async () => {
     const text = await readFile(
@@ -215,7 +223,9 @@ describe("bashAntipatterns", () => {
   });
 
   test("a call that is not a shell command is not its concern", async () => {
-    expect(await bashAntipatterns.run(write("notes.md"), context)).toEqual({ kind: "allow" });
+    expect(await bashAntipatterns.run(use(tmpdir(), write("notes.md")), deps)).toEqual({
+      kind: "allow",
+    });
   });
 
   test("SC22 — a script that cannot run lets the call through", async () => {

@@ -1,0 +1,88 @@
+{
+  "session_id": "8f1c2b7e-3d4a-4c9b-9e21-5a6f7d8c9b10",
+  "transcript_path": "/Users/dev/.claude/projects/-work-repo/8f1c2b7e-3d4a-4c9b-9e21-5a6f7d8c9b10.jsonl",
+  "cwd": "/work/repo",
+  "permission_mode": "default",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "AskUserQuestion",
+  "tool_use_id": "toolu_01AbCdEfGhIjKlMnOpQrStUv",
+  "tool_input": {
+    "questions": [
+      {
+        "question": "How should hooks run after a run event is saved?",
+        "header": "Dispatch",
+        "options": [
+          {
+            "label": "Detached helper (Recommended)",
+            "description": "After an event is saved, start a background helper. Never slows the run.",
+            "preview": "orchestrate done ──► save event\n        │\n        └─► spawn helper (detached) ──► fire hooks for new events"
+          },
+          {
+            "label": "Inline, with a timeout",
+            "description": "Fire hooks right after saving, in the same process, capped at a few seconds."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "Which moments should the built-in Slack notifier post?",
+        "header": "Slack scope",
+        "options": [
+          {
+            "label": "All five (Recommended)",
+            "description": "Run started, failed, finished, waiting on a question, waiting on a rate limit."
+          },
+          {
+            "label": "Only the three",
+            "description": "Failed run, pending question, rate-limit wait."
+          }
+        ],
+        "multiSelect": false
+      }
+    ]
+  },
+  "tool_response": {
+    "questions": [
+      {
+        "question": "How should hooks run after a run event is saved?",
+        "header": "Dispatch",
+        "options": [
+          {
+            "label": "Detached helper (Recommended)",
+            "description": "After an event is saved, start a background helper. Never slows the run.",
+            "preview": "orchestrate done ──► save event\n        │\n        └─► spawn helper (detached) ──► fire hooks for new events"
+          },
+          {
+            "label": "Inline, with a timeout",
+            "description": "Fire hooks right after saving, in the same process, capped at a few seconds."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "Which moments should the built-in Slack notifier post?",
+        "header": "Slack scope",
+        "options": [
+          {
+            "label": "All five (Recommended)",
+            "description": "Run started, failed, finished, waiting on a question, waiting on a rate limit."
+          },
+          {
+            "label": "Only the three",
+            "description": "Failed run, pending question, rate-limit wait."
+          }
+        ],
+        "multiSelect": false
+      }
+    ],
+    "answers": {
+      "How should hooks run after a run event is saved?": "Detached helper (Recommended)",
+      "Which moments should the built-in Slack notifier post?": "Can you compare to current v1 implementation. My sense is every node start/end, ask question, rate limit"
+    },
+    "annotations": {
+      "How should hooks run after a run event is saved?": {
+        "preview": "orchestrate done ──► save event\n        │\n        └─► spawn helper (detached) ──► fire hooks for new events"
+      }
+    }
+  }
+}

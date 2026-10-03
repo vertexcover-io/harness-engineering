@@ -3,6 +3,7 @@ import {
   type AgentAdapter,
   type HookDeps,
   NonEmptyStringSchema,
+  type PostToolUseHandler,
   type PreToolUseHandler,
   parseJson,
   type Result,
@@ -10,15 +11,22 @@ import {
   type StopFailureHandler,
   type StopHandler,
   type ToolCall,
+  type ToolResult,
   type ToolUse,
   type TranscriptEntry,
 } from "@harness/sdk";
 import * as z from "zod";
 import { parseStdin, preToolUseReply, runNoReplyHook, stopReply } from "../hooks/common.ts";
-import { bashAntipatterns, recordGuard, runPreToolUse } from "../hooks/pre-tool-use.ts";
+import { answerNotice } from "../hooks/post-tool-use.ts";
+import {
+  bashAntipatterns,
+  questionNotice,
+  recordGuard,
+  runPreToolUse,
+} from "../hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "../hooks/session-start.ts";
 import { continueWorkflow, runStop } from "../hooks/stop.ts";
-import { resumeAfterLimit } from "../hooks/stop-failure.ts";
+import { recordAgentError, resumeAfterLimit } from "../hooks/stop-failure.ts";
 import { shellQuote } from "./common.ts";
 
 const HOOK_TIMEOUT_S = 30;
@@ -186,15 +194,40 @@ const ClaudePreToolUseInputSchema = z.looseObject({
   session_id: NonEmptyStringSchema,
   tool_name: NonEmptyStringSchema,
   tool_input: z.looseObject({}).default({}),
+  tool_use_id: NonEmptyStringSchema.optional(),
   cwd: z.string().optional(),
 });
 
 const OTHER_TOOL: ToolCall = { kind: "other" };
 
+const QuestionInputSchema = z.looseObject({
+  questions: z
+    .array(
+      z.looseObject({
+        question: NonEmptyStringSchema,
+        header: z.string().optional(),
+        options: z.array(z.looseObject({ label: z.string() })).default([]),
+      }),
+    )
+    .min(1),
+});
+
+const parseQuestionCall = (toolInput: Readonly<Record<string, unknown>>): ToolCall => {
+  const parsed = QuestionInputSchema.safeParse(toolInput);
+  if (!parsed.success) return OTHER_TOOL;
+  const questions = parsed.data.questions.map(({ question, header, options }) => ({
+    question,
+    ...(header === undefined ? {} : { header }),
+    options: options.map((option) => option.label),
+  }));
+  return { kind: "question", questions };
+};
+
 const toToolCall = (toolName: string, toolInput: Readonly<Record<string, unknown>>): ToolCall => {
   const { command } = toolInput;
   if (toolName === "Bash")
     return typeof command === "string" ? { kind: "shell", command } : OTHER_TOOL;
+  if (toolName === "AskUserQuestion") return parseQuestionCall(toolInput);
   const field = PATH_FIELDS.get(toolName);
   const path = field === undefined ? undefined : toolInput[field];
   return typeof path === "string" ? { kind: "file-write", path } : OTHER_TOOL;
@@ -203,11 +236,24 @@ const toToolCall = (toolName: string, toolInput: Readonly<Record<string, unknown
 const parsePreToolUseInput = (stdin: string): Result<ToolUse> => {
   const parsed = parseStdin(stdin, ClaudePreToolUseInputSchema);
   if (!parsed.ok) return parsed;
-  const { session_id: sessionId, tool_name: toolName, tool_input: toolInput, cwd } = parsed.value;
+  const {
+    session_id: sessionId,
+    tool_name: toolName,
+    tool_input: toolInput,
+    tool_use_id: toolUseId,
+    cwd,
+  } = parsed.value;
   const call = toToolCall(toolName, toolInput);
   return {
     ok: true,
-    value: { agent: "claude", sessionId, toolName, cwd: cwd ?? process.cwd(), call },
+    value: {
+      agent: "claude",
+      sessionId,
+      toolName,
+      ...(toolUseId === undefined ? {} : { toolUseId }),
+      cwd: cwd ?? process.cwd(),
+      call,
+    },
   };
 };
 
@@ -224,10 +270,75 @@ const claudePreToolUse = async (
   return preToolUseReply(await runPreToolUse(use.value, handler, deps));
 };
 
+const ClaudePostToolUseInputSchema = z.looseObject({
+  session_id: NonEmptyStringSchema,
+  tool_name: NonEmptyStringSchema,
+  tool_input: z.looseObject({}).default({}),
+  tool_response: z.unknown().optional(),
+  tool_use_id: NonEmptyStringSchema.optional(),
+});
+type ClaudePostToolUseInput = z.infer<typeof ClaudePostToolUseInputSchema>;
+
+// A multi-select question is answered with every picked label.
+const AnswersSchema = z.looseObject({
+  answers: z.record(
+    z.string(),
+    z.union([z.string(), z.array(z.string()).transform((picked) => picked.join(", "))]),
+  ),
+});
+const AnnotationsSchema = z.looseObject({
+  annotations: z.record(z.string(), z.looseObject({ notes: z.string().optional() })),
+});
+
+// A real transcript shows the answers in the tool result (tool_response); tool_input is read first
+// in case Claude adds them there too.
+const readAnswers = <T>(
+  schema: z.ZodType<T>,
+  { tool_input, tool_response }: ClaudePostToolUseInput,
+): T | undefined => schema.safeParse(tool_input).data ?? schema.safeParse(tool_response).data;
+
+const toToolResult = (input: ClaudePostToolUseInput): ToolResult => {
+  if (input.tool_name !== "AskUserQuestion") return { kind: "other" };
+  const asked = QuestionInputSchema.safeParse(input.tool_input);
+  if (!asked.success) return { kind: "other" };
+  const answers = new Map(Object.entries(readAnswers(AnswersSchema, input)?.answers ?? {}));
+  const annotations = new Map(
+    Object.entries(readAnswers(AnnotationsSchema, input)?.annotations ?? {}),
+  );
+  const answered = asked.data.questions.flatMap(({ question }) => {
+    const answer = answers.get(question);
+    if (answer === undefined) return [];
+    const notes = annotations.get(question)?.notes;
+    return [{ question, answer, ...(notes ? { notes } : {}) }];
+  });
+  return answered.length === 0 ? { kind: "other" } : { kind: "answers", answers: answered };
+};
+
+const claudePostToolUse = (
+  stdin: string,
+  deps: HookDeps,
+  handler: PostToolUseHandler,
+): Promise<string> =>
+  runNoReplyHook({
+    stdin,
+    deps,
+    handler,
+    event: "post-tool-use",
+    schema: ClaudePostToolUseInputSchema,
+    toHandlerInput: (input) => ({
+      agent: "claude" as const,
+      sessionId: input.session_id,
+      toolName: input.tool_name,
+      ...(input.tool_use_id === undefined ? {} : { toolUseId: input.tool_use_id }),
+      result: toToolResult(input),
+    }),
+  });
+
 // What Claude answers; every event is supported.
 export const claudeAdapter: AgentAdapter = {
   stop: claudeStop,
   preToolUse: claudePreToolUse,
+  postToolUse: claudePostToolUse,
   sessionStart: claudeSessionStart,
   stopFailure: claudeStopFailure,
 };
@@ -241,11 +352,16 @@ const claudeHooks = () =>
     SessionStart: [{ handlers: Object.values(sessionStartHandlers) }],
     Stop: [{ handlers: [continueWorkflow] }],
     // Claude ends a turn with rate_limit when the plan's usage limit is hit.
-    StopFailure: [{ matcher: "rate_limit", handlers: [resumeAfterLimit] }],
+    StopFailure: [
+      { matcher: "rate_limit", handlers: [resumeAfterLimit] },
+      { matcher: "*", handlers: [recordAgentError] },
+    ],
     PreToolUse: [
       { matcher: [...PATH_FIELDS.keys(), "Bash"].join("|"), handlers: [recordGuard] },
       { matcher: "Bash", handlers: [bashAntipatterns] },
+      { matcher: "AskUserQuestion", handlers: [questionNotice] },
     ],
+    PostToolUse: [{ matcher: "AskUserQuestion", handlers: [answerNotice] }],
   }) as const;
 
 const hookEntry = (orchestrateArgv: readonly string[], event: string, handler: string) => ({
@@ -284,6 +400,10 @@ export const claudeSettings = (orchestrateArgv: readonly string[]) => {
       PreToolUse: registered.PreToolUse.map(({ matcher, handlers }) => ({
         matcher,
         hooks: handlers.map((handler) => hookEntry(orchestrateArgv, "pre-tool-use", handler.name)),
+      })),
+      PostToolUse: registered.PostToolUse.map(({ matcher, handlers }) => ({
+        matcher,
+        hooks: handlers.map((handler) => hookEntry(orchestrateArgv, "post-tool-use", handler.name)),
       })),
     },
   };

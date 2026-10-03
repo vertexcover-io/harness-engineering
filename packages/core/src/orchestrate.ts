@@ -32,6 +32,7 @@ import { currentTerminal, harnessTerminalHost } from "./agents/tmux.ts";
 import { commentRepliedEvent, isOpen, readComments, replyToComment } from "./comments.ts";
 import { runContextStep } from "./context-step.ts";
 import { findEnvRun } from "./hooks/common.ts";
+import { postToolUseHandlers } from "./hooks/post-tool-use.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
 import { sessionStartHandlers } from "./hooks/session-start.ts";
 import { stopHandlers } from "./hooks/stop.ts";
@@ -437,6 +438,12 @@ const hookCommand = () => {
     description: "Log a turn an API error ended, and wait out a usage limit",
     handlers: stopFailureHandlers,
     answer: (adapter) => adapter.stopFailure,
+  });
+  addHookCommand(hook, {
+    name: "post-tool-use",
+    description: "Record what a tool call returned, such as the person's answers",
+    handlers: postToolUseHandlers,
+    answer: (adapter) => adapter.postToolUse,
   });
   return hook;
 };
