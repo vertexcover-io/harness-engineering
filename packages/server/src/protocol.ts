@@ -29,6 +29,9 @@ export const StartRunBodySchema = z.strictObject({
   name: SlugSchema.optional(),
   agent: WorkflowAgentSchema.default("claude"),
   tier: NameSchema.optional(),
+  // the env the session starts with, which harness run builds from the project's .env, the config
+  // and the workflow; required, so a caller that forgets it is refused rather than run without it
+  env: z.record(z.string(), z.string()),
   // the config file harness run --config named; the run reads it instead of its checkout's
   config: AbsolutePathSchema.optional(),
 });

@@ -1,6 +1,6 @@
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
-import { type DoctorReport, runDoctor, verdict, workflowChecks } from "@harness/core";
+import { type DoctorReport, loadStartEnv, runDoctor, verdict, workflowChecks } from "@harness/core";
 import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@harness/sdk";
 import { runtimeChecks } from "@harness/server";
 import {
@@ -53,13 +53,12 @@ export const runCommand = () =>
         if (!loaded.ok) return fail(loaded.error);
       }
 
+      // Built once: the doctor's env checks and the session see the same values.
+      const env = await loadStartEnv(config ?? null, cwd, plan);
       const report = await runDoctor({
         cwd,
         config,
-        extraChecks: [
-          ...runtimeChecks(plan.agent),
-          ...workflowChecks(plan.doctor, dirname(workflowPath)),
-        ],
+        extraChecks: [...runtimeChecks(plan.agent), ...workflowChecks(plan.doctor, env)],
         log: cliLog(),
       });
       const doctorVerdict = verdict(report);
@@ -68,6 +67,7 @@ export const runCommand = () =>
 
       const repoRoot = await createGit().repoRoot(cwd);
       if (repoRoot === null) return fail("not inside a git repository");
+      if (!env.ok) return fail(env.error);
 
       await ensureServer();
       const result = await harnessClient().run({
@@ -76,6 +76,7 @@ export const runCommand = () =>
         inputs: { prompt: opts.prompt, ...opts.input } satisfies JsonObject,
         cwd: repoRoot,
         agent: plan.agent,
+        env: env.value,
         ...(plan.tier === undefined ? {} : { tier: plan.tier }),
         ...(opts.name === undefined ? {} : { name: opts.name }),
         ...(config === undefined ? {} : { config }),

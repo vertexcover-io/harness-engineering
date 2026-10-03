@@ -15,6 +15,9 @@ import { join } from "node:path";
 import { DoctorJsonSchema } from "@harness/core";
 
 const TIMEOUT_MS = 40_000;
+// Bun would load the repo's .env into the CLI, and from there the server and tmux, by itself.
+const NO_DOTENV = "--env-file=/dev/null";
+
 const CLI = join(import.meta.dir, "index.ts");
 const FAKE_AGENT = join(
   import.meta.dir,
@@ -117,7 +120,7 @@ const harness = (
   env: NodeJS.ProcessEnv,
   ...args: string[]
 ): { code: number; stdout: string; stderr: string } => {
-  const run = spawnSync("bun", [CLI, ...args], { cwd, env, encoding: "utf8" });
+  const run = spawnSync("bun", [NO_DOTENV, CLI, ...args], { cwd, env, encoding: "utf8" });
   return { code: run.status ?? 1, stdout: run.stdout, stderr: run.stderr };
 };
 
@@ -127,7 +130,7 @@ const spawnHarness = (
   args: readonly string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> =>
   new Promise((resolvePromise) => {
-    const child = spawn("bun", [CLI, ...args], { cwd, env });
+    const child = spawn("bun", [NO_DOTENV, CLI, ...args], { cwd, env });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
@@ -211,6 +214,38 @@ describe("harness run", () => {
       const args = Array.isArray(argv) ? argv.map(String) : [];
 
       expect(args[args.indexOf("--model") + 1]).toBe("opus");
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the agent session starts with the .env, config env and workflow env and envFile values",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+      writeFileSync(join(repo, ".env"), "E2E_DOTENV=dotenv\nE2E_SHARED=dotenv\n");
+      writeFileSync(
+        join(repo, "orchestrate.config.json"),
+        JSON.stringify({ version: 2, env: { E2E_CONFIG: "config", E2E_SHARED: "config" } }),
+      );
+      writeFileSync(join(repo, "flow.env"), "E2E_FLOW_FILE=file\n");
+      writeFileSync(
+        join(repo, "env.yaml"),
+        `envFile: flow.env\nenv:\n  E2E_SHARED: workflow\n${OK_WORKFLOW}`,
+      );
+
+      expect(harness(repo, env, "run", "env.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
+      waitFor(() => readLines(fakeOut).some(isLaunch));
+      const launched = readLines(fakeOut).find(isLaunch)?.env as Record<string, string>;
+
+      expect(launched).toMatchObject({
+        E2E_DOTENV: "dotenv",
+        E2E_CONFIG: "config",
+        E2E_FLOW_FILE: "file",
+        E2E_SHARED: "workflow",
+      });
 
       stopServer(repo, env);
     },

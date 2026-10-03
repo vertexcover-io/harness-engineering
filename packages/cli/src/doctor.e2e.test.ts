@@ -30,6 +30,7 @@ afterEach(() => {
 const doctor = (files: Record<string, string>, args: readonly string[]) => {
   const dir = mkdtempSync(join(tmpdir(), "harness-doctor-e2e-"));
   dirs.push(dir);
+  spawnSync("git", ["init", "-q"], { cwd: dir });
   for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
   const { DOCTOR_E2E_KEY: _unset, ...env } = process.env;
   const result = spawnSync("bun", [CLI, "doctor", ...args], {
@@ -62,6 +63,27 @@ describe("harness doctor --workflow", () => {
     ]);
     expect(rowOf(stdout, "env:DOCTOR_E2E_KEY")).toMatchObject({ status: "ok" });
     expect(stdout).not.toContain("top-secret");
+  });
+
+  test("the key set only in the config's env passes", () => {
+    const config = JSON.stringify({ version: 2, env: { DOCTOR_E2E_KEY: "from-config" } });
+    const { stdout } = doctor({ "wf.yaml": WORKFLOW, "orchestrate.config.json": config }, [
+      "--workflow",
+      "wf.yaml",
+      "--json",
+    ]);
+    expect(rowOf(stdout, "env:DOCTOR_E2E_KEY")).toMatchObject({ status: "ok" });
+  });
+
+  test("a workflow envFile that is missing fails the env check naming the file", () => {
+    const { stdout } = doctor({ "wf.yaml": `envFile: gone.env\n${WORKFLOW}` }, [
+      "--workflow",
+      "wf.yaml",
+      "--json",
+    ]);
+    const row = rowOf(stdout, "env:DOCTOR_E2E_KEY");
+    expect(row?.status).toBe("fail");
+    expect(row?.detail).toContain("gone.env");
   });
 
   test("without --workflow the declared checks do not run", () => {

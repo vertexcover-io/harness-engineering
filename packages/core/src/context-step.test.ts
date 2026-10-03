@@ -38,6 +38,7 @@ const seed = (runDir: string): State => ({
   runId: "r-1",
   runName: "feat-x",
   runDir,
+  config: { path: null, root: runDir },
   version: "2.0.0",
   workflow: { name: "t", path: "workflow.yaml" },
   input: {},
@@ -68,12 +69,15 @@ const seed = (runDir: string): State => ({
 });
 
 // A run whose one open step is a context node with the given fields.
-const setUp = async (node: string) => {
+const setUp = async (node: string, header = "") => {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "context-step-")));
   const run: RunRef = { id: "r-1", cwd, name: "feat-x" };
   const runDir = runDirOf(cwd, "feat-x");
   mkdirSync(join(runDir, "artifacts"), { recursive: true });
-  writeFileSync(join(runDir, "workflow.yaml"), `name: t\nnodes:\n  - { id: step, ${node} }\n`);
+  writeFileSync(
+    join(runDir, "workflow.yaml"),
+    `name: t\n${header}nodes:\n  - { id: step, ${node} }\n`,
+  );
   writeFileSync(join(runDir, "state.json"), JSON.stringify(seed(runDir)));
   const registry = createRegistry(join(cwd, "registry.json"));
   await registry.addRun({
@@ -164,7 +168,8 @@ afterEach(() => {
   mock.restore();
 });
 
-const LAUNCH = { cwd: "/repo", env: { HARNESS_RUN_ID: "r-1" }, orchestrateArgv: ["/o.ts"] };
+const LAUNCH = { cwd: "/repo", orchestrateArgv: ["/o.ts"] };
+const HOME = "/home/.harness";
 
 type Context = Awaited<ReturnType<typeof setUp>>;
 
@@ -181,6 +186,7 @@ const helper = async (
     registry: context.registry,
     provider,
     launch: LAUNCH,
+    home: HOME,
     log: noopLogger,
   });
 
@@ -260,6 +266,40 @@ describe("runContextStep: new", () => {
       output: { action: "new", applied: false, reason: "no pane" },
     });
     expect(typesOf(fake.typed)).toEqual(["C-u", RESUME, "Enter"]);
+  });
+
+  test("the new session launches with the run's .env and workflow env, under the harness's own", async () => {
+    const context = await setUp("type: context, action: new", "env: { FROM_WORKFLOW: '1' }\n");
+    writeFileSync(join(context.run.cwd, ".env"), "FROM_DOTENV=1\nHARNESS_RUN_ID=spoofed\n");
+    const starting = startingProvider(context);
+
+    await helper(context, fakeTerminal(() => IDLE).terminal, starting.provider);
+
+    expect(starting.relaunches[0]?.options.env).toEqual({
+      FROM_DOTENV: "1",
+      FROM_WORKFLOW: "1",
+      HARNESS_RUN_ID: "r-1",
+      HARNESS_HOME: HOME,
+    });
+  });
+
+  test("a run env that fails to load completes unapplied and resumes the old session, launching nothing", async () => {
+    const context = await setUp("type: context, action: new", "envFile: gone.env\n");
+    const fake = fakeTerminal(() => IDLE);
+    const { provider, relaunches } = fakeProvider();
+
+    await helper(context, fake.terminal, provider);
+
+    expect(relaunches).toEqual([]);
+    expect(await stepOutput(context.runDir)).toMatchObject({
+      output: { action: "new", applied: false },
+    });
+    expect(JSON.stringify(await stepOutput(context.runDir))).toContain("gone.env");
+    expect(typesOf(fake.typed)).toEqual(["C-u", RESUME, "Enter"]);
+    expect((await context.registry.findRun("r-1"))?.sessions).toEqual([
+      { agent: "claude", sessionId: "A" },
+    ]);
+    expect(await typesIn(context.runDir)).not.toContain("workflow.context.started");
   });
 
   test("a new session that never starts completes the node unapplied after the timeout", async () => {

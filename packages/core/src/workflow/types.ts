@@ -1,5 +1,6 @@
 import {
   AgentTypeSchema,
+  EnvLayerSchema,
   type JsonValue,
   NameSchema,
   NodeTypeSchema,
@@ -207,6 +208,9 @@ export const WorkflowSchema = z.strictObject({
   agent: WorkflowAgentSchema.default("claude"),
   // looked up under agents.AGENT.tiers in the config to pick the model the session launches with
   tier: NameSchema.optional(),
+  // set in every agent session of the run, over the config's; envFile is relative to the folder
+  // the run starts in (the repo root). Only the top workflow's apply; an included one's are ignored.
+  ...EnvLayerSchema.shape,
   doctor: z.array(DoctorDeclarationSchema).default([]),
   inputs: z.record(NodeIdSchema, InputDeclarationSchema).default({}),
   nodes: z.array(NodeSchema).min(1),
@@ -340,6 +344,8 @@ export type WorkflowPlan = Readonly<{
   name: string;
   agent: WorkflowAgent;
   tier?: string | undefined;
+  env: Readonly<Record<string, string>>;
+  envFile?: string | undefined;
   inputs: InputDeclarations;
   doctor: readonly DoctorDeclaration[];
   nodes: readonly PlanNode[];

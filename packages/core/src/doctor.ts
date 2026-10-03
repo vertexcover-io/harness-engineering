@@ -21,7 +21,6 @@ import {
   type Outcome,
   ok,
   type Result,
-  readProjectEnv,
   warn,
 } from "@harness/sdk";
 import * as z from "zod";
@@ -309,20 +308,23 @@ const isResolvable = (id: string, from: string): boolean => {
   }
 };
 
+// env is what the run's session will start with; the process environment fills the rest.
 const runDeclared = async (
   { check, key }: DoctorDeclaration,
   root: string,
-  workflowDir: string,
+  env: Result<Readonly<Record<string, string>>>,
 ): Promise<Outcome> => {
   if (check === "env") {
-    return (await readProjectEnv(root, key)) ? ok("set") : fail("missing");
+    if (!env.ok) return fail(env.error);
+    return (env.value[key] ?? process.env[key]) ? ok("set") : fail("missing");
   }
   if (check === "binary") {
     const path = Bun.which(key);
     return path === null ? fail("not on PATH") : ok(path);
   }
   if (check === "package") {
-    return isResolvable(key, workflowDir) ? ok("resolvable") : fail("cannot be resolved");
+    // From the repo root: a run's scripts and modules load their packages from the repo.
+    return isResolvable(key, root) ? ok("resolvable") : fail("cannot be resolved");
   }
   const path = resolve(root, key);
   return (await isReadable(path)) ? ok(path) : fail("missing or unreadable");
@@ -331,10 +333,10 @@ const runDeclared = async (
 // The workflow's own required checks. Their fix is the workflow author's advice for the user.
 export const workflowChecks = (
   declarations: readonly DoctorDeclaration[],
-  workflowDir: string,
+  env: Result<Readonly<Record<string, string>>>,
 ): readonly Check[] =>
   declarations.map((declaration) => ({
     name: `${declaration.check}:${declaration.key}`,
     fix: [declaration.fix],
-    run: ({ root }) => runDeclared(declaration, root, workflowDir),
+    run: ({ root }) => runDeclared(declaration, root, env),
   }));

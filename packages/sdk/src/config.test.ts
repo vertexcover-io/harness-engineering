@@ -194,6 +194,13 @@ describe("ConfigSchema", () => {
     expect(ConfigSchema.safeParse({ version: 2, ...fields }).success).toBe(false);
   });
 
+  test.each(["env/dev.env", "../shared/.env", "./.env.local", "/etc/myapp/dev.env"])(
+    "an envFile path, relative or absolute, is kept: %s",
+    (envFile) => {
+      expect(ConfigSchema.parse({ version: 2, envFile }).envFile).toBe(envFile);
+    },
+  );
+
   test("WS5 — a package description is kept", () => {
     const config = ConfigSchema.parse({
       version: 2,
