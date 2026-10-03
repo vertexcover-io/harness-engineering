@@ -12,7 +12,6 @@ the feature being planned.
 |---|---|---|
 | `implement` | `plan.md`, the `## Phases` section | reads the digraph, builds the phases in order |
 | a coder | one `phases/phase-N.md`, plus `plan.md` | what it builds, and the scenarios that prove it |
-| `quality-gate` | `plan.md` and every phase file | resolves scenario ids against the matrix |
 | `code-review`, spec persona | `design.md` and `plan.md` | the intent to review the diff against |
 
 ## Contents
@@ -36,7 +35,7 @@ fails without saying why.
 | the digraph inside it | implement | `digraph phases { … }`, one node per phase id, `pN -> pM` edges |
 | the `## Acceptance` heading | the coder | exact text |
 | `# Phase N: TITLE` and `Depends on:` | the coder | the first two lines of every phase file |
-| scenario ids | quality-gate | the format in `test-scenarios.md`, unique across the whole plan |
+| scenario ids | tdd | the format in `test-scenarios.md`, unique across the whole plan |
 
 Everything else is prose. The rules below govern it.
 
@@ -161,8 +160,7 @@ symptom shows up in the Test Matrix, not in the steps: rows climb to `e2e` becau
 nothing lower can reach the behavior. Name the shape that forces the climb, quote it, and give a
 phase the step that opens it up. `test-scenarios.md`'s red flag says when to go looking.
 
-Pre-existing problems in a file you happen to be touching are out of scope; they are
-`tech-debt-finder`'s job. A long list dilutes the entries that actually block. If a row's
+Pre-existing problems in a file you happen to be touching are out of scope. A long list dilutes the entries that actually block. If a row's
 resolution would be "leave the code as is", it is not a blocker — delete the row.
 
 Quote the code. The coder matches the quoted text to find the place; four lines locate it, and

@@ -68,8 +68,8 @@ file in the setup is fine; the expectations assert only what an actor observes.
 ## Format
 
 Heading `**SCn — OBSERVABLE OUTCOME** · TRACE_IDS` — the id is globally unique across
-the plan; `tdd` carries it in the test title and `quality-gate` resolves it against the
-phase file. A scenario tracing to nothing is dropped, or flags a missing requirement.
+the plan; `tdd` carries it in the test title. A scenario tracing to nothing is dropped, or
+flags a missing requirement.
 
 ```markdown
 **SC3 — A weak password is rejected with the rule's error** · R2, EC1

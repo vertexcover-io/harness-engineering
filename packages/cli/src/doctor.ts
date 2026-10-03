@@ -50,7 +50,7 @@ export const renderTable = (results: readonly DoctorRow[]): string => {
   return [line(HEADERS), ...body].join("\n");
 };
 
-const FAIL_ADVICE = "Fix the FAIL rows above, or run /setup-harness.";
+const FAIL_ADVICE = "Fix the FAIL rows above.";
 const WARN_ADVICE = "Every required check passed. Each WARN costs the one stage it unblocks.";
 
 const advice = (report: DoctorReport): readonly string[] => {

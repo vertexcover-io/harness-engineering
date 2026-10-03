@@ -12,7 +12,9 @@ description: >
 
 Every line of production code is written in response to a failing test.
 
-**First action: read `orchestrate.config.json` at the repo root.** Every command and package path this skill uses comes from it, resolved per `skills/orchestrate/references/config.md`.
+**First action: read the project's orchestrate config** (`orchestrate.config.yaml` or
+`orchestrate.config.json` at the repo root). Every command and package path this skill uses comes
+from its `packages` block.
 
 **Project overrides.** Read `$ARGUMENTS` if it names a file, else
 `.claude/harness/tdd-reference.md` if it exists. Either outranks the defaults below on conflict.
@@ -42,7 +44,7 @@ instead of every incidental edge.
 ## RED — write the failing test first
 
 Write one minimal test describing the behavior you want. Run only that test's file — the package's
-`test_file`, per `skills/orchestrate/references/config.md`. Watch it **fail** — not error — with a
+`test_file`. Watch it **fail** — not error — with a
 message that matches, because the feature is missing.
 
 **Where that command carries no `{FILE}`, it runs the whole suite** — read your new test's own line.

@@ -3,10 +3,6 @@
 # Merge the relevant blocks into your ~/.codex/config.toml (or <repo>/.codex/config.toml).
 # This mirrors the Claude Code settings.json that ships with the plugin.
 
-# Enable plugin-bundled hooks (required for harness/hooks/hooks.json to fire).
-[features]
-plugin_hooks = true
-
 # Subagent concurrency — orchestrate fans out across phases.
 [agents]
 max_threads = 6

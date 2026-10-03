@@ -27,7 +27,7 @@ describe("renderText", () => {
       ]),
     );
     expect(text).toContain("VERDICT\nBLOCKED jq");
-    expect(text.endsWith("Fix the FAIL rows above, or run /setup-harness.")).toBe(true);
+    expect(text.endsWith("Fix the FAIL rows above.")).toBe(true);
   });
 
   test("SC3: DEGRADED with only warnings names every warned row and prints the WARN advice line", () => {

@@ -53,8 +53,6 @@ jobs:
 
       - run: npm run test:hooks
 
-      - run: npm run test:skills
-
   # A tag pushed with GITHUB_TOKEN starts no workflow run, so a manual release cuts its tag
   # here and the release job below publishes it in this same run.
   cut:

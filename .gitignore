@@ -4,7 +4,6 @@ dot-not-commit
 docs/*
 !docs/learnings/
 !docs/adr/
-orchestrate-workspace
 code-review-workspace
 dev-docs
 .harness/*

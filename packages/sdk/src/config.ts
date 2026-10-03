@@ -270,7 +270,7 @@ export const loadConfigFile = async (
       ok: false,
       error: {
         code: "CONFIG_MISSING",
-        message: `${repoRoot} has no ${CONFIG_FILES.join(", ")}. Run setup-harness to write one`,
+        message: `${repoRoot} has no ${CONFIG_FILES.join(", ")}. Write orchestrate.config.yaml (version: 2)`,
       },
     };
   }

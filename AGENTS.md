@@ -34,4 +34,3 @@ Explain reasoning for non-obvious decisions
 - Tool mapping: `references/codex-tools.md`
 - Config snippet for `~/.codex/config.toml`: `references/codex-config.toml`
 - Subagent roles: `.codex/agents/explore.toml`, `plan.toml`, `worker.toml`
-- Plugin-bundled hooks require `[features] plugin_hooks = true` in `config.toml`

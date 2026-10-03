@@ -441,11 +441,11 @@ describe("loadConfig", () => {
     },
   );
 
-  test("SC14 — a repository without a config file fails with CONFIG_MISSING naming setup-harness", async () => {
+  test("SC14 — a repository without a config file fails with CONFIG_MISSING saying which file to write", async () => {
     const result = await loadConfig(root);
     if (result.ok) throw new Error("expected a failure");
     expect(result.error.code).toBe("CONFIG_MISSING");
-    expect(result.error.message).toContain("setup-harness");
+    expect(result.error.message).toContain("Write orchestrate.config.yaml (version: 2)");
   });
 
   test("BL10: a top-level baseline command loads, and a number there fails with CONFIG_INVALID", async () => {
