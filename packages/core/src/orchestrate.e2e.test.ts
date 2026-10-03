@@ -90,7 +90,14 @@ const orchestrate = (
     cwd,
     encoding: "utf8",
     input,
-    env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home, ...env },
+    // A FORCE_COLOR in the caller's shell would color the error text the tests parse as JSON.
+    env: {
+      ...process.env,
+      FORCE_COLOR: undefined,
+      HARNESS_RUN_ID: undefined,
+      HARNESS_HOME: home,
+      ...env,
+    },
   });
   return { code: run.status, stdout: run.stdout, stderr: run.stderr };
 };
@@ -103,7 +110,14 @@ const orchestrateAsync = async (
 ): Promise<Readonly<{ code: number; stdout: string; stderr: string }>> => {
   const child = Bun.spawn(["bun", SCRIPT, ...args], {
     cwd,
-    env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home, ...env },
+    // A FORCE_COLOR in the caller's shell would color the error text the tests parse as JSON.
+    env: {
+      ...process.env,
+      FORCE_COLOR: undefined,
+      HARNESS_RUN_ID: undefined,
+      HARNESS_HOME: home,
+      ...env,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
