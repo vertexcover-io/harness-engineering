@@ -8,7 +8,7 @@
   ],
   "engines": {
     "node": ">=22.12",
-    "bun": ">=1.2"
+    "bun": ">=1.3.3"
   },
   "scripts": {
     "typecheck": "bun run --filter '@harness/*' typecheck && tsc -p skills/create-workspace && tsc -p skills/ticket-fetcher && tsc -p skills/baseline && tsc -p skills/qa",
@@ -16,7 +16,7 @@
     "lint": "biome check",
     "check": "bun scripts/check.ts",
     "lint:fix": "biome check --write",
-    "cli": "bun packages/cli/src/index.ts",
+    "cli": "bun --no-env-file packages/cli/src/index.ts",
     "orchestrate": "bun packages/core/src/orchestrate.ts",
     "workspace": "bun skills/create-workspace/scripts/workspace.ts",
     "ticket": "bun skills/ticket-fetcher/scripts/ticket.ts",

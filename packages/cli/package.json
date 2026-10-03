@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "bun build ./src/index.ts --compile --outfile dist/harness"
+    "build": "bun build ./src/index.ts --compile --no-compile-autoload-dotenv --outfile dist/harness"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^15.0.0",
