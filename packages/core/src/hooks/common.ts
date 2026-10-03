@@ -1,13 +1,16 @@
 import {
   type AgentType,
+  type Event,
   type HookDeps,
   type HookReply,
+  type JsonValue,
   parseJson,
   type Result,
   type RunRef,
   type SessionRef,
   type ToolVerdict,
 } from "@harness/sdk";
+import { appendRunEvent } from "@harness/sdk/internal";
 import * as z from "zod";
 
 // The initialized run that HARNESS_RUN_ID names, whichever session is asking. A session that
@@ -32,6 +35,21 @@ export const findSessionRun = async (
     (session) => session.agent === input.agent && session.sessionId === input.sessionId,
   );
   return linked ? run?.ref : undefined;
+};
+
+// Stores an event from the agent's hooks in the run the session belongs to. Undefined when the
+// session is no run's, or when the event could not be stored, which is logged.
+export const recordSessionEvent = async (
+  session: Readonly<{ agent: AgentType; sessionId: string }>,
+  event: Readonly<{ type: string; payload: JsonValue }>,
+  deps: HookDeps,
+): Promise<Readonly<{ run: RunRef; event: Event }> | undefined> => {
+  const run = await findSessionRun(session, deps);
+  if (run === undefined) return undefined;
+  const stored = await appendRunEvent(run, { ...event, source: "hooks" });
+  if (stored.ok) return { run, event: stored.value.event };
+  deps.log.warn({ error: stored.error }, `${event.type} not recorded`);
+  return undefined;
 };
 
 export const parseStdin = <T>(stdin: string, schema: z.ZodType<T>): Result<T> => {

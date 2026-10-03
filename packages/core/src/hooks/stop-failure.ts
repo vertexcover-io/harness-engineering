@@ -1,28 +1,38 @@
-import type { StopFailureHandler } from "@harness/sdk";
-import { appendRunEvent } from "@harness/sdk/internal";
+import type { StopFailureHandler, StopFailureInput } from "@harness/sdk";
 import { startLimitWait } from "../limit-wait.ts";
-import { findSessionRun } from "./common.ts";
+import { recordSessionEvent } from "./common.ts";
+
+const buildErrorPayload = ({ agent, sessionId, error, message }: StopFailureInput) => ({
+  agent,
+  sessionId,
+  error,
+  ...(message === undefined ? {} : { message }),
+});
 
 export const resumeAfterLimit: StopFailureHandler = {
   name: "resume-after-limit",
   run: async (input, deps) => {
     if (!input.usageLimit) return;
-    const run = await findSessionRun(input, deps);
-    if (run === undefined) return;
-    const { agent, sessionId, error, message } = input;
-    const stored = await appendRunEvent(run, {
-      type: "agent.limit.reached",
-      source: "hooks",
-      payload: { agent, sessionId, error, ...(message === undefined ? {} : { message }) },
-    });
-    if (!stored.ok) {
-      deps.log.warn({ error: stored.error }, "stop-failure: the limit was not recorded");
-      return;
-    }
-    startLimitWait(run, sessionId, stored.value.event.id);
+    const event = { type: "agent.limit.reached", payload: buildErrorPayload(input) };
+    const recorded = await recordSessionEvent(input, event, deps);
+    if (recorded === undefined) return;
+    startLimitWait(recorded.run, input.sessionId, recorded.event.id);
+  },
+};
+
+// A usage limit is resume-after-limit's; any other error stops the agent until a person acts.
+export const recordAgentError: StopFailureHandler = {
+  name: "record-agent-error",
+  run: async (input, deps) => {
+    if (input.usageLimit) return;
+    await recordSessionEvent(
+      input,
+      { type: "agent.stopped", payload: buildErrorPayload(input) },
+      deps,
+    );
   },
 };
 
 export const stopFailureHandlers: Readonly<Record<string, StopFailureHandler>> = Object.fromEntries(
-  [resumeAfterLimit].map((handler) => [handler.name, handler]),
+  [resumeAfterLimit, recordAgentError].map((handler) => [handler.name, handler]),
 );
