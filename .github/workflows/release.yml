@@ -45,7 +45,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.19
+          bun-version: 1.4.2
 
       - run: npm run test:scripts
 
@@ -74,7 +74,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.19
+          bun-version: 1.4.2
 
       - name: Bump the version, pin the marketplaces, commit and tag
         id: version

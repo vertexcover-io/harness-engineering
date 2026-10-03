@@ -105,18 +105,25 @@ const MOCKUP = `<!doctype html><html><body>
 <script>document.getElementById("go").textContent = "Continue";</script>
 </body></html>`;
 
-const browser = (...args: string[]): string => {
-  const run = spawnSync("agent-browser", args, {
-    encoding: "utf8",
+// Async on purpose: the viewer runs in this process, and a sync spawn would freeze it while the
+// browser waits for its page.
+const browser = async (...args: string[]): Promise<string> => {
+  const run = Bun.spawn(["agent-browser", ...args], {
     env: { ...process.env, AGENT_BROWSER_SESSION: SESSION },
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  if (run.status !== 0)
-    throw new Error(`agent-browser ${args[0]} failed: ${run.stderr}${run.stdout}`);
-  return run.stdout.trim();
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(run.stdout).text(),
+    new Response(run.stderr).text(),
+    run.exited,
+  ]);
+  if (code !== 0) throw new Error(`agent-browser ${args[0]} failed: ${stderr}${stdout}`);
+  return stdout.trim();
 };
 
-const evaluate = (js: string): unknown => {
-  const out = browser("eval", js);
+const evaluate = async (js: string): Promise<unknown> => {
+  const out = await browser("eval", js);
   try {
     return JSON.parse(out);
   } catch {
@@ -127,16 +134,16 @@ const evaluate = (js: string): unknown => {
 const until = async (js: string, ms = 5000): Promise<void> => {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
-    if (evaluate(js) === true) return;
+    if ((await evaluate(js)) === true) return;
     await Bun.sleep(100);
   }
   throw new Error(`still false after ${ms}ms: ${js}`);
 };
 
-const selectText = (inFrame: boolean, text: string): void => {
+const selectText = async (inFrame: boolean, text: string): Promise<void> => {
   const doc = inFrame ? "document.querySelector('#htmlFrame').contentDocument" : "document";
   const root = inFrame ? `${doc}.body` : "document.querySelector('#docRoot')";
-  evaluate(`(() => {
+  await evaluate(`(() => {
     const doc = ${doc}; const root = ${root};
     const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -220,30 +227,32 @@ describe("viewer in a browser", () => {
   });
 
   test("SC33: Comment mode gates the selection bar, and a sent comment reaches the agent's status", async () => {
-    browser("open", `${url}#artifacts/design.md`);
+    await browser("open", `${url}#artifacts/design.md`);
     await until("!!document.querySelector('#docRoot')");
-    evaluate("localStorage.setItem('harness-viewer:comment-mode','off')");
-    browser("reload");
+    await evaluate("localStorage.setItem('harness-viewer:comment-mode','off')");
+    await browser("reload");
     await until("!!document.querySelector('#docRoot')");
 
-    selectText(false, "one file per run");
+    await selectText(false, "one file per run");
     await Bun.sleep(600);
-    expect(evaluate(barShown)).toBe(false);
+    expect(await evaluate(barShown)).toBe(false);
 
-    browser("click", "#modeBtn");
-    selectText(false, "one file per run");
+    await browser("click", "#modeBtn");
+    await selectText(false, "one file per run");
     await until(barShown);
 
-    browser("click", "#selbar button[data-kind=comment]");
-    browser("fill", "#composerText", "Why only one file?");
-    browser("press", "Control+Enter");
+    await browser("click", "#selbar button[data-kind=comment]");
+    await browser("fill", "#composerText", "Why only one file?");
+    await browser("press", "Control+Enter");
     await until("document.querySelector('.batch') !== null");
-    expect(evaluate("document.querySelector('#docRoot mark.hl.is-draft') !== null")).toBe(true);
-    expect(evaluate("document.querySelector('.batch .group-label').textContent")).toContain(
+    expect(await evaluate("document.querySelector('#docRoot mark.hl.is-draft') !== null")).toBe(
+      true,
+    );
+    expect(await evaluate("document.querySelector('.batch .group-label').textContent")).toContain(
       "Not sent yet",
     );
 
-    browser("click", "#sendBtn");
+    await browser("click", "#sendBtn");
     await until("document.querySelector('.batch') === null");
     await until(
       "[...document.querySelectorAll('#threads .card .status')].some((s) => s.textContent === 'With the agent')",
@@ -295,17 +304,17 @@ describe("viewer in a browser", () => {
   }, 30000);
 
   test("SC35: text selected inside an HTML artifact becomes a comment with an element path", async () => {
-    browser("open", `${url}#artifacts/mock.html`);
+    await browser("open", `${url}#artifacts/mock.html`);
     await until(
       "document.querySelector('#htmlFrame')?.contentDocument?.getElementById('go')?.textContent === 'Continue'",
     );
-    selectText(true, "Sign in");
+    await selectText(true, "Sign in");
     await until(barShown);
-    browser("click", "#selbar button[data-kind=comment]");
-    browser("fill", "#composerText", "Make the title bolder");
-    browser("press", "Control+Enter");
+    await browser("click", "#selbar button[data-kind=comment]");
+    await browser("fill", "#composerText", "Make the title bolder");
+    await browser("press", "Control+Enter");
     await until("document.querySelector('.batch') !== null");
-    browser("click", "#sendBtn");
+    await browser("click", "#sendBtn");
     await until("document.querySelector('.batch') === null");
     await until(
       "[...document.querySelectorAll('#threads .loc')].some((l) => l.textContent.includes('div.mk-card > h2.mk-title'))",
@@ -313,10 +322,10 @@ describe("viewer in a browser", () => {
   }, 30000);
 
   test("a code block is one wrapped box with diff colors, not a stack of inline chips", async () => {
-    browser("set", "viewport", "1000", "800");
-    browser("open", `${url}#artifacts/code.md`);
+    await browser("set", "viewport", "1000", "800");
+    await browser("open", `${url}#artifacts/code.md`);
     await until("!!document.querySelector('#docRoot pre .hljs-addition')");
-    const look = evaluate(`(() => {
+    const look = await evaluate(`(() => {
       const pre = document.querySelector('#docRoot pre');
       const style = (sel) => getComputedStyle(document.querySelector(sel));
       return {
@@ -357,92 +366,92 @@ describe("viewer in a browser", () => {
   }, 30000);
 
   test("the outline lists the file's headings, jumps to one on click, and marks the section in view", async () => {
-    browser("open", `${url}#artifacts/outline.md`);
+    await browser("open", `${url}#artifacts/outline.md`);
     await until("document.querySelectorAll('#outline button').length > 0");
     expect(
-      evaluate("[...document.querySelectorAll('#outline button')].map((b) => b.textContent)"),
+      await evaluate("[...document.querySelectorAll('#outline button')].map((b) => b.textContent)"),
     ).toEqual(["Outline", "One", "Two", "Three", "Three detail"]);
 
-    browser("set", "viewport", "1000", "800");
-    browser("click", "#outline li:nth-child(4) button");
+    await browser("set", "viewport", "1000", "800");
+    await browser("click", "#outline li:nth-child(4) button");
     await until(belowHead("Three"));
-    expect(evaluate("location.hash")).toBe("#artifacts/outline.md#three");
+    expect(await evaluate("location.hash")).toBe("#artifacts/outline.md#three");
     await until(
       "document.querySelector('#outline button[aria-current=\"true\"]')?.textContent === 'Three'",
     );
   }, 30000);
 
   test("a link to a section opens the file at that section, and a heading's # link points at it", async () => {
-    browser("set", "viewport", "1280", "800");
-    browser("open", `${url}#artifacts/outline.md#three-detail`);
+    await browser("set", "viewport", "1280", "800");
+    await browser("open", `${url}#artifacts/outline.md#three-detail`);
     await until("!!document.querySelector('#docRoot')");
     await until(belowHead("Three detail"));
     expect(
-      evaluate(
+      await evaluate(
         "[...document.querySelectorAll('#docRoot h2')].find((h) => h.textContent === 'Two').querySelector('a.anchor').getAttribute('href')",
       ),
     ).toBe("#artifacts/outline.md#two");
   }, 30000);
 
   test("a code block copies its code, and one over 40 lines opens folded until asked", async () => {
-    browser("open", `${url}#artifacts/code.md`);
+    await browser("open", `${url}#artifacts/code.md`);
     await until("!!document.querySelector('#docRoot pre .copy-btn')");
     const fold =
       "document.querySelector('#docRoot pre.language-ts, #docRoot pre:has(code.language-ts)')";
     expect(
-      evaluate(
+      await evaluate(
         `${fold}.classList.contains('folded') && ${fold}.clientHeight < ${fold}.scrollHeight`,
       ),
     ).toBe(true);
-    expect(evaluate("document.querySelector('#docRoot .fold-btn').dataset.more")).toBe("20");
-    browser("click", "#docRoot .fold-btn");
-    expect(evaluate(`${fold}.classList.contains('folded')`)).toBe(false);
+    expect(await evaluate("document.querySelector('#docRoot .fold-btn').dataset.more")).toBe("20");
+    await browser("click", "#docRoot .fold-btn");
+    expect(await evaluate(`${fold}.classList.contains('folded')`)).toBe(false);
 
     // The test browser denies clipboard reads, so record what the page writes instead.
-    evaluate(`(() => {
+    await evaluate(`(() => {
       const write = navigator.clipboard.writeText.bind(navigator.clipboard);
       navigator.clipboard.writeText = (text) => { window.copiedText = text; return write(text); };
       ${fold}.scrollIntoView({ block: 'center' });
     })()`);
-    browser("click", "#docRoot pre:has(code.language-ts) .copy-btn");
+    await browser("click", "#docRoot pre:has(code.language-ts) .copy-btn");
     await until(
       "document.querySelector('#docRoot pre:has(code.language-ts) .copy-btn').dataset.state === 'copied'",
     );
-    expect(evaluate("window.copiedText")).toContain("const line50 = 50;");
+    expect(await evaluate("window.copiedText")).toContain("const line50 = 50;");
   }, 30000);
 
   test("a diff shows more of its file above and below on request, until the file runs out", async () => {
-    browser("open", `${url}#artifacts/steps.md`);
+    await browser("open", `${url}#artifacts/steps.md`);
     await until("!!document.querySelector('#docRoot .hunk .expand-btn')");
     const hunk = "document.querySelector('#docRoot .hunk')";
     const shown = `[${hunk}.dataset.from, ${hunk}.dataset.to].join('-')`;
-    expect(evaluate(shown)).toBe("19-21");
+    expect(await evaluate(shown)).toBe("19-21");
 
-    browser("click", "#docRoot .expand-btn[data-dir=up]");
+    await browser("click", "#docRoot .expand-btn[data-dir=up]");
     await until(`${shown} === '9-21'`);
-    expect(evaluate(`${hunk}.querySelector('.diff-line').textContent`)).toBe(
+    expect(await evaluate(`${hunk}.querySelector('.diff-line').textContent`)).toBe(
       " export const v9 = 9;",
     );
-    expect(evaluate(`!!${hunk}.querySelector('.diff-line .hljs-keyword')`)).toBe(true);
+    expect(await evaluate(`!!${hunk}.querySelector('.diff-line .hljs-keyword')`)).toBe(true);
 
-    browser("click", "#docRoot .expand-btn[data-dir=up]");
+    await browser("click", "#docRoot .expand-btn[data-dir=up]");
     await until(`${shown} === '1-21'`);
-    expect(evaluate(`${hunk}.querySelector('.expand-btn[data-dir=up]').hidden`)).toBe(true);
+    expect(await evaluate(`${hunk}.querySelector('.expand-btn[data-dir=up]').hidden`)).toBe(true);
     for (const expected of ["1-31", "1-40"]) {
-      browser("click", "#docRoot .expand-btn[data-dir=down]");
+      await browser("click", "#docRoot .expand-btn[data-dir=down]");
       await until(`${shown} === '${expected}'`);
     }
-    expect(evaluate(`${hunk}.querySelector('.expand-btn[data-dir=down]').hidden`)).toBe(true);
+    expect(await evaluate(`${hunk}.querySelector('.expand-btn[data-dir=down]').hidden`)).toBe(true);
   }, 30000);
 
   test("a file path, a diff and the open artifact each open in the editor at their line", async () => {
-    browser("open", `${url}#artifacts/steps.md`);
+    await browser("open", `${url}#artifacts/steps.md`);
     await until("!!document.querySelector('#docRoot code[data-path]')");
     opened.length = 0;
-    browser("click", "#docRoot code[data-path]");
+    await browser("click", "#docRoot code[data-path]");
     await until("!document.querySelector('#toast').hidden");
-    browser("click", "#docRoot pre[data-file] .open-btn");
-    browser("click", "#editBtn");
+    await browser("click", "#docRoot pre[data-file] .open-btn");
+    await browser("click", "#editBtn");
     const sample = join(cwd, "src", "sample.ts");
     for (let i = 0; i < 30 && opened.length < 3; i++) await Bun.sleep(100);
     expect(opened).toEqual([

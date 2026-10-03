@@ -60,6 +60,21 @@ const CYCLE_WORKFLOW = [
   "",
 ].join("\n");
 
+// The binary as packages/cli's build script makes it, written to a temp folder.
+const buildBinary = (): string => {
+  const cliDir = join(import.meta.dir, "..");
+  const { scripts } = JSON.parse(readFileSync(join(cliDir, "package.json"), "utf8")) as {
+    scripts: { build: string };
+  };
+  const binary = join(mkdtempSync(join(tmpdir(), "harness-bin-")), "harness");
+  const built = spawnSync("sh", ["-c", scripts.build.replace("dist/harness", binary)], {
+    cwd: cliDir,
+    encoding: "utf8",
+  });
+  if (built.status !== 0) throw new Error(built.stderr);
+  return binary;
+};
+
 const makeRepo = (): string => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "harness-run-e2e-repo-")));
   const git = (...args: string[]) => execFileSync("git", args, { cwd: dir });
@@ -248,6 +263,30 @@ describe("harness run", () => {
       });
 
       stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the built harness binary loads no .env, so a repo's agent variables never reach the pane",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+      writeFileSync(join(repo, ".env"), "ANTHROPIC_BASE_URL=http://app-gateway\n");
+      const binary = buildBinary();
+
+      const result = spawnSync(binary, ["run", "ok.yaml", "--prompt", "hi", "--no-open"], {
+        cwd: repo,
+        env,
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(0);
+      waitFor(() => readLines(fakeOut).some(isLaunch));
+      const launched = readLines(fakeOut).find(isLaunch)?.env as Record<string, string>;
+
+      expect(launched.ANTHROPIC_BASE_URL).toBeUndefined();
+
+      spawnSync(binary, ["server", "stop"], { cwd: repo, env });
     },
     TIMEOUT_MS,
   );
