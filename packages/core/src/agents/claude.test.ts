@@ -207,7 +207,7 @@ describe("claudeProvider.relaunch", () => {
 
     const result = await provider.relaunch(host.find("%3"), "s-new", {
       cwd: "/repo",
-      prompt: "/orchestrate-v2 --resume feat-x",
+      prompt: "/orchestrate --resume feat-x",
       env: { HARNESS_RUN_ID: "r-1" },
       orchestrateArgv: ["/usr/bin/bun", "/o.ts"],
     });
@@ -220,7 +220,7 @@ describe("claudeProvider.relaunch", () => {
     expect(spec?.env).toEqual({ HARNESS_RUN_ID: "r-1" });
     expect(spec?.argv.slice(0, 3)).toEqual(["/bin/claude", "--session-id", "s-new"]);
     expect(spec?.argv).toContain("--settings");
-    expect(spec?.argv.at(-1)).toBe("/orchestrate-v2 --resume feat-x");
+    expect(spec?.argv.at(-1)).toBe("/orchestrate --resume feat-x");
   });
 });
 

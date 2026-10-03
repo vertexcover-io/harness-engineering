@@ -65,7 +65,7 @@ codex plugin marketplace add vertexcover-io/harness-engineering
 codex plugin add harness --marketplace harness
 ```
 
-Merge the config snippet into `~/.codex/config.toml` to enable plugin-bundled hooks, set subagent concurrency, and apply the harness permissions profile:
+Merge the config snippet into `~/.codex/config.toml` to set subagent concurrency and apply the harness permissions profile:
 
 ```bash
 mkdir -p ~/.codex
@@ -75,28 +75,7 @@ cat references/codex-config.toml >> ~/.codex/config.toml
 **Codex compatibility notes:**
 - Skills load from `skills/` via `.codex-plugin/plugin.json` after the plugin is installed and enabled.
 - Tool-name differences vs Claude Code are documented in [`references/codex-tools.md`](./references/codex-tools.md) (e.g. `TodoWrite` → `update_plan`, `Edit` → `apply_patch`, `WebSearch` → `web_search`).
-- Hooks are supported via `hooks/hooks.json`; requires `[features] plugin_hooks = true` in `config.toml`.
 - Named subagent types map to TOML agent files at `.codex/agents/` (`explore.toml`, `plan.toml`, `worker.toml`).
-
-### PI
-
-Install Harness into the [PI coding agent](https://github.com/earendil-works/pi) with one command — it writes to `~/.pi/agent/settings.json` automatically and installs skills **and** the hook extension for full orchestrate parity:
-
-```bash
-pi install git:github.com/vertexcover-io/harness-engineering@main
-```
-
-Use `-l` to install into project-local `.pi/settings.json` instead. Manage with `pi list`, `pi update git:github.com/vertexcover-io/harness-engineering`, and `pi remove git:github.com/vertexcover-io/harness-engineering`.
-
-For skills only (no hooks / orchestrate dashboard):
-
-```bash
-npx skills add vertexcover-io/harness-engineering --agent pi
-```
-
-**PI compatibility notes:**
-- Skills are drop-in (same Agent-Skills `SKILL.md`); discovery is via the `pi.skills` field in `package.json` (installed) or `--skill <path>` (dev). A `.pi/skills` symlink is **not** discovered.
-- Hooks run in-process via `extensions/pi/harness-hooks.ts` — PI events map to harness hooks (`agent_end` → e2e gate + dashboard "waiting", `input` → dashboard "running", `session_shutdown` → dag finalize). Full mapping in [`references/pi-tools.md`](./references/pi-tools.md).
 
 ### Skills-only install (any agent)
 
@@ -105,10 +84,7 @@ The open-standard [`skills` CLI](https://github.com/vercel-labs/skills) installs
 ```bash
 npx skills add vertexcover-io/harness-engineering --agent claude-code
 npx skills add vertexcover-io/harness-engineering --agent codex
-npx skills add vertexcover-io/harness-engineering --agent pi
 ```
-
-**Caveat (all three):** the `npx skills` path installs **skills only** — hooks, quality gates, and the orchestrate dashboard require the agent's native plugin install (`/plugin install harness` for Claude Code, `codex plugin add harness` for Codex, `pi install git:…` for PI).
 
 ### Pre-releases
 
@@ -130,7 +106,7 @@ git push origin main --follow-tags
 
 With npm, put `--` before the arguments: `npm run release:version -- minor --pre-release`. A pre-release repins only the pre-release marketplace; a stable release repins both. Users see a new pin once it reaches `main`.
 
-**Try a pre-release** with `/orchestrate TASK --pre-release`. Orchestrate moves your install to the pre-release marketplace, or updates it there, then asks you to run `/reload-plugins` and start again. A plain `/orchestrate` on a pre-release offers to move you back to stable. By hand:
+**Try a pre-release** by hand:
 
 ```bash
 claude plugin marketplace add https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main/.claude-plugin/pre-release/marketplace.json
@@ -138,167 +114,40 @@ claude plugin install harness@harness-pre-release
 claude plugin uninstall harness@main
 ```
 
-Keep only one of `harness@main` and `harness@harness-pre-release` installed: both load at once when both are. A harness run from a local checkout is never moved.
+Keep only one of `harness@main` and `harness@harness-pre-release` installed: both load at once when both are.
 
 ## Quick Start
 
-Tell Claude Code or Codex what you want to build. For the full pipeline:
+The `harness` CLI runs a workflow from start to finish. From this checkout:
 
-```
-/orchestrate "Add rate limiting to the API"
+```bash
+bun install
+bun run cli run workflows/task.yaml --prompt "Add rate limiting to the API"
 ```
 
-This handles everything — design, planning, coding with tests, quality checks, docs, and a PR.
+`harness run` starts the harness server, opens an agent session, and sends it the `orchestrate`
+skill. The session then walks the workflow one stage at a time. `harness doctor` checks the tools,
+repository and config a run needs; `harness view` opens a run's page in the browser.
 
 For smaller tasks, use individual skills like `/tdd`, `/code-review`, or `/git-commit`.
 
 ## The Pipeline
 
-The orchestrate skill runs a full development pipeline end-to-end. Give it a prompt or a spec file and it handles the rest.
-
-**Pipeline stages:**
+`workflows/task.yaml` runs these stages, each one a skill under `skills/`:
 
 ```
-Setup → Brainstorm → Planner → Coder → Quality Gate → Sync Docs → Learnings → Commit & PR
+ticket-fetcher → create-workspace → baseline → design → planning → implement
+  → code-review → qa (loops back to implement until it passes) → git-commit → visual-pr
 ```
 
-| Stage | What happens |
-|-------|-------------|
-| **Setup** | Creates an isolated git worktree, runs baseline metrics |
-| **Brainstorm** | Interactive design session — you approve the architecture before any code |
-| **Planner** | Generates phased implementation plan with dependency graph — served as a page you review and comment on directly |
-| **Coder** | Dispatches parallel sub-agents running TDD (RED-GREEN-REFACTOR) per phase |
-| **Quality Gate** | Hard pass/fail verification — typecheck, lint, tests, coverage |
-| **Sync Docs** | Updates documentation to match the new code |
-| **Learnings** | Captures gotchas and patterns for future sessions |
-| **Commit & PR** | Creates conventional commits and opens a pull request |
-
-Stages 0–2 (Setup, Brainstorm, Planner) run interactively so you stay in control of design decisions. Stages 3–7 run as autonomous sub-agents.
-
-All artifacts land in `.harness/<name>/` — design, plan, phase files, and quality reports (gitignored; reviewers read them out-of-band).
-
-**Live DAG Dashboard**
-
-The pipeline launches a live dashboard that visualizes progress as a directed acyclic graph. Each node represents a stage or phase, color-coded by status (pending, running, done, failed). Click any node to see its report.
-
-<p align="center">
-  <img src="assets/dag-dashboard-overview.png" alt="DAG Dashboard — full pipeline view" width="700" />
-</p>
-
-Click any completed node to inspect its report:
-
-<p align="center">
-  <img src="assets/dag-report-brainstorm-spec.png" alt="Brainstorm & Spec report" width="400" />
-  <img src="assets/dag-report-planning-context.png" alt="Planning report — context and phase graph" width="400" />
-</p>
-
-After the pipeline completes, the dashboard is finalized into a self-contained HTML file you can share or archive.
-
-You can also run stages individually if you prefer more control:
-`/planning` → `/tdd` → `/quality-gate` → `/git-commit` → `/harness-retro`
+The project's settings live in `orchestrate.config.yaml` (`version: 2`) at the repository root.
+Run artifacts land in `.harness/`.
 
 ## Recipes
-
-### I want to build a feature
-
-Run `/orchestrate` with a prompt or spec file. It runs the full pipeline:
-
-1. **Brainstorms** the problem with you and produces a design doc
-2. **Plans** the implementation — breaks work into phases (you approve before coding starts, and can mark up the plan page itself instead of describing changes in the terminal)
-3. **Codes** each phase using TDD with parallel sub-agents
-4. **Runs quality checks** — typecheck, lint, tests, coverage
-5. **Updates docs** to match the new code
-6. **Captures learnings** from the run
-7. **Commits and creates a PR**
-
-All artifacts are saved to `.harness/<name>/` for traceability.
-
----
-
-### I want to fix a bug
-
-Run `/orchestrate` with a description of the bug. It writes a failing test to reproduce the issue, fixes it, verifies everything passes, and commits the result.
-
----
 
 ### I want to review a PR
 
 Run `/code-review`. It reads the diff, reviews it across eight axes (defects, spec, security, testing, reuse, simplification, efficiency, altitude), and produces a `REVIEW.md` with a verdict: APPROVE, APPROVE WITH SUGGESTIONS, or REQUEST CHANGES. It then applies the fixes for what it found and records each one in the report.
-
----
-
-### I want to act on feedback a ticket came back with
-
-Run `/rework <ticket-id>` with the QA report, or `/rework <ticket-id> --pr <N>` for a reviewer's comments. It resumes the run that already exists — same worktree, same baseline, no new plan — applies the feedback, and puts it back through review, the gate, and verification scoped to what the fix touched. For PR feedback it writes a report giving every comment a verdict and a disposition.
-
-The `review-fixer` skill is the same job triggered from GitHub Actions instead of by hand.
-
----
-
-### I want to audit code quality
-
-Three standalone tools — run any of them independently:
-
-**Tech Debt Finder** — scans your codebase for technical debt and creates GitHub issues:
-
-```
-/tech-debt-finder src/
-/tech-debt-finder full    # scan entire repo
-```
-
-A deterministic backend pass plus three parallel LLM agents scan simultaneously:
-
-| Scanner | Looks for |
-|---------|-----------|
-| **Deterministic backend** | Python via `radon`; **TS/JS via [fallow](https://fallow.tools)** — unused exports/files/types, unused & circular deps, boundary violations, duplication, cyclomatic complexity |
-| **Dependency & Environment** | Known CVEs, outdated packages, unused dependencies, circular imports, pinning gaps |
-| **Structural & Complexity** | God modules, high cyclomatic complexity, deep nesting, layer violations, code duplication |
-| **Code Patterns** | Bare except, swallowed exceptions, `Any` overuse, blocking calls in async, mutable defaults, magic numbers, dead code |
-
-Polyglot: Python and TS/JS get deterministic, tool-backed findings; other languages (Go,
-Rust, Java, …) get best-effort pattern scanning, labeled as such in the report. `fallow` runs
-via `npx` and is skipped gracefully when offline. Code review also uses `fallow audit` to
-ground TS/JS reviews in structural truth.
-
-Output: terminal report by severity + GitHub issues with code snippets and permalinks.
-
-Suppress known findings in `.claude/harness/tech-debt-ignore.md`:
-
-```
-providers/fal.py:god-module       # suppress specific rule for a file
-utils.py:*                        # suppress all rules for a file
-*:magic-number                    # suppress a rule everywhere
-```
-
-**Coverage Guard** — enforces minimum test coverage (default 90%). Auto-generates missing tests via `/orchestrate` if below threshold.
-
-```
-/coverage-guard
-```
-
-**Doc Quality Guard** — checks docs for accuracy against the actual code and flags AI-generated tone:
-
-```
-/doc-quality-guard docs/
-/doc-quality-guard          # scan all READMEs and docs
-```
-
-| Category | Examples |
-|----------|----------|
-| **Accuracy** | Wrong API signatures, removed features still documented, stale code examples, dead internal links, outdated install instructions |
-| **AI slop** | "Additionally", "leverage", "seamlessly", promotional language, filler phrases, em dash overuse, chatbot tone |
-
-Findings are classified by severity, then a fix spec is generated and handed off to `/orchestrate` for automated remediation.
-
-**Optional — fallow as a standalone skill.** `tech-debt-finder` and `code-review` call the
-[fallow](https://fallow.tools) CLI directly (via `npx`), so no extra install is required. For
-ad-hoc fallow use, you can also install the official skill (third-party — not bundled in this
-marketplace):
-
-```
-/install fallow-rs/fallow-skills      # Claude Code
-npx skills add fallow-rs/fallow-skills # any agent
-```
 
 ---
 
@@ -323,39 +172,9 @@ Use `/refactor`. It assesses your code for improvement opportunities:
 
 ---
 
-### I want to test a skill
-
-Two tools work together: `/skill-eval-generator` creates the test suite, and `skill-creator eval` (from the [skill-creator](https://www.npmjs.com/package/skill-creator) plugin) runs it.
-
-**Generate evals:**
-
-```
-/skill-eval-generator skills/tdd/SKILL.md
-```
-
-This reads the SKILL.md, extracts behavioral rules (MUST, NEVER, ALWAYS clauses), and produces `evals/evals.json` with realistic prompts, verifiable expectations, and anti-expectations. Fixture files are generated when the skill operates on input files (e.g., code-review needs source code with planted bugs).
-
-**Run evals:**
-
-```
-/skill-creator eval skills/tdd/SKILL.md
-```
-
-This executes each eval case against the skill, checks expectations and anti-expectations, and reports pass/fail per case.
-
-**Review a skill as written:**
-
-```
-/skill-review skills/tdd
-```
-
-This grades the skill against `skills/skill-review/references/rubric.md` — description quality, invocation, structure, integrity, coherence, test coverage, security, content, convention and cost — in two passes: a script answers the mechanical checks, then a reading covers the rest. It writes a report and machine-readable findings. Evals measure a skill by running it; this one judges it by reading it.
-
-**Typical workflow:** generate evals → run them → iterate on the SKILL.md until evals pass → ship the skill.
-
 ## Always-On Skills
 
-Some skills run automatically when you're writing code — through `/tdd`, `/orchestrate`, or directly. You never invoke them:
+Some skills run automatically when you're writing code — through `/tdd`, `/implement`, or directly. You never invoke them:
 
 - **code-quality** — Enforces strict types (no `any`), immutability (`readonly`), pure functions, Result types for errors, early returns over nested conditionals
 - **testing standard** — lives inside `tdd` (`references/testing.md` + `anti-patterns.md`): behavior-driven tests, factories, minimal mocking — tests verify *what* not *how*
@@ -367,8 +186,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 
 | Command | What it does |
 |---------|-------------|
-| `/orchestrate` | Full pipeline: design → plan → code → PR → retro |
-| `/rework` | Applies QA or PR-review feedback to every PR on a ticket |
+| `orchestrate` | Walks a v2 workflow inside the session `harness run` starts (not typed by hand) |
 | `/planning` | Breaks work into phases with dependency graph |
 | `/adr` | Records one architecture decision in `docs/adr/`, checked by a review agent, and adds it to the index |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
@@ -376,16 +194,9 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md, then applies the fixes |
 | `/git-commit` | Groups changes into logical conventional commits; squashes a branch's commits first when asked |
 | `/visual-pr` | Creates or updates a PR with a visual change outline and validation evidence |
-| `/resolve-merge-conflict` | Resolves merge and rebase conflicts, locally or on an open PR |
-| `/tech-debt-finder` | Finds code smells, creates GitHub issues |
-| `/coverage-guard` | Enforces minimum test coverage |
-| `/doc-quality-guard` | Audits docs for accuracy and staleness |
-| `/skill-eval-generator` | Generates eval test suites for skills (pairs with `skill-creator eval`) |
-| `/skill-review` | Grades a skill against the rubric, writes a report plus JSON findings |
-| `/harness-retro` | Post-mortems a finished run: what broke, why, and which skill to fix |
 
 **Run automatically (no command needed):**
-`code-quality` · `refactor` · `quality-gate` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
+`code-quality` · `refactor` · `writing-style`
 
 ## Structure
 
@@ -400,31 +211,23 @@ harness/
 │   └── plugin.json  # Claude Code plugin manifest
 ├── CLAUDE.md        # Global instructions for Claude Code
 ├── settings.json    # Permissions, hooks, and environment config
-├── hooks/
-│   └── hooks.json   # Session hooks for dashboard management (ask-user, DAG updates)
 └── skills/          # Reusable skills that extend Claude Code and Codex
     ├── adr/
+    ├── baseline/
     ├── code-quality/
     ├── code-review/
-    ├── coverage-guard/
-    ├── doc-quality-guard/
+    ├── create-workspace/
+    ├── design/
     ├── git-commit/
-    ├── harness-retro/
     ├── implement/
-    ├── learn/
     ├── orchestrate/
     ├── planning/
-    ├── quality-gate/
+    ├── qa/
     ├── refactor/
-    ├── resolve-merge-conflict/
-    ├── review-fixer/
-    ├── rework/
-    ├── skill-eval-generator/
-    ├── skill-review/
-    ├── sync-docs/
     ├── tdd/
-    ├── tech-debt-finder/
-    └── using-git-worktrees/
+    ├── ticket-fetcher/
+    ├── visual-pr/
+    └── writing-style/
 ```
 
 ## Configuration
@@ -443,7 +246,6 @@ harness/
 **settings.json** — Claude Code runtime behavior:
 - Pre-approved read-only tools (git, grep, find, jq) and denied dangerous commands
 - Deny rules for dotfiles, `~/Library`, `/etc`, and other sensitive paths
-- Session lifecycle hooks for the orchestrate dashboard
 - [ccstatusline](https://www.npmjs.com/package/ccstatusline) integration
 
 ## Inspiration

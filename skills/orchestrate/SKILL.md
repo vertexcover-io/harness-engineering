@@ -1,12 +1,12 @@
 ---
-name: orchestrate-v2
+name: orchestrate
 description: >
   Runs a harness v2 workflow from inside the Claude Code or Codex session `harness run` launches.
   Not triggered by a user request — the harness server starts this skill directly as the
   session's first message, passing --workflow and --inputs.
 ---
 
-# orchestrate-v2
+# orchestrate
 
 `harness run` launches this session with `HARNESS_RUN_ID` and `HARNESS_HOME` already set in its
 environment, then sends this skill as the first message.

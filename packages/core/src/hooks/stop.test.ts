@@ -245,7 +245,7 @@ describe("runStopHook", () => {
     const reads: TranscriptEntry[] = [
       { kind: "prompt", text: "how does next work?" },
       { kind: "command", command: "grep -n decideNext packages/core/src/orchestrate.ts" },
-      { kind: "command", command: "cat skills/v2/orchestrate-v2/SKILL.md" },
+      { kind: "command", command: "cat skills/orchestrate/SKILL.md" },
       { kind: "command", command: "grep -rn orchestrate packages/core" },
     ];
     const direct: TranscriptEntry[] = [
