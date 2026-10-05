@@ -10,6 +10,7 @@ import {
   workflowChecks,
 } from "@yok/core";
 import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@yok/sdk";
+import { isCompiled } from "@yok/sdk/internal";
 import { runtimeChecks } from "@yok/server";
 import {
   apiErrorText,
@@ -99,7 +100,7 @@ export const runCommand = () =>
       log.info({ runId: run.id, workflow: run.workflow, cwd: run.cwd, terminal }, "run started");
 
       console.log(run.id);
-      console.log(`yok attach --run-id ${run.id}`);
+      console.log(`${isCompiled ? "yok" : "yok-dev"} attach --run-id ${run.id}`);
       console.log(`view: ${result.value.view}`);
       openForPerson(result.value.view, opts.open === false);
 

@@ -4,6 +4,7 @@ import type { AgentType } from "./agent.ts";
 import type { EnvLayer } from "./config.ts";
 import type { Result } from "./contracts.ts";
 import { readIfExists, readText } from "./files.ts";
+import { prependPath } from "./process.ts";
 import { type CheckoutConfig, findConfigRoot, findRoot } from "./runs.ts";
 
 // The checkout's .env when it has one, else the main checkout's: the whole file, never merged.
@@ -84,9 +85,16 @@ export const loadEnv = async (
   return { ok: true, value: { ...projectEnv, ...config.value, ...own.value } };
 };
 
-// What a run's agent session starts with: the run's env, under yok's own variables.
+// What a run's agent session starts with: the run's env, under yok's own variables, with the
+// shim folder first on PATH so the session's `yok` is the program that started the run.
 export const sessionEnv = (
   env: Readonly<Record<string, string>>,
   runId: string,
   home: string,
-): Record<string, string> => ({ ...env, YOK_RUN_ID: runId, YOK_HOME: home });
+  shimDir: string,
+): Record<string, string> => ({
+  ...env,
+  PATH: prependPath(shimDir, env.PATH ?? process.env.PATH),
+  YOK_RUN_ID: runId,
+  YOK_HOME: home,
+});

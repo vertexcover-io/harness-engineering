@@ -104,6 +104,11 @@ const done = (result: Result<string>): Result<void> =>
 const envArgs = (env: Readonly<Record<string, string>>): string[] =>
   Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
 
+// tmux gives a new pane the PATH of the client that asked for it, over -e PATH, so a PATH the
+// spec sets is applied by env in front of the program.
+const paneArgv = (spec: Pick<TerminalSpec, "argv" | "env">): readonly string[] =>
+  spec.env.PATH === undefined ? spec.argv : ["env", `PATH=${spec.env.PATH}`, ...spec.argv];
+
 // `expected` marks a call whose failure is an ordinary answer, such as "no server yet" from
 // list-sessions, so it is not logged as an error.
 const runTmux = async (
@@ -209,7 +214,7 @@ const tmuxPane = (socket: TmuxSocket, target: string): ITerminal => ({
   rename: async (name) => done(await runTmux(socket, ["rename-session", "-t", target, name])),
   respawn: async (spec) => {
     const args = ["respawn-pane", "-k", "-t", target, "-c", spec.cwd, ...envArgs(spec.env)];
-    const result = await runTmux(socket, [...args, "--", ...spec.argv]);
+    const result = await runTmux(socket, [...args, "--", ...paneArgv(spec)]);
     if (result.ok) socket.log.info({ pane: labelOf(target), cwd: spec.cwd }, "tmux pane respawned");
     return done(result);
   },
@@ -262,7 +267,7 @@ export const tmuxHost = (options: TmuxHostOptions): ITerminalHost => {
       spec.cwd,
       ...envArgs(spec.env),
       "--",
-      ...spec.argv,
+      ...paneArgv(spec),
     ]);
     if (!result.ok) return result;
     socket.log.info({ session: spec.name, cwd: spec.cwd }, "tmux session created");

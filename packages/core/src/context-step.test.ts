@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import {
   type IAgentProvider,
   type ITerminal,
@@ -36,7 +36,7 @@ import {
   runModelStep,
 } from "./context-step.ts";
 
-const RESUME = "/orchestrate --resume feat-x";
+const RESUME = "/yok:orchestrate --resume feat-x";
 const IDLE = "❯ ";
 const BUSY = "· Vibing… (3s)";
 
@@ -178,8 +178,8 @@ afterEach(() => {
   mock.restore();
 });
 
-const LAUNCH = { cwd: "/repo", orchestrateArgv: ["/o.ts"] };
-const HOME = "/home/.yok";
+const LAUNCH = { cwd: "/repo", orchestrateArgv: ["/o.ts"], pluginDir: "/plugin-repo" };
+const HOME = mkdtempSync(join(tmpdir(), "yok-home-"));
 
 type Context = Awaited<ReturnType<typeof setUp>>;
 
@@ -288,9 +288,23 @@ describe("runContextStep: new", () => {
     expect(starting.relaunches[0]?.options.env).toEqual({
       FROM_DOTENV: "1",
       FROM_WORKFLOW: "1",
+      PATH: expect.stringContaining(join(HOME, "shims")),
       YOK_RUN_ID: "r-1",
       YOK_HOME: HOME,
     });
+  });
+
+  test("SC67: a context reset relaunches Claude on /yok:orchestrate --resume, with a shim under the home first on PATH and the launch's plugin folder kept", async () => {
+    const context = await setUp("type: context, action: new");
+    const starting = startingProvider(context);
+
+    await helper(context, fakeTerminal(() => IDLE).terminal, starting.provider);
+
+    const options = starting.relaunches[0]?.options;
+    expect(options?.prompt).toBe("/yok:orchestrate --resume feat-x");
+    const [shimDir = ""] = (options?.env?.PATH ?? "").split(delimiter);
+    expect(dirname(shimDir)).toBe(join(HOME, "shims"));
+    expect(options?.pluginDir).toBe("/plugin-repo");
   });
 
   test("a run env that fails to load completes unapplied and resumes the old session, launching nothing", async () => {

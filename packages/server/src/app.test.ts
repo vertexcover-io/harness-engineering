@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { captureLogger } from "@yok/core";
 import type { IAgentProvider, ITerminal, LaunchOptions, Result } from "@yok/sdk";
 import { noopLogger, WorkflowRunSchema } from "@yok/sdk";
@@ -70,7 +77,7 @@ const buildDeps = async (
       return fakeProvider(agent, launch);
     },
     log,
-    home: "/home/.yok",
+    home: mkdtempSync(join(tmpdir(), "yok-home-")),
     viewerOrigin: "http://localhost:1",
     pid: 4242,
     version: "0.0.0-test",
@@ -395,9 +402,34 @@ describe("POST /runs", () => {
     const { run } = z.object({ run: WorkflowRunSchema }).parse(await res.json());
     expect(seen[0]?.env).toEqual({
       API_URL: "http://x",
+      PATH: expect.stringContaining(join(deps.home, "shims")),
       YOK_RUN_ID: run.id,
       YOK_HOME: deps.home,
     });
+  });
+
+  test("SC66: from source, a run's session gets a shim folder under the home first on PATH, holding an executable yok, and the repo as its plugin folder", async () => {
+    const { workflowPath, cwd } = tempWorkspace();
+    const seen: LaunchOptions[] = [];
+    const deps = await buildDeps((options) => {
+      seen.push(options);
+      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
+    });
+
+    const res = await createApp(deps).request("/runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflow: "ok", workflowPath, inputs: {}, cwd, env: {} }),
+    });
+
+    expect(res.status).toBe(201);
+    const { run } = z.object({ run: WorkflowRunSchema }).parse(await res.json());
+    const [shimDir = ""] = (seen[0]?.env?.PATH ?? "").split(delimiter);
+    expect(dirname(shimDir)).toBe(join(deps.home, "shims"));
+    accessSync(join(shimDir, "yok"), constants.X_OK);
+    expect(seen[0]?.env?.YOK_RUN_ID).toBe(run.id);
+    const pluginDir = seen[0]?.pluginDir ?? "";
+    expect(existsSync(join(pluginDir, ".claude-plugin", "plugin.json"))).toBe(true);
   });
 
   test("a request without env is 400 and launches nothing", async () => {

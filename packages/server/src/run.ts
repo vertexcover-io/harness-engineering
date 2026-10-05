@@ -10,7 +10,7 @@ import {
   tierLaunch,
   type WorkflowRun,
 } from "@yok/sdk";
-import { type Registry, resolveTiers } from "@yok/sdk/internal";
+import { devPluginDir, type Registry, resolveTiers, selfArgv, writeShim } from "@yok/sdk/internal";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { errorResponse, jsonBody, type Vars } from "./api.ts";
@@ -76,7 +76,8 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     .launch({
       cwd,
       prompt: `${provider.skillPrefix}orchestrate --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
-      env: sessionEnv(body.env, id, deps.home),
+      env: sessionEnv(body.env, id, deps.home, writeShim(selfArgv(), deps.home)),
+      pluginDir: devPluginDir(),
       orchestrateArgv: orchestrateArgv(),
       ...tierLaunch(tiers === null ? null : (tiers.models[tiers.default] ?? null)),
     })

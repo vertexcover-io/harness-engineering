@@ -33,6 +33,7 @@ import {
   AgentStatusSchema,
   callMode,
   createRegistry,
+  devPluginDir,
   foldModelSwitch,
   jsonlEventStore,
   runMode,
@@ -585,6 +586,7 @@ const contextCommand = () =>
         launch: {
           cwd: run.cwd,
           orchestrateArgv: orchestrateArgv(),
+          pluginDir: devPluginDir(),
           // a switched model outlives the session it was switched in
           ...tierLaunch(current),
         },
@@ -612,7 +614,7 @@ const modelCommand = () =>
         sessionId: opts.sessionId,
         terminal: currentTerminal(process.env, log),
         provider,
-        launch: { cwd: run.cwd, orchestrateArgv: orchestrateArgv() },
+        launch: { cwd: run.cwd, orchestrateArgv: orchestrateArgv(), pluginDir: devPluginDir() },
         home: yokHome(),
         log,
       });

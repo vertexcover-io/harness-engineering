@@ -171,13 +171,16 @@ describe("tmuxHost against a real tmux", () => {
       name: `s-${randomUUID()}`,
       cwd: process.cwd(),
       argv: [FAKE_AGENT, weird],
-      env: { FAKE_AGENT_OUT: outFile, K: "V" },
+      env: { FAKE_AGENT_OUT: outFile, K: "V", PATH: `/shim-dir:${process.env.PATH}` },
     });
 
     await waitFor(() => existsSync(outFile));
     const [record] = readLines(outFile);
     expect(record?.argv).toEqual([weird]);
     expect((record?.env as Record<string, string> | undefined)?.K).toBe("V");
+    expect((record?.env as Record<string, string> | undefined)?.PATH).toBe(
+      `/shim-dir:${process.env.PATH}`,
+    );
     await pane.kill();
   });
 
@@ -478,8 +481,8 @@ describe("tmux pane respawn", () => {
 
     const respawned = await pane.respawn({
       cwd: process.cwd(),
-      argv: ["sh", "-c", 'echo "hello $GREETING"; sleep 60'],
-      env: { GREETING: "world" },
+      argv: ["sh", "-c", 'echo "hello $GREETING $(echo "$PATH" | cut -d: -f1)"; sleep 60'],
+      env: { GREETING: "world", PATH: `/shim-dir:${process.env.PATH}` },
     });
 
     expect(respawned.ok).toBe(true);
@@ -489,7 +492,7 @@ describe("tmux pane respawn", () => {
     expect(await host.list()).toEqual([name]);
     await sleep(300);
     const screen = await host.find(name).capture();
-    expect(screen.ok ? screen.value : "").toContain("hello world");
+    expect(screen.ok ? screen.value : "").toContain("hello world /shim-dir");
   });
 });
 

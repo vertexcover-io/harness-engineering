@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DoctorJsonSchema } from "@yok/core";
 
 const TIMEOUT_MS = 40_000;
@@ -484,7 +484,8 @@ describe("yok run", () => {
       expect(run.code).toBe(0);
       const [runId, attach] = run.stdout.trim().split("\n");
       expect(runId).toMatch(/^r-[0-9a-f]{8}$/);
-      expect(attach).toBe(`yok attach --run-id ${runId}`);
+      // From source the hint names yok-dev: a plain `yok` is the release binary, whose home has no such run.
+      expect(attach).toBe(`yok-dev attach --run-id ${runId}`);
 
       const status = yok(repo, env, "server", "status");
       expect(status.code).toBe(0);
@@ -493,7 +494,7 @@ describe("yok run", () => {
       waitFor(() => readLines(fakeOut).some((record) => isLaunch(record)));
       const record = readLines(fakeOut).find(isLaunch);
       const argv = record?.argv as string[] | undefined;
-      expect(argv?.at(-1)).toContain(`/orchestrate --workflow ${join(repo, "ok.yaml")}`);
+      expect(argv?.at(-1)).toContain(`/yok:orchestrate --workflow ${join(repo, "ok.yaml")}`);
       expect(record?.runId).toBe(runId);
 
       stopServer(repo, env);
@@ -751,6 +752,62 @@ describe("yok run", () => {
       const names = json.results.map((row) => row.name);
       expect(names).toContain("tmux");
       expect(names).toContain("claude");
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "SC72: a dev server in HOME/.yok-dev and a release-home server in YOK_HOME answer on their own sockets, list only their own run, and shim it under their own home",
+    async () => {
+      const repo = makeRepo();
+      const base = makeEnv();
+      const { YOK_HOME: _home, ...withoutHome } = base.env;
+      const userHome = realpathSync(mkdtempSync(join(tmpdir(), "yok-user-home-")));
+      const devHome = join(userHome, ".yok-dev");
+      const releaseHome = join(userHome, ".yok");
+      const out = (name: string) => join(base.home, `${name}.jsonl`);
+      const sides = [
+        { home: devHome, fakeOut: out("dev"), env: { ...withoutHome, HOME: userHome } },
+        {
+          home: releaseHome,
+          fakeOut: out("release"),
+          env: {
+            ...base.env,
+            YOK_HOME: releaseHome,
+            YOK_TMUX_SOCKET: `${base.socket}-release`,
+          },
+        },
+      ].map((side) => ({ ...side, env: { ...side.env, FAKE_AGENT_OUT: side.fakeOut } }));
+      cleanups.push(() => {
+        for (const { home } of sides)
+          for (const pid of serverPids(home)) process.kill(pid, "SIGKILL");
+        spawnSync("tmux", ["-L", `${base.socket}-release`, "kill-server"]);
+      });
+      const ask = (home: string, path: string) =>
+        fetch(`http://localhost${path}`, { unix: join(home, "yok.sock") });
+
+      const runIds = sides.map(({ env }) => {
+        const run = yok(repo, env, "run", "ok.yaml", "--prompt", "x");
+        expect(run.code).toBe(0);
+        return run.stdout.trim().split("\n")[0] ?? "";
+      });
+
+      for (const [index, side] of sides.entries()) {
+        const other = sides[1 - index]?.home ?? "";
+        expect((await ask(side.home, "/health")).status).toBe(200);
+        const registry = JSON.parse(readFileSync(join(side.home, "registry.json"), "utf8")) as {
+          runs: Record<string, unknown>;
+        };
+        expect(Object.keys(registry.runs)).toEqual([runIds[index] ?? ""]);
+        expect((await ask(other, `/runs/${runIds[index]}/view`)).status).toBe(404);
+        waitFor(() => readLines(side.fakeOut).some(isLaunch));
+        const launched = readLines(side.fakeOut).find(isLaunch)?.env as Record<string, string>;
+        const [shimDir = ""] = (launched.PATH ?? "").split(":");
+        expect(dirname(shimDir)).toBe(join(side.home, "shims"));
+      }
+      expect(join(devHome, "yok.sock")).not.toBe(join(releaseHome, "yok.sock"));
+
+      for (const { env } of sides) stopServer(repo, env);
     },
     TIMEOUT_MS,
   );

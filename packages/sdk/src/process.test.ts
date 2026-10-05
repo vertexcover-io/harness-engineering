@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { existsSync, lstatSync, readdirSync, readlinkSync } from "node:fs";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
+  devPluginDir,
   execWithTimeout,
   isCompiled,
   killRunning,
@@ -12,6 +14,7 @@ import {
   spawn,
   spawnDetached,
   spawnInteractive,
+  writeShim,
 } from "./process.ts";
 
 const cwd = process.cwd();
@@ -66,6 +69,49 @@ describe("selfArgv", () => {
     expect(() => withSelf(undefined, selfArgv)).toThrow("YOK_SELF is unset");
     expect(() => withSelf("[]", selfArgv)).toThrow();
     expect(() => withSelf("not json", selfArgv)).toThrow();
+  });
+
+  test("SC71: from source, devPluginDir is the repo three folders above the CLI entry YOK_SELF names, and the real entry gives the folder holding the plugin manifest", () => {
+    const fake = JSON.stringify(["/b", "--no-env-file", "/r/packages/cli/src/index.ts"]);
+    expect(withSelf(fake, devPluginDir)).toBe("/r");
+    const repo = devPluginDir();
+    expect(repo).toBeDefined();
+    expect(existsSync(join(repo ?? "", ".claude-plugin", "plugin.json"))).toBe(true);
+  });
+});
+
+describe("writeShim", () => {
+  test("SC60: the same program reuses its shim folder, holding only yok and no temp file; another program gets another folder under HOME/shims", async () => {
+    const home = await mkdtemp(join(tmpdir(), "shim-"));
+    const first = writeShim(["/b", "--no-env-file", "/one/index.ts"], home);
+    const again = writeShim(["/b", "--no-env-file", "/one/index.ts"], home);
+    const other = writeShim(["/b", "--no-env-file", "/two/index.ts"], home);
+    expect(again).toBe(first);
+    expect(other).not.toBe(first);
+    expect(dirname(first)).toBe(join(home, "shims"));
+    expect(dirname(other)).toBe(join(home, "shims"));
+    expect(readdirSync(first)).toEqual(["yok"]);
+    expect(readdirSync(other)).toEqual(["yok"]);
+  });
+
+  test("SC61: a compiled program's shim is a symlink to the binary", async () => {
+    const home = await mkdtemp(join(tmpdir(), "shim-"));
+    const shim = join(writeShim(["/opt/yok/bin/yok"], home, true), "yok");
+    expect(lstatSync(shim).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(shim)).toBe("/opt/yok/bin/yok");
+  });
+
+  test("SC65: a source shim runs the program that wrote it with the caller's arguments, and exits with its code", async () => {
+    const home = await mkdtemp(join(tmpdir(), "shim-"));
+    const fixture = join(home, "fixture.ts");
+    await writeFile(
+      fixture,
+      "console.log(JSON.stringify(process.argv.slice(2)));\nprocess.exit(7);\n",
+    );
+    const shim = join(writeShim([process.execPath, fixture], home), "yok");
+    const result = await spawn(shim, ["a", "b c"], { cwd });
+    expect(result.stdout.trim()).toBe(JSON.stringify(["a", "b c"]));
+    expect(result.code).toBe(7);
   });
 });
 
