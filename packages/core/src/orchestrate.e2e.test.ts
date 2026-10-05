@@ -2319,7 +2319,7 @@ nodes:
 `;
 
 const FAKE_AGENT = join(import.meta.dir, "agents", "fixtures", "fake-agent.ts");
-const RESUME = "/orchestrate --resume feat-x";
+const RESUME = "/yok:orchestrate --resume feat-x";
 
 // A run whose agent is the fake agent in a private tmux pane, on session A; ENV goes to every call.
 const runInPane = async (

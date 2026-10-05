@@ -1,4 +1,4 @@
-export { type ClaudeProviderOptions, claudeProvider } from "./agents/claude.ts";
+export { type ClaudeProviderOptions, claudeArgs, claudeProvider } from "./agents/claude.ts";
 export { type CodexProviderOptions, codexProvider } from "./agents/codex.ts";
 export { type AgentProviderOptions, agentProvider } from "./agents/index.ts";
 export { yokTerminalHost } from "./agents/tmux.ts";

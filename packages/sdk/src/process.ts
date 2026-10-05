@@ -1,5 +1,7 @@
 import { spawn as nodeSpawn } from "node:child_process";
-import { openSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, openSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import * as z from "zod";
 import type { Exec } from "./check.ts";
@@ -231,3 +233,34 @@ export const execWithTimeout =
     if (stopped === "timeout") throw new Error(`timed out after ${timeoutMs / 1000}s`);
     return { code, stdout, stderr };
   };
+
+// The repo a source run comes from, handed to Claude as --plugin-dir so the agent reads the same
+// skills orchestrate does: three folders above the CLI entry YOK_SELF names.
+export const devPluginDir = (): string | undefined => {
+  if (isCompiled) return undefined;
+  const argv = selfArgv();
+  return resolve(dirname(argv[argv.length - 1] ?? argv[0]), "..", "..", "..");
+};
+
+export const prependPath = (dir: string, base: string | undefined): string =>
+  base === undefined || base === "" ? dir : `${dir}${delimiter}${base}`;
+
+const quote = (arg: string): string => `'${arg.replaceAll("'", `'\\''`)}'`;
+
+// A session's `yok` is the program that started it. The folder is keyed by that program, so a
+// release binary and each source checkout get their own; the file is replaced whole, never edited.
+export const writeShim = (
+  argv: readonly string[],
+  home: string,
+  compiled: boolean = isCompiled,
+): string => {
+  const hash = createHash("sha256").update(argv.join("\0")).digest("hex").slice(0, 12);
+  const dir = join(home, "shims", hash);
+  const shim = join(dir, "yok");
+  const temp = `${shim}.${process.pid}`;
+  mkdirSync(dir, { recursive: true });
+  if (compiled) symlinkSync(argv[0] ?? process.execPath, temp);
+  else writeFileSync(temp, `#!/bin/sh\nexec ${argv.map(quote).join(" ")} "$@"\n`, { mode: 0o755 });
+  renameSync(temp, shim);
+  return dir;
+};

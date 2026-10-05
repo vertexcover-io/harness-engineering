@@ -29,7 +29,7 @@ export {
   type StepReport,
 } from "./events.ts";
 export { importModule, loadFunction, type ModuleError, runLockPath } from "./files.ts";
-export { isCompiled, selfArgv } from "./process.ts";
+export { devPluginDir, isCompiled, prependPath, selfArgv, writeShim } from "./process.ts";
 export {
   createRegistry,
   type Registry,

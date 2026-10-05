@@ -19,6 +19,7 @@ import {
   isClaudeBusy,
 } from "./claude.ts";
 import { claudeSettings } from "./claude-hooks.ts";
+import { codexProvider } from "./codex.ts";
 
 describe("claudeArgs", () => {
   test("SC1: every option present puts the flags in order with prompt last", () => {
@@ -52,6 +53,39 @@ describe("claudeArgs", () => {
     const args = claudeArgs({ orchestrateArgv, prompt: "go" });
     expect(args).toEqual(["--settings", expect.any(String), "go"]);
     expect(JSON.parse(args[1] ?? "")).toEqual(claudeSettings(orchestrateArgv));
+  });
+
+  test("SC63: a plugin folder adds --plugin-dir after --settings and before the prompt, and no plugin folder adds nothing", () => {
+    const args = claudeArgs({
+      pluginDir: "/repo",
+      orchestrateArgv: ["/b", "orchestrate"],
+      prompt: "go",
+    });
+    expect(args).toEqual(["--settings", expect.any(String), "--plugin-dir", "/repo", "go"]);
+    expect(claudeArgs({ prompt: "go" })).toEqual(["go"]);
+  });
+
+  test("SC63: a plugin folder turns the installed yok@yok off in the one --settings, so only the folder's copy loads", () => {
+    const orchestrateArgv = ["/b", "orchestrate"];
+    const withHooks = claudeArgs({ pluginDir: "/repo", orchestrateArgv });
+    expect(JSON.parse(withHooks[1] ?? "")).toEqual({
+      ...claudeSettings(orchestrateArgv),
+      enabledPlugins: { "yok@yok": false },
+    });
+    expect(claudeArgs({ pluginDir: "/repo" })).toEqual([
+      "--settings",
+      JSON.stringify({ enabledPlugins: { "yok@yok": false } }),
+      "--plugin-dir",
+      "/repo",
+    ]);
+  });
+});
+
+describe("skillPrefix", () => {
+  test("SC64: Claude's prompts name the yok plugin's skill as /yok:, and Codex keeps $", () => {
+    const host = fakeHost({});
+    expect(claudeProvider({ host }).skillPrefix).toBe("/yok:");
+    expect(codexProvider({ host }).skillPrefix).toBe("$");
   });
 });
 

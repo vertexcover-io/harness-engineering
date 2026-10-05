@@ -108,18 +108,28 @@ export type ClaudeArgOptions = Readonly<{
   systemPrompt?: string;
   prompt?: string;
   orchestrateArgv?: readonly string[];
+  pluginDir?: string | undefined;
 }>;
 
-export const claudeArgs = (options: ClaudeArgOptions): string[] => [
-  ...(options.model !== undefined ? ["--model", options.model] : []),
-  ...(options.effort !== undefined ? ["--effort", options.effort] : []),
-  ...(options.permissionMode !== undefined ? ["--permission-mode", options.permissionMode] : []),
-  ...(options.systemPrompt !== undefined ? ["--append-system-prompt", options.systemPrompt] : []),
-  ...(options.orchestrateArgv !== undefined
-    ? ["--settings", JSON.stringify(claudeSettings(options.orchestrateArgv))]
-    : []),
-  ...(options.prompt !== undefined ? [options.prompt] : []),
-];
+// A plugin folder loads as yok@inline, and Claude keeps an installed yok@yok on beside
+// it, so the installed one is turned off. Claude reads only the last --settings, hence one object.
+const sessionSettings = (options: ClaudeArgOptions): Record<string, unknown> => ({
+  ...(options.orchestrateArgv !== undefined ? claudeSettings(options.orchestrateArgv) : {}),
+  ...(options.pluginDir !== undefined ? { enabledPlugins: { "yok@yok": false } } : {}),
+});
+
+export const claudeArgs = (options: ClaudeArgOptions): string[] => {
+  const settings = sessionSettings(options);
+  return [
+    ...(options.model !== undefined ? ["--model", options.model] : []),
+    ...(options.effort !== undefined ? ["--effort", options.effort] : []),
+    ...(options.permissionMode !== undefined ? ["--permission-mode", options.permissionMode] : []),
+    ...(options.systemPrompt !== undefined ? ["--append-system-prompt", options.systemPrompt] : []),
+    ...(Object.keys(settings).length > 0 ? ["--settings", JSON.stringify(settings)] : []),
+    ...(options.pluginDir !== undefined ? ["--plugin-dir", options.pluginDir] : []),
+    ...(options.prompt !== undefined ? [options.prompt] : []),
+  ];
+};
 
 export const claudeRunArgs = <T>(request: RunRequest<T>): string[] => [
   "-p",
@@ -274,7 +284,7 @@ export const claudeProvider = ({
 
   return {
     type: "claude",
-    skillPrefix: "/",
+    skillPrefix: "/yok:",
     checks: [
       {
         name: "claude",

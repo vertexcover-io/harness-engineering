@@ -74,6 +74,9 @@ export type LaunchOptions = Readonly<{
   // argv that runs the orchestrate script; the provider registers the agent's hooks and status
   // line as its subcommands
   orchestrateArgv?: readonly string[];
+  // a plugin folder to load for this session only (Claude's --plugin-dir); set for runs started
+  // from source so the agent reads the repo's skills
+  pluginDir?: string | undefined;
 }>;
 
 export type RunRequest<T = string> = {

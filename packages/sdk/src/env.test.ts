@@ -257,9 +257,30 @@ describe("loadEnv", () => {
 
 describe("sessionEnv", () => {
   test("SC2: a session starts with YOK_RUN_ID and YOK_HOME over the run's env, and no variable of the old name", () => {
-    const env = sessionEnv({ A: "1" }, "run-1", "/h");
-    expect(env).toEqual({ A: "1", YOK_RUN_ID: "run-1", YOK_HOME: "/h" });
+    const env = sessionEnv({ A: "1", PATH: "/run/bin" }, "run-1", "/h", "/h/shims/abc");
+    expect(env).toEqual({
+      A: "1",
+      PATH: "/h/shims/abc:/run/bin",
+      YOK_RUN_ID: "run-1",
+      YOK_HOME: "/h",
+    });
     const oldPrefix = `${["HAR", "NESS"].join("")}_`;
     expect(Object.keys(env).filter((key) => key.startsWith(oldPrefix))).toEqual([]);
+  });
+
+  test("SC62: the shim folder goes first on the run's PATH, or the caller's PATH when the run has none, and a run's env cannot override YOK_RUN_ID", () => {
+    const env = sessionEnv(
+      { PATH: "/run/bin", YOK_RUN_ID: "stale", FOO: "1" },
+      "run-1",
+      "/h",
+      "/h/shims/abc",
+    );
+    expect(env.PATH).toBe("/h/shims/abc:/run/bin");
+    expect(env.YOK_RUN_ID).toBe("run-1");
+    expect(env.YOK_HOME).toBe("/h");
+    expect(env.FOO).toBe("1");
+    expect(sessionEnv({}, "run-1", "/h", "/h/shims/abc").PATH).toBe(
+      `/h/shims/abc:${process.env.PATH}`,
+    );
   });
 });

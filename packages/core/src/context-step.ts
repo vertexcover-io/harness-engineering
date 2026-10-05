@@ -26,6 +26,8 @@ import {
   pickTierModel,
   type Registry,
   runLockPath,
+  selfArgv,
+  writeShim,
 } from "@yok/sdk/internal";
 import {
   CLAUDE_CLEAR_INPUT_KEY,
@@ -96,7 +98,7 @@ const waitForIdle = (terminal: ITerminal): Promise<Result<true>> =>
     },
   );
 
-const resumePrompt = (run: RunRef): string => `/orchestrate --resume ${run.name}`;
+const resumePrompt = (run: RunRef): string => `/yok:orchestrate --resume ${run.name}`;
 
 // A tmux call can throw (a hung tmux times out) and so can reading a half-written event line. The
 // helper runs detached, so a throw would end it silently and leave the node open for good: it
@@ -189,7 +191,7 @@ const startNewSession = async (
   await recordStarted(options, "new", sessionId);
   const launch = {
     ...options.launch,
-    env: sessionEnv(env.value, run.id, options.home),
+    env: sessionEnv(env.value, run.id, options.home, writeShim(selfArgv(), options.home)),
     prompt: resumePrompt(run),
   };
   const relaunched = await catchThrow(log, provider.relaunch(terminal, sessionId, launch));
@@ -359,7 +361,7 @@ const resumeOnModel = async (
       ...launch,
       ...tierLaunch(target),
       resume: true,
-      env: sessionEnv(env.value, run.id, home),
+      env: sessionEnv(env.value, run.id, home, writeShim(selfArgv(), home)),
       prompt: resumePrompt(run),
     }),
   );

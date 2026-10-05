@@ -38,11 +38,19 @@ claude plugin install yok@yok
 
 This persists across sessions — the plugin loads automatically on startup. It installs the latest stable release, not whatever `main` holds: the marketplace pins a release tag. `claude plugin marketplace update main` then `claude plugin update yok@yok` moves you to the next release.
 
-To run the code in a local checkout instead, point Claude at it. Adding the checkout as a marketplace still installs the pinned release from GitHub.
+### Working on yok itself
+
+A checkout installs a second command, `yok-dev`, that runs the TypeScript source directly, so an edit shows on the next run with no build. It sits next to the release `yok` and never replaces it.
 
 ```bash
-claude --plugin-dir PATH_TO_HARNESS
+cd packages/cli && bun link
+# in ~/.zshrc, once
+export PATH="$HOME/.bun/bin:$PATH"
 ```
+
+`yok-dev run …` starts runs from source, and the agent sessions it starts call `yok-dev` back whenever a skill says `yok`. To open an agent by hand the same way, use `yok-dev claude` or `yok-dev codex`; Claude also loads this checkout as its plugin. A session you open with plain `claude` uses the release `yok`.
+
+`yok-dev` keeps its runs, server and logs in `~/.yok-dev`, apart from the release's `~/.yok`, so the two never share a server. A run started by one does not show in the other's `yok view`. Set `YOK_HOME` to point either at another folder.
 
 ### Codex
 
