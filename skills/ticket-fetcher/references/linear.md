@@ -1,7 +1,7 @@
 # Linear reference
 
 Fetch one Linear ticket into the ticket folder you were given, then write `ticket.json`.
-`COMMAND` is `bun run linear`. Its `search`, `issue` and `asset` subcommands read
+`COMMAND` is `yok orchestrate script --skill ticket-fetcher scripts/linear.ts`. Its `search`, `issue` and `asset` subcommands read
 `LINEAR_API_KEY` from the project `.env`, then the environment. It prints JSON on stdout. On
 failure it exits 1 with a message on stderr; report that message and stop.
 

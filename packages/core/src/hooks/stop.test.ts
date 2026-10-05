@@ -25,7 +25,7 @@ import {
   type TranscriptEntry,
 } from "@yok/sdk";
 import { appendRunEvent, createRegistry, jsonlEventStore } from "@yok/sdk/internal";
-import { ORCHESTRATE_SCRIPT } from "../stage.ts";
+import { orchestrateArgv } from "../stage.ts";
 import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 import { decideStop, runStopHook, type StopCheck } from "./stop.ts";
 
@@ -96,7 +96,7 @@ describe("decideStop", () => {
     expect(decision).toMatchObject({ reason: "run-finished" });
   });
 
-  test("SC2 — an open leaf inside a loop blocks with that leaf's done command", () => {
+  test("SC2, SC23 — an open leaf inside a loop blocks with that leaf's done command", () => {
     const loop = nodeRun("fix", "running", "loop", { review: nodeRun("fix/1/review", "running") });
     const decision = decide({ nodeRuns: { fix: loop } });
     expect(decision).toMatchObject({
@@ -106,7 +106,8 @@ describe("decideStop", () => {
     });
     const message = "message" in decision ? decision.message : "";
     expect(message).toContain("node review");
-    expect(message).toContain("bun run orchestrate done fix/1/review --run feat-x");
+    expect(message).toContain("yok orchestrate done fix/1/review --run feat-x");
+    expect(message).not.toContain("bun run");
   });
 
   test("SC3 — a running loop with no running child blocks with the next command", () => {
@@ -115,7 +116,7 @@ describe("decideStop", () => {
     });
     const decision = decide({ nodeRuns: { fix: loop } });
     expect(decision).toMatchObject({
-      message: expect.stringContaining("bun run orchestrate next --run feat-x"),
+      message: expect.stringContaining("yok orchestrate next --run feat-x"),
       reason: "next-not-run",
     });
   });
@@ -124,7 +125,7 @@ describe("decideStop", () => {
     const decision = decide({ nodeRuns: { lint: nodeRun("lint", "running", "exec") } });
     const message = "message" in decision ? decision.message : "";
     expect(decision).toMatchObject({ reason: "node-not-done", nodeRunId: "lint" });
-    expect(message).toContain("bun run orchestrate exec lint --run feat-x");
+    expect(message).toContain("yok orchestrate exec lint --run feat-x");
     expect(message).toContain("background task");
     expect(message).not.toContain("orchestrate done");
   });
@@ -180,7 +181,7 @@ describe("decideStop", () => {
   test("SC10: a stop between nodes with no switch pending, as after a failed one, sends the agent to next", () => {
     expect(decide({})).toMatchObject({
       reason: "next-not-run",
-      message: expect.stringContaining("bun run orchestrate next --run feat-x"),
+      message: expect.stringContaining("yok orchestrate next --run feat-x"),
     });
   });
 });
@@ -222,7 +223,7 @@ const orchestrateAfterPrompt: TranscriptEntry[] = [
   { kind: "prompt", text: "why?" },
   { kind: "command", command: "ls" },
   { kind: "prompt", text: "go" },
-  { kind: "command", command: "bun run orchestrate next --run feat-x" },
+  { kind: "command", command: "yok orchestrate next --run feat-x" },
 ];
 
 describe("runStopHook", () => {
@@ -249,11 +250,22 @@ describe("runStopHook", () => {
     });
   });
 
+  test("SC24 — yok orchestrate next after the prompt drives the run, and yok orchestrate run-hook call does not", async () => {
+    const runHook: TranscriptEntry[] = [
+      { kind: "prompt", text: "go" },
+      { kind: "command", command: "yok orchestrate run-hook call" },
+    ];
+    expect(await runStopHook(input(orchestrateAfterPrompt), (await setUp({})).deps)).toMatchObject({
+      kind: "continue",
+    });
+    expect(await runStopHook(input(runHook), (await setUp({})).deps)).toEqual({ kind: "allow" });
+  });
+
   test("SC12 — commands only before the last prompt do not count", async () => {
     const { deps } = await setUp({});
     const entries: TranscriptEntry[] = [
       { kind: "prompt", text: "go" },
-      { kind: "command", command: "bun run orchestrate next --run feat-x" },
+      { kind: "command", command: "yok orchestrate next --run feat-x" },
       { kind: "prompt", text: "why did lint fail?" },
       { kind: "command", command: "cat lint.log" },
     ];
@@ -371,15 +383,16 @@ describe("an open context node", () => {
   afterEach(() => spawn.mockReset());
   afterAll(() => spawn.mockRestore());
 
-  test("lets the turn end, records context-node and starts the helper for that node", async () => {
+  test("SC22: lets the turn end, records context-node and starts the helper for that node as the program's orchestrate context", async () => {
     const { deps, runDir, cwd } = await setUp(contextOpen);
 
     expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toEqual({ kind: "allow" });
 
+    const [program, ...self] = orchestrateArgv();
     expect(spawn.mock.calls).toEqual([
       [
-        process.execPath,
-        [ORCHESTRATE_SCRIPT, "context", "nr-1", "--run-id", "r-1", "--session-id", "s1"],
+        program,
+        [...self, "context", "nr-1", "--run-id", "r-1", "--session-id", "s1"],
         { cwd, output: "ignore" },
       ],
     ]);
@@ -428,10 +441,11 @@ describe("an open context node", () => {
 
     expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toEqual({ kind: "allow" });
 
+    const [program, ...self] = orchestrateArgv();
     expect(spawn.mock.calls).toEqual([
       [
-        process.execPath,
-        [ORCHESTRATE_SCRIPT, "model", "3", "--run-id", "r-1", "--session-id", "s1"],
+        program,
+        [...self, "model", "3", "--run-id", "r-1", "--session-id", "s1"],
         { cwd, output: "ignore" },
       ],
     ]);

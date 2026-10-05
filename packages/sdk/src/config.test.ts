@@ -289,6 +289,18 @@ describe("ConfigSchema", () => {
     expect(ConfigSchema.safeParse({ version: 2, extensions }).success).toBe(false);
   });
 
+  test("SC43: a command reference extension parses alone, and is rejected beside replace or empty", () => {
+    const withScript = (script: unknown) =>
+      ConfigSchema.safeParse({ version: 2, extensions: { baseline: { references: { script } } } });
+    expect(withScript({ command: "x", replace: "a.md" }).success).toBe(false);
+    expect(withScript({ command: "" }).success).toBe(false);
+    const parsed = withScript({ command: "python tools/b.py" });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.extensions.baseline?.references.script).toEqual({
+      command: "python tools/b.py",
+    });
+  });
+
   test("SC21 — a null command loads as a command the project does not have", () => {
     const config = ConfigSchema.parse({
       version: 2,

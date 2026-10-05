@@ -39,7 +39,8 @@ export {
   type LogBase,
   resolveLevel,
 } from "./logging.ts";
-export { getConsumed, getNodeFacts, getNodeRun, loadStartEnv } from "./runs.ts";
+export { orchestrateCommand } from "./orchestrate.ts";
+export { getNodeFacts, loadStartEnv } from "./runs.ts";
 export {
   findWorkflowPath,
   type LoadedStage,

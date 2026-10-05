@@ -11,10 +11,12 @@ import {
 } from "../../../skills/create-workspace/scripts/workspace.ts";
 import { schemas as qaSchemas } from "../../../skills/qa/scripts/qa.ts";
 import { schemas as ticketSchemas } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
+import { claudeSettings } from "./agents/claude-hooks.ts";
 import {
   findWorkflowPath,
   listReferences,
   loadStage,
+  orchestrateArgv,
   resolveExtension,
   resolveReference,
   resolveReferencePath,
@@ -36,6 +38,23 @@ const validStage = {
   protocols: ["artifact-registration"],
   scopes: ["feature"],
 };
+
+describe("orchestrateArgv", () => {
+  test("SC21: is YOK_SELF's argv plus orchestrate, and a Claude stop hook built from it shell-quotes each part", () => {
+    const saved = process.env.YOK_SELF;
+    process.env.YOK_SELF = JSON.stringify(["/b", "--no-env-file", "/c/index.ts"]);
+    try {
+      const argv = orchestrateArgv();
+      const stop = claudeSettings(argv).hooks.Stop.flatMap((group) => group.hooks);
+      expect(argv).toEqual(["/b", "--no-env-file", "/c/index.ts", "orchestrate"]);
+      expect(stop.map((hook) => hook.command)).toContain(
+        "'/b' '--no-env-file' '/c/index.ts' 'orchestrate' 'hook' 'stop' '--agent' 'claude' '--handler' 'continue-workflow'",
+      );
+    } finally {
+      process.env.YOK_SELF = saved;
+    }
+  });
+});
 
 describe("StageSchema", () => {
   test("a full stage parses and produce entries default optional to false", () => {
@@ -386,6 +405,24 @@ describe("resolveReferencePath", () => {
     const result = await resolveReferencePath({ ...options, ref });
     if (result.ok) throw new Error("expected a failure");
     expect(result.error).toContain(message);
+  });
+});
+
+describe("a command reference", () => {
+  test("SC41: notes as a command is refused as text and as a path, naming its key, while extra still resolves", async () => {
+    const options = await setupResolve({
+      demo: { references: { notes: { command: "echo hi" }, extra: { add: "ext/notes.md" } } },
+    });
+    const asText = await resolveReference({ ...options, ref: "notes" });
+    const asPath = await resolveReferencePath({ ...options, ref: "notes" });
+    if (asText.ok || asPath.ok) throw new Error("expected failures");
+    expect(asText.error).toContain("extensions.demo.references.notes");
+    expect(asText.error).toContain("command");
+    expect(asPath.error).toContain("extensions.demo.references.notes");
+    expect(await resolveReference({ ...options, ref: "extra" })).toEqual({
+      ok: true,
+      value: "extension text\n",
+    });
   });
 });
 

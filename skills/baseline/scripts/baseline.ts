@@ -82,7 +82,8 @@ const isFolder = (path: string): boolean =>
   statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
 // A missing folder would make spawn fail with exit 127 and read as a command that cannot start,
-// and state.json keeps workspace.path after `workspace.ts remove`, so the folder is checked here.
+// and state.json keeps workspace.path after `yok orchestrate script --skill create-workspace
+// scripts/workspace.ts remove`, so the folder is checked here.
 const resolveWorkspace = async (
   options: BaselineOptions,
 ): Promise<Result<string, BaselineError>> => {
@@ -245,7 +246,7 @@ export const captureBaseline = async (
 // stdout carries only the report, so failures are logged to stderr, at warn unless LOG_LEVEL says otherwise.
 const log = jsonLogger({ level: LogLevelSchema.catch("warn").parse(process.env.LOG_LEVEL) });
 
-const USAGE = `usage: baseline.ts [--run NAME | --run-id ID] [--packages A,B] [--dir DIR]
+const USAGE = `usage: yok orchestrate script --skill baseline scripts/baseline.ts [--run NAME | --run-id ID] [--packages A,B] [--dir DIR]
 
 Runs the run's config's baseline scripts in its workspace (--dir, else state.json's
 workspace.path), writes artifacts/baseline.json and prints { path, workspace, packages }.
@@ -270,11 +271,10 @@ const splitList = (value: string): string[] =>
     .map((name) => name.trim())
     .filter((name) => name !== "");
 
-const main = async (argv: readonly string[]): Promise<void> => {
+export const main = async (argv: readonly string[]): Promise<void> => {
   if (argv.includes("--help") || argv.includes("-h")) return void process.stdout.write(USAGE);
   // parseArgs throws on an unknown flag; main's caller prints that error.
   const flags = parseArgs({ args: [...argv], options: FLAGS }).values;
-  const { packages, dir } = flags;
   const run = await requireRun({
     registry: createRegistryReader(registryPath()),
     name: flags.run,
@@ -285,6 +285,7 @@ const main = async (argv: readonly string[]): Promise<void> => {
   if (!run.ok) return fail(run.error);
   const config = await loadRunConfig(run.value);
   if (!config.ok) return fail(config.error);
+  const { packages, dir } = flags;
   const result = await captureBaseline({
     config: config.value.config,
     run: run.value,

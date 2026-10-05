@@ -20,11 +20,11 @@ import {
   type ModelSwitch,
 } from "@yok/sdk/internal";
 import { startContextStep, startModelStep } from "../context-step.ts";
-import { completeContextStep, findContextPlanNode, orchestrateCommand } from "../runs.ts";
+import { completeContextStep, findContextPlanNode, orchestrateLine } from "../runs.ts";
 import { findSessionRun } from "./common.ts";
 
 export const DEFAULT_STOP_MAX_BLOCKS = 1;
-// `bun run orchestrate next` or `bun …/orchestrate.ts done`, but not a path like orchestrate/SKILL.md
+// `yok orchestrate next` or `bun …/index.ts orchestrate done`, but not a path like orchestrate/SKILL.md
 const ORCHESTRATE = /\borchestrate(?:\.ts)?\s+(?:init|link-session|emit|next|exec|done)\b/;
 const ASK_RULE =
   "If you need the user's input, ask the way the orchestrate skill's reference for your agent says.";
@@ -106,7 +106,7 @@ const progressSince = (events: readonly Event[], seq: number | undefined): boole
   );
 
 const nextMessage = (run: RunRef): string =>
-  `Yok run ${run.name} is not finished. Run \`${orchestrateCommand({ verb: "next", run })}\` ` +
+  `Yok run ${run.name} is not finished. Run \`${orchestrateLine({ verb: "next", run })}\` ` +
   `and do the step it prints, as the orchestrate skill says. ${ASK_RULE}`;
 
 // next hands out an exec or wait node for the agent to run with exec, and an agent node for it to
@@ -114,13 +114,13 @@ const nextMessage = (run: RunRef): string =>
 const openNodeMessage = (run: RunRef, leaf: ActiveLeaf): string => {
   const { nodeId, nodeRunId } = leaf;
   if (leaf.nodeType === "agent") {
-    const done = orchestrateCommand({ verb: "done", run, nodeRunId });
+    const done = orchestrateLine({ verb: "done", run, nodeRunId });
     return (
       `Yok run ${run.name}: node ${nodeId} is still open. Finish the node's work and record ` +
       `it with \`${done} --output -\` (or \`--error -\`). ${ASK_RULE}`
     );
   }
-  const exec = orchestrateCommand({ verb: "exec", run, nodeRunId });
+  const exec = orchestrateLine({ verb: "exec", run, nodeRunId });
   return (
     `Yok run ${run.name}: step ${nodeId} is still open. If you have not run it yet, run ` +
     `\`${exec}\`. If it is already running as a background task, wait for that task to finish. ` +

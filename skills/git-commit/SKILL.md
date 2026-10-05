@@ -153,7 +153,7 @@ Each commit should represent one logical concern. Grouping priorities:
 Aim for the fewest commits that each stand alone. One commit is a fine answer for a small
 change.
 
-When a single file has mixed concerns, use hunk-level staging to split it across commits. See `references/hunk-staging.md` for techniques; in a run, read it with `bun run orchestrate skill ref git-commit.hunk-staging`.
+When a single file has mixed concerns, use hunk-level staging to split it across commits. See `references/hunk-staging.md` for techniques; in a run, read it with `yok orchestrate skill ref git-commit.hunk-staging`.
 
 **Plan every commit before staging any:** which files and hunks go into each one.
 

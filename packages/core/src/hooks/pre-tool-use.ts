@@ -38,17 +38,17 @@ const recordMessage = (record: ProtectedRecord): string => {
   if (record.kind === "registry") {
     return (
       `${record.path} is the yok registry, so this call was refused. It changes only ` +
-      "through `bun run orchestrate init NAME` and " +
-      "`bun run orchestrate link-session --run NAME --agent AGENT --session-id ID`. " +
+      "through `yok orchestrate init NAME` and " +
+      "`yok orchestrate link-session --run NAME --agent AGENT --session-id ID`. " +
       "Reading it is fine."
     );
   }
   const run = record.runName;
   return (
     `${record.path} is written only by the orchestrate script, so this call was refused. ` +
-    `Move the run with \`bun run orchestrate next --run ${run}\`, record a node with ` +
-    `\`bun run orchestrate exec|done NODE_RUN_ID --run ${run}\`, and add an event with ` +
-    `\`bun run orchestrate emit TYPE --run ${run} --source SKILL\`. Reading the file is fine.`
+    `Move the run with \`yok orchestrate next --run ${run}\`, record a node with ` +
+    `\`yok orchestrate exec|done NODE_RUN_ID --run ${run}\`, and add an event with ` +
+    `\`yok orchestrate emit TYPE --run ${run} --source SKILL\`. Reading the file is fine.`
   );
 };
 

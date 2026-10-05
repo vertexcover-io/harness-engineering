@@ -15,7 +15,16 @@ import {
   withMediaIsland,
 } from "./report-media.ts";
 
-const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "report-media.ts");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "../../../packages/cli/src/index.ts");
+const REPORT_MEDIA = [
+  "--no-env-file",
+  CLI,
+  "orchestrate",
+  "script",
+  "--skill",
+  "qa",
+  "scripts/report-media.ts",
+];
 
 const ffmpegMissing = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status !== 0;
 const needsFfmpeg = ffmpegMissing ? "ffmpeg is not on PATH" : false;
@@ -23,7 +32,7 @@ const needsFfmpeg = ffmpegMissing ? "ffmpeg is not on PATH" : false;
 type Run = { readonly status: number; readonly stdout: string; readonly stderr: string };
 
 const run = (...args: readonly string[]): Run => {
-  const r = spawnSync(process.execPath, ["--experimental-strip-types", SCRIPT, ...args], {
+  const r = spawnSync("bun", [...REPORT_MEDIA, ...args], {
     encoding: "utf8",
   });
   return { status: r.status ?? -1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
@@ -89,7 +98,7 @@ test("SC3: the crop window is the last one cropdetect reported", () => {
   assert.equal(parseCropWindow("frame= 1 fps=0.0 q=-1.0 Lsize=N/A\n"), null);
 });
 
-test("SC4: a directory with no frames exits 0 and says so", () => {
+test("SC51, SC4: a directory with no frames exits 0 and says so", () => {
   const dir = withScreenshots("noframes");
 
   const r = run(dir);
@@ -98,21 +107,24 @@ test("SC4: a directory with no frames exits 0 and says so", () => {
   assert.match(r.stdout, /no frames under .*screenshots — no videos to build/);
 });
 
-test("SC5: a directory with no screenshots folder at all exits 0 the same way", () => {
+test("SC51, SC5: a directory with no screenshots folder at all exits 0 the same way", () => {
   const r = run(sandbox("bare"));
 
   assert.equal(r.status, 0);
   assert.match(r.stdout, /no videos to build/);
 });
 
-test("SC6: a missing or extra argument, or an absent directory, exits 2", () => {
+test("SC51, SC6: a missing or extra argument, or an absent directory, exits 2", () => {
   assert.equal(run().status, 2);
-  assert.match(run().stderr, /usage: report-media\.ts \[--inline\] VERIFICATION_DIR/);
+  assert.match(
+    run().stderr,
+    /usage: yok orchestrate script --skill qa scripts\/report-media\.ts \[--inline\] VERIFICATION_DIR/,
+  );
   assert.equal(run("a", "b").status, 2);
   assert.equal(run(join(sandbox("gone"), "nope")).status, 2);
 });
 
-test("SC7: each scenario builds its own video and reports its crop window", {
+test("SC51, SC7: each scenario builds its own video and reports its crop window", {
   skip: needsFfmpeg,
 }, () => {
   const dir = withScreenshots("build");
@@ -207,7 +219,7 @@ test("SC16: anything that is not a readable PNG reads as no dimensions", () => {
   );
 });
 
-test("SC8: a scenario ffmpeg cannot build is FAILED, and the run exits non-zero", {
+test("SC51, SC8: a scenario ffmpeg cannot build is FAILED, and the run exits non-zero", {
   skip: needsFfmpeg,
 }, () => {
   const dir = withScreenshots("failure");
@@ -283,7 +295,7 @@ test("SC19: the media island lands before the data island, and a re-run replaces
   assert.deepEqual(parseReportData(twice), {});
 });
 
-test("SC20: --inline writes every readable file into the report as a data URI", () => {
+test("SC51, SC20: --inline writes every readable file into the report as a data URI", () => {
   const dir = withReport("inline", {
     scenarios: [{ video: "01_a.mp4", frames: [{ src: "screenshots/01_a__01_open.png" }] }],
   });
@@ -304,7 +316,7 @@ test("SC20: --inline writes every readable file into the report as a data URI", 
   assert.ok(html.includes(`data:image/png;base64,${Buffer.from("png-bytes").toString("base64")}`));
 });
 
-test("SC21: a file --inline cannot read is FAILED, exits 1, and the rest is still inlined", () => {
+test("SC51, SC21: a file --inline cannot read is FAILED, exits 1, and the rest is still inlined", () => {
   const dir = withReport("inline-missing", {
     scenarios: [
       {

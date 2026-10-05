@@ -10,7 +10,10 @@ import { stopDeliveries } from "./delivery.ts";
 import { claudeOver, EMPTY_BOX, fakeHost } from "./fake-host.ts";
 import { startViewer, type Viewer } from "./viewer.ts";
 
-const ORCHESTRATE = join(import.meta.dir, "..", "..", "core", "src", "orchestrate.ts");
+const ORCHESTRATE = [
+  join(import.meta.dir, "..", "..", "cli", "src", "index.ts"),
+  "orchestrate",
+] as const;
 const SESSION = `viewer-e2e-${process.pid}`;
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "yok-viewer-e2e-")));
@@ -264,7 +267,7 @@ describe("viewer in a browser", () => {
     const reply = spawnSync(
       "bun",
       [
-        ORCHESTRATE,
+        ...ORCHESTRATE,
         "comments",
         "reply",
         "--run",

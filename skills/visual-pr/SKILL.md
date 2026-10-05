@@ -63,8 +63,8 @@ Check ancestry with `git merge-base --is-ancestor`. A bare `--force-with-lease` 
 here: the fetch above moves the lease to whatever the remote now holds. If a push is refused,
 stop and report it; never fall back to a plain `--force`.
 
-Read the references with `bun run orchestrate skill ref visual-pr.description-template` and
-`bun run orchestrate skill ref visual-pr.visual-guide`, not by path. Save the body as
+Read the references with `yok orchestrate skill ref visual-pr.description-template` and
+`yok orchestrate skill ref visual-pr.visual-guide`, not by path. Save the body as
 `.yok/RUN/artifacts/pr-description.md`, or `pr-description-NAME.md` per repo when the
 workspace has several, and finish the stage with `--artifact pr-description=artifacts/FILE` for
 the first one. The stage's output is the result below for each repo.

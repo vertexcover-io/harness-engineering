@@ -102,9 +102,9 @@ export const downloadAsset = async (api: Api, url: string, target: Target): Prom
 };
 
 const USAGE = `usage:
-  bun run linear search QUERY [--limit N]
-  bun run linear issue KEY_OR_URL
-  bun run linear asset URL --dir DIR --name NAME`;
+  yok orchestrate script --skill ticket-fetcher scripts/linear.ts search QUERY [--limit N]
+  yok orchestrate script --skill ticket-fetcher scripts/linear.ts issue KEY_OR_URL
+  yok orchestrate script --skill ticket-fetcher scripts/linear.ts asset URL --dir DIR --name NAME`;
 
 const parseLimit = (value: string | undefined): number => {
   if (value === undefined) return 10;
@@ -131,4 +131,6 @@ const runCommand = async (cwd: string, argv: readonly string[]): Promise<unknown
   return downloadAsset(api, arg, { dir, name });
 };
 
-if (import.meta.main) await runProviderCli(runCommand, process.argv.slice(2));
+export const main = (argv: readonly string[]): Promise<void> => runProviderCli(runCommand, argv);
+
+if (import.meta.main) await main(process.argv.slice(2));

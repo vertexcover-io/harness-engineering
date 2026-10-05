@@ -1,14 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import * as sdk from "@yok/sdk";
 import { type CheckContext, type Exec, execWithTimeout, type ITerminalHost } from "@yok/sdk";
 import { captureLogger } from "../logging.ts";
 import { claudeProvider } from "./claude.ts";
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
-import { currentTerminal, tmuxHost } from "./tmux.ts";
+import { currentTerminal, defaultTmuxSocket, tmuxHost, yokTerminalHost } from "./tmux.ts";
 
 const exec = execWithTimeout(10_000);
 const FAKE_AGENT = join(import.meta.dirname, "fixtures", "fake-agent.ts");
@@ -489,5 +490,27 @@ describe("tmux pane respawn", () => {
     await sleep(300);
     const screen = await host.find(name).capture();
     expect(screen.ok ? screen.value : "").toContain("hello world");
+  });
+});
+
+describe("yokTerminalHost", () => {
+  test("SC35: dev and release default to different tmux sockets, and YOK_TMUX_SOCKET wins", async () => {
+    const calls: (readonly string[])[] = [];
+    const recording: Exec = (_command, args) => {
+      calls.push(args);
+      return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+    };
+    const spy = spyOn(sdk, "execWithTimeout").mockImplementation(() => recording);
+    try {
+      await yokTerminalHost({ YOK_HOME: "/tmp/y" }).list();
+      await yokTerminalHost({ YOK_HOME: "/tmp/y", YOK_TMUX_SOCKET: "t1" }).list();
+    } finally {
+      spy.mockRestore();
+    }
+    expect([defaultTmuxSocket(), defaultTmuxSocket(true)]).toEqual(["yok-dev", "yok"]);
+    expect(calls.map((args) => args.slice(0, 2))).toEqual([
+      ["-L", "yok-dev"],
+      ["-L", "t1"],
+    ]);
   });
 });

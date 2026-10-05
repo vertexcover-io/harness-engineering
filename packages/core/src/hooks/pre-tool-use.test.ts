@@ -83,7 +83,7 @@ const write = (path: string): ToolCall => ({ kind: "file-write", path });
 const shell = (command: string): ToolCall => ({ kind: "shell", command });
 
 describe("recordGuard through runPreToolUse", () => {
-  test("SC8 — a write tool on a run record is refused with the orchestrate commands, and logged", async () => {
+  test("SC8, SC23 — a write tool on a run record is refused with the orchestrate commands, and logged", async () => {
     const { cwd, runDir, deps } = await setUp();
 
     const verdict = await runPreToolUse(
@@ -95,9 +95,10 @@ describe("recordGuard through runPreToolUse", () => {
     const path = join(cwd, ".yok/feat-x/state.json");
     expect(verdict).toMatchObject({ kind: "deny", path });
     const message = verdict.kind === "deny" ? verdict.message : "";
-    expect(message).toContain("bun run orchestrate next --run feat-x");
+    expect(message).toContain("yok orchestrate next --run feat-x");
     expect(message).toContain("exec|done NODE_RUN_ID --run feat-x");
     expect(message).toContain("orchestrate emit");
+    expect(message).not.toContain("bun run");
     expect((await jsonlEventStore(runDir).read()).map((event) => event.payload)).toEqual([
       {
         agent: "claude",
@@ -138,7 +139,7 @@ describe("recordGuard through runPreToolUse", () => {
     }
   });
 
-  test("SC9 — a shell command on the registry is refused with init and link-session", async () => {
+  test("SC9, SC23 — a shell command on the registry is refused with init and link-session", async () => {
     const { cwd, deps } = await setUp();
 
     const verdict = await runPreToolUse(
@@ -148,8 +149,9 @@ describe("recordGuard through runPreToolUse", () => {
     );
 
     const message = verdict.kind === "deny" ? verdict.message : "";
-    expect(message).toContain("bun run orchestrate init");
+    expect(message).toContain("yok orchestrate init");
     expect(message).toContain("link-session");
+    expect(message).not.toContain("bun run");
   });
 
   test("SC10 — other writes pass and are not logged", async () => {
@@ -241,7 +243,7 @@ describe("bashAntipatterns", () => {
 
   test("SC21 (regression) — the orchestrate done heredoc still passes", async () => {
     const command = [
-      "bun run orchestrate done n1 --run feat-x --output - <<'JSON'",
+      "yok orchestrate done n1 --run feat-x --output - <<'JSON'",
       '{ "ok": true }',
       "JSON",
     ].join("\n");

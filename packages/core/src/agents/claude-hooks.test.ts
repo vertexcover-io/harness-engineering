@@ -50,7 +50,7 @@ describe("readClaudeTranscript", () => {
           type: "tool_use",
           id: "t1",
           name: "Bash",
-          input: { command: "bun run orchestrate next --run feat-x" },
+          input: { command: "yok orchestrate next --run feat-x" },
         },
       ]),
       user([{ type: "tool_result", tool_use_id: "t1", content: "{}" }]),
@@ -67,7 +67,7 @@ describe("readClaudeTranscript", () => {
 
     expect(await readClaudeTranscript(path)).toEqual([
       { kind: "prompt", text: "go" },
-      { kind: "command", command: "bun run orchestrate next --run feat-x" },
+      { kind: "command", command: "yok orchestrate next --run feat-x" },
       { kind: "prompt", text: "why?" },
     ]);
   });
@@ -141,7 +141,7 @@ describe("claudeAdapter.preToolUse", () => {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          permissionDecisionReason: expect.stringContaining("bun run orchestrate next --run x"),
+          permissionDecisionReason: expect.stringContaining("yok orchestrate next --run x"),
         },
       });
     }

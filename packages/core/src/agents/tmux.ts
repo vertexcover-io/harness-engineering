@@ -19,6 +19,7 @@ import {
   warn,
   yokHome,
 } from "@yok/sdk";
+import { isCompiled } from "@yok/sdk/internal";
 
 // Bundled as text, so a compiled yok binary carries it too.
 import { shellQuote } from "./common.ts";
@@ -280,13 +281,17 @@ export const tmuxHost = (options: TmuxHostOptions): ITerminalHost => {
 
 const configPathFor = (env: NodeJS.ProcessEnv): string => join(yokHome(env), "tmux.conf");
 
-// The tmux server `yok run` starts sessions on: YOK_TMUX_SOCKET, or `yok`.
+// The tmux server `yok run` starts sessions on: YOK_TMUX_SOCKET, else `yok` for the
+// binary and `yok-dev` from source, so the two never attach to each other's panes.
+export const defaultTmuxSocket = (compiled: boolean = isCompiled): string =>
+  compiled ? "yok" : "yok-dev";
+
 export const yokTerminalHost = (
   env: NodeJS.ProcessEnv = process.env,
   log?: ILogger,
 ): ITerminalHost =>
   tmuxHost({
-    socketName: env.YOK_TMUX_SOCKET ?? "yok",
+    socketName: env.YOK_TMUX_SOCKET ?? defaultTmuxSocket(),
     configPath: configPathFor(env),
     ...(log === undefined ? {} : { log }),
   });

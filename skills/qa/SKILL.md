@@ -92,7 +92,7 @@ skipping" and stop.
 ## Inputs
 
 RUN below is the run's spec name; standalone, use a short kebab-case name for the feature. Read a
-reference with `bun run orchestrate skill ref qa.NAME`; outside a run, read it from this skill's
+reference with `yok orchestrate skill ref qa.NAME`; outside a run, read it from this skill's
 `references/` folder. In a run, the input may hold:
 
 | Field | Meaning |
@@ -488,13 +488,10 @@ scenario in one pass, the carried-over ones included: the videos are assembled f
 captured, and the `writing-the-report` reference owns what the settings do and what a hand-run rebuild has to keep.
 
 1. **Run the bundled script over the verification directory.** It globs every `NN_SLUG` prefix under
-   `screenshots/` and writes one `NN_SLUG.mp4` beside the report. QA_SKILL_DIR is the folder holding
-   this SKILL.md:
+   `screenshots/` and writes one `NN_SLUG.mp4` beside the report:
 
    ```bash
-   node --experimental-strip-types \
-     "QA_SKILL_DIR/scripts/report-media.ts" \
-     /abs/path/to/.yok/RUN/artifacts/verification
+   yok orchestrate script --skill qa scripts/report-media.ts /abs/path/to/.yok/RUN/artifacts/verification
    ```
 
 2. **Read every line it prints.** Each scenario gets `ok NN_SLUG.mp4 crop=…` or `FAILED NN_SLUG — REASON`, and
@@ -528,7 +525,7 @@ the round's whole output. Every other attempt writes the report, a terminal `FAI
 
 **Writing it:**
 
-1. Copy the file `bun run --silent orchestrate skill ref --path qa.report-template` prints (standalone,
+1. Copy the file `yok orchestrate skill ref --path qa.report-template` prints (standalone,
    this skill's `references/proof-report-template.html`) to `verification/proof-report.html` and fill
    its JSON island; the field-by-field contract is the `writing-the-report` reference.
 2. `bugs[]` carries only what is still broken as you write — a bug an earlier round found and a fix has since closed
@@ -537,9 +534,7 @@ the round's whole output. Every other attempt writes the report, a terminal `FAI
 4. **Inline the media, last** — after this the report is too large to edit, so it runs once every other checklist bullet holds:
 
    ```bash
-   node --experimental-strip-types \
-     "QA_SKILL_DIR/scripts/report-media.ts" \
-     --inline /abs/path/to/.yok/RUN/artifacts/verification
+   yok orchestrate script --skill qa scripts/report-media.ts --inline /abs/path/to/.yok/RUN/artifacts/verification
    ```
 
    It writes every video, frame, baseline and artifact the report names into the report itself, so the one file

@@ -29,12 +29,14 @@ export {
   type StepReport,
 } from "./events.ts";
 export { importModule, loadFunction, type ModuleError, runLockPath } from "./files.ts";
+export { isCompiled, selfArgv } from "./process.ts";
 export {
   createRegistry,
   type Registry,
   type RegistryFile,
   RegistryFileSchema,
 } from "./registry.ts";
+export { callMode, runMode } from "./run-hooks.ts";
 export {
   appendRunEvent,
   appendRunEventIf,
@@ -45,3 +47,4 @@ export {
   readGit,
   syncState,
 } from "./state.ts";
+export { VERSION } from "./version.ts";

@@ -16,9 +16,10 @@ references:
   script:
     path: scripts/baseline.ts
     description: >
-      The script that runs the baseline. A project replaces it with
-      `extensions.baseline.references.script: { replace: PATH }`; a replacement takes the same
-      flags and prints the same report.
+      The script that runs the baseline. A project replaces it with a JS or TS file that exports
+      `main(argv)`, `extensions.baseline.references.script: { replace: PATH }`, or with a command in
+      any language, `{ command: "python tools/baseline.py" }`; either gets the same flags and prints
+      the same report.
 ---
 
 # Baseline
@@ -28,16 +29,16 @@ RUN below is the run's spec name.
 
 ## Steps
 
-1. Run the baseline script, which the project may have replaced. Add `--packages NAME1,NAME2`
-   when the input has `packages`:
+1. Run the baseline. It runs the project's replacement when it has one. Add
+   `--packages NAME1,NAME2` when the input has `packages`:
 
    ```bash
-   bun "$(bun run --silent orchestrate skill ref --path baseline.script)" --run RUN
+   yok orchestrate script --skill baseline scripts/baseline.ts --run RUN
    ```
 
    It runs every script before it prints, which can take minutes. Run it in the background and
-   wait for it to finish rather than cutting it off. If `skill ref` fails, stop and report its
-   error.
+   wait for it to finish rather than cutting it off. If it cannot find the run, its config or the
+   replacement, it exits non-zero; step 2 covers that.
 2. If the command exits non-zero, stop and report the error exactly as it printed it, such as a
    script that is missing or a workspace that does not exist. Fixing the config is the person's
    call.

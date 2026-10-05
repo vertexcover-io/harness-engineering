@@ -145,6 +145,23 @@ export const importModule = async (
 const isFunction = <F extends AnyFunction>(value: unknown): value is F =>
   typeof value === "function";
 
+// Runs a script file in this process: argv first, so top-level code sees its arguments, then the
+// import, then its `main(args)` when it exports one. A number main returns is the exit code;
+// undefined leaves process.exitCode as the script set it.
+export const runScriptFile = async (
+  file: string,
+  args: readonly string[],
+): Promise<Result<number | undefined, ModuleError>> => {
+  process.argv = [process.execPath, file, ...args];
+  const loaded = await importModule(file);
+  if (!loaded.ok) return loaded;
+  const { main } = loaded.value;
+  if (!isFunction<(argv: readonly string[]) => unknown>(main))
+    return { ok: true, value: undefined };
+  const code = await main(args);
+  return { ok: true, value: typeof code === "number" ? code : undefined };
+};
+
 export const loadFunction = async <F extends AnyFunction>(
   file: string,
   name: string,

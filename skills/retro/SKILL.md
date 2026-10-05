@@ -66,9 +66,9 @@ A stage runs unattended, so the brief says to ask nobody anything: a missing inp
 the report and the audit goes on without it.
 
 Wait for the sub-agent, then check that `retro.md` exists. Finish the stage with
-`bun run orchestrate done NODE_RUN_ID --run RUN --artifact retro=artifacts/retro.md --output -`
+`yok orchestrate done NODE_RUN_ID --run RUN --artifact retro=artifacts/retro.md --output -`
 and the line `N major, M minor` as the output. When the sub-agent fails, or reports that
-`bun run retro` was not found, finish with `--error -` and its reason; the node allows failure,
+`yok` was not found, finish with `--error -` and its reason; the node allows failure,
 so the run's status does not change.
 
 ## The method

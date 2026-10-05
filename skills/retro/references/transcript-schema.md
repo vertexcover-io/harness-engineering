@@ -1,6 +1,6 @@
 # Transcript schema and hand-written queries
 
-`bun run retro extract` covers the bulk extraction. This file covers what it cannot: the record
+`yok orchestrate script --skill retro scripts/retro.ts extract` covers the bulk extraction. This file covers what it cannot: the record
 shape, and the per-run queries you write yourself during Step 1 and Step 2 of `audit-method.md`.
 
 ## Contents
@@ -66,10 +66,10 @@ text misses what sub-agents told the orchestrator. Search the raw main transcrip
 
 ## Loader
 
-Start any hand-written query with this.
+Start any hand-written query with this. Write the query to a `.ts` file in the extraction folder
+and run it with `yok orchestrate script OUT/NN-name.ts`.
 
-```bash
-bun -e '
+```ts
 import { loadRecords, blocksOf } from "/ABSOLUTE/PATH/TO/skills/retro/scripts/transcript.ts";
 const recs = loadRecords("MAIN.jsonl");
 for (const rec of recs) {
@@ -77,7 +77,6 @@ for (const rec of recs) {
     // rec.line is the citation; rec.data is the record; block.name and block.input are the call
   }
 }
-'
 ```
 
 `loadRecords` drops unparseable lines and keeps 1-based line numbers; `blocksOf(rec, kind)` returns
@@ -88,16 +87,15 @@ the content blocks of one kind, or none when the content is a plain string.
 Step 1's last four detectors, which the extractor does not answer.
 
 **D9 — Retry loops.** Group the `Bash` calls by command family, the first two words of the
-command, and list every family run three or more times.
+command, and list every family run three or more times. Save its output as
+`OUT/10-retry-families.txt`.
 
-```bash
-bun -e '
+```ts
 import { countBy, familyOf, loadRecords, toolCalls } from "/ABSOLUTE/PATH/TO/skills/retro/scripts/transcript.ts";
 const calls = toolCalls(loadRecords("MAIN.jsonl"), ["Bash"]);
 for (const [family, runs] of Object.entries(countBy(calls.map(familyOf)))) {
   if (runs >= 3) console.log(runs, family);
 }
-' > OUT/10-retry-families.txt
 ```
 
 Then read each listed family's runs in `03-tool-calls.txt`, in order. A loop is the same command
@@ -110,7 +108,7 @@ and a path containing `review`. Print `input['content']`.
 
 **D11 — Claim versus catch.** For each coder agent in `06-subagents.txt`, take its `FINAL` line:
 what it said it finished, and for which files. Open the whole message with
-`bun run retro cite AGENT.jsonl LINE --full`, using the line number after `FINAL :`. Then search
+`yok orchestrate script --skill retro scripts/retro.ts cite AGENT.jsonl LINE --full`, using the line number after `FINAL :`. Then search
 the D10 review text for the same file names. A review finding against a file the coder reported
 as done and passing is a hit. Cite both: the coder's final message and the reviewer's `Write`.
 
@@ -162,7 +160,7 @@ grep -nE "TODO|\{\{|<[a-z-]+>" OUT/03-tool-calls.txt | grep -i write
 
 ```bash
 grep -n 'distinctive phrase' MAIN.jsonl | cut -c1-200
-bun run retro cite MAIN.jsonl LINE --context 5
+yok orchestrate script --skill retro scripts/retro.ts cite MAIN.jsonl LINE --context 5
 ```
 
 ## Discipline

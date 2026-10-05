@@ -243,7 +243,7 @@ const until = async <T>(read: () => Promise<T>, done: (value: T) => boolean): Pr
 };
 
 describe("appendRunEvent with run hooks", () => {
-  test("SC110: blocking hooks run in order and are recorded before the append returns", async () => {
+  test("SC110, SC27: blocking hooks run in order and are recorded before the append returns", async () => {
     const { run, calls } = await runWithHooks({
       "custom.demo.ping": [
         { name: "a", handler: "seen" },
@@ -288,7 +288,7 @@ describe("appendRunEvent with run hooks", () => {
     expect(await calls()).toHaveLength(2);
   });
 
-  test("SC112: a blocking module hook that throws is recorded like a failed command and does not stop the next hook or the append", async () => {
+  test("SC112, SC27: a blocking module hook that throws is recorded like a failed command and does not stop the next hook or the append", async () => {
     const { run, runDir, calls } = await runWithHooks({
       "custom.demo.ping": [
         { name: "bad", handler: "throws" },
@@ -344,7 +344,7 @@ describe("appendRunEvent with run hooks", () => {
     expect(new Set([first, second])).toEqual(new Set(["1", "2"]));
   }, 10_000);
 
-  test("a blocking module hook that holds a timer past its 1s timeout lets the appending process exit, recorded as a timeout", async () => {
+  test("SC27: a blocking module hook that holds a timer past its 1s timeout lets the appending process exit, recorded as a timeout", async () => {
     const { run, calls } = await runWithHooks({
       "custom.demo.ping": [{ name: "tick", handler: "ticking", timeoutSeconds: 1 }],
     });
@@ -420,13 +420,14 @@ await appendRunEvent(${JSON.stringify(run)}, { type: "custom.demo.ping", source:
     ]);
   });
 
-  test("a non-blocking hook's second call reads the value its first call stored with custom.state.updated", async () => {
+  test("SC28: a non-blocking module hook records after the append returns, and its second call reads the value its first call stored with custom.state.updated", async () => {
     const { run, calls } = await runWithHooks({
       "custom.demo.ping": [{ name: "thread", blocking: false, handler: "thread" }],
     });
 
     await appendRunEvent(run, ping());
     await appendRunEvent(run, ping());
+    expect(await calls()).toEqual([]);
     const recorded = await until(calls, (found) => found.length === 2);
 
     expect(recorded.map((call) => call.payload)).toMatchObject([

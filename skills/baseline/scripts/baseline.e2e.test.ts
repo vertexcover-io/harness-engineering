@@ -13,18 +13,36 @@ import { join } from "node:path";
 import { runDirOf, type WorkflowRun } from "@yok/sdk";
 import { createState } from "@yok/sdk/internal";
 
-const SCRIPT = join(import.meta.dir, "baseline.ts");
+const CLI = join(import.meta.dir, "../../../packages/cli/src/index.ts");
+const BASELINE = [
+  "--no-env-file",
+  CLI,
+  "orchestrate",
+  "script",
+  "--skill",
+  "baseline",
+  "scripts/baseline.ts",
+];
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "baseline-e2e-")));
 
+const WORKFLOW =
+  'name: ok\nnodes:\n  - { id: a, type: exec, input: null, runtime: sh, script: "true" }\n';
+
 // A repo holding orchestrate.config.json with `baseline`, and a run named feat-x registered in
 // YOK_HOME, as `orchestrate init` leaves it.
-const baselineRun = (baseline: string | undefined): Readonly<{ repo: string; home: string }> => {
+const baselineRun = (
+  baseline: string | undefined,
+  extensions: Readonly<Record<string, unknown>> = {},
+): Readonly<{ repo: string; home: string }> => {
   const repo = tempDir();
   const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
   git("init", "-q", "-b", "main");
   git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
-  writeFileSync(join(repo, "orchestrate.config.json"), JSON.stringify({ version: 2, baseline }));
+  writeFileSync(
+    join(repo, "orchestrate.config.json"),
+    JSON.stringify({ version: 2, baseline, extensions }),
+  );
   const workflowPath = join(repo, "ok.yaml");
   writeFileSync(workflowPath, "name: ok\nnodes: []\n");
   const run: WorkflowRun = {
@@ -43,6 +61,7 @@ const baselineRun = (baseline: string | undefined): Readonly<{ repo: string; hom
   const home = tempDir();
   writeFileSync(join(home, "registry.json"), JSON.stringify({ version: 1, runs: { "r-1": run } }));
   mkdirSync(runDirOf(repo, "feat-x"), { recursive: true });
+  writeFileSync(join(runDirOf(repo, "feat-x"), "workflow.yaml"), WORKFLOW);
   return { repo, home };
 };
 
@@ -55,7 +74,7 @@ const baseline = (
   args: readonly string[],
   extra: Readonly<Record<string, string>> = {},
 ) => {
-  const run = spawnSync("bun", [SCRIPT, ...args], {
+  const run = spawnSync("bun", [...BASELINE, ...args], {
     cwd,
     encoding: "utf8",
     env: { ...env(home), ...extra },
@@ -80,7 +99,7 @@ const waitFor = async (condition: () => boolean, timeoutMs = 10_000): Promise<vo
   }
 };
 
-describe("baseline.ts", () => {
+describe("SC48: yok orchestrate script --skill baseline scripts/baseline.ts with no extension, as baseline.ts did", () => {
   test("runs the configured script and writes artifacts/baseline.json", () => {
     const { repo, home } = baselineRun(`echo '{"tests":3}'`);
 
@@ -110,7 +129,6 @@ describe("baseline.ts", () => {
     const file = join(elsewhere, "custom.json");
     writeFileSync(file, JSON.stringify({ version: 2, baseline: "echo from-run-config" }));
     const runDir = runDirOf(repo, "feat-x");
-    writeFileSync(join(runDir, "workflow.yaml"), "name: ok\nnodes: []\n");
     await createState({
       runId: "r-1",
       runDir,
@@ -156,7 +174,7 @@ describe("baseline.ts", () => {
   test("SIGTERM kills the running baseline script, exits 143 and writes nothing", async () => {
     const { repo, home } = baselineRun("echo $$ > pid; sleep 30");
     const pidFile = join(repo, "pid");
-    const child = Bun.spawn(["bun", SCRIPT, "--run", "feat-x", "--dir", repo], {
+    const child = Bun.spawn(["bun", ...BASELINE, "--run", "feat-x", "--dir", repo], {
       cwd: repo,
       env: env(home),
       stdout: "ignore",
@@ -170,5 +188,33 @@ describe("baseline.ts", () => {
     expect(await child.exited).toBe(143);
     await waitFor(() => !isAlive(pid), 2000);
     expect(existsSync(join(runDirOf(repo, "feat-x"), "artifacts", "baseline.json"))).toBe(false);
+  });
+});
+
+describe("a project's baseline override", () => {
+  test("SC45: a replace override's main gets --run feat-x --packages api, its 3 is the exit code, and no baseline.json is written", () => {
+    const script = { replace: "tools/base.ts" };
+    const { repo, home } = baselineRun("echo built-in", { baseline: { references: { script } } });
+    mkdirSync(join(repo, "tools"));
+    writeFileSync(
+      join(repo, "tools", "base.ts"),
+      "export const main = (argv) => { console.log(JSON.stringify(argv)); return 3; };\n",
+    );
+
+    const run = baseline(repo, home, ["--run", "feat-x", "--packages", "api"]);
+
+    expect(run.stdout).toBe('["--run","feat-x","--packages","api"]\n');
+    expect(run.code).toBe(3);
+    expect(existsSync(join(runDirOf(repo, "feat-x"), "artifacts", "baseline.json"))).toBe(false);
+  });
+
+  test('SC46: a command override runs through sh with --dir "a b" kept as one word', () => {
+    const script = { command: "printf '%s|'" };
+    const { repo, home } = baselineRun(undefined, { baseline: { references: { script } } });
+
+    const run = baseline(repo, home, ["--run", "feat-x", "--dir", "a b"]);
+
+    expect(run.stdout).toBe("--run|feat-x|--dir|a b|");
+    expect(run.code).toBe(0);
   });
 });

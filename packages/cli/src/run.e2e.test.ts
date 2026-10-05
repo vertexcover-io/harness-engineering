@@ -29,7 +29,7 @@ const FAKE_AGENT = join(
   "fixtures",
   "fake-agent.ts",
 );
-const ORCHESTRATE = join(import.meta.dir, "..", "..", "core", "src", "orchestrate.ts");
+const ORCHESTRATE = [CLI, "orchestrate"] as const;
 
 const OK_WORKFLOW = [
   "name: ok",
@@ -372,7 +372,7 @@ describe("yok run", () => {
       const launch = readLines(fakeOut).find(isSession);
       const agentEnv = launch?.env as NodeJS.ProcessEnv;
 
-      const init = spawnSync("bun", [ORCHESTRATE, "init", "fix-login"], {
+      const init = spawnSync("bun", [...ORCHESTRATE, "init", "fix-login"], {
         cwd: String(launch?.cwd),
         env: agentEnv,
         encoding: "utf8",
@@ -400,7 +400,7 @@ describe("yok run", () => {
       const settings = JSON.parse(args[args.indexOf("--settings") + 1] ?? "{}");
 
       expect(settings.hooks.Stop[0].hooks[0].command).toContain(
-        "packages/core/src/orchestrate.ts' 'hook' 'stop' '--agent' 'claude'",
+        "packages/cli/src/index.ts' 'orchestrate' 'hook' 'stop' '--agent' 'claude'",
       );
 
       stopServer(repo, env);
@@ -423,7 +423,7 @@ describe("yok run", () => {
 
       expect(settings.hooks.PreToolUse[0].matcher).toBe("Write|Edit|MultiEdit|NotebookEdit|Bash");
       expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain(
-        "packages/core/src/orchestrate.ts' 'hook' 'pre-tool-use' '--agent' 'claude'",
+        "packages/cli/src/index.ts' 'orchestrate' 'hook' 'pre-tool-use' '--agent' 'claude'",
       );
 
       stopServer(repo, env);
@@ -458,7 +458,7 @@ describe("yok run", () => {
 
       const hook = spawnSync(
         "bun",
-        [ORCHESTRATE, "hook", "session-start", "--agent", "claude", "--handler", "link-session"],
+        [...ORCHESTRATE, "hook", "session-start", "--agent", "claude", "--handler", "link-session"],
         {
           cwd: String(launch?.cwd),
           env: launch?.env as NodeJS.ProcessEnv,
@@ -606,7 +606,7 @@ describe("yok run", () => {
       expect(registry.runs[runId].config).toBe(file);
       waitFor(() => readLines(fakeOut).some(isLaunch));
       const launch = readLines(fakeOut).find(isLaunch);
-      const init = spawnSync("bun", [ORCHESTRATE, "init", "fix-login"], {
+      const init = spawnSync("bun", [...ORCHESTRATE, "init", "fix-login"], {
         cwd: String(launch?.cwd),
         env: launch?.env as NodeJS.ProcessEnv,
         encoding: "utf8",

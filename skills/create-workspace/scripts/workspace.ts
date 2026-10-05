@@ -254,7 +254,9 @@ const precheckAdd = async (
     return refused("workspace add needs workspace.layout multi; a mono workspace is its one repo");
   }
   if (!existsSync(location.workspaceDir)) {
-    return refused(`no workspace at ${location.workspaceDir}; create it with workspace.ts create`);
+    return refused(
+      `no workspace at ${location.workspaceDir}; create it with yok orchestrate script --skill create-workspace scripts/workspace.ts create`,
+    );
   }
   const planned = planMulti(location, options, "add");
   if (!planned.ok) return planned;
@@ -639,7 +641,7 @@ export const workspaceInfo = (config: Config): WorkspaceInfo => {
 // stdout carries only the report, so failures are logged to stderr, at warn unless LOG_LEVEL says otherwise.
 const log = jsonLogger({ level: LogLevelSchema.catch("warn").parse(process.env.LOG_LEVEL) });
 
-const USAGE = `usage: workspace.ts COMMAND [flags]
+const USAGE = `usage: yok orchestrate script --skill create-workspace scripts/workspace.ts COMMAND [flags]
 
 Create, inspect, add to and remove the run's workspace: a git worktree per repo, with the
 project's setup and teardown.
@@ -776,7 +778,7 @@ const changeWorkspace = async (
   }
 };
 
-const main = async (argv: readonly string[]): Promise<void> => {
+export const main = async (argv: readonly string[]): Promise<void> => {
   if (argv.includes("--help") || argv.includes("-h")) return void process.stdout.write(USAGE);
   const line = parseCommandLine(argv);
   if (!line.ok) return fail(line.error);

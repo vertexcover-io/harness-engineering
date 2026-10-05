@@ -101,7 +101,8 @@
      entry plus one render function; nothing else moves.
 
      The video, every frame and every file open in a modal, and all of them
-     load from the report-media island below, which report-media.ts --inline
+     load from the report-media island below, which
+     yok orchestrate script --skill qa scripts/report-media.ts --inline
      fills. Nothing loads from disk, so until it has run every frame shows as
      missing — and once it has, this file shows them wherever it is moved.
      ========================================================================== -->
@@ -759,12 +760,12 @@ code {
 (() => {
   const D = JSON.parse(document.getElementById('report-data').textContent);
   /* report-media maps a path the data names to that file as a data URI — written by
-     report-media.ts --inline, never by hand. Nothing loads from disk: a path it does
+     yok orchestrate script --skill qa scripts/report-media.ts --inline, never by hand. Nothing loads from disk: a path it does
      not hold shows as missing here too, not only once the report has been moved. */
   const MEDIA = JSON.parse(document.getElementById('report-media').textContent);
   const res = p => MEDIA[p] || '';
   const NOT_INLINED = '<strong>This file is not inside the report.</strong> ' +
-    'Run report-media.ts --inline and fix whatever it prints as FAILED.';
+    'Run yok orchestrate script --skill qa scripts/report-media.ts --inline and fix whatever it prints as FAILED.';
   const S = D.scenarios || [], BUGS = D.bugs || [], GAPS = D.gaps || [], COV = D.coverage || [];
 
   const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };

@@ -14,7 +14,7 @@ import { join } from "node:path";
 import * as sdk from "@yok/sdk";
 import { noopLogger, registryPath, runDirOf, type StopFailureInput } from "@yok/sdk";
 import { createRegistry, jsonlEventStore } from "@yok/sdk/internal";
-import { ORCHESTRATE_SCRIPT } from "../stage.ts";
+import { orchestrateArgv } from "../stage.ts";
 import { resumeAfterLimit } from "./stop-failure.ts";
 
 const setUp = async () => {
@@ -58,7 +58,7 @@ describe("resumeAfterLimit", () => {
   afterEach(() => spawn.mockReset());
   afterAll(() => spawn.mockRestore());
 
-  test("a usage limit in a run session is logged as agent.limit.reached and starts the limit wait for that event", async () => {
+  test("SC22: a usage limit in a run session is logged as agent.limit.reached and starts the program's orchestrate limit-wait for that event", async () => {
     const { runDir, cwd, deps } = await setUp();
     await resumeAfterLimit.run(failure("rate_limit"), deps);
     const [event] = await jsonlEventStore(runDir).read();
@@ -72,10 +72,11 @@ describe("resumeAfterLimit", () => {
       },
     });
     const id = event?.id ?? "";
+    const [program, ...self] = orchestrateArgv();
     expect(spawn.mock.calls).toEqual([
       [
-        process.execPath,
-        [ORCHESTRATE_SCRIPT, "limit-wait", id, "--run-id", "r-1", "--session-id", "s1"],
+        program,
+        [...self, "limit-wait", id, "--run-id", "r-1", "--session-id", "s1"],
         { cwd, output: "ignore" },
       ],
     ]);
