@@ -14,7 +14,7 @@ import {
   type ToolResult,
   type ToolUse,
   type TranscriptEntry,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import { parseStdin, preToolUseReply, runNoReplyHook, stopReply } from "../hooks/common.ts";
 import { answerNotice } from "../hooks/post-tool-use.ts";

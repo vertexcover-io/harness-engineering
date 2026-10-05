@@ -22,7 +22,7 @@ shape, and the per-run queries you write yourself during Step 1 and Step 2 of `a
 `SLUG` is the project's working directory with every `/` replaced by `-`. So
 `/Users/x/Projects/andromeda` becomes `-Users-x-Projects-andromeda`.
 
-A v2 run lists its session ids in `.harness/RUN/event.jsonl`, and the extractor finds each
+A v2 run lists its session ids in `.yok/RUN/event.jsonl`, and the extractor finds each
 transcript by id across every project folder.
 
 ## Record schema
@@ -70,7 +70,7 @@ Start any hand-written query with this.
 
 ```bash
 bun -e '
-import { loadRecords, blocksOf } from "/ABSOLUTE/PATH/TO/skills/harness-retro/scripts/transcript.ts";
+import { loadRecords, blocksOf } from "/ABSOLUTE/PATH/TO/skills/retro/scripts/transcript.ts";
 const recs = loadRecords("MAIN.jsonl");
 for (const rec of recs) {
   for (const block of blocksOf(rec, "tool_use")) {
@@ -92,7 +92,7 @@ command, and list every family run three or more times.
 
 ```bash
 bun -e '
-import { countBy, familyOf, loadRecords, toolCalls } from "/ABSOLUTE/PATH/TO/skills/harness-retro/scripts/transcript.ts";
+import { countBy, familyOf, loadRecords, toolCalls } from "/ABSOLUTE/PATH/TO/skills/retro/scripts/transcript.ts";
 const calls = toolCalls(loadRecords("MAIN.jsonl"), ["Bash"]);
 for (const [family, runs] of Object.entries(countBy(calls.map(familyOf)))) {
   if (runs >= 3) console.log(runs, family);

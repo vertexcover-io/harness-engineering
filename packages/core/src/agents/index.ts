@@ -1,10 +1,4 @@
-import type {
-  AgentAdapter,
-  IAgentProvider,
-  ILogger,
-  ITerminalHost,
-  SessionRef,
-} from "@harness/sdk";
+import type { AgentAdapter, IAgentProvider, ILogger, ITerminalHost, SessionRef } from "@yok/sdk";
 import { type WorkflowAgent, WorkflowAgentSchema } from "../workflow/types.ts";
 import { claudeProvider } from "./claude.ts";
 import { claudeAdapter } from "./claude-hooks.ts";
@@ -29,9 +23,8 @@ type ProviderBuild = (options: Omit<AgentProviderOptions, "agent">) => IAgentPro
 
 const providers: Readonly<Record<WorkflowAgent, ProviderBuild>> = {
   claude: ({ host, env, log }) =>
-    claudeProvider({ host, binary: env.HARNESS_CLAUDE_BIN ?? "claude", log }),
-  codex: ({ host, env, log }) =>
-    codexProvider({ host, binary: env.HARNESS_CODEX_BIN ?? "codex", log }),
+    claudeProvider({ host, binary: env.YOK_CLAUDE_BIN ?? "claude", log }),
+  codex: ({ host, env, log }) => codexProvider({ host, binary: env.YOK_CODEX_BIN ?? "codex", log }),
 };
 
 export const agentProvider = ({ agent, ...options }: AgentProviderOptions): IAgentProvider =>

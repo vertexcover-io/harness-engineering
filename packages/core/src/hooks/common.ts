@@ -9,23 +9,23 @@ import {
   type RunRef,
   type SessionRef,
   type ToolVerdict,
-} from "@harness/sdk";
-import { appendRunEvent } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { appendRunEvent } from "@yok/sdk/internal";
 import * as z from "zod";
 
-// The initialized run that HARNESS_RUN_ID names, whichever session is asking. A session that
+// The initialized run that YOK_RUN_ID names, whichever session is asking. A session that
 // starts before init has no named run yet.
 export const findEnvRun = async (
   deps: HookDeps,
 ): Promise<Readonly<{ ref: RunRef; sessions: readonly SessionRef[] }> | undefined> => {
-  const runId = deps.env.HARNESS_RUN_ID;
+  const runId = deps.env.YOK_RUN_ID;
   if (!runId) return undefined;
   const run = await deps.registry.findRun(runId);
   if (run === undefined || run.name === null) return undefined;
   return { ref: { id: run.id, cwd: run.cwd, name: run.name }, sessions: run.sessions };
 };
 
-// The run this agent session belongs to, or undefined when it is not a harness run session.
+// The run this agent session belongs to, or undefined when it is not a yok run session.
 export const findSessionRun = async (
   input: Readonly<{ agent: AgentType; sessionId: string }>,
   deps: HookDeps,

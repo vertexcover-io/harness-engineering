@@ -1,5 +1,5 @@
 export { type AppDeps, type AppType, createApp } from "./app.ts";
-export { createHarnessClient, type HarnessClient, type HarnessClientOptions } from "./client.ts";
+export { createYokClient, type YokClient, type YokClientOptions } from "./client.ts";
 export {
   type ApiError,
   type ErrorBody,

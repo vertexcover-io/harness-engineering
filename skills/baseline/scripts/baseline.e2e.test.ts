@@ -10,15 +10,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runDirOf, type WorkflowRun } from "@harness/sdk";
-import { createState } from "@harness/sdk/internal";
+import { runDirOf, type WorkflowRun } from "@yok/sdk";
+import { createState } from "@yok/sdk/internal";
 
 const SCRIPT = join(import.meta.dir, "baseline.ts");
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "baseline-e2e-")));
 
 // A repo holding orchestrate.config.json with `baseline`, and a run named feat-x registered in
-// HARNESS_HOME, as `orchestrate init` leaves it.
+// YOK_HOME, as `orchestrate init` leaves it.
 const baselineRun = (baseline: string | undefined): Readonly<{ repo: string; home: string }> => {
   const repo = tempDir();
   const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
@@ -46,8 +46,8 @@ const baselineRun = (baseline: string | undefined): Readonly<{ repo: string; hom
   return { repo, home };
 };
 
-// A run id or harness home from the shell running the tests must never reach a real registry.
-const env = (home: string) => ({ ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home });
+// A run id or yok home from the shell running the tests must never reach a real registry.
+const env = (home: string) => ({ ...process.env, YOK_RUN_ID: undefined, YOK_HOME: home });
 
 const baseline = (
   cwd: string,
@@ -126,11 +126,11 @@ describe("baseline.ts", () => {
     expect(recorded.workspace.command).toBe("echo from-run-config");
   });
 
-  test("$HARNESS_RUN_ID picks the run with no flag, and --run-id picks it from outside the repo", () => {
+  test("$YOK_RUN_ID picks the run with no flag, and --run-id picks it from outside the repo", () => {
     const { repo, home } = baselineRun("echo ok");
     const path = join(runDirOf(repo, "feat-x"), "artifacts", "baseline.json");
 
-    const fromSession = baseline(repo, home, ["--dir", repo], { HARNESS_RUN_ID: "r-1" });
+    const fromSession = baseline(repo, home, ["--dir", repo], { YOK_RUN_ID: "r-1" });
     const byId = baseline(tempDir(), home, ["--run-id", "r-1", "--dir", repo]);
 
     expect(fromSession.code).toBe(0);

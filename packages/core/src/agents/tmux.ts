@@ -8,7 +8,6 @@ import {
   type Exec,
   execWithTimeout,
   fail,
-  harnessHome,
   type ILogger,
   type ITerminal,
   type ITerminalHost,
@@ -18,9 +17,10 @@ import {
   type Result,
   type TerminalSpec,
   warn,
-} from "@harness/sdk";
+  yokHome,
+} from "@yok/sdk";
 
-// Bundled as text, so a compiled harness binary carries it too.
+// Bundled as text, so a compiled yok binary carries it too.
 import { shellQuote } from "./common.ts";
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
 
@@ -69,7 +69,7 @@ export type TmuxHostOptions = Readonly<{
 type TmuxSocket = Readonly<{ baseArgs: readonly string[]; exec: Exec; log: ILogger }>;
 
 const tmuxSocket = ({
-  socketName = "harness",
+  socketName = "yok",
   socketPath,
   configPath,
   exec = execWithTimeout(10_000),
@@ -154,13 +154,13 @@ const pasteText = async (
   target: string,
   text: string,
 ): Promise<Result<string>> => {
-  const buffer = `harness-${randomUUID()}`;
+  const buffer = `yok-${randomUUID()}`;
   const loaded = await runTmux(socket, ["set-buffer", "-b", buffer, "--", text]);
   if (!loaded.ok) return loaded;
   return runTmux(socket, ["paste-buffer", "-p", "-d", "-b", buffer, "-t", target]);
 };
 
-// Text typed into a pane can come from outside the harness (a review comment). A raw ESC or CR in
+// Text typed into a pane can come from outside yok (a review comment). A raw ESC or CR in
 // it could end a bracketed paste early and press keys of its own, so only tab and newline survive.
 const isControl = (code: number): boolean =>
   (code < 0x20 && code !== 0x09 && code !== 0x0a) || (code >= 0x7f && code <= 0x9f);
@@ -229,7 +229,7 @@ export const tmuxHost = (options: TmuxHostOptions): ITerminalHost => {
       : [];
   };
 
-  // Once per process: write the config, and reload it into a harness tmux that outlived an
+  // Once per process: write the config, and reload it into a yok tmux that outlived an
   // earlier process. A fresh server picks up the file itself via -f on its first new-session.
   let setup: Promise<void> | null = null;
   const ensureSetup = (): Promise<void> => {
@@ -278,15 +278,15 @@ export const tmuxHost = (options: TmuxHostOptions): ITerminalHost => {
   };
 };
 
-const configPathFor = (env: NodeJS.ProcessEnv): string => join(harnessHome(env), "tmux.conf");
+const configPathFor = (env: NodeJS.ProcessEnv): string => join(yokHome(env), "tmux.conf");
 
-// The tmux server `harness run` starts sessions on: HARNESS_TMUX_SOCKET, or `harness`.
-export const harnessTerminalHost = (
+// The tmux server `yok run` starts sessions on: YOK_TMUX_SOCKET, or `yok`.
+export const yokTerminalHost = (
   env: NodeJS.ProcessEnv = process.env,
   log?: ILogger,
 ): ITerminalHost =>
   tmuxHost({
-    socketName: env.HARNESS_TMUX_SOCKET ?? "harness",
+    socketName: env.YOK_TMUX_SOCKET ?? "yok",
     configPath: configPathFor(env),
     ...(log === undefined ? {} : { log }),
   });

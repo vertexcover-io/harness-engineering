@@ -1,6 +1,6 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
-import type { ArtifactRef, JsonValue, NodeRun, Result } from "@harness/sdk";
+import type { ArtifactRef, JsonValue, NodeRun, Result } from "@yok/sdk";
 import * as z from "zod";
 import type { PlanAgentNode, PlanStage } from "./types.ts";
 import { VerifierIssueSchema } from "./verifiers.ts";

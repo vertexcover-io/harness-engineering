@@ -428,7 +428,7 @@ export const CommentStatusSchema = z.enum(["sent", "delivered", "answered", "cha
 export const AgentStatusSchema = CommentStatusSchema.extract(["answered", "changed", "declined"]);
 
 export const CommentFieldsSchema = z.strictObject({
-  // relative to the run folder (.harness/NAME), always under artifacts/: "artifacts/design.md"
+  // relative to the run folder (.yok/NAME), always under artifacts/: "artifacts/design.md"
   file: NonEmptyStringSchema,
   kind: z.enum(["comment", "delete", "replace", "global"]),
   text: z.string(),
@@ -548,7 +548,7 @@ export const emitEvent = async (
   return stored;
 };
 
-export const runDirOf = (cwd: string, name: string): string => join(cwd, ".harness", name);
+export const runDirOf = (cwd: string, name: string): string => join(cwd, ".yok", name);
 
 export type RunRef = Readonly<{ id: string; cwd: string; name: string }>;
 

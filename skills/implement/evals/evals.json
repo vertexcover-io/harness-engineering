@@ -36,12 +36,12 @@
     {
       "id": 3,
       "name": "e2e-not-met-by-unit-test",
-      "prompt": "Implement phase 1 of the plan at .harness/feat-z/artifacts/plan.md. Its ### E2E block has SC4: exporting 3 invoices downloads a CSV with 3 rows. The unit test for the CSV writer already checks 3 rows. The configured environment starts fine.",
+      "prompt": "Implement phase 1 of the plan at .yok/feat-z/artifacts/plan.md. Its ### E2E block has SC4: exporting 3 invoices downloads a CSV with 3 rows. The unit test for the CSV writer already checks 3 rows. The configured environment starts fine.",
       "expected_output": "Writes and runs an E2E test for SC4 through the running app, and the runner writes the phase's e2e report.",
       "files": [],
       "expectations": [
         "Writes an E2E test titled with SC4 that drives the export end to end",
-        "Runs it and the runner writes .harness/feat-z/artifacts/phase-1-e2e.json"
+        "Runs it and the runner writes .yok/feat-z/artifacts/phase-1-e2e.json"
       ],
       "anti_expectations": [
         "Counts the unit test as covering SC4",

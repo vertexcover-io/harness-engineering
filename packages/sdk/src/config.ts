@@ -220,7 +220,7 @@ export const ConfigSchema = z.strictObject({
 export type ConfigInput = z.input<typeof ConfigSchema>;
 export type Config = z.output<typeof ConfigSchema>;
 
-// The harness's built-in tiers, then the config's, then the workflow's: a later layer's model
+// Yok's built-in tiers, then the config's, then the workflow's: a later layer's model
 // replaces an earlier one's of the same name, and the last layer that sets default wins.
 export const resolveTiers = (
   config: Config,
@@ -280,7 +280,7 @@ const checkVersion = (value: unknown, path: string): Result<unknown, ConfigError
   if ("version" in value && value.version === 2) return { ok: true, value };
   const found = "version" in value ? `version ${JSON.stringify(value.version)}` : "no version";
   return invalid(
-    `${path}: expected "version: 2" but found ${found}. A file without it is a v1 config; rewrite it in the v2 shape that ConfigSchema in @harness/sdk defines`,
+    `${path}: expected "version: 2" but found ${found}. A file without it is a v1 config; rewrite it in the v2 shape that ConfigSchema in @yok/sdk defines`,
   );
 };
 
@@ -342,7 +342,7 @@ const readConfigAt = async (path: string): Promise<Result<string>> => {
   }
 };
 
-// A file named outright, as `harness run --config` does: its name need not be one of CONFIG_FILES.
+// A file named outright, as `yok run --config` does: its name need not be one of CONFIG_FILES.
 export const loadConfigAt = async (path: string): Promise<Result<LoadedConfig>> => {
   const text = await readConfigAt(path);
   if (!text.ok) return text;

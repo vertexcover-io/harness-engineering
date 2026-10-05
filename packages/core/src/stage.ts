@@ -11,7 +11,7 @@ import {
   readText,
   SlugSchema,
   spawnDetached,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 
 const UniqueSlugsSchema = z
@@ -106,10 +106,10 @@ type ResolveOptions = Readonly<{ skillsDir: string; root: string; config: Config
 export const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined =>
   Object.hasOwn(record, key) ? record[key] : undefined;
 
-// The harness's own skills ship beside this code, so their text always matches this version;
-// HARNESS_SKILLS_DIR points tests at a demo set instead.
-export const harnessSkillsDir = (): string =>
-  process.env.HARNESS_SKILLS_DIR || join(import.meta.dir, "..", "..", "..", "skills");
+// Yok's own skills ship beside this code, so their text always matches this version;
+// YOK_SKILLS_DIR points tests at a demo set instead.
+export const yokSkillsDir = (): string =>
+  process.env.YOK_SKILLS_DIR || join(import.meta.dir, "..", "..", "..", "skills");
 
 // Agent hooks and the detached context helper run outside this repo's package.json, so they call
 // bun and the script by absolute path.
@@ -130,24 +130,21 @@ export const spawnOrchestrateHelper = ({
 // The server that asks for this runs under bun, so execPath is bun.
 export const orchestrateArgv = (): readonly string[] => [process.execPath, ORCHESTRATE_SCRIPT];
 
-// A stage name is one of the harness's own skills; a stage with a "/" is a skill folder in the
+// A stage name is one of yok's own skills; a stage with a "/" is a skill folder in the
 // project at `root`.
-export const findStageDir = (
-  stage: string,
-  root: string,
-  skillsDir = harnessSkillsDir(),
-): string => (stage.includes("/") ? resolve(root, stage) : join(skillsDir, stage));
+export const findStageDir = (stage: string, root: string, skillsDir = yokSkillsDir()): string =>
+  stage.includes("/") ? resolve(root, stage) : join(skillsDir, stage);
 
-// The harness's default workflows ship beside this code, like its skills.
-export const harnessWorkflowsDir = (): string =>
+// Yok's default workflows ship beside this code, like its skills.
+export const yokWorkflowsDir = (): string =>
   join(import.meta.dir, "..", "..", "..", "workflows");
 
-// A bare name is one of the harness's own workflows; a name with a "/" or a .yaml/.yml extension
+// A bare name is one of yok's own workflows; a name with a "/" or a .yaml/.yml extension
 // is a file in the project at `cwd`.
 export const findWorkflowPath = (
   workflow: string,
   cwd: string,
-  workflowsDir = harnessWorkflowsDir(),
+  workflowsDir = yokWorkflowsDir(),
 ): string =>
   workflow.includes("/") || /\.ya?ml$/.test(workflow)
     ? resolve(cwd, workflow)

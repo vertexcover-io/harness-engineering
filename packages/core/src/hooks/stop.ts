@@ -12,13 +12,13 @@ import {
   type StopInput,
   type StopReason,
   type TranscriptEntry,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import {
   appendRunEvent,
   foldModelSwitch,
   jsonlEventStore,
   type ModelSwitch,
-} from "@harness/sdk/internal";
+} from "@yok/sdk/internal";
 import { startContextStep, startModelStep } from "../context-step.ts";
 import { completeContextStep, findContextPlanNode, orchestrateCommand } from "../runs.ts";
 import { findSessionRun } from "./common.ts";
@@ -90,7 +90,7 @@ const touchedRunSinceLastPrompt = (
 };
 
 const maxBlocksOf = (env: HookDeps["env"]): number => {
-  const maxBlocks = Number(env.HARNESS_STOP_MAX_BLOCKS);
+  const maxBlocks = Number(env.YOK_STOP_MAX_BLOCKS);
   return Number.isInteger(maxBlocks) && maxBlocks > 0 ? maxBlocks : DEFAULT_STOP_MAX_BLOCKS;
 };
 
@@ -106,7 +106,7 @@ const progressSince = (events: readonly Event[], seq: number | undefined): boole
   );
 
 const nextMessage = (run: RunRef): string =>
-  `Harness run ${run.name} is not finished. Run \`${orchestrateCommand({ verb: "next", run })}\` ` +
+  `Yok run ${run.name} is not finished. Run \`${orchestrateCommand({ verb: "next", run })}\` ` +
   `and do the step it prints, as the orchestrate skill says. ${ASK_RULE}`;
 
 // next hands out an exec or wait node for the agent to run with exec, and an agent node for it to
@@ -116,13 +116,13 @@ const openNodeMessage = (run: RunRef, leaf: ActiveLeaf): string => {
   if (leaf.nodeType === "agent") {
     const done = orchestrateCommand({ verb: "done", run, nodeRunId });
     return (
-      `Harness run ${run.name}: node ${nodeId} is still open. Finish the node's work and record ` +
+      `Yok run ${run.name}: node ${nodeId} is still open. Finish the node's work and record ` +
       `it with \`${done} --output -\` (or \`--error -\`). ${ASK_RULE}`
     );
   }
   const exec = orchestrateCommand({ verb: "exec", run, nodeRunId });
   return (
-    `Harness run ${run.name}: step ${nodeId} is still open. If you have not run it yet, run ` +
+    `Yok run ${run.name}: step ${nodeId} is still open. If you have not run it yet, run ` +
     `\`${exec}\`. If it is already running as a background task, wait for that task to finish. ` +
     ASK_RULE
   );
@@ -230,7 +230,7 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
   try {
     const run = await findSessionRun(input, deps);
     if (run === undefined) {
-      deps.log.debug({ sessionId: input.sessionId }, "stop allowed: not a harness run session");
+      deps.log.debug({ sessionId: input.sessionId }, "stop allowed: not a yok run session");
       return ALLOW;
     }
     const runDir = runDirOf(run.cwd, run.name);

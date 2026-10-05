@@ -8,9 +8,9 @@ import {
   runDoctor,
   verdict,
   workflowChecks,
-} from "@harness/core";
-import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@harness/sdk";
-import { runtimeChecks } from "@harness/server";
+} from "@yok/core";
+import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@yok/sdk";
+import { runtimeChecks } from "@yok/server";
 import {
   apiErrorText,
   cliLog,
@@ -18,8 +18,8 @@ import {
   compileOrFail,
   ensureServer,
   fail,
-  harnessClient,
   openForPerson,
+  yokClient,
 } from "./client.ts";
 
 const collectInput = (pair: string, acc: Record<string, string>): Record<string, string> => {
@@ -82,7 +82,7 @@ export const runCommand = () =>
       if (!env.ok) return fail(env.error);
 
       await ensureServer();
-      const result = await harnessClient().run({
+      const result = await yokClient().run({
         workflow: plan.name,
         workflowPath,
         inputs: { prompt: opts.prompt, ...opts.input } satisfies JsonObject,
@@ -99,7 +99,7 @@ export const runCommand = () =>
       log.info({ runId: run.id, workflow: run.workflow, cwd: run.cwd, terminal }, "run started");
 
       console.log(run.id);
-      console.log(`harness attach --run-id ${run.id}`);
+      console.log(`yok attach --run-id ${run.id}`);
       console.log(`view: ${result.value.view}`);
       openForPerson(result.value.view, opts.open === false);
 

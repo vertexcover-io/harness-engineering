@@ -1,5 +1,5 @@
 import { Command } from "@commander-js/extra-typings";
-import { findWorkflowPath } from "@harness/core";
+import { findWorkflowPath } from "@yok/core";
 import { compileOrFail } from "./client.ts";
 
 export const verifyCommand = () =>

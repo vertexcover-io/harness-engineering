@@ -23,7 +23,7 @@ import {
   ok,
   type Result,
   warn,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import { findMissingNotifierKeys } from "./notifier.ts";
 import { pickNotifier } from "./notifier-hooks.ts";
@@ -43,7 +43,7 @@ export const DoctorReportSchema = z.strictObject({
   warned: z.array(z.string()),
 });
 
-// What `harness doctor --json` prints: the report plus its verdict line.
+// What `yok doctor --json` prints: the report plus its verdict line.
 export const DoctorJsonSchema = DoctorReportSchema.extend({ verdict: z.string() });
 
 export type DoctorRow = z.infer<typeof DoctorRowSchema>;
@@ -76,9 +76,9 @@ const parseJson = (text: string): Result<unknown> => {
 const checkGitRepo = async ({ root, exec }: CheckContext): Promise<Outcome> =>
   (await createGit(exec).repoRoot(root)) === null ? fail("not inside a git repository") : ok(root);
 
-const checkHarnessIgnored = async ({ root, exec }: CheckContext): Promise<Outcome> => {
-  const ignored = await createGit(exec).isIgnored(root, join(root, ".harness", "probe"));
-  return ignored ? ok(".harness/ is gitignored") : fail(".harness/ is not gitignored");
+const checkYokIgnored = async ({ root, exec }: CheckContext): Promise<Outcome> => {
+  const ignored = await createGit(exec).isIgnored(root, join(root, ".yok", "probe"));
+  return ignored ? ok(".yok/ is gitignored") : fail(".yok/ is not gitignored");
 };
 
 // Unlike a run, the doctor reports a missing config instead of using the default one.
@@ -160,9 +160,9 @@ export const CHECKS: readonly Check[] = [
   },
   { name: "curl", fix: ["brew install curl", "apt install curl"], run: checkBinary("curl") },
   {
-    name: "harness-gitignored",
-    fix: ["echo '.harness/' >> .gitignore", "remove any narrower .harness/* exception"],
-    run: checkHarnessIgnored,
+    name: "yok-gitignored",
+    fix: ["echo '.yok/' >> .gitignore", "remove any narrower .yok/* exception"],
+    run: checkYokIgnored,
   },
   {
     name: "orchestrate-config",
@@ -300,7 +300,7 @@ export type DoctorOptions = {
   // Checks a caller adds, such as a plugin's own tools; their rows follow the built-in ones.
   readonly extraChecks?: readonly Check[];
   readonly log?: ILogger;
-  // the config file harness run --config named
+  // the config file yok run --config named
   readonly config?: string | undefined;
 };
 

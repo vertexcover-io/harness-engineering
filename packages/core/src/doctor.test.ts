@@ -12,7 +12,7 @@ import {
   fail,
   type Notifier,
   type Result,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import {
   buildNotifierCheck,
   evaluate,
@@ -55,7 +55,7 @@ afterAll(async () => {
 const allToolsOk = (root: string): Record<string, { code: number; stdout: string }> => ({
   "git --version": { code: 0, stdout: "git version 2.43.0" },
   "git rev-parse --show-toplevel": { code: 0, stdout: root },
-  [key("git", ["check-ignore", "-q", join(root, ".harness", "probe")])]: { code: 0, stdout: "" },
+  [key("git", ["check-ignore", "-q", join(root, ".yok", "probe")])]: { code: 0, stdout: "" },
   "jq --version": { code: 0, stdout: "jq-1.7" },
   "curl --version": { code: 0, stdout: "curl 8.4.0" },
   "gh --version": { code: 0, stdout: "gh version 2.40.0" },
@@ -71,7 +71,7 @@ const BUILT_IN_NAMES = [
   "git-repo",
   "jq",
   "curl",
-  "harness-gitignored",
+  "yok-gitignored",
   "orchestrate-config",
   "gh",
   "agent-browser",
@@ -208,7 +208,7 @@ describe("runDoctor", () => {
   test("SC15: the report lists v1's ten built-in rows in v1's order", async () => {
     const report = await runDoctor({ cwd: cleanRoot, exec: fakeExec(allToolsOk(cleanRoot)) });
     expect(report.results.map((row) => row.name)).toEqual(BUILT_IN_NAMES);
-    expect(report.results.some((row) => row.name === "harness-version")).toBe(false);
+    expect(report.results.some((row) => row.name === "yok-version")).toBe(false);
   });
 });
 
@@ -273,9 +273,9 @@ describe("runDoctor (integration)", () => {
       status: "fail",
       detail: "not inside a git repository",
     });
-    expect(report.results.find((row) => row.name === "harness-gitignored")).toMatchObject({
+    expect(report.results.find((row) => row.name === "yok-gitignored")).toMatchObject({
       status: "fail",
-      detail: ".harness/ is not gitignored",
+      detail: ".yok/ is not gitignored",
     });
     expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
       status: "fail",
@@ -283,15 +283,15 @@ describe("runDoctor (integration)", () => {
     });
   });
 
-  test("SC17: a repository that ignores .harness/ and has a valid config passes the repository checks", async () => {
+  test("SC17: a repository that ignores .yok/ and has a valid config passes the repository checks", async () => {
     const dir = await makeDir("doctor-clean-repo-");
     await exec("git", ["init"], dir);
-    await writeFile(join(dir, ".gitignore"), ".harness/\n");
+    await writeFile(join(dir, ".gitignore"), ".yok/\n");
     await writeFile(join(dir, "orchestrate.config.json"), V2);
 
     const report = await runDoctor({ cwd: dir, exec });
     expect(report.results.find((row) => row.name === "git-repo")).toMatchObject({ status: "ok" });
-    expect(report.results.find((row) => row.name === "harness-gitignored")).toMatchObject({
+    expect(report.results.find((row) => row.name === "yok-gitignored")).toMatchObject({
       status: "ok",
     });
     expect(report.results.find((row) => row.name === "orchestrate-config")).toMatchObject({
@@ -489,17 +489,21 @@ describe("runDoctor (integration)", () => {
     expect(report.results.find((r) => r.name === "project-doctor")).toBeUndefined();
   });
 
-  test("inside a repository that does not ignore .harness/, harness-gitignored fails", async () => {
-    const dir = await makeDir("doctor-not-ignored-");
-    await exec("git", ["init"], dir);
-    await writeFile(join(dir, "orchestrate.config.json"), V2);
+  test("SC6: yok-gitignored passes when .gitignore holds .yok/, and fails naming .yok/ when it holds only the old folder", async () => {
+    const gitignoredRow = async (ignored: string) => {
+      const dir = await makeDir("doctor-ignored-");
+      await exec("git", ["init"], dir);
+      await writeFile(join(dir, ".gitignore"), ignored);
+      await writeFile(join(dir, "orchestrate.config.json"), V2);
+      const report = await runDoctor({ cwd: dir, exec });
+      return report.results.find((row) => row.name === "yok-gitignored");
+    };
 
-    const report = await runDoctor({ cwd: dir, exec });
-    expect(report.results.find((row) => row.name === "git-repo")).toMatchObject({ status: "ok" });
-    expect(report.results.find((row) => row.name === "harness-gitignored")).toMatchObject({
-      status: "fail",
-      detail: ".harness/ is not gitignored",
-    });
+    expect(await gitignoredRow(".yok/\n")).toMatchObject({ status: "ok" });
+    // Split so the sweep for the old product name (SC10) does not flag this test.
+    const old = await gitignoredRow(`.${["har", "ness"].join("")}/\n`);
+    expect(old).toMatchObject({ status: "fail", detail: ".yok/ is not gitignored" });
+    expect(old?.fix?.join("\n")).toContain(".yok/");
   });
 
   test("a project doctor that exits 0 with plain output is one OK row naming the command", async () => {

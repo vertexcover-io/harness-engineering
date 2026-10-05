@@ -41,12 +41,12 @@ phases, each change as a diff, and the tests that prove each phase.
 The input holds `task`, the same text the design stage had, and may hold `workspace`, the
 create-workspace stage's output. Read code in each repo's `worktreeDir` when it is there, and in
 the current checkout otherwise. RUN below is the run's spec name. The stage reads
-`.harness/RUN/artifacts/design.md` and writes:
+`.yok/RUN/artifacts/design.md` and writes:
 
 | File | Read by |
 |---|---|
-| `.harness/RUN/artifacts/plan.md` | the user, the `implement` stage, `code-review` |
-| `.harness/RUN/artifacts/phases/phase-N.md` | the user, and the coder that builds phase N |
+| `.yok/RUN/artifacts/plan.md` | the user, the `implement` stage, `code-review` |
+| `.yok/RUN/artifacts/phases/phase-N.md` | the user, and the coder that builds phase N |
 
 Standalone with no approved `design.md`, run the `design` skill first.
 

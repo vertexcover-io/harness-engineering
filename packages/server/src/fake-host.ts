@@ -1,6 +1,6 @@
-import { claudeProvider } from "@harness/core";
-import type { IAgentProvider, ITerminal, ITerminalHost } from "@harness/sdk";
-import { noopLogger } from "@harness/sdk";
+import { claudeProvider } from "@yok/core";
+import type { IAgentProvider, ITerminal, ITerminalHost } from "@yok/sdk";
+import { noopLogger } from "@yok/sdk";
 
 export const RULE = "─".repeat(40);
 export const EMPTY_BOX = `${RULE}\n❯\n${RULE}\n  Model: Opus`;

@@ -1,14 +1,14 @@
 ---
 name: orchestrate
 description: >
-  Runs a harness v2 workflow from inside the Claude Code or Codex session `harness run` launches.
-  Not triggered by a user request — the harness server starts this skill directly as the
+  Runs a yok v2 workflow from inside the Claude Code or Codex session `yok run` launches.
+  Not triggered by a user request — the yok server starts this skill directly as the
   session's first message, passing --workflow and --inputs.
 ---
 
 # orchestrate
 
-`harness run` launches this session with `HARNESS_RUN_ID` and `HARNESS_HOME` already set in its
+`yok run` launches this session with `YOK_RUN_ID` and `YOK_HOME` already set in its
 environment, then sends this skill as the first message.
 
 Read the reference for the agent you are before Step 1: `references/claude-code.md` in Claude
@@ -32,7 +32,7 @@ without extension). Then run:
 bun run orchestrate init NAME
 ```
 
-`init` reads `HARNESS_RUN_ID` from this session's environment, so no `--run-id` flag is needed.
+`init` reads `YOK_RUN_ID` from this session's environment, so no `--run-id` flag is needed.
 Every later action on the run names it by `NAME` (`--run NAME`), not by its id. On a non-zero
 exit, show the command's error output and stop — do not retry with a different name.
 
@@ -60,10 +60,10 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      values of the variables the skill names, and `prompt` as extra instructions when present.
      When the skill needs one of its references, run
      `bun run orchestrate skill ref STAGE.REF`. It needs no `--run`: it finds the run through
-     `HARNESS_RUN_ID` and reads the config that run started with. Never open a reference file by
+     `YOK_RUN_ID` and reads the config that run started with. Never open a reference file by
      its path, since that skips the project's changes to it. When the skill is done, run the reply's `done`
      command with `--output -`, plus `--artifact NAME=artifacts/PATH` for each artifact the
-     skill wrote under `.harness/NAME/`, and pass the output on stdin in a quoted heredoc. The
+     skill wrote under `.yok/NAME/`, and pass the output on stdin in a quoted heredoc. The
      output is JSON when the skill declares `outputs` (or the node an `output` schema), and plain
      text otherwise:
 
@@ -90,12 +90,12 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      then finish it with the reply's `done` command the same way as a stage.
    - `context`: tell the user `↻ NODE_ID: ACTION` (the reply's `nodeId` and `action`, e.g.
      `↻ fresh: new`), then end the turn at once, without running any other command. The work
-     starts once the turn is over: for `new` the harness replaces this session with a fresh one,
+     starts once the turn is over: for `new` the yok replaces this session with a fresh one,
      and for `compact` it compacts this session. Either way the session then receives
      the skill's `--resume NAME` message and carries on. Codex has no context steps: the Stop
      hook completes the node as not applied and sends you back to `next`.
    - `model`: tell the user `⇄ NODE_ID: MODEL` (the reply's `nodeId` and `model`), then end the
-     turn at once, without running any other command. Once the turn is over, the harness
+     turn at once, without running any other command. Once the turn is over, yok
      restarts this same session on `model` (and `effort`, when set), keeping the conversation,
      and sends it the skill's `--resume NAME` message. The `next` that follows hands out the
      node, or reports it as failed if the switch failed. Codex runs never get a `model` reply.
@@ -114,7 +114,7 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
 4. On any non-zero exit from `next`, show its error output and stop.
 
 `exec` and `done` record how each node ended. Never run `bun run orchestrate emit` for a node, and
-never edit `.harness/NAME/state.json`, `.harness/NAME/event.jsonl` or the harness `registry.json`
+never edit `.yok/NAME/state.json`, `.yok/NAME/event.jsonl` or the yok `registry.json`
 yourself: a hook refuses any tool call that writes, moves or deletes them, and its message names
 the command to use instead. Reading them is fine.
 

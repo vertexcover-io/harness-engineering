@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type CheckContext, type Exec, execWithTimeout, type ITerminalHost } from "@harness/sdk";
+import { type CheckContext, type Exec, execWithTimeout, type ITerminalHost } from "@yok/sdk";
 import { captureLogger } from "../logging.ts";
 import { claudeProvider } from "./claude.ts";
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
@@ -22,9 +22,9 @@ afterEach(async () => {
 });
 
 const makeSocket = (): { socketName: string; configPath: string } => {
-  const socketName = `harness-test-${randomUUID()}`;
+  const socketName = `yok-test-${randomUUID()}`;
   sockets.push(socketName);
-  const dir = mkdtempSync(join(tmpdir(), "harness-tmux-"));
+  const dir = mkdtempSync(join(tmpdir(), "yok-tmux-"));
   return { socketName, configPath: join(dir, "tmux.conf") };
 };
 
@@ -109,7 +109,7 @@ describe("tmuxTerminal.sendText logging", () => {
       );
     const host = tmuxHost({
       socketName: "unused",
-      configPath: join(mkdtempSync(join(tmpdir(), "harness-tmux-")), "tmux.conf"),
+      configPath: join(mkdtempSync(join(tmpdir(), "yok-tmux-")), "tmux.conf"),
       exec: failingExec,
       log,
     });
@@ -215,7 +215,7 @@ describe("tmuxHost against a real tmux", () => {
       return screen.ok && /200~line one[\s\S]*line two[\s\S]*201~/.test(screen.value);
     });
     const buffers = await exec("tmux", ["-L", socketName, "list-buffers"], process.cwd());
-    expect(buffers.stdout).not.toContain("harness-");
+    expect(buffers.stdout).not.toContain("yok-");
     await pane.kill();
   });
 
@@ -376,9 +376,9 @@ describe("tmuxHost against a real tmux", () => {
     expect(await show(without, "status")).toBe("");
   });
 
-  test("SC7c: an older harness tmux gets its config rewritten and reloaded once, before the first create", async () => {
+  test("SC7c: an older yok tmux gets its config rewritten and reloaded once, before the first create", async () => {
     const { socketName, configPath } = makeSocket();
-    const dir = mkdtempSync(join(tmpdir(), "harness-tmux-old-"));
+    const dir = mkdtempSync(join(tmpdir(), "yok-tmux-old-"));
     const oldConfigPath = join(dir, "old.conf");
     writeFileSync(oldConfigPath, "set -g status on\n");
     await exec(
@@ -405,7 +405,7 @@ describe("tmuxHost against a real tmux", () => {
     expect(status.trim()).toBe("status off");
   });
 
-  test("SC7d: no harness tmux running yet: the config is written, never reloaded, and the fresh server has it", async () => {
+  test("SC7d: no yok tmux running yet: the config is written, never reloaded, and the fresh server has it", async () => {
     const { socketName, configPath } = makeSocket();
     const { exec: wrapped, sourceFileCalls } = countingExec(exec);
     const host = tmuxHost({ socketName, configPath, exec: wrapped });
@@ -439,12 +439,12 @@ describe("currentTerminal and rename", () => {
     const paneId = (
       await exec("tmux", ["-L", socketName, "list-panes", "-a", "-F", "#{pane_id}"], "/")
     ).stdout.trim();
-    const harnessHome = dirname(configPath);
+    const yokHome = dirname(configPath);
 
     const current = currentTerminal({
       TMUX: `${socket},1,0`,
       TMUX_PANE: paneId,
-      HARNESS_HOME: harnessHome,
+      YOK_HOME: yokHome,
     });
     if (current === undefined) throw new Error("no current pane");
     expect(current.attachCommand()).toContain("-S");

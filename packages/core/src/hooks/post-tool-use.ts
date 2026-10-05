@@ -1,4 +1,4 @@
-import type { PostToolUseHandler } from "@harness/sdk";
+import type { PostToolUseHandler } from "@yok/sdk";
 import { recordSessionEvent } from "./common.ts";
 
 // Records the person's answers to the agent's questions.

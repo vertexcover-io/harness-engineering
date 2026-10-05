@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import type { EmitInput, Event, emitRunEvent, JsonValue, RunRef, State } from "@harness/sdk";
+import type { EmitInput, Event, emitRunEvent, JsonValue, RunRef, State } from "@yok/sdk";
 import {
   createSlackNotifier,
   describeEvent,
@@ -20,7 +20,7 @@ const state: State = {
   lastEventSeq: 0,
   runId: "r-demo",
   runName: "demo",
-  runDir: "/work/.harness/demo",
+  runDir: "/work/.yok/demo",
   version: "2.0.0",
   workflow: { name: "task", path: "workflow.yaml" },
   input: { prompt: "fix it" },
@@ -69,7 +69,7 @@ describe("describeEvent", () => {
       "workflow.started",
       event("workflow.started"),
       state,
-      { title: "Harness run started: demo", mention: true, body: "fix it", files: [] },
+      { title: "Yok run started: demo", mention: true, body: "fix it", files: [] },
     ],
     [
       "workflow.completed",
@@ -457,7 +457,7 @@ describe("notify", () => {
   // A run folder holding artifacts/design.md, and artifacts/env.md linking to the checkout's .env.
   const runFolder = async () => {
     const checkout = await realpath(await mkdtemp(join(tmpdir(), "notifier-run-")));
-    const runDir = join(checkout, ".harness", "demo");
+    const runDir = join(checkout, ".yok", "demo");
     await mkdir(join(runDir, "artifacts"), { recursive: true });
     await writeFile(join(runDir, "artifacts", "design.md"), "# design\n");
     await writeFile(join(checkout, ".env"), "SLACK_BOT_TOKEN=xoxb-secret\n");

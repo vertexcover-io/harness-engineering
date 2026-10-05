@@ -42,7 +42,7 @@
       "id": 3,
       "name": "verifies-with-the-projects-own-checks",
       "prompt": "I fixed the conflict markers in the merge already. is it safe to commit?",
-      "expected_output": "The project's own commands are discovered — from orchestrate.config.yaml in a harness repo, otherwise from package.json or the equivalent — and typecheck, tests and format are run. Anything the merge broke is fixed. The project's CLAUDE.md asks before committing, so the resolution is shown and the commit waits for confirmation.",
+      "expected_output": "The project's own commands are discovered — from orchestrate.config.yaml in a yok repo, otherwise from package.json or the equivalent — and typecheck, tests and format are run. Anything the merge broke is fixed. The project's CLAUDE.md asks before committing, so the resolution is shown and the commit waits for confirmation.",
       "files": [
         "skills/resolve-merge-conflict/evals/files/eval3_claude_md.md"
       ],
@@ -154,7 +154,7 @@
     {
       "id": 9,
       "name": "does-not-pause-when-unattended",
-      "prompt": "Running unattended under harness run. The PR this run opened now conflicts with its base. Resolve it.",
+      "prompt": "Running unattended under yok run. The PR this run opened now conflicts with its base. Resolve it.",
       "expected_output": "The conflict is resolved, the base verified and the checks run, then the resolution is committed and pushed without stopping for confirmation, because nobody is there to answer. The checks and the BASE_OID proof still gate the push.",
       "files": [],
       "expectations": [

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { type RunRef, runDirOf } from "@harness/sdk";
+import { type RunRef, runDirOf } from "@yok/sdk";
 import { isClaudeBusy } from "./agents/claude.ts";
 import { renderStatusline } from "./statusline.ts";
 
@@ -83,15 +83,15 @@ const lineOf = async (run: RunRef | undefined, stdin = "{}"): Promise<string> =>
 describe("renderStatusline", () => {
   test("SC1: a running top-level node shows the run, node, bar and count", async () => {
     const run = makeRun({ nodeRuns: { a: node("completed"), design: node("running") } });
-    expect(await lineOf(run)).toBe("harness feat-x ▸ design [▓▓▓░░░░░░░] 1/4 · 45s");
+    expect(await lineOf(run)).toBe("yok feat-x ▸ design [▓▓▓░░░░░░░] 1/4 · 45s");
   });
 
   test("shows (stage S) only when the stage differs from the node id", async () => {
     const workflow = `name: w\nnodes:\n${agentYaml("design", 2, "design")}${agentYaml("plan", 2, "planning")}`;
     const same = makeRun({ nodeRuns: { design: node("running") }, workflow });
     const differs = makeRun({ nodeRuns: { plan: node("running") }, workflow });
-    expect(await lineOf(same)).toStartWith("harness feat-x ▸ design [");
-    expect(await lineOf(differs)).toStartWith("harness feat-x ▸ plan (stage planning) [");
+    expect(await lineOf(same)).toStartWith("yok feat-x ▸ design [");
+    expect(await lineOf(differs)).toStartWith("yok feat-x ▸ plan (stage planning) [");
   });
 
   test("SC2: walks nested nodes to the deepest running node and shows the loop pass", async () => {
@@ -104,11 +104,11 @@ describe("renderStatusline", () => {
       }),
     };
     expect(await lineOf(makeRun({ nodeRuns, workflow }))).toStartWith(
-      "harness feat-x ▸ build #2 › code (stage coder) [░░░░░░░░░░] 0/1",
+      "yok feat-x ▸ build #2 › code (stage coder) [░░░░░░░░░░] 0/1",
     );
     const loopOnly = { build: node("running", { nodeType: "loop", iteration: 3 }) };
     expect(await lineOf(makeRun({ nodeRuns: loopOnly, workflow }))).toStartWith(
-      "harness feat-x ▸ build #3 [",
+      "yok feat-x ▸ build #3 [",
     );
   });
 
@@ -121,10 +121,10 @@ describe("renderStatusline", () => {
       pick: node("running", { nodeType: "switch", nodes: { fix: node("running") } }),
     };
     expect(await lineOf(makeRun({ nodeRuns: inCase, workflow }))).toStartWith(
-      "harness feat-x ▸ pick › plan (stage planning) [",
+      "yok feat-x ▸ pick › plan (stage planning) [",
     );
     expect(await lineOf(makeRun({ nodeRuns: inDefault, workflow }))).toStartWith(
-      "harness feat-x ▸ pick › fix (stage implement) [",
+      "yok feat-x ▸ pick › fix (stage implement) [",
     );
   });
 
@@ -136,14 +136,12 @@ describe("renderStatusline", () => {
       d: node("completed"),
     };
     expect(await lineOf(makeRun({ status: "completed", nodeRuns: done }))).toBe(
-      "harness feat-x ▸ ✓ completed [▓▓▓▓▓▓▓▓▓▓] 4/4",
+      "yok feat-x ▸ ✓ completed [▓▓▓▓▓▓▓▓▓▓] 4/4",
     );
     expect(await lineOf(makeRun({ status: "failed", nodeRuns: { a: node("completed") } }))).toBe(
-      "harness feat-x ▸ ✗ failed [▓▓▓░░░░░░░] 1/4",
+      "yok feat-x ▸ ✗ failed [▓▓▓░░░░░░░] 1/4",
     );
-    expect(await lineOf(makeRun({ status: "cancelled" }))).toStartWith(
-      "harness feat-x ▸ ✗ cancelled",
-    );
+    expect(await lineOf(makeRun({ status: "cancelled" }))).toStartWith("yok feat-x ▸ ✗ cancelled");
   });
 
   test("SC4: elapsed time reads 45s, 12m and 1h05m", async () => {
@@ -165,7 +163,7 @@ describe("renderStatusline", () => {
 
   test("a running run between nodes shows the bar without a node or elapsed time", async () => {
     const between = makeRun({ nodeRuns: { a: node("completed") } });
-    expect(await lineOf(between)).toBe("harness feat-x [▓▓▓░░░░░░░] 1/4");
+    expect(await lineOf(between)).toBe("yok feat-x [▓▓▓░░░░░░░] 1/4");
   });
 
   test("SC5: model and context use appear when present and are left out otherwise", async () => {
@@ -182,13 +180,13 @@ describe("renderStatusline", () => {
   });
 
   test("SC6: falls back without a run, without a readable state, and without a workflow file", async () => {
-    expect(await lineOf(undefined)).toBe("harness · starting");
-    expect(await lineOf(makeRun({ state: "{ not json" }))).toBe("harness feat-x");
+    expect(await lineOf(undefined)).toBe("yok · starting");
+    expect(await lineOf(makeRun({ state: "{ not json" }))).toBe("yok feat-x");
     const noWorkflow = makeRun({ nodeRuns: { a: node("running") }, workflow: null });
-    expect(await lineOf(noWorkflow)).toBe("harness feat-x ▸ a · 45s");
+    expect(await lineOf(noWorkflow)).toBe("yok feat-x ▸ a · 45s");
   });
 
-  test("SC7: fixed text never trips the harness's screen checks", async () => {
+  test("SC7: fixed text never trips yok's screen checks", async () => {
     const lines = [
       await lineOf(undefined),
       await lineOf(makeRun({ state: "{" })),
@@ -201,7 +199,7 @@ describe("renderStatusline", () => {
       await lineOf(makeRun({ status: "cancelled" })),
     ];
     for (const line of lines) {
-      expect(line).toStartWith("harness");
+      expect(line).toStartWith("yok");
       expect(SPINNER_START.test(line)).toBe(false);
       for (const word of FORBIDDEN) expect(line).not.toContain(word);
       expect(isClaudeBusy(line)).toBe(false);

@@ -2,10 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addComments, readComments } from "@harness/core";
-import type { WorkflowRun } from "@harness/sdk";
-import { noopLogger, runDirOf } from "@harness/sdk";
-import { createRegistry } from "@harness/sdk/internal";
+import { addComments, readComments } from "@yok/core";
+import type { WorkflowRun } from "@yok/sdk";
+import { noopLogger, runDirOf } from "@yok/sdk";
+import { createRegistry } from "@yok/sdk/internal";
 import { deliverComments, lastDelivery, scheduleDelivery, stopDeliveries } from "./delivery.ts";
 import { claudeOver, EMPTY_BOX, fakeHost } from "./fake-host.ts";
 
@@ -13,7 +13,7 @@ const MENU = `${EMPTY_BOX}\nEnter to select · ↑/↓ to navigate · Esc to can
 const NOW = new Date("2026-01-01T00:00:00.000Z");
 
 const setup = async (overrides: Partial<WorkflowRun> = {}) => {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "harness-delivery-")));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "yok-delivery-")));
   const run: WorkflowRun = {
     id: "r-1",
     workflow: "w",

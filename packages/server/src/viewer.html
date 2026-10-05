@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Harness Artifact Viewer</title>
+<title>Yok Artifact Viewer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
@@ -324,7 +324,7 @@ mark.hl.pulse { animation: pulseMark 1.2s ease-out; }
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>harness view</div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>yok view</div>
     <div class="run">run <b id="runName"></b> · <span id="runId"></span></div>
     <nav class="tabs" aria-label="Run views">
       <span class="tab" aria-current="page">Artifacts</span>
@@ -396,7 +396,7 @@ const el = (tag, className, text) => {
 };
 const short = (text, n) => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
 
-const MODE_KEY = "harness-viewer:comment-mode";
+const MODE_KEY = "yok-viewer:comment-mode";
 const readMode = () => {
   try { return localStorage.getItem(MODE_KEY) === "on"; } catch { return false; }
 };
@@ -497,7 +497,7 @@ function emptyState(starting) {
   if (starting) {
     box.append(
       el("h2", "", "The run is starting"),
-      el("p", "", "harness run opened this page right away. The agent is reading the task and will name the run in a moment; its files appear here after that."),
+      el("p", "", "yok run opened this page right away. The agent is reading the task and will name the run in a moment; its files appear here after that."),
     );
     watch.append("waiting for orchestrate init");
     box.append(watch);
@@ -507,7 +507,7 @@ function emptyState(starting) {
     el("h2", "", "No artifacts in this run yet"),
     el("p", "", "Files show up here as soon as the agent writes them."),
   );
-  watch.append(`watching .harness/${runName}/artifacts/`);
+  watch.append(`watching .yok/${runName}/artifacts/`);
   box.append(watch);
   const steps = el("ol");
   for (const text of [
@@ -1333,7 +1333,7 @@ function toast(text) {
 function showRun(body) {
   runName = body.run.name;
   $("#runName").textContent = runName ?? "starting";
-  if (runName) $("#sideLabel").textContent = `.harness/${runName}/artifacts/`;
+  if (runName) $("#sideLabel").textContent = `.yok/${runName}/artifacts/`;
 }
 
 async function applyFiles(body) {

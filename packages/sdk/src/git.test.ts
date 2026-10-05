@@ -80,10 +80,8 @@ const CASES: Case[] = [
   },
   {
     name: "isIgnored",
-    run: (git) => git.isIgnored("/cwd", "/cwd/.harness/probe"),
-    expected: [
-      { command: "git", args: ["check-ignore", "-q", "/cwd/.harness/probe"], cwd: "/cwd" },
-    ],
+    run: (git) => git.isIgnored("/cwd", "/cwd/.yok/probe"),
+    expected: [{ command: "git", args: ["check-ignore", "-q", "/cwd/.yok/probe"], cwd: "/cwd" }],
   },
   {
     name: "hasRemote",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ILogger } from "@harness/sdk";
+import type { ILogger } from "@yok/sdk";
 import { captureLogger, createLogger, resolveLevel } from "./logging.ts";
 
 describe("resolveLevel", () => {

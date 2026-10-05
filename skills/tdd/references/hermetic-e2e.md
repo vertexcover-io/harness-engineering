@@ -124,7 +124,7 @@ scenario in the package that consumes it, and the uncovered files are not a gap.
 
 Derive any pass/fail report from the runner's JSON reporter, not hand-authored counts — that is
 what makes a gate trustworthy. In a pipeline the report goes to the path the caller supplies
-(`<HARNESS_DIR>/phase-<N>-e2e.json`). **A bare `--reporter=json` prints to stdout and writes no
+(`<YOK_DIR>/phase-<N>-e2e.json`). **A bare `--reporter=json` prints to stdout and writes no
 file**; each runner names its destination differently:
 
 | Runner | Invocation |

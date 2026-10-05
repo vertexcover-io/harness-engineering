@@ -1,4 +1,4 @@
-<h1 align="center">Harness</h1>
+<h1 align="center">Yok</h1>
 
 <p align="center">
   <strong>Engineering discipline for AI-assisted development</strong><br>
@@ -19,7 +19,7 @@
   <a href="#skill-reference">Skill Reference</a>
 </p>
 
-AI coding tools are fast. They're also reckless — no tests, no design, no verification. Code appears in seconds and breaks in production minutes later. Harness fixes this with a full pipeline where every stage has clear inputs, outputs, and pass/fail criteria:
+AI coding tools are fast. They're also reckless — no tests, no design, no verification. Code appears in seconds and breaks in production minutes later. Yok fixes this with a full pipeline where every stage has clear inputs, outputs, and pass/fail criteria:
 
 ```
 Brainstorm → Plan → TDD → Quality Gate → Docs → PR
@@ -33,10 +33,10 @@ Run the full pipeline end-to-end, or pick individual skills for smaller tasks.
 
 ```bash
 claude plugin marketplace add vertexcover-io/harness-engineering
-claude plugin install harness@main
+claude plugin install yok@yok
 ```
 
-This persists across sessions — the plugin loads automatically on startup. It installs the latest stable release, not whatever `main` holds: the marketplace pins a release tag. `claude plugin marketplace update main` then `claude plugin update harness@main` moves you to the next release.
+This persists across sessions — the plugin loads automatically on startup. It installs the latest stable release, not whatever `main` holds: the marketplace pins a release tag. `claude plugin marketplace update main` then `claude plugin update yok@yok` moves you to the next release.
 
 To run the code in a local checkout instead, point Claude at it. Adding the checkout as a marketplace still installs the pinned release from GitHub.
 
@@ -46,26 +46,26 @@ claude --plugin-dir PATH_TO_HARNESS
 
 ### Codex
 
-Install Harness from a configured Codex marketplace:
+Install Yok from a configured Codex marketplace:
 
 ```bash
 codex plugin marketplace add vertexcover-io/harness-engineering
-codex plugin add harness --marketplace harness
+codex plugin add yok --marketplace yok
 ```
 
 Restart Codex after installing or updating the marketplace.
 
-If you added Harness before the Codex marketplace catalog existed and see
-`plugin 'harness' was not found in marketplace 'harness'`, remove the old
+If you added Yok before the Codex marketplace catalog existed and see
+`plugin 'yok' was not found in marketplace 'yok'`, remove the old
 snapshot and add it again:
 
 ```bash
 codex plugin marketplace remove main
 codex plugin marketplace add vertexcover-io/harness-engineering
-codex plugin add harness --marketplace harness
+codex plugin add yok --marketplace yok
 ```
 
-Merge the config snippet into `~/.codex/config.toml` to set subagent concurrency and apply the harness permissions profile:
+Merge the config snippet into `~/.codex/config.toml` to set subagent concurrency and apply the yok permissions profile:
 
 ```bash
 mkdir -p ~/.codex
@@ -79,7 +79,7 @@ cat references/codex-config.toml >> ~/.codex/config.toml
 
 ### Skills-only install (any agent)
 
-The open-standard [`skills` CLI](https://github.com/vercel-labs/skills) installs Harness's skills into any supported agent — it auto-discovers `SKILL.md` and needs no manifest:
+The open-standard [`skills` CLI](https://github.com/vercel-labs/skills) installs Yok's skills into any supported agent — it auto-discovers `SKILL.md` and needs no manifest:
 
 ```bash
 npx skills add vertexcover-io/harness-engineering --agent claude-code
@@ -93,7 +93,7 @@ Users install the tag a marketplace file on `main` pins, so `main` can run ahead
 | Channel | File | Marketplace | Pins |
 |---|---|---|---|
 | stable | `.claude-plugin/marketplace.json` | `main` | the latest stable tag |
-| pre-release | `.claude-plugin/pre-release/marketplace.json` | `harness-pre-release` | the latest tag of any kind |
+| pre-release | `.claude-plugin/pre-release/marketplace.json` | `yok-pre-release` | the latest tag of any kind |
 
 **Cut a release** from GitHub: Actions → Release → Run workflow, then pick the bump and tick pre-release if you want one. The workflow bumps the version, repins the marketplaces, pushes the commit and tag to the branch you ran it on, and publishes the GitHub release. Or cut one locally and push it:
 
@@ -110,28 +110,28 @@ With npm, put `--` before the arguments: `npm run release:version -- minor --pre
 
 ```bash
 claude plugin marketplace add https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main/.claude-plugin/pre-release/marketplace.json
-claude plugin install harness@harness-pre-release
-claude plugin uninstall harness@main
+claude plugin install yok@yok-pre-release
+claude plugin uninstall yok@yok
 ```
 
-Keep only one of `harness@main` and `harness@harness-pre-release` installed: both load at once when both are.
+Keep only one of `yok@yok` and `yok@yok-pre-release` installed: both load at once when both are.
 
 ## Quick Start
 
-The `harness` CLI runs a workflow from start to finish. From this checkout:
+The `yok` CLI runs a workflow from start to finish. From this checkout:
 
 ```bash
 bun install
 bun run cli run task --prompt "Add rate limiting to the API"
 ```
 
-`task` is a workflow the harness ships in `workflows/`. A bare name runs the shipped workflow of
+`task` is a workflow yok ships in `workflows/`. A bare name runs the shipped workflow of
 that name; a path, or a name ending in `.yaml` or `.yml`, runs that file from your project
-(`harness run ./my-flow.yaml …`). `harness verify` and `harness doctor --workflow` take the same.
+(`yok run ./my-flow.yaml …`). `yok verify` and `yok doctor --workflow` take the same.
 
-`harness run` starts the harness server, opens an agent session, and sends it the `orchestrate`
-skill. The session then walks the workflow one stage at a time. `harness doctor` checks the tools,
-repository and config a run needs; `harness view` opens a run's page in the browser.
+`yok run` starts the yok server, opens an agent session, and sends it the `orchestrate`
+skill. The session then walks the workflow one stage at a time. `yok doctor` checks the tools,
+repository and config a run needs; `yok view` opens a run's page in the browser.
 
 For smaller tasks, use individual skills like `/tdd`, `/code-review`, or `/git-commit`.
 
@@ -142,7 +142,7 @@ For smaller tasks, use individual skills like `/tdd`, `/code-review`, or `/git-c
 ```
 ticket-fetcher → create-workspace → baseline → design → planning → implement
   → code-review → qa (loops back to implement until it passes) → git-commit → visual-pr
-  → harness-retro (runs after a failed stage too)
+  → retro (runs after a failed stage too)
 ```
 
 `ticket-fetcher` picks its provider from the ticket URL or key in the request: Linear
@@ -151,7 +151,7 @@ ticket-fetcher → create-workspace → baseline → design → planning → imp
 `LINEAR_API_KEY`; change it to `ASANA_API_KEY` for an Asana-only project.
 
 The project's settings live in `orchestrate.config.yaml` (`version: 2`) at the repository root.
-Run artifacts land in `.harness/`.
+Run artifacts land in `.yok/`.
 
 ## Recipes
 
@@ -196,7 +196,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/imp
 
 | Command | What it does |
 |---------|-------------|
-| `orchestrate` | Walks a v2 workflow inside the session `harness run` starts (not typed by hand) |
+| `orchestrate` | Walks a v2 workflow inside the session `yok run` starts (not typed by hand) |
 | `/planning` | Breaks work into phases with dependency graph |
 | `/adr` | Records one architecture decision in `docs/adr/`, checked by a review agent, and adds it to the index |
 | `/tdd` | RED-GREEN-REFACTOR development cycle |
@@ -204,7 +204,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/imp
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md, then applies the fixes |
 | `/git-commit` | Groups changes into logical conventional commits; squashes a branch's commits first when asked |
 | `/visual-pr` | Creates or updates a PR with a visual change outline and validation evidence |
-| `/harness-retro` | Audits a finished run's session transcripts and writes a ranked report of harness defects |
+| `/retro` | Audits a finished run's session transcripts and writes a ranked report of yok defects |
 | `/resolve-merge-conflict` | Resolves a stopped merge or rebase, or a PR that conflicts, by recovering each side's intent |
 
 **Run automatically (no command needed):**
@@ -213,7 +213,7 @@ Some skills run automatically when you're writing code — through `/tdd`, `/imp
 ## Structure
 
 ```
-harness/
+yok/
 ├── .agents/
 │   └── plugins/
 │       └── marketplace.json  # Codex marketplace catalog
@@ -231,7 +231,7 @@ harness/
     ├── create-workspace/
     ├── design/
     ├── git-commit/
-    ├── harness-retro/
+    ├── retro/
     ├── implement/
     ├── orchestrate/
     ├── planning/
@@ -255,7 +255,7 @@ harness/
 
 **.codex-plugin/plugin.json** — Codex plugin metadata. It points Codex at the same `skills/` directory used by Claude Code.
 
-**.agents/plugins/marketplace.json** — Codex marketplace catalog. It exposes `harness@harness` for `codex plugin add`.
+**.agents/plugins/marketplace.json** — Codex marketplace catalog. It exposes `yok@yok` for `codex plugin add`.
 
 **settings.json** — Claude Code runtime behavior:
 - Pre-approved read-only tools (git, grep, find, jq) and denied dangerous commands

@@ -102,7 +102,7 @@ const releaseLock = async (lockDir: string): Promise<void> => {
   await rm(tempDir, { recursive: true, force: true });
 };
 
-// Every lock a run takes lives in its own folder, .harness/NAME/locks, away from the artifacts.
+// Every lock a run takes lives in its own folder, .yok/NAME/locks, away from the artifacts.
 export const runLockPath = (runDir: string, name: string): string =>
   join(runDir, "locks", `${name}.lock`);
 

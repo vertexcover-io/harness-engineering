@@ -214,12 +214,12 @@ export {
 } from "./process.ts";
 export {
   createRegistryReader,
-  harnessHome,
   type RegistryReader,
   registryPath,
   type SessionRef,
   type WorkflowRun,
   WorkflowRunSchema,
+  yokHome,
 } from "./registry.ts";
 export {
   type CheckoutConfig,

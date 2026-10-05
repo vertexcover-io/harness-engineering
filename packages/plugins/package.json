@@ -1,5 +1,5 @@
 {
-  "name": "@harness/plugins",
+  "name": "@yok/plugins",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@harness/core": "workspace:*"
+    "@yok/core": "workspace:*"
   }
 }

@@ -9,8 +9,8 @@ import { verifyCommand } from "./verify.ts";
 import { viewCommand } from "./view.ts";
 
 await new Command()
-  .name("harness")
-  .description("Harness engineering CLI")
+  .name("yok")
+  .description("Yok engineering CLI")
   .addCommand(attachCommand())
   .addCommand(doctorCommand())
   .addCommand(runCommand())

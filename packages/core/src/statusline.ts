@@ -8,7 +8,7 @@ import {
   readState,
   runDirOf,
   type State,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import { type WorkflowNode, WorkflowSchema } from "./workflow/types.ts";
 
@@ -124,16 +124,16 @@ const trailing = (
   ];
 };
 
-// The line Claude Code shows for a harness run session. Reads the run's saved state without a
+// The line Claude Code shows for a yok run session. Reads the run's saved state without a
 // lock and never writes; the caller prints it.
 export const renderStatusline = async (stdin: string, run: RunRef | undefined): Promise<string> => {
-  if (run === undefined) return "harness · starting";
+  if (run === undefined) return "yok · starting";
   const runDir = runDirOf(run.cwd, run.name);
   const [state, workflow] = await Promise.all([
     readState(runDir).catch(() => null),
     readWorkflow(runDir).catch(() => null),
   ]);
-  const head = `harness ${run.name}`;
+  const head = `yok ${run.name}`;
   if (state === null) return head;
   const running = findRunning(state.nodeRuns);
   const done = Object.values(state.nodeRuns).filter((node) => node.status !== "running").length;

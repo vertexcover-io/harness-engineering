@@ -11,8 +11,8 @@ import type {
   ResolvedTiers,
   State,
   TierModel,
-} from "@harness/sdk";
-import { builtInHandlers, foldModelSwitch, projectEvents } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { builtInHandlers, foldModelSwitch, projectEvents } from "@yok/sdk/internal";
 import { compileWorkflow } from "./compile.ts";
 import { type Decision, decideNext } from "./next.ts";
 import { DEMO_STAGES, writeStages } from "./test-stages.ts";
@@ -39,7 +39,7 @@ const start = (input: JsonObject = {}): State => ({
   lastEventSeq: 0,
   runId: "r-1",
   runName: "demo",
-  runDir: "/work/.harness/demo",
+  runDir: "/work/.yok/demo",
   version: "2.0.0",
   workflow: { name: "demo", path: "workflow.yaml" },
   input,

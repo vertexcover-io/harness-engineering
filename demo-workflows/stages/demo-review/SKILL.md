@@ -27,9 +27,9 @@ name.
 
 ## Steps
 
-1. Read `.harness/RUN_NAME/artifacts/brief.md` and every file in
-   `.harness/RUN_NAME/artifacts/drafts/`.
-2. Write one line to `.harness/RUN_NAME/artifacts/review.md`:
+1. Read `.yok/RUN_NAME/artifacts/brief.md` and every file in
+   `.yok/RUN_NAME/artifacts/drafts/`.
+2. Write one line to `.yok/RUN_NAME/artifacts/review.md`:
    `Reviewed D drafts after N loop passes: NAME1, NAME2, …`.
 3. Finish the node with `--artifact review=artifacts/review.md`, and reply with:
 

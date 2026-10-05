@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Notifier } from "@harness/sdk";
+import type { Notifier } from "@yok/sdk";
 import { compileWorkflow } from "./compile.ts";
 import { evaluateBoolean, resolveValue, type Scope } from "./evaluate.ts";
 import { DEMO_STAGES, writeStages } from "./test-stages.ts";
@@ -923,7 +923,7 @@ describe("compile with stages", () => {
     },
   );
 
-  test("IW34 — a stage name reads the harness's own skills folder, a stage path reads the project root, and a stage in neither is rejected", async () => {
+  test("IW34 — a stage name reads yok's own skills folder, a stage path reads the project root, and a stage in neither is rejected", async () => {
     const { plan } = await compileWithStages(workflow(stageNode("ws", "create-workspace")));
     expect(plan.nodes[0]).toMatchObject({
       stage: { skill: expect.stringMatching(/\/skills\/create-workspace\/SKILL\.md$/) },
@@ -1155,13 +1155,13 @@ describe("the shipped task workflow", () => {
     });
   });
 
-  test("SC20: the last node is an always, allow-failure harness-retro after pr, with input {}", async () => {
+  test("SC20: the last node is an always, allow-failure retro after pr, with input {}", async () => {
     const plan = await compileWorkflow(TASK_WORKFLOW);
 
     expect(plan.nodes.at(-1)).toMatchObject({
       id: "retro",
       type: "agent",
-      stage: { ref: "harness-retro" },
+      stage: { ref: "retro" },
       dependsOn: ["pr"],
       always: true,
       allowFailure: true,

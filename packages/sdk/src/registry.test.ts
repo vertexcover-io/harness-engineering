@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   createRegistry,
   createRegistryReader,
   RegistryFileSchema,
   type WorkflowRun,
+  yokHome,
 } from "./registry.ts";
 
 const run = (id: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
@@ -26,7 +27,18 @@ const run = (id: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => (
 });
 
 const tempRegistryPath = (): string =>
-  join(mkdtempSync(join(tmpdir(), "harness-registry-")), "registry.json");
+  join(mkdtempSync(join(tmpdir(), "yok-registry-")), "registry.json");
+
+// Split so the sweep for the old product name (SC10) does not flag this test.
+const OLD_NAME = ["har", "ness"].join("");
+
+describe("yokHome", () => {
+  test("SC1: the home is ~/.yok, YOK_HOME overrides it, and the old home variable is not read", () => {
+    expect(yokHome({})).toBe(join(homedir(), ".yok"));
+    expect(yokHome({ YOK_HOME: "/tmp/y" })).toBe("/tmp/y");
+    expect(yokHome({ [`${OLD_NAME.toUpperCase()}_HOME`]: "/tmp/h" })).toBe(join(homedir(), ".yok"));
+  });
+});
 
 describe("createRegistry", () => {
   test("SC8: two update calls started together both land on disk and parse", async () => {

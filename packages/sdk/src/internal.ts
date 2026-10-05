@@ -1,5 +1,5 @@
 // The engine's side of the sdk: core, server and cli import these. Extension code uses
-// @harness/sdk; a skill script never imports this file.
+// @yok/sdk; a skill script never imports this file.
 export { resolveTiers, uniqueNames } from "./config.ts";
 export { pickTierModel } from "./contracts.ts";
 export {

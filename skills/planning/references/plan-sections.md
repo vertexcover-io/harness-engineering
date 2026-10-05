@@ -1,6 +1,6 @@
 # plan.md and phases/phase-N.md — the contract
 
-Paths: `.harness/RUN/artifacts/plan.md` · `.harness/RUN/artifacts/phases/phase-N.md`.
+Paths: `.yok/RUN/artifacts/plan.md` · `.yok/RUN/artifacts/phases/phase-N.md`.
 
 The planner writes both directly. The user approves them and a coder builds from them, so they
 are the whole record of the plan. Examples below use a neutral domain, user auth, unrelated to

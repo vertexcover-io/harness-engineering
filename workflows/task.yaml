@@ -4,7 +4,7 @@ inputs:
     type: string
     required: true
   # Which entry of the config's environments block qa verifies against: `default` is the entry the
-  # block names as its default. Pick another with `harness run … --input environment=NAME`.
+  # block names as its default. Pick another with `yok run … --input environment=NAME`.
   environment:
     type: string
     default: default
@@ -113,11 +113,11 @@ nodes:
       workspace: "{{ nodes.create-workspace.output }}"
       task: "{{ nodes.ticket-fetcher.output.task }}"
 
-  # Audits the run for harness defects. always: it runs after a failed node too; allowFailure:
+  # Audits the run for yok defects. always: it runs after a failed node too; allowFailure:
   # its own failure never changes the run's status.
   - id: retro
     type: agent
-    stage: harness-retro
+    stage: retro
     dependsOn: [pr]
     always: true
     allowFailure: true

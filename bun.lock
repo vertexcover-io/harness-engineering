@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "harness-engineering",
@@ -10,25 +11,25 @@
       },
     },
     "packages/cli": {
-      "name": "@harness/cli",
+      "name": "@yok/cli",
       "version": "0.0.0",
       "bin": {
-        "harness": "./src/index.ts",
+        "yok-dev": "./src/index.ts",
       },
       "dependencies": {
         "@commander-js/extra-typings": "^15.0.0",
-        "@harness/core": "workspace:*",
-        "@harness/sdk": "workspace:*",
-        "@harness/server": "workspace:*",
+        "@yok/core": "workspace:*",
+        "@yok/sdk": "workspace:*",
+        "@yok/server": "workspace:*",
         "commander": "^15.0.0",
       },
     },
     "packages/core": {
-      "name": "@harness/core",
+      "name": "@yok/core",
       "version": "0.0.0",
       "dependencies": {
         "@commander-js/extra-typings": "^15.0.0",
-        "@harness/sdk": "workspace:*",
+        "@yok/sdk": "workspace:*",
         "commander": "^15.0.0",
         "pino": "^9",
         "yaml": "^2.9.1",
@@ -36,14 +37,14 @@
       },
     },
     "packages/plugins": {
-      "name": "@harness/plugins",
+      "name": "@yok/plugins",
       "version": "0.0.0",
       "dependencies": {
-        "@harness/core": "workspace:*",
+        "@yok/core": "workspace:*",
       },
     },
     "packages/sdk": {
-      "name": "@harness/sdk",
+      "name": "@yok/sdk",
       "version": "0.0.0",
       "dependencies": {
         "yaml": "^2.9.1",
@@ -51,12 +52,12 @@
       },
     },
     "packages/server": {
-      "name": "@harness/server",
+      "name": "@yok/server",
       "version": "0.0.0",
       "dependencies": {
-        "@harness/core": "workspace:*",
-        "@harness/sdk": "workspace:*",
         "@hono/zod-validator": "^0.9.1",
+        "@yok/core": "workspace:*",
+        "@yok/sdk": "workspace:*",
         "highlight.js": "^11.12.0",
         "hono": "^4.13.9",
         "markdown-it": "^14.1.0",
@@ -88,16 +89,6 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.14", "", { "os": "win32", "cpu": "x64" }, "sha512-oJWmBhoHsnhUKIke+0gXDX0mltJrWHA1UyHsrTlXwX0TL64ilVZAo+TYZm97baecV0esBdpzy3k96q+09JaZUQ=="],
 
     "@commander-js/extra-typings": ["@commander-js/extra-typings@15.0.0", "", { "peerDependencies": { "commander": "~15.0.0" } }, "sha512-yeJlba62xqmkgELUsn7356MEnzLLu/fw2x4lofFqGnXh6YysRdEs2BaLeLtg1+KU0AXvMeqQvTTp+3hBEBK+EA=="],
-
-    "@harness/cli": ["@harness/cli@workspace:packages/cli"],
-
-    "@harness/core": ["@harness/core@workspace:packages/core"],
-
-    "@harness/plugins": ["@harness/plugins@workspace:packages/plugins"],
-
-    "@harness/sdk": ["@harness/sdk@workspace:packages/sdk"],
-
-    "@harness/server": ["@harness/server@workspace:packages/server"],
 
     "@hono/zod-validator": ["@hono/zod-validator@0.9.1", "", { "peerDependencies": { "hono": ">=4.11.2", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-iiv6w0qrIc0arfvCtUqBWsvl4fXjzaTcQcCJTTtCnkawF9HHGE+KjEl0ox3gQJ6rKZEgE3mLExlQCF72M+mNuw=="],
 
@@ -152,6 +143,16 @@
     "@typescript/typescript-win32-arm64": ["@typescript/typescript-win32-arm64@7.0.2", "", { "os": "win32", "cpu": "arm64" }, "sha512-Gyl1Vy6OsWesLzmq+EP0Fb7b4Nid5232AvcA2SFcdYreldpNtYFFofPjnt62y9hQy7VTaZp65ICJjuAQRaVcIQ=="],
 
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
+
+    "@yok/cli": ["@yok/cli@workspace:packages/cli"],
+
+    "@yok/core": ["@yok/core@workspace:packages/core"],
+
+    "@yok/plugins": ["@yok/plugins@workspace:packages/plugins"],
+
+    "@yok/sdk": ["@yok/sdk@workspace:packages/sdk"],
+
+    "@yok/server": ["@yok/server@workspace:packages/server"],
 
     "argparse": ["argparse@2.0.1", "", {}, "sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q=="],
 

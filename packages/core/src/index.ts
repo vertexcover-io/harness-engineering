@@ -1,7 +1,7 @@
 export { type ClaudeProviderOptions, claudeProvider } from "./agents/claude.ts";
 export { type CodexProviderOptions, codexProvider } from "./agents/codex.ts";
 export { type AgentProviderOptions, agentProvider } from "./agents/index.ts";
-export { harnessTerminalHost } from "./agents/tmux.ts";
+export { yokTerminalHost } from "./agents/tmux.ts";
 export {
   addComments,
   addUserReply,

@@ -8,7 +8,7 @@ import {
   jsonLogger,
   type Result,
   type TerminalSpec,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import {
   canTypeComment,
@@ -208,7 +208,7 @@ describe("claudeProvider.relaunch", () => {
     const result = await provider.relaunch(host.find("%3"), "s-new", {
       cwd: "/repo",
       prompt: "/orchestrate --resume feat-x",
-      env: { HARNESS_RUN_ID: "r-1" },
+      env: { YOK_RUN_ID: "r-1" },
       orchestrateArgv: ["/usr/bin/bun", "/o.ts"],
     });
 
@@ -217,7 +217,7 @@ describe("claudeProvider.relaunch", () => {
     expect(call).toMatchObject({ method: "respawn", pane: "%3" });
     const spec = call?.method === "respawn" ? call.spec : undefined;
     expect(spec?.cwd).toBe("/repo");
-    expect(spec?.env).toEqual({ HARNESS_RUN_ID: "r-1" });
+    expect(spec?.env).toEqual({ YOK_RUN_ID: "r-1" });
     expect(spec?.argv.slice(0, 3)).toEqual(["/bin/claude", "--session-id", "s-new"]);
     expect(spec?.argv).toContain("--settings");
     expect(spec?.argv.at(-1)).toBe("/orchestrate --resume feat-x");

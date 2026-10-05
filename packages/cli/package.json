@@ -1,5 +1,5 @@
 {
-  "name": "@harness/cli",
+  "name": "@yok/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,17 +7,17 @@
     ".": "./src/index.ts"
   },
   "bin": {
-    "harness": "./src/index.ts"
+    "yok-dev": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "bun build ./src/index.ts --compile --no-compile-autoload-dotenv --outfile dist/harness"
+    "build": "bun build ./src/index.ts --compile --no-compile-autoload-dotenv --outfile dist/yok"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^15.0.0",
-    "@harness/core": "workspace:*",
-    "@harness/sdk": "workspace:*",
-    "@harness/server": "workspace:*",
+    "@yok/core": "workspace:*",
+    "@yok/sdk": "workspace:*",
+    "@yok/server": "workspace:*",
     "commander": "^15.0.0"
   }
 }

@@ -3,8 +3,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runDirOf, type WorkflowRun } from "@harness/sdk";
-import { createState, jsonlEventStore } from "@harness/sdk/internal";
+import { runDirOf, type WorkflowRun } from "@yok/sdk";
+import { createState, jsonlEventStore } from "@yok/sdk/internal";
 
 const SCRIPT = join(import.meta.dir, "workspace.ts");
 
@@ -20,10 +20,10 @@ const makeRepo = (dir: string, ignored: string): string => {
   return dir;
 };
 
-const tempRepo = (): string => makeRepo(tempDir(), ".worktrees/\n.harness/\n");
+const tempRepo = (): string => makeRepo(tempDir(), ".worktrees/\n.yok/\n");
 
 const makeMulti = (): string => {
-  const root = makeRepo(tempDir(), ".workspaces/\n.harness/\napi/\nweb/\n");
+  const root = makeRepo(tempDir(), ".workspaces/\n.yok/\napi/\nweb/\n");
   makeRepo(join(root, "api"), "");
   makeRepo(join(root, "web"), "");
   writeFileSync(
@@ -61,7 +61,7 @@ const initializedRun = (home: string, cwd: string): void => {
 
 const eventsOf = (cwd: string) => jsonlEventStore(runDirOf(cwd, "feat-x")).read();
 
-// A run id or harness home from the shell running the tests must never reach a real registry.
+// A run id or yok home from the shell running the tests must never reach a real registry.
 const workspace = (
   cwd: string,
   home: string,
@@ -71,7 +71,7 @@ const workspace = (
   const run = spawnSync("bun", [SCRIPT, ...args], {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home, ...env },
+    env: { ...process.env, YOK_RUN_ID: undefined, YOK_HOME: home, ...env },
   });
   return { code: run.status, stdout: run.stdout, stderr: run.stderr };
 };
@@ -138,12 +138,12 @@ describe("workspace.ts", () => {
     expect(info.stderr).toContain("--root");
   });
 
-  test("inside a harness session, create records into the run $HARNESS_RUN_ID names", async () => {
+  test("inside a yok session, create records into the run $YOK_RUN_ID names", async () => {
     const root = tempRepo();
     const home = tempDir();
     initializedRun(home, root);
 
-    const created = workspace(root, home, ["create", "b"], { HARNESS_RUN_ID: "r-1" });
+    const created = workspace(root, home, ["create", "b"], { YOK_RUN_ID: "r-1" });
 
     expect(created.code).toBe(0);
     expect((await eventsOf(root)).map((event) => event.type)).toEqual(["workspace.created"]);
@@ -270,7 +270,7 @@ describe("workspace.ts", () => {
 
     expect(run.code).toBe(0);
     expect(existsSync(join(root, ".worktrees/b"))).toBe(true);
-    expect(existsSync(join(root, ".harness"))).toBe(false);
+    expect(existsSync(join(root, ".yok"))).toBe(false);
   });
 
   test("run from inside a multi workspace repo, remove finds the meta repo and its run", async () => {

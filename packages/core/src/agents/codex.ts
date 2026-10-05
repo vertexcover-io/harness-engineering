@@ -15,7 +15,7 @@ import {
   type Result,
   type RunRequest,
   spawn,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import { codexHookOverrides } from "./codex-hooks.ts";
 import {
@@ -49,7 +49,7 @@ const settingFlags = ({
   ]),
 ];
 
-// Codex skips untrusted hooks, and the harness hooks arrive as -c overrides. The flag also covers
+// Codex skips untrusted hooks, and the yok hooks arrive as -c overrides. The flag also covers
 // hooks in the repo's own .codex/ config.
 export const codexArgs = (options: CodexArgOptions): string[] => [
   "--dangerously-bypass-hook-trust",
@@ -151,7 +151,7 @@ const statusLineOf = ({
   orchestrateArgv,
   env,
 }: Pick<LaunchOptions, "orchestrateArgv" | "env">): readonly string[] | undefined => {
-  const runId = env?.HARNESS_RUN_ID;
+  const runId = env?.YOK_RUN_ID;
   if (orchestrateArgv === undefined || runId === undefined) return undefined;
   return [...orchestrateArgv, "statusline", "--run-id", runId];
 };
@@ -160,7 +160,7 @@ const statusLineOf = ({
 const writeSchema = async <T>(
   outputFormat: z.ZodType<T>,
 ): Promise<Readonly<{ dir: string; file: string }>> => {
-  const dir = await mkdtemp(join(tmpdir(), "harness-codex-"));
+  const dir = await mkdtemp(join(tmpdir(), "yok-codex-"));
   const file = join(dir, "schema.json");
   await writeFile(file, JSON.stringify(z.toJSONSchema(outputFormat)));
   return { dir, file };

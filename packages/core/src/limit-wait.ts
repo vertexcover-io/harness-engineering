@@ -8,8 +8,8 @@ import {
   type LimitWaitingEvent,
   type RunRef,
   runDirOf,
-} from "@harness/sdk";
-import { appendRunEvent, jsonlEventStore } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { appendRunEvent, jsonlEventStore } from "@yok/sdk/internal";
 import * as z from "zod";
 import { spawnOrchestrateHelper } from "./stage.ts";
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ILogger } from "@harness/sdk";
+import type { ILogger } from "@yok/sdk";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

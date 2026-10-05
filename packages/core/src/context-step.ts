@@ -17,7 +17,7 @@ import {
   sessionEnv,
   type TierModel,
   tierLaunch,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import {
   appendRunEvent,
   foldModelSwitch,
@@ -26,7 +26,7 @@ import {
   pickTierModel,
   type Registry,
   runLockPath,
-} from "@harness/sdk/internal";
+} from "@yok/sdk/internal";
 import {
   CLAUDE_CLEAR_INPUT_KEY,
   CLAUDE_NOTHING_TO_COMPACT,

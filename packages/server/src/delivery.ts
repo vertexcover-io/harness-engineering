@@ -5,10 +5,10 @@ import {
   readComments,
   type WorkflowAgent,
   WorkflowAgentSchema,
-} from "@harness/core";
-import type { IAgentProvider, ILogger, ITerminalHost, State, WorkflowRun } from "@harness/sdk";
-import { emitRunEvent, readState, runDirOf } from "@harness/sdk";
-import type { Registry } from "@harness/sdk/internal";
+} from "@yok/core";
+import type { IAgentProvider, ILogger, ITerminalHost, State, WorkflowRun } from "@yok/sdk";
+import { emitRunEvent, readState, runDirOf } from "@yok/sdk";
+import type { Registry } from "@yok/sdk/internal";
 
 export type DeliveryOutcome =
   | Readonly<{ kind: "delivered"; ids: readonly string[] }>

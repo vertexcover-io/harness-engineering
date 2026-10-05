@@ -11,9 +11,9 @@ import {
 import { mkdir, mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as sdk from "@harness/sdk";
-import { noopLogger, registryPath, runDirOf, type StopFailureInput } from "@harness/sdk";
-import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
+import * as sdk from "@yok/sdk";
+import { noopLogger, registryPath, runDirOf, type StopFailureInput } from "@yok/sdk";
+import { createRegistry, jsonlEventStore } from "@yok/sdk/internal";
 import { ORCHESTRATE_SCRIPT } from "../stage.ts";
 import { resumeAfterLimit } from "./stop-failure.ts";
 
@@ -36,7 +36,7 @@ const setUp = async () => {
   });
   const runDir = runDirOf(cwd, "feat-x");
   await mkdir(runDir, { recursive: true });
-  const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
+  const deps = { registry, env: { YOK_RUN_ID: "r-1" }, log: noopLogger };
   return { runDir, cwd, deps };
 };
 

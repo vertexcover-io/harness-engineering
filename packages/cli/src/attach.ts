@@ -1,13 +1,13 @@
 import { Command } from "@commander-js/extra-typings";
-import { harnessTerminalHost } from "@harness/core";
+import { yokTerminalHost } from "@yok/core";
 import {
   type Result,
   registryPath,
   requireRun,
   spawnInteractive,
   type WorkflowRun,
-} from "@harness/sdk";
-import { createRegistry, type Registry } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { createRegistry, type Registry } from "@yok/sdk/internal";
 import { commandLog, fail } from "./client.ts";
 
 const findById = async (registry: Registry, id: string): Promise<Result<WorkflowRun>> => {
@@ -16,7 +16,7 @@ const findById = async (registry: Registry, id: string): Promise<Result<Workflow
 };
 
 // An id on its own is looked up as is, so a run can be attached before init names it. A name, or
-// $HARNESS_RUN_ID, goes through requireRun, the way orchestrate picks a run.
+// $YOK_RUN_ID, goes through requireRun, the way orchestrate picks a run.
 const findRunToAttach = async (
   registry: Registry,
   name: string | undefined,
@@ -36,12 +36,12 @@ const findRunToAttach = async (
 const attachArgv = (run: WorkflowRun): Result<readonly string[]> =>
   run.terminal === null
     ? { ok: false, error: `run ${run.id} has no terminal yet` }
-    : { ok: true, value: harnessTerminalHost().find(run.terminal).attachCommand() };
+    : { ok: true, value: yokTerminalHost().find(run.terminal).attachCommand() };
 
 export const attachCommand = () =>
   new Command("attach")
     .description("Attach to a run's terminal")
-    .argument("[name]", "run name in this repo (default: $HARNESS_RUN_ID)")
+    .argument("[name]", "run name in this repo (default: $YOK_RUN_ID)")
     .option("--run-id <id>", "attach by run id instead of name")
     .option("--print", "print the attach command instead of running it")
     .action(async (name, opts) => {

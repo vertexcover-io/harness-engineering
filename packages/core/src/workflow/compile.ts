@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { JsonValue } from "@harness/sdk";
+import type { JsonValue } from "@yok/sdk";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 import { findStageDir, loadSkill, own } from "../stage.ts";

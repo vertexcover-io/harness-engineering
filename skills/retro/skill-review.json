@@ -1,6 +1,6 @@
 {
-  "skill": "harness-retro",
-  "path": "/Users/vertexcover/Projects/harness-engineering/.worktrees/v1-retro-merge-conflict-skills/skills/harness-retro",
+  "skill": "retro",
+  "path": "/Users/vertexcover/Projects/harness-engineering/.worktrees/v1-retro-merge-conflict-skills/skills/retro",
   "findings": [],
   "script_false_positives": [
     {

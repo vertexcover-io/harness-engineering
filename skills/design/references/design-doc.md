@@ -1,6 +1,6 @@
 # design.md — format
 
-Path: `.harness/RUN/artifacts/design.md`. The first gate: a person reads it in under a minute
+Path: `.yok/RUN/artifacts/design.md`. The first gate: a person reads it in under a minute
 and says whether the shape is right, before anyone builds a full plan. The planning stage
 builds from it, so it must stand without the conversation that produced it.
 

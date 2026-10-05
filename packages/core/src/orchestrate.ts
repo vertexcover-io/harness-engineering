@@ -12,7 +12,6 @@ import {
   createGit,
   emitRunEvent,
   type HookDeps,
-  harnessHome,
   type ILogger,
   type JsonValue,
   loadPickedConfig,
@@ -27,16 +26,17 @@ import {
   stopRunningOnSignal,
   tierLaunch,
   type WorkflowRun,
-} from "@harness/sdk";
+  yokHome,
+} from "@yok/sdk";
 import {
   AgentStatusSchema,
   createRegistry,
   foldModelSwitch,
   jsonlEventStore,
   type StepOutcome,
-} from "@harness/sdk/internal";
+} from "@yok/sdk/internal";
 import { agentAdapters, agentProvider, findSessionAgent, HOOK_AGENTS } from "./agents/index.ts";
-import { currentTerminal, harnessTerminalHost } from "./agents/tmux.ts";
+import { currentTerminal, yokTerminalHost } from "./agents/tmux.ts";
 import { commentRepliedEvent, isOpen, readComments, replyToComment } from "./comments.ts";
 import { runContextStep, runModelStep } from "./context-step.ts";
 import { findEnvRun } from "./hooks/common.ts";
@@ -58,23 +58,23 @@ import {
   nextStep,
 } from "./runs.ts";
 import {
-  harnessSkillsDir,
   listReferences,
   orchestrateArgv,
   resolveExtension,
   resolveReference,
   resolveReferencePath,
+  yokSkillsDir,
 } from "./stage.ts";
 import { renderStatusline } from "./statusline.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
-const RUN_HELP = "spec name of the run, as given to init (default: $HARNESS_RUN_ID)";
-const RUN_ID_HELP = "id of the run, instead of its name (default: $HARNESS_RUN_ID)";
+const RUN_HELP = "spec name of the run, as given to init (default: $YOK_RUN_ID)";
+const RUN_ID_HELP = "id of the run, instead of its name (default: $YOK_RUN_ID)";
 const EMPTY_NODE_RUN_ID = "nodeRunId must not be empty";
 
 // stdout carries only command output, so skills can parse it; logs go to stderr.
 const log = createLogger(
-  { service: "harness-orchestrate" },
+  { service: "yok-orchestrate" },
   {
     destination: { write: (chunk: string) => void process.stderr.write(chunk) },
     level: resolveLevel(process.env, "warn"),
@@ -119,7 +119,7 @@ const printResult = (result: Result<unknown>): void =>
 
 const registry = () => createRegistry(registryPath(), log);
 
-// The agents the harness can restart in their pane, which is how a session switches models.
+// The agents the yok can restart in their pane, which is how a session switches models.
 const MODEL_SWITCH_AGENTS: ReadonlySet<AgentType> = new Set(
   HOOK_AGENTS.filter((agent) => agentAdapters[agent].contextSteps),
 );
@@ -134,12 +134,12 @@ const parseJsonFlag = (text: string, flag: string): Result<JsonValue> => {
 
 const initCommand = () =>
   new Command("init")
-    .description("Give the run started by harness run its name and folder, .harness/NAME")
+    .description("Give the run started by yok run its name and folder, .yok/NAME")
     .argument("<name>", "spec name of the run, used for its folder")
-    .option("--run-id <id>", "run id (default: $HARNESS_RUN_ID)")
+    .option("--run-id <id>", "run id (default: $YOK_RUN_ID)")
     .action(async (name, opts) => {
-      const runId = opts.runId ?? process.env.HARNESS_RUN_ID;
-      if (!runId) return fail("no run: pass --run-id or run inside a harness session");
+      const runId = opts.runId ?? process.env.YOK_RUN_ID;
+      if (!runId) return fail("no run: pass --run-id or run inside a yok session");
       await runWorkflowCommand(async () => {
         const result = await initializeRun({
           registry: registry(),
@@ -316,7 +316,7 @@ const doneCommand = () =>
           kind: "configuration",
           retryable: false,
           code: "run",
-          path: opts.runId ?? opts.run ?? (process.env.HARNESS_RUN_ID || ""),
+          path: opts.runId ?? opts.run ?? (process.env.YOK_RUN_ID || ""),
           message: run.error,
         });
       const report = await finishStep(run.value, nodeRunId, outcome.value, artifacts.value);
@@ -359,7 +359,7 @@ const printResolved = async (
   const loaded = await configFor(flags);
   if (!loaded.ok) return fail(loaded.error);
   const { root, config } = loaded.value;
-  const options = { skillsDir: harnessSkillsDir(), root, config, skill };
+  const options = { skillsDir: yokSkillsDir(), root, config, skill };
   const text = await resolveText(options);
   if (!text.ok) return fail(text.error);
   process.stdout.write(text.value);
@@ -413,7 +413,7 @@ type HookSpec<H> = Readonly<{
 }>;
 
 // Always exits 0 and prints only the agent's reply: an error here must never trap a session. An
-// agent without this hook, or a handler the harness does not know, prints nothing.
+// agent without this hook, or a handler yok does not know, prints nothing.
 const addHookCommand = <H>(hook: Command, spec: HookSpec<H>): void => {
   hook
     .command(spec.name)
@@ -478,15 +478,15 @@ const statuslineCommand = () =>
     .description("Print the status line Claude Code shows for this run's session")
     .option("--run-id <id>", "look the run up by id and read no stdin (the tmux status bar)")
     .action(async (options: { runId?: string }) => {
-      const runId = options.runId ?? process.env.HARNESS_RUN_ID;
+      const runId = options.runId ?? process.env.YOK_RUN_ID;
       if (!runId) return;
       const stdin = options.runId === undefined ? await Bun.stdin.text().catch(() => "") : "";
-      const deps = { registry: registry(), env: { ...process.env, HARNESS_RUN_ID: runId }, log };
+      const deps = { registry: registry(), env: { ...process.env, YOK_RUN_ID: runId }, log };
       const line = await findEnvRun(deps)
         .then((found) => renderStatusline(stdin, found?.ref))
         .catch((error: unknown) => {
           log.error({ err: error }, "statusline failed");
-          return "harness · starting";
+          return "yok · starting";
         });
       process.stdout.write(`${line}\n`);
     });
@@ -498,7 +498,7 @@ const sessionProvider = (
 ) => {
   const agent = findSessionAgent(linked?.sessions ?? [], sessionId);
   if (agent === undefined) return undefined;
-  const host = harnessTerminalHost(process.env, helperLog);
+  const host = yokTerminalHost(process.env, helperLog);
   return agentProvider({ agent, host, env: process.env, log: helperLog });
 };
 
@@ -535,7 +535,7 @@ const contextCommand = () =>
     .option("--run-id <id>", RUN_ID_HELP)
     .requiredOption("--session-id <id>", "the agent session whose turn just ended")
     .action(async (nodeRunId, opts) => {
-      const helper = await loadHelperRun(opts, "harness-context", "context.log");
+      const helper = await loadHelperRun(opts, "yok-context", "context.log");
       if (helper === undefined) return;
       const { run, log, provider } = helper;
       const runDir = runDirOf(run.cwd, run.name);
@@ -557,7 +557,7 @@ const contextCommand = () =>
           // a switched model outlives the session it was switched in
           ...tierLaunch(current),
         },
-        home: harnessHome(),
+        home: yokHome(),
         log,
       });
     });
@@ -572,7 +572,7 @@ const modelCommand = () =>
     .option("--run-id <id>", RUN_ID_HELP)
     .requiredOption("--session-id <id>", "the agent session whose turn just ended")
     .action(async (seq, opts) => {
-      const helper = await loadHelperRun(opts, "harness-model", "model.log");
+      const helper = await loadHelperRun(opts, "yok-model", "model.log");
       if (helper === undefined) return;
       const { run, log, provider } = helper;
       await runModelStep({
@@ -582,7 +582,7 @@ const modelCommand = () =>
         terminal: currentTerminal(process.env, log),
         provider,
         launch: { cwd: run.cwd, orchestrateArgv: orchestrateArgv() },
-        home: harnessHome(),
+        home: yokHome(),
         log,
       });
     });
@@ -609,7 +609,7 @@ const limitWaitCommand = () =>
       const picked = await requireRun(runInputFromFlags(opts));
       if (!picked.ok) return fail(picked.error);
       const run = picked.value;
-      const log = helperLogger(run, "harness-limit-wait", "limit-wait.log");
+      const log = helperLogger(run, "yok-limit-wait", "limit-wait.log");
       const linked = await registry().findRun(run.id);
       const provider = sessionProvider(linked, opts.sessionId, log);
       await runLimitWait({
@@ -674,7 +674,7 @@ stopRunningOnSignal();
 
 await new Command()
   .name("orchestrate")
-  .description("Actions a skill takes on a harness run; each one calls core directly")
+  .description("Actions a skill takes on a yok run; each one calls core directly")
   .addCommand(initCommand())
   .addCommand(linkSessionCommand())
   .addCommand(emitCommand())

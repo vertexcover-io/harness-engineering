@@ -1,7 +1,7 @@
 import { basename, join, resolve } from "node:path";
 
-// Where a command runs, and what `~`, `$HOME` and `$HARNESS_HOME` stand for there.
-export type PathBase = Readonly<{ cwd: string; home: string; harnessHome: string }>;
+// Where a command runs, and what `~`, `$HOME` and `$YOK_HOME` stand for there.
+export type PathBase = Readonly<{ cwd: string; home: string; yokHome: string }>;
 
 const WRAPPERS: ReadonlySet<string> = new Set(["sudo", "command", "nohup", "time", "exec"]);
 const REMOVERS: ReadonlySet<string> = new Set(["rm", "unlink", "shred", "truncate", "tee"]);
@@ -34,14 +34,12 @@ const REDIRECT_OPERATOR = /^(?:\d+>>?|&>>?|>>?\|?)$/;
 const REDIRECT_ATTACHED = /^(?:\d*|&)>>?\|?(.+)$/;
 const ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const HOME_PREFIX = /^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/;
-const HARNESS_HOME_PREFIX = /^(?:\$HARNESS_HOME|\$\{HARNESS_HOME\})(?=\/|$)/;
+const YOK_HOME_PREFIX = /^(?:\$YOK_HOME|\$\{YOK_HOME\})(?=\/|$)/;
 const SEPARATORS: ReadonlySet<string> = new Set([";", "&", "|", "\n", "(", ")"]);
 
 // The absolute path a word names, or undefined when it holds a variable this cannot know.
 export const expandPath = (word: string, base: PathBase): string | undefined => {
-  const expanded = word
-    .replace(HOME_PREFIX, base.home)
-    .replace(HARNESS_HOME_PREFIX, base.harnessHome);
+  const expanded = word.replace(HOME_PREFIX, base.home).replace(YOK_HOME_PREFIX, base.yokHome);
   return expanded.includes("$") ? undefined : resolve(base.cwd, expanded);
 };
 

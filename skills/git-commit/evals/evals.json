@@ -54,14 +54,14 @@
     },
     {
       "id": 4,
-      "prompt": "Commit the working tree. Arguments: --working-commits .harness/demo/working-commits.txt",
+      "prompt": "Commit the working tree. Arguments: --working-commits .yok/demo/working-commits.txt",
       "expected_output": "Two feature commits \u2014 cart discounts and checkout \u2014 with the review and verify fixes folded into them, every tracked change committed, and no question asked.",
       "setup": "skills/git-commit/evals/files/make-fixture.sh 4 REPO_DIR, then run the prompt inside REPO_DIR",
       "files": [
         "skills/git-commit/evals/files/make-fixture.sh"
       ],
       "expectations": [
-        "Reads .harness/demo/working-commits.txt before grouping",
+        "Reads .yok/demo/working-commits.txt before grouping",
         "Creates one commit for cart discounts and one for checkout",
         "Creates no commit whose subject starts with fix",
         "Puts the percent-capping change in the same commit as applyDiscount",
@@ -74,15 +74,15 @@
     {
       "id": 5,
       "prompt": "Commit my changes",
-      "expected_output": "The discount change is committed, .gitignore gets its .harness/* rule back in a commit, and .harness/demo/plan.md is never committed.",
+      "expected_output": "The discount change is committed, .gitignore gets its .yok/* rule back in a commit, and .yok/demo/plan.md is never committed.",
       "setup": "skills/git-commit/evals/files/make-fixture.sh 5 REPO_DIR, then run the prompt inside REPO_DIR",
       "files": [
         "skills/git-commit/evals/files/make-fixture.sh"
       ],
       "expectations": [
         "Commits src/cart.ts and src/cart.test.ts together",
-        "No commit contains .harness/demo/plan.md",
-        "The final .gitignore contains a .harness/* rule",
+        "No commit contains .yok/demo/plan.md",
+        "The final .gitignore contains a .yok/* rule",
         "Asks the user no question and waits for no approval"
       ]
     },
@@ -104,7 +104,7 @@
     {
       "id": 7,
       "prompt": "Squash my commits",
-      "expected_output": "The five checkpoint commits on feat/checkout become two feature commits, cart discounts and checkout, with the review and verify fixes folded in; the uncommitted README edit is committed too, in one of them or in a docs commit. The old history is kept under refs/harness/pre-squash/feat/checkout and the summary says the push needs force.",
+      "expected_output": "The five checkpoint commits on feat/checkout become two feature commits, cart discounts and checkout, with the review and verify fixes folded in; the uncommitted README edit is committed too, in one of them or in a docs commit. The old history is kept under refs/yok/pre-squash/feat/checkout and the summary says the push needs force.",
       "setup": "skills/git-commit/evals/files/make-fixture.sh 7 REPO_DIR, then run the prompt inside REPO_DIR",
       "files": [
         "skills/git-commit/evals/files/make-fixture.sh"
@@ -113,9 +113,9 @@
         "git log main..HEAD shows one commit for cart discounts and one for checkout, and at most one more, for the README",
         "No commit subject starts with fix or chore",
         "The percent-capping change is in the cart discounts commit and the empty-items guard in the checkout commit",
-        "refs/harness/pre-squash/feat/checkout points at the commit that was HEAD before the squash",
+        "refs/yok/pre-squash/feat/checkout points at the commit that was HEAD before the squash",
         "git status shows no tracked change after the run, and README.md's edit is in a commit",
-        "git diff refs/harness/pre-squash/feat/checkout HEAD shows only README.md",
+        "git diff refs/yok/pre-squash/feat/checkout HEAD shows only README.md",
         "The summary says the next push must use --force-with-lease",
         "Runs no git push",
         "Asks the user no question and waits for no approval"
@@ -163,7 +163,7 @@
       "expectations": [
         "git log main..HEAD shows fewer than six commits and none whose subject starts with fix",
         "git ls-tree -r HEAD --name-only lists dist/bundle.js",
-        "git diff refs/harness/pre-squash/feat/checkout HEAD prints nothing",
+        "git diff refs/yok/pre-squash/feat/checkout HEAD prints nothing",
         "Runs git add -f only on dist/bundle.js, through the intent-to-add step",
         "Asks the user no question and waits for no approval"
       ]

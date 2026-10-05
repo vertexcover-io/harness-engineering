@@ -14,10 +14,10 @@ import {
 import { readIfExists, withLock } from "./files.ts";
 import { type ILogger, noopLogger } from "./logger.ts";
 
-export const harnessHome = (env: NodeJS.ProcessEnv = process.env): string =>
-  env.HARNESS_HOME ?? join(homedir(), ".harness");
+export const yokHome = (env: NodeJS.ProcessEnv = process.env): string =>
+  env.YOK_HOME ?? join(homedir(), ".yok");
 
-export const registryPath = (home: string = harnessHome()): string => join(home, "registry.json");
+export const registryPath = (home: string = yokHome()): string => join(home, "registry.json");
 
 export const WorkflowRunSchema = z.strictObject({
   id: NonEmptyStringSchema,
@@ -27,11 +27,11 @@ export const WorkflowRunSchema = z.strictObject({
   cwd: NonEmptyStringSchema,
   // agent sessions of this run, first = the one start run launched
   sessions: z.array(SessionRefSchema),
-  // Set by init; the run's folder is CWD/.harness/NAME.
+  // Set by init; the run's folder is CWD/.yok/NAME.
   name: SlugSchema.nullable(),
   // tmux session the run's agent lives in; null until the server launches it
   terminal: NonEmptyStringSchema.nullable().default(null),
-  // the config file `harness run --config` named; init settles the run's config from it
+  // the config file `yok run --config` named; init settles the run's config from it
   config: AbsolutePathSchema.nullable().default(null),
   // the run's merged tier set, resolved once by the server at launch; init copies it into state
   tiers: ResolvedTiersSchema.nullable(),

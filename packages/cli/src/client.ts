@@ -7,10 +7,10 @@ import {
   resolveLevel,
   WorkflowError,
   type WorkflowPlan,
-} from "@harness/core";
-import { harnessHome, type ILogger, spawnDetached, withLock } from "@harness/sdk";
-import { type ApiError, logPath, socketPath } from "@harness/server";
-import { createHarnessClient, type HarnessClient } from "@harness/server/client";
+} from "@yok/core";
+import { type ILogger, spawnDetached, withLock, yokHome } from "@yok/sdk";
+import { type ApiError, logPath, socketPath } from "@yok/server";
+import { createYokClient, type YokClient } from "@yok/server/client";
 
 const HEALTH_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 100;
@@ -26,7 +26,7 @@ let logger: ILogger | null = null;
 // The CLI's own logger: stderr keeps stdout clean for command output, so `--json` stays parseable.
 export const cliLog = (): ILogger => {
   logger ??= createLogger(
-    { service: "harness-cli" },
+    { service: "yok-cli" },
     {
       destination: { write: (chunk: string) => void process.stderr.write(chunk) },
       level: cliLevel(),
@@ -71,10 +71,10 @@ export const compileOrFail = (path: string, cwd: string): Promise<WorkflowPlan |
 // How a server error reads on the terminal.
 export const apiErrorText = (error: ApiError): string => `${error.code}: ${error.message}`;
 
-export const harnessClient = (home: string = harnessHome()): HarnessClient =>
-  createHarnessClient({ home, log: cliLog() });
+export const yokClient = (home: string = yokHome()): YokClient =>
+  createYokClient({ home, log: cliLog() });
 
-// `[process.execPath, Bun.main]` re-runs the interpreted CLI; a compiled `dist/harness` binary
+// `[process.execPath, Bun.main]` re-runs the interpreted CLI; a compiled `dist/yok` binary
 // re-runs itself with just its own path.
 export const selfCommand = (): readonly string[] =>
   basename(process.execPath) === "bun" ? [process.execPath, Bun.main] : [process.execPath];
@@ -82,7 +82,7 @@ export const selfCommand = (): readonly string[] =>
 const tailOf = (path: string, lines = 20): string =>
   existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").slice(-lines).join("\n") : "";
 
-const waitForHealth = async (client: HarnessClient, deadline: number): Promise<boolean> => {
+const waitForHealth = async (client: YokClient, deadline: number): Promise<boolean> => {
   while (Date.now() < deadline) {
     if ((await client.health()).ok) return true;
     await sleep(POLL_INTERVAL_MS);
@@ -90,10 +90,10 @@ const waitForHealth = async (client: HarnessClient, deadline: number): Promise<b
   return (await client.health()).ok;
 };
 
-// Starts `harness server start` when nothing answers /health. A lock stops two CLIs racing to
+// Starts `yok server start` when nothing answers /health. A lock stops two CLIs racing to
 // start two servers; a stale socket file from a crashed server is removed before spawning.
-export const ensureServer = async (home: string = harnessHome()): Promise<void> => {
-  const client = harnessClient(home);
+export const ensureServer = async (home: string = yokHome()): Promise<void> => {
+  const client = yokClient(home);
   // Fast path: a running server skips the lock. The check inside the lock covers another
   // command having started the server while this one waited for it.
   if ((await client.health()).ok) return;
@@ -115,7 +115,7 @@ export const ensureServer = async (home: string = harnessHome()): Promise<void> 
     }
     const tail = tailOf(logPath(home));
     log.error({ pid, tail }, "server did not answer /health within 5s");
-    throw new Error(`harness server did not start within ${HEALTH_TIMEOUT_MS / 1000}s\n${tail}`);
+    throw new Error(`yok server did not start within ${HEALTH_TIMEOUT_MS / 1000}s\n${tail}`);
   });
 };
 

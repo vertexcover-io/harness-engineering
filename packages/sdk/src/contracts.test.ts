@@ -17,7 +17,7 @@ const validState = {
   lastEventSeq: 0,
   runId: "r-test",
   runName: "add-login",
-  runDir: "/work/.harness/add-login",
+  runDir: "/work/.yok/add-login",
   version: "2.0.0",
   workflow: { name: "feature", path: "workflow.yaml" },
   input: { prompt: "add login" },
@@ -134,7 +134,7 @@ describe("StateSchema", () => {
       "an event handler module that is not absolute",
       { ...validState, eventHandlers: { "custom.a.b": [{ module: "a.ts", handler: "f" }] } },
     ],
-    ["a relative runDir", { ...validState, runDir: ".harness/add-login" }],
+    ["a relative runDir", { ...validState, runDir: ".yok/add-login" }],
     ["a scope other than null", { ...validState, scope: "feature" }],
     ["a null status", { ...validState, status: null }],
     [

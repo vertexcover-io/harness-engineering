@@ -14,7 +14,7 @@ Write code that is correct, predictable, and simple.
 Read these in order, highest priority first. Later sources fill gaps; they never relax a rule an earlier one set:
 
 1. `$ARGUMENTS`, when it is a path to an existing file
-2. `.claude/harness/code-quality-reference.md` in the project root
+2. `.claude/yok/code-quality-reference.md` in the project root
 3. Any standards the repo already documents — `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `STYLE_GUIDE.md`, `docs/` equivalents, or the conventions section of `CLAUDE.md`/`AGENTS.md`
 4. The language reference for the file you are writing — `references/typescript.md` (strict mode, schema-first boundaries, branded types) or `references/python.md` (strict type checking, Pydantic validation, frozen dataclasses). Read it before writing that language
 5. The defaults below, which apply universally

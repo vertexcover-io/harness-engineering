@@ -12,7 +12,7 @@ import {
   type ToolUse,
   type ToolVerdict,
   type TranscriptEntry,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import { parseStdin, preToolUseReply, runNoReplyHook, stopReply } from "../hooks/common.ts";
 import { recordGuard, runPreToolUse } from "../hooks/pre-tool-use.ts";

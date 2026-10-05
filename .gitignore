@@ -6,12 +6,12 @@ docs/*
 !docs/adr/
 code-review-workspace
 dev-docs
-.harness/*
-!.harness/knowledge/
-!.harness/README.md
+.yok/*
+!.yok/knowledge/
+!.yok/README.md
 .env
 .env.local
-.env.harness
+.env.yok
 .env.local
 
 # Python bytecode

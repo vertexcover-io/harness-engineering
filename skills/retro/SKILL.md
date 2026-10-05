@@ -1,11 +1,11 @@
 ---
-name: harness-retro
+name: retro
 description: >
-  Audits a finished harness pipeline run and reports the harness defects it exposed. Reads the
+  Audits a finished yok pipeline run and reports the yok defects it exposed. Reads the
   run's session transcripts, finds what broke, and writes one ranked report for the people who
-  build the harness. Runs as the last stage of every task run, failed runs included. Also use
+  build yok. Runs as the last stage of every task run, failed runs included. Also use
   it whenever the user says "retro", "post-mortem", "what went wrong in that run", "why did
-  the harness stop", or supplies a session transcript path.
+  yok stop", or supplies a session transcript path.
 mode: inline
 allowed-tools: [Agent, Bash, Read, Write, Grep, Glob, Skill]
 tier: deep
@@ -26,14 +26,14 @@ references:
       Step 1 or Step 2 of the audit method needs a query the extractor does not answer.
 ---
 
-# Harness retro
+# Retro
 
-The retro audits the **harness**, not the feature. The feature's code is evidence only: it shows
+The retro audits **yok**, not the feature. The feature's code is evidence only: it shows
 what a stage did or missed.
 
-The retro writes one file, `.harness/RUN/artifacts/retro.md`, where RUN is the run's spec name.
+The retro writes one file, `.yok/RUN/artifacts/retro.md`, where RUN is the run's spec name.
 Standalone, with a transcript path and no run, it writes `retro.md` in the current directory. The
-reader builds the harness and has never heard of the task, the repo, or the product.
+reader builds yok and has never heard of the task, the repo, or the product.
 
 ## Run this in a sub-agent
 
@@ -47,11 +47,11 @@ Dispatch the retro as its own agent, always. Two reasons.
 
 Dispatch one `general-purpose` sub-agent with a self-contained brief. The brief holds:
 
-- RUN, the extraction folder `.harness/RUN/retro`, and the report path. Standalone, the transcript
+- RUN, the extraction folder `.yok/RUN/retro`, and the report path. Standalone, the transcript
   path instead of RUN.
 - The timezone, only when the user named one. Without it the extractor prints times in the
   machine's zone, and the report names that zone.
-- The project repo: the `create-workspace` node's `workspaceDir` in `.harness/RUN/state.json`,
+- The project repo: the `create-workspace` node's `workspaceDir` in `.yok/RUN/state.json`,
   when that node ran.
 - The PR URL: the `pr` node's output in the same file, when that node ran.
 - The absolute path of `references/audit-method.md` in this skill's folder, with the instruction

@@ -1,4 +1,4 @@
-import { HOOK_TIMEOUT_S, type HookRefs, NOTIFIER_HOOK, type Notifier } from "@harness/sdk";
+import { HOOK_TIMEOUT_S, type HookRefs, NOTIFIER_HOOK, type Notifier } from "@yok/sdk";
 import { NOTIFIER_EVENTS, NOTIFIER_MODULE } from "./notifier.ts";
 
 // A workflow's notifier block replaces the config's whole.

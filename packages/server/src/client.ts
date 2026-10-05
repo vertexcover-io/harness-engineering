@@ -1,11 +1,11 @@
-import { harnessHome, type ILogger, noopLogger, type Result } from "@harness/sdk";
+import { type ILogger, noopLogger, type Result, yokHome } from "@yok/sdk";
 import type { ClientResponse } from "hono/client";
 import { hc } from "hono/client";
 import type { SuccessStatusCode } from "hono/utils/http-status";
 import type { AppType } from "./app.ts";
 import { type ApiError, ErrorBodySchema, type StartRunRequest, socketPath } from "./protocol.ts";
 
-export type HarnessClientOptions = Readonly<{ home?: string; log?: ILogger }>;
+export type YokClientOptions = Readonly<{ home?: string; log?: ILogger }>;
 
 // The body a response carries on its 2xx statuses, as the server's routes declare it.
 type SuccessBody<R> =
@@ -65,11 +65,8 @@ const socketFetch = (socket: string, log: ILogger) =>
 
 // One method per API call, named like the CLI command that makes it. Inputs and outputs are
 // typed from the server's routes, so neither side restates the other's schemas.
-export const createHarnessClient = ({
-  home = harnessHome(),
-  log = noopLogger,
-}: HarnessClientOptions = {}) => {
-  const api = hc<AppType>("http://harness", {
+export const createYokClient = ({ home = yokHome(), log = noopLogger }: YokClientOptions = {}) => {
+  const api = hc<AppType>("http://yok", {
     fetch: socketFetch(socketPath(home), log.child({ component: "client" })),
   });
   return {
@@ -79,4 +76,4 @@ export const createHarnessClient = ({
   };
 };
 
-export type HarnessClient = ReturnType<typeof createHarnessClient>;
+export type YokClient = ReturnType<typeof createYokClient>;

@@ -9,38 +9,38 @@ import {
   runDirOf,
   type ToolCall,
   type ToolUse,
-} from "@harness/sdk";
-import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { createRegistry, jsonlEventStore } from "@yok/sdk/internal";
 import { bashAntipatterns, protectedRecordOf, recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 
 describe("protectedRecordOf", () => {
-  const where = { cwd: "/repo", home: "/home/u", harnessHome: "/home/u/.harness" };
+  const where = { cwd: "/repo", home: "/home/u", yokHome: "/home/u/.yok" };
   const kindOf = (path: string) => protectedRecordOf(path, where);
 
   test("SC7 — only the three records are protected", () => {
-    expect(kindOf(".harness/feat-x/state.json")).toMatchObject({
+    expect(kindOf(".yok/feat-x/state.json")).toMatchObject({
       kind: "state",
       runName: "feat-x",
     });
-    expect(kindOf("/abs/.harness/feat-x/event.jsonl")).toMatchObject({
+    expect(kindOf("/abs/.yok/feat-x/event.jsonl")).toMatchObject({
       kind: "events",
       runName: "feat-x",
     });
     for (const path of [
-      "/home/u/.harness/registry.json",
-      "~/.harness/registry.json",
-      "$HOME/.harness/registry.json",
-      "$HARNESS_HOME/registry.json",
+      "/home/u/.yok/registry.json",
+      "~/.yok/registry.json",
+      "$HOME/.yok/registry.json",
+      "$YOK_HOME/registry.json",
       // biome-ignore lint/suspicious/noTemplateCurlyInString: the shell form under test
-      "${HARNESS_HOME}/registry.json",
+      "${YOK_HOME}/registry.json",
     ]) {
-      expect(kindOf(path)).toEqual({ kind: "registry", path: "/home/u/.harness/registry.json" });
+      expect(kindOf(path)).toEqual({ kind: "registry", path: "/home/u/.yok/registry.json" });
     }
     for (const path of [
-      ".harness/feat-x/artifacts/plan.md",
-      ".harness/feat-x/state.json.bak",
+      ".yok/feat-x/artifacts/plan.md",
+      ".yok/feat-x/state.json.bak",
       "docs/state.json",
-      ".harness/registry.json",
+      ".yok/registry.json",
     ]) {
       expect(kindOf(path)).toBeUndefined();
     }
@@ -67,7 +67,7 @@ const setUp = async () => {
   });
   const runDir = runDirOf(cwd, "feat-x");
   await mkdir(runDir, { recursive: true });
-  const deps = { registry, env: { HARNESS_RUN_ID: "r-1", HARNESS_HOME: home }, log: noopLogger };
+  const deps = { registry, env: { YOK_RUN_ID: "r-1", YOK_HOME: home }, log: noopLogger };
   return { cwd, home, runDir, deps };
 };
 
@@ -87,12 +87,12 @@ describe("recordGuard through runPreToolUse", () => {
     const { cwd, runDir, deps } = await setUp();
 
     const verdict = await runPreToolUse(
-      use(cwd, write(".harness/feat-x/state.json")),
+      use(cwd, write(".yok/feat-x/state.json")),
       recordGuard,
       deps,
     );
 
-    const path = join(cwd, ".harness/feat-x/state.json");
+    const path = join(cwd, ".yok/feat-x/state.json");
     expect(verdict).toMatchObject({ kind: "deny", path });
     const message = verdict.kind === "deny" ? verdict.message : "";
     expect(message).toContain("bun run orchestrate next --run feat-x");
@@ -111,11 +111,38 @@ describe("recordGuard through runPreToolUse", () => {
     ]);
   });
 
+  test("SC3: an Edit of .yok/demo/state.json is refused naming the run, and the old run folder is left alone", async () => {
+    const { cwd, deps } = await setUp();
+    const edit = (path: string) =>
+      runPreToolUse(use(cwd, write(path), { toolName: "Edit" }), recordGuard, deps);
+
+    const refused = await edit("/repo/.yok/demo/state.json");
+    // Split so the sweep for the old product name (SC10) does not flag this test.
+    const allowed = await edit(`/repo/.${["har", "ness"].join("")}/demo/state.json`);
+
+    expect(refused.kind).toBe("deny");
+    expect(refused.kind === "deny" ? refused.message : "").toContain("--run demo");
+    expect(allowed).toEqual({ kind: "allow" });
+  });
+
+  test("SC4: both shell spellings of YOK_HOME in a command expand to the yok home, whose registry is refused", async () => {
+    const { cwd, home, deps } = await setUp();
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the shell form under test
+    for (const variable of ["$YOK_HOME", "${YOK_HOME}"]) {
+      const verdict = await runPreToolUse(
+        use(cwd, shell(`rm ${variable}/registry.json`), { toolName: "Bash" }),
+        recordGuard,
+        deps,
+      );
+      expect(verdict).toMatchObject({ kind: "deny", path: join(home, "registry.json") });
+    }
+  });
+
   test("SC9 — a shell command on the registry is refused with init and link-session", async () => {
     const { cwd, deps } = await setUp();
 
     const verdict = await runPreToolUse(
-      use(cwd, shell("rm $HARNESS_HOME/registry.json"), { toolName: "Bash" }),
+      use(cwd, shell("rm $YOK_HOME/registry.json"), { toolName: "Bash" }),
       recordGuard,
       deps,
     );
@@ -129,7 +156,7 @@ describe("recordGuard through runPreToolUse", () => {
     const { cwd, runDir, deps } = await setUp();
 
     const verdict = await runPreToolUse(
-      use(cwd, write(".harness/feat-x/artifacts/plan.md")),
+      use(cwd, write(".yok/feat-x/artifacts/plan.md")),
       recordGuard,
       deps,
     );
@@ -155,7 +182,7 @@ describe("recordGuard through runPreToolUse", () => {
         throw new Error("registry down");
       },
     };
-    const second = await runPreToolUse(use(cwd, write(".harness/feat-x/state.json")), recordGuard, {
+    const second = await runPreToolUse(use(cwd, write(".yok/feat-x/state.json")), recordGuard, {
       ...deps,
       registry,
     });
@@ -166,7 +193,7 @@ describe("recordGuard through runPreToolUse", () => {
     const { cwd, runDir, deps } = await setUp();
 
     const verdict = await runPreToolUse(
-      use(cwd, write(".harness/feat-x/event.jsonl"), { sessionId: "other" }),
+      use(cwd, write(".yok/feat-x/event.jsonl"), { sessionId: "other" }),
       recordGuard,
       deps,
     );

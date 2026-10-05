@@ -16,10 +16,10 @@ packages:
   sdk:
     path: packages/sdk
     runner: bun
-    description: "@harness/sdk: shared primitives (agent, git, process, logger, check)"
+    description: "@yok/sdk: shared primitives (agent, git, process, logger, check)"
     commands:
       bootstrap: bun install
-      typecheck: bun run --filter @harness/sdk typecheck
+      typecheck: bun run --filter @yok/sdk typecheck
       lint: bunx biome check packages/sdk
       testAll: bun test ./packages/sdk
       testFile: bun test {FILE}
@@ -27,10 +27,10 @@ packages:
   core:
     path: packages/core
     runner: bun
-    description: "@harness/core: config, run events, state, workspace and the orchestrate script"
+    description: "@yok/core: config, run events, state, workspace and the orchestrate script"
     commands:
       bootstrap: bun install
-      typecheck: bun run --filter @harness/core typecheck
+      typecheck: bun run --filter @yok/core typecheck
       lint: bunx biome check packages/core
       testAll: bun test ./packages/core
       testFile: bun test {FILE}
@@ -39,10 +39,10 @@ packages:
   server:
     path: packages/server
     runner: bun
-    description: "@harness/server: Hono server and its client"
+    description: "@yok/server: Hono server and its client"
     commands:
       bootstrap: bun install
-      typecheck: bun run --filter @harness/server typecheck
+      typecheck: bun run --filter @yok/server typecheck
       lint: bunx biome check packages/server
       testAll: bun test ./packages/server
       testFile: bun test {FILE}
@@ -50,22 +50,22 @@ packages:
   cli:
     path: packages/cli
     runner: bun
-    description: "@harness/cli: the harness binary"
+    description: "@yok/cli: the yok binary"
     commands:
       bootstrap: bun install
-      typecheck: bun run --filter @harness/cli typecheck
+      typecheck: bun run --filter @yok/cli typecheck
       lint: bunx biome check packages/cli
       testAll: bun test ./packages/cli
       testFile: bun test {FILE}
-      build: bun run --filter @harness/cli build
+      build: bun run --filter @yok/cli build
 
   plugins:
     path: packages/plugins
     runner: bun
-    description: "@harness/plugins: built-in plugins"
+    description: "@yok/plugins: built-in plugins"
     commands:
       bootstrap: bun install
-      typecheck: bun run --filter @harness/plugins typecheck
+      typecheck: bun run --filter @yok/plugins typecheck
       lint: bunx biome check packages/plugins
       testAll: null
       testFile: null

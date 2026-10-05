@@ -6,7 +6,7 @@ import {
   parseJson,
   type Result,
   type TerminalSpec,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import type * as z from "zod";
 
 // An agent's TUI never returns while it is waiting for Enter to submit; the spike found 150ms reliable.

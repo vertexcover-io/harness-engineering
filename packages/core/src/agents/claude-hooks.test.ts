@@ -13,8 +13,8 @@ import {
   type StopFailureInput,
   type ToolCall,
   type ToolUse,
-} from "@harness/sdk";
-import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { createRegistry, jsonlEventStore } from "@yok/sdk/internal";
 import { answerNotice } from "../hooks/post-tool-use.ts";
 import { preToolUseHandlers, questionNotice, recordGuard } from "../hooks/pre-tool-use.ts";
 import { continueWorkflow, stopHandlers } from "../hooks/stop.ts";
@@ -89,7 +89,7 @@ describe("claudeAdapter.stop", () => {
       findRunsByName: async () => [],
       listRuns: async () => [],
     };
-    const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
+    const deps = { registry, env: { YOK_RUN_ID: "r-1" }, log: noopLogger };
 
     expect(await claudeStop?.("not json", deps, continueWorkflow)).toBe("");
     expect(await claudeStop?.("{}", deps, continueWorkflow)).toBe("");
@@ -121,10 +121,10 @@ describe("claudeSettings statusLine", () => {
 });
 
 describe("claudeAdapter.preToolUse", () => {
-  const deps = { registry: NO_RUNS, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
+  const deps = { registry: NO_RUNS, env: { YOK_RUN_ID: "r-1" }, log: noopLogger };
   const stdin = (tool_name: string, tool_input: Record<string, unknown>) =>
     JSON.stringify({ session_id: "s1", tool_name, tool_input, cwd: "/repo" });
-  const TARGET = ".harness/x/state.json";
+  const TARGET = ".yok/x/state.json";
 
   test("SC14 — Claude's tool shapes map to the guard and deny in Claude's format", async () => {
     const inputs = [
@@ -462,7 +462,7 @@ const linkedRun = async () => {
   });
   const runDir = runDirOf(cwd, "feat-x");
   await mkdir(runDir, { recursive: true });
-  const deps = { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
+  const deps = { registry, env: { YOK_RUN_ID: "r-1" }, log: noopLogger };
   return { deps, events: () => jsonlEventStore(runDir).read() };
 };
 

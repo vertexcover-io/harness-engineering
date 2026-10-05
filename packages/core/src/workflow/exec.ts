@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { type JsonValue, type ProcessRecord, stackOf } from "@harness/sdk";
+import { type JsonValue, type ProcessRecord, stackOf } from "@yok/sdk";
 import { callFunction, loadFunction, runScript } from "./executors.ts";
 import {
   type NodeContext,

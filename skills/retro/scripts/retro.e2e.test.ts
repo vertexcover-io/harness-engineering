@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runDirOf } from "@harness/sdk";
+import { runDirOf } from "@yok/sdk";
 
 const SCRIPT = join(import.meta.dir, "retro.ts");
 
@@ -17,7 +17,7 @@ const user = (ts: string, text: string): Row => ({
   message: { role: "user", content: text },
 });
 
-// One event.jsonl line as the harness writes it.
+// One event.jsonl line as yok writes it.
 const event = (seq: number, type: string, ts: string, payload: Row, nodeId?: string): Row => ({
   schemaVersion: 1,
   seq,
@@ -30,8 +30,8 @@ const event = (seq: number, type: string, ts: string, payload: Row, nodeId?: str
   payload,
 });
 
-// A checkout holding .harness/run-x/event.jsonl for one Claude session, and a projects folder
-// holding that session's transcript, as `harness run` and Claude Code leave them.
+// A checkout holding .yok/run-x/event.jsonl for one Claude session, and a projects folder
+// holding that session's transcript, as `yok run` and Claude Code leave them.
 const runFixture = (): Readonly<{ cwd: string; projects: string; transcript: string }> => {
   const cwd = mkdtempSync(join(tmpdir(), "retro-e2e-"));
   const runDir = runDirOf(cwd, "run-x");

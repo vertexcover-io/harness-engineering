@@ -62,7 +62,7 @@ Only on the squash way in. RUN below is the run's spec name.
 
 **Where.** In a run, the input's `workspace` is the create-workspace stage's output: do this
 step and the rest of the workflow once per repo, in its `worktreeDir`. The repo's base is
-`workspace.repositories.NAME.git.startSha` in `.harness/RUN/state.json`. Outside a run, work in
+`workspace.repositories.NAME.git.startSha` in `.yok/RUN/state.json`. Outside a run, work in
 the current checkout, and the base is where the branch left the base branch: the one the user
 names, else origin's default branch:
 
@@ -96,10 +96,10 @@ holds:
 
 ```bash
 PRE_SQUASH=$(git rev-parse HEAD)
-git update-ref "refs/harness/pre-squash/$BRANCH" "$PRE_SQUASH"
+git update-ref "refs/yok/pre-squash/$BRANCH" "$PRE_SQUASH"
 GIT_DIR_ABS=$(git rev-parse --absolute-git-dir)
-LOG="$GIT_DIR_ABS/harness-working-commits.txt"
-DIRTY="$GIT_DIR_ABS/harness-dirty-paths.txt"
+LOG="$GIT_DIR_ABS/yok-working-commits.txt"
+DIRTY="$GIT_DIR_ABS/yok-dirty-paths.txt"
 git log --reverse --format='%h %s%n%b' "$BASE..$PRE_SQUASH" > "$LOG"
 git status --porcelain --no-renames | cut -c4- | sort > "$DIRTY"
 git reset --mixed "$BASE"
@@ -183,7 +183,7 @@ alone, commit what is still dirty without `LOG`, and say so in the summary.
 Then show `git log --oneline -N` and name every file you left out and every choice you were
 unsure of. After a squash, add per repo: the base, how many commits became how many, whether
 the branch was already on the remote, and the undo command
-`git reset --hard refs/harness/pre-squash/BRANCH`.
+`git reset --hard refs/yok/pre-squash/BRANCH`.
 
 ## Commit Message Format
 
@@ -208,7 +208,7 @@ No file lists, no step-by-step account, no test results.
 
 - **Large changesets (50+ files)**: batch by directory/module.
 - **Monorepo**: use package name as scope (`feat(api): ...`, `fix(web): ...`).
-- **Pipeline artifacts under `.harness/`** reach reviewers out-of-band. `.gitignore` ignores `.harness/*` and lets a few paths back in with `!.harness/...` lines; commit only those. Any other `.harness/` path showing as trackable means the ignore rule is missing: restore `.harness/*` in `.gitignore`, commit that fix, and leave the artifact out.
+- **Pipeline artifacts under `.yok/`** reach reviewers out-of-band. `.gitignore` ignores `.yok/*` and lets a few paths back in with `!.yok/...` lines; commit only those. Any other `.yok/` path showing as trackable means the ignore rule is missing: restore `.yok/*` in `.gitignore`, commit that fix, and leave the artifact out.
 
 ## Scope Boundaries
 

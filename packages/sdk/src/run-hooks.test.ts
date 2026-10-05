@@ -16,7 +16,7 @@ const state: State = {
   lastEventSeq: 1,
   runId: "r-test",
   runName: "add-login",
-  runDir: "/work/.harness/add-login",
+  runDir: "/work/.yok/add-login",
   version: "2.0.0",
   workflow: { name: "feature", path: "workflow.yaml" },
   input: {},

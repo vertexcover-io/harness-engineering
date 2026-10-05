@@ -14,7 +14,7 @@ import {
   type Result,
   type RunRequest,
   spawn,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import { claudeSettings } from "./claude-hooks.ts";
 import { limitMenuKeys, readResetWait } from "./claude-limit.ts";

@@ -36,7 +36,7 @@ and pushes belong to the caller; this skill works with a branch that is already 
 RUN below is the run's spec name. The input holds `workspace`, the create-workspace stage's
 output, and `task`, the request or ticket text. Do every step once per repo in the workspace,
 inside its `worktreeDir`, and skip a repo whose branch has no commit past its base. The base
-branch is `workspace.repositories.NAME.git.baseBranch` in `.harness/RUN/state.json`.
+branch is `workspace.repositories.NAME.git.baseBranch` in `.yok/RUN/state.json`.
 
 Push the branch before step 1. The commit stage may have rewritten commits that were already
 pushed, so the push may need force. Force only over commits this checkout is known to hold:
@@ -48,7 +48,7 @@ REMOTE=$(git rev-parse --verify --quiet "origin/$BRANCH")
 ```
 
 - No `REMOTE`, or `REMOTE` is an ancestor of `HEAD`: `git push -u origin "$BRANCH"`.
-- `REMOTE` is an ancestor of `refs/harness/pre-squash/$BRANCH`: the squash rewrote those commits
+- `REMOTE` is an ancestor of `refs/yok/pre-squash/$BRANCH`: the squash rewrote those commits
   and the new history holds their work. Push with a lease on that exact commit, so the push is
   refused if the remote moves after this check:
 
@@ -65,7 +65,7 @@ stop and report it; never fall back to a plain `--force`.
 
 Read the references with `bun run orchestrate skill ref visual-pr.description-template` and
 `bun run orchestrate skill ref visual-pr.visual-guide`, not by path. Save the body as
-`.harness/RUN/artifacts/pr-description.md`, or `pr-description-NAME.md` per repo when the
+`.yok/RUN/artifacts/pr-description.md`, or `pr-description-NAME.md` per repo when the
 workspace has several, and finish the stage with `--artifact pr-description=artifacts/FILE` for
 the first one. The stage's output is the result below for each repo.
 

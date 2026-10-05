@@ -3,14 +3,14 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Raise a PR for the pushed payment retry fix. The branch was reused after its previous PR merged. The change checks for an existing payment before charging again. Local payment tests passed; integration tests were not run. The run artifacts are in .harness/payment-retry.",
+      "prompt": "Raise a PR for the pushed payment retry fix. The branch was reused after its previous PR merged. The change checks for an existing payment before charging again. Local payment tests passed; integration tests were not run. The run artifacts are in .yok/payment-retry.",
       "expected_output": "A new PR explaining duplicate-charge prevention, with a focused behavior outline and accurate validation, plus its confirmed URL and number.",
       "expectations": [
         "Inspects the pushed diff and does not use the merged PR as the update target",
         "Creates a PR with explicit head and base and returns PR_ACTION=created",
         "Uses the description template and a relevant visual outline",
         "Reports integration tests as not run and local tests as local",
-        "Saves the description in the supplied harness directory and reads back the published PR",
+        "Saves the description in the supplied yok directory and reads back the published PR",
         "Does not commit, push, merge, assign reviewers, or change labels"
       ]
     },

@@ -9,7 +9,7 @@ import {
   isInsideDir,
   readComments,
   type WorkflowAgent,
-} from "@harness/core";
+} from "@yok/core";
 import type {
   EmitInput,
   IAgentProvider,
@@ -19,9 +19,9 @@ import type {
   Result,
   State,
   WorkflowRun,
-} from "@harness/sdk";
-import { emitRunEvent, NonEmptyStringSchema, runDirOf } from "@harness/sdk";
-import { CommentDraftSchema, type Registry } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { emitRunEvent, NonEmptyStringSchema, runDirOf } from "@yok/sdk";
+import { CommentDraftSchema, type Registry } from "@yok/sdk/internal";
 import hljs from "highlight.js/lib/common";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -387,7 +387,7 @@ export const openInEditor = ({
 >): Result<null> => {
   const editor = env.VISUAL || env.EDITOR;
   if (!editor)
-    return { ok: false, error: "no editor: set VISUAL or EDITOR where the harness server starts" };
+    return { ok: false, error: "no editor: set VISUAL or EDITOR where the yok server starts" };
   const command = editorCommand({ editor, file, line });
   if (command === null) {
     return {
