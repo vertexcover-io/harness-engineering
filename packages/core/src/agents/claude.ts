@@ -15,7 +15,9 @@ import {
   type RunRequest,
   spawn,
 } from "@yok/sdk";
+import { VERSION } from "@yok/sdk/internal";
 import * as z from "zod";
+import { pluginCheck } from "../plugin.ts";
 import { claudeSettings } from "./claude-hooks.ts";
 import { limitMenuKeys, readResetWait } from "./claude-limit.ts";
 import {
@@ -291,6 +293,7 @@ export const claudeProvider = ({
         fix: ["npm i -g @anthropic-ai/claude-code"],
         run: checkBinary(binary),
       },
+      pluginCheck("claude", binary, VERSION),
     ],
     launch,
     relaunch,

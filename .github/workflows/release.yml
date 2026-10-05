@@ -15,14 +15,16 @@ on:
         type: boolean
         default: false
 
+# Only cut (which pushes the tag) and release (which publishes) get write access below.
+# The other jobs install and run third-party packages, so their token cannot push.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # Runs first, so a manual release never pushes a tag for code that fails its tests.
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,6 +55,17 @@ jobs:
 
       - run: npm run test:hooks
 
+      # The agent e2e tests drive tmux sessions.
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck
+
+      - run: bun run test
+
+      - run: bun run lint
+
   # A tag pushed with GITHUB_TOKEN starts no workflow run, so a manual release cuts its tag
   # here and the release job below publishes it in this same run.
   cut:
@@ -60,6 +73,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
@@ -91,22 +106,159 @@ jobs:
           git push --atomic origin "HEAD:$GITHUB_REF_NAME" "$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-  release:
+  # One macOS job builds all four: bun cross-compiles the Linux files, and a macOS arm64 binary
+  # must be signed to run, which only a macOS host does.
+  build:
     needs: [test, cut]
-    # A pushed tag skips cut; a manual run publishes only once cut has pushed its tag.
+    # A pushed tag skips cut; a manual run builds only once cut has pushed its tag.
     if: ${{ !cancelled() && needs.test.result == 'success' && needs.cut.result != 'failure' }}
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.cut.outputs.tag || github.ref_name }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - run: bun install --frozen-lockfile
+
+      # Every build in build:all keeps --no-compile-autoload-dotenv and --no-compile-autoload-bunfig,
+      # so a project's .env never loads, and its bunfig.toml preload never runs, in the binary's process.
+      - run: bun run --cwd packages/cli build:all
+
+      - name: Write checksums.txt
+        working-directory: packages/cli/dist
+        run: shasum -a 256 yok-darwin-arm64 yok-darwin-x64 yok-linux-x64 yok-linux-arm64 > checksums.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: |
+            packages/cli/dist/yok-*
+            packages/cli/dist/checksums.txt
+
+  # No setup-bun here on purpose: anything that still needs bun on disk fails.
+  binary-e2e:
+    needs: [cut, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       TAG: ${{ needs.cut.outputs.tag || github.ref_name }}
     steps:
-      # A tag like v1.32.0-rc.1 publishes as a pre-release, so it never becomes "Latest".
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.cut.outputs.tag || github.ref_name }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
+
+      - run: chmod +x dist/yok-*
+
+      - run: bash scripts/smoke-binary.sh dist/yok-linux-x64 "${TAG#v}"
+
+  # The binary's own e2e suite. bun runs the test file; the binary under test gets a PATH with no bun.
+  binary-tests:
+    needs: [cut, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.cut.outputs.tag || github.ref_name }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - run: bun install --frozen-lockfile
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
+
+      - run: chmod +x dist/yok-*
+
+      - run: YOK_BIN="$PWD/dist/yok-linux-x64" bun test packages/cli/src/binary.e2e.test.ts
+
+  release:
+    needs: [test, cut, build, binary-e2e, binary-tests]
+    if: ${{ !cancelled() && needs.binary-e2e.result == 'success' && needs.binary-tests.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.cut.outputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
+
+      # An rc publishes as a pre-release; a stable tag takes GitHub's latest link, which install.sh reads.
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           # No checkout in this job, so gh needs to be told which repository to release.
           GH_REPO: ${{ github.repository }}
         run: |
-          flags=""
+          flags="--latest"
           case "$TAG" in *-*) flags="--prerelease" ;; esac
-          gh release create "$TAG" --verify-tag --generate-notes --title "$TAG" $flags
+          gh release create "$TAG" --verify-tag --generate-notes --title "$TAG" $flags dist/*
+
+      - name: Check the release carries all five files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          names=$(gh release view "$TAG" --json assets --jq '[.assets[].name] | sort | join(" ")')
+          test "$names" = "checksums.txt yok-darwin-arm64 yok-darwin-x64 yok-linux-arm64 yok-linux-x64"
+
+      # install.sh with no variables downloads from releases/latest, so a stable tag must be the latest
+      # release and an rc must never be.
+      - name: Check the release's latest and pre-release marks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          pre=$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)
+          case "$TAG" in
+            *-*) test "$pre" = true ;;
+            *) test "$pre" = false && test "$(gh release view --json tagName --jq .tagName)" = "$TAG" ;;
+          esac
+
+  install-smoke:
+    needs: [cut, release]
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      TAG: ${{ needs.cut.outputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.cut.outputs.tag || github.ref_name }}
+
+      - run: YOK_VERSION="$TAG" sh install.sh
+
+      - run: test "$("$HOME/.yok/bin/yok" --version)" = "${TAG#v}"
+
+      # doctor exits 1 on a runner without tmux or an agent, so this checks only that it reports.
+      - run: '{ "$HOME/.yok/bin/yok" doctor --json || true; } | jq -e .'
+
+      # The README's plain curl | sh: with no variables set it must install this stable release.
+      - if: ${{ !contains(env.TAG, '-') }}
+        run: sh install.sh && test "$("$HOME/.yok/bin/yok" --version)" = "${TAG#v}"

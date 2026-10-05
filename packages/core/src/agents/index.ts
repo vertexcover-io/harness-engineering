@@ -21,10 +21,15 @@ export type AgentProviderOptions = Readonly<{
 
 type ProviderBuild = (options: Omit<AgentProviderOptions, "agent">) => IAgentProvider;
 
+export const agentBinary = (
+  agent: WorkflowAgent,
+  env: Readonly<Record<string, string | undefined>>,
+): string =>
+  agent === "claude" ? (env.YOK_CLAUDE_BIN ?? "claude") : (env.YOK_CODEX_BIN ?? "codex");
+
 const providers: Readonly<Record<WorkflowAgent, ProviderBuild>> = {
-  claude: ({ host, env, log }) =>
-    claudeProvider({ host, binary: env.YOK_CLAUDE_BIN ?? "claude", log }),
-  codex: ({ host, env, log }) => codexProvider({ host, binary: env.YOK_CODEX_BIN ?? "codex", log }),
+  claude: ({ host, env, log }) => claudeProvider({ host, binary: agentBinary("claude", env), log }),
+  codex: ({ host, env, log }) => codexProvider({ host, binary: agentBinary("codex", env), log }),
 };
 
 export const agentProvider = ({ agent, ...options }: AgentProviderOptions): IAgentProvider =>

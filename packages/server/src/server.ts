@@ -9,9 +9,8 @@ import {
 } from "@yok/core";
 import type { Check, IAgentProvider, ILogger, ITerminalHost } from "@yok/sdk";
 import { noopLogger, registryPath } from "@yok/sdk";
-import { createRegistry } from "@yok/sdk/internal";
+import { createRegistry, VERSION } from "@yok/sdk/internal";
 import prettyFactory from "pino-pretty";
-import serverPackage from "../package.json";
 import { createApp } from "./app.ts";
 import { resumeDeliveries, stopDeliveries } from "./delivery.ts";
 import { pidPath, socketPath } from "./protocol.ts";
@@ -65,7 +64,7 @@ export const startServer = async ({
 
   const { host, providerFor } = runtime ?? defaultRuntime(log);
   const registry = createRegistry(registryPath(home), log);
-  const version = String(serverPackage.version);
+  const version = VERSION;
   const viewerLog = log.child({ component: "viewer" });
   const viewer = await startViewer({ home, registry, providerFor, host, log: viewerLog });
   void resumeDeliveries({ registry, providerFor, host, log: viewerLog, now: () => new Date() });

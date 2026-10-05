@@ -8,7 +8,8 @@
       "name": "yok",
       "source": {
         "source": "url",
-        "url": "https://github.com/vertexcover-io/harness-engineering.git"
+        "url": "https://github.com/vertexcover-io/harness-engineering.git",
+        "ref": "v0.0.0"
       },
       "policy": {
         "installation": "AVAILABLE",

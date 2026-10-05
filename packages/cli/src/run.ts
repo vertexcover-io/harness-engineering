@@ -30,13 +30,14 @@ const collectInput = (pair: string, acc: Record<string, string>): Record<string,
   return { ...acc, [pair.slice(0, index)]: pair.slice(index + 1) };
 };
 
-// The verdict alone names the failing checks; each one's detail says what to fix.
+// The verdict alone names the failing checks; each one's detail says what went wrong, and its
+// fixes follow it.
 const blockedText = (report: DoctorReport): string =>
   [
     verdict(report),
     ...report.results
       .filter((row) => row.status === "fail")
-      .map((row) => `${row.name}: ${row.detail}`),
+      .flatMap((row) => [`${row.name}: ${row.detail}`, ...row.fix.map((step) => `  fix: ${step}`)]),
   ].join("\n");
 
 export const runCommand = () =>

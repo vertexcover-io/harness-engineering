@@ -2,11 +2,11 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addComments, readComments } from "@yok/core";
+import { addComments, agentBinary, readComments } from "@yok/core";
 import type { WorkflowRun } from "@yok/sdk";
 import { runDirOf } from "@yok/sdk";
 import { claudeOver, EMPTY_BOX, fakeHost } from "./fake-host.ts";
-import { startServer } from "./server.ts";
+import { runtimeChecks, startServer } from "./server.ts";
 
 test("SC26: a restarted server types the comments an earlier one left behind, with no viewer request", async () => {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "yok-srv-")));
@@ -43,4 +43,12 @@ test("SC26: a restarted server types the comments an earlier one left behind, wi
   await server.stop();
   expect(await delivered()).toBe(true);
   expect(calls[0]).toContain("1 new comment");
+});
+
+test("SC128: each agent's runtime checks carry its plugin check, run against the binary agentBinary names", () => {
+  expect(runtimeChecks("claude").map((check) => check.name)).toContain("claude-plugin");
+  expect(runtimeChecks("codex").map((check) => check.name)).toContain("codex-plugin");
+  expect(agentBinary("claude", { YOK_CLAUDE_BIN: "/x/claude" })).toBe("/x/claude");
+  expect(agentBinary("codex", { YOK_CODEX_BIN: "/x/codex" })).toBe("/x/codex");
+  expect([agentBinary("claude", {}), agentBinary("codex", {})]).toEqual(["claude", "codex"]);
 });

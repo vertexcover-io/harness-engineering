@@ -76,6 +76,7 @@ const callRequest = (module: string, handler: string) => ({
           app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
         },
       },
+      tiers: null,
       nodeRuns: {},
       activeSessions: [],
       eventHandlers: {},

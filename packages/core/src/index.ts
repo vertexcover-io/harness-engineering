@@ -1,6 +1,6 @@
 export { type ClaudeProviderOptions, claudeArgs, claudeProvider } from "./agents/claude.ts";
 export { type CodexProviderOptions, codexProvider } from "./agents/codex.ts";
-export { type AgentProviderOptions, agentProvider } from "./agents/index.ts";
+export { type AgentProviderOptions, agentBinary, agentProvider } from "./agents/index.ts";
 export { yokTerminalHost } from "./agents/tmux.ts";
 export {
   addComments,
@@ -41,6 +41,12 @@ export {
 } from "./logging.ts";
 export * as notifierHooks from "./notifier.ts";
 export { orchestrateCommand } from "./orchestrate.ts";
+export {
+  enabledVersions,
+  installPlugin,
+  pluginCheck,
+  YOK_REPO,
+} from "./plugin.ts";
 export { getNodeFacts, loadStartEnv } from "./runs.ts";
 export {
   findPluginSkills,

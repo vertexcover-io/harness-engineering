@@ -4,6 +4,13 @@
 // --env-file=/dev/null: Bun would load the repo's .env itself, hiding what the yok passed.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
+import { VERSION } from "@yok/sdk/internal";
+
+// A compiled yok's plugin check asks for the installed plugins; this one matches the binary.
+if (process.argv[2] === "plugin") {
+  console.log(JSON.stringify([{ id: "yok@yok", version: VERSION, scope: "user", enabled: true }]));
+  process.exit(0);
+}
 
 const out = process.env.FAKE_AGENT_OUT;
 if (!out) throw new Error("FAKE_AGENT_OUT is not set");

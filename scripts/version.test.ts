@@ -1,13 +1,13 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
-import { cpSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { describe, test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { agreedVersion, nextVersion, readVersion, setRef, setVersion } from "./version.ts"
 
-describe("nextVersion", () => {
+describe("SC123: nextVersion", () => {
   test("bumps a segment and zeroes the ones below it", () => {
     assert.equal(nextVersion("1.2.3", "patch"), "1.2.4")
     assert.equal(nextVersion("1.2.3", "minor"), "1.3.0")
@@ -76,7 +76,7 @@ describe("nextVersion", () => {
   })
 })
 
-describe("agreedVersion", () => {
+describe("SC123: agreedVersion", () => {
   test("returns the version every manifest shares", () => {
     assert.equal(agreedVersion(['{"version": "1.30.0"}', '{"version": "1.30.0"}']), "1.30.0")
   })
@@ -97,7 +97,7 @@ describe("agreedVersion", () => {
   })
 })
 
-describe("readVersion", () => {
+describe("SC123: readVersion", () => {
   test("finds the version field", () => {
     assert.equal(readVersion('{"version": "1.30.0"}'), "1.30.0")
   })
@@ -107,7 +107,7 @@ describe("readVersion", () => {
   })
 })
 
-describe("setVersion", () => {
+describe("SC123: setVersion", () => {
   test("rewrites an existing version and leaves the rest of the file alone", () => {
     const source = '{\n  "name": "yok",\n  "version": "1.30.0",\n  "private": true\n}\n'
     assert.equal(
@@ -129,7 +129,7 @@ describe("setVersion", () => {
   })
 })
 
-describe("setRef", () => {
+describe("SC123: setRef", () => {
   test("repins the marketplace to the new tag and leaves the rest of the file alone", () => {
     const source = '{\n  "name": "main",\n  "source": {\n    "repo": "a/b",\n    "ref": "v1.31.1"\n  }\n}\n'
     assert.equal(
@@ -143,28 +143,39 @@ describe("setRef", () => {
   })
 })
 
-const RELEASE_FILES = [
-  "scripts/version.ts",
-  "scripts/check-release-tag.sh",
-  "package.json",
-  ".claude-plugin/plugin.json",
-  ".claude-plugin/marketplace.json",
-  ".claude-plugin/pre-release/marketplace.json",
-]
+const repoDir = fileURLToPath(new URL("..", import.meta.url))
 
-const copyReleaseFiles = (): string => {
-  const repo = fileURLToPath(new URL("..", import.meta.url))
+const PACKAGE_MANIFESTS = readdirSync(join(repoDir, "packages"))
+  .map((name) => `packages/${name}/package.json`)
+  .filter((manifest) => existsSync(join(repoDir, manifest)))
+
+const MANIFESTS = ["package.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", ...PACKAGE_MANIFESTS]
+const MARKETPLACES = [".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"]
+const RELEASE_FILES = ["scripts/version.ts", "scripts/check-release-tag.sh", "bun.lock", ...MANIFESTS, ...MARKETPLACES]
+
+const copyReleaseFiles = (extra: Readonly<Record<string, string>> = {}): string => {
   const copy = mkdtempSync(join(tmpdir(), "release-"))
   RELEASE_FILES.forEach((file) => {
     mkdirSync(dirname(join(copy, file)), { recursive: true })
-    cpSync(join(repo, file), join(copy, file))
+    cpSync(join(repoDir, file), join(copy, file))
+  })
+  Object.entries(extra).forEach(([file, text]) => {
+    mkdirSync(dirname(join(copy, file)), { recursive: true })
+    writeFileSync(join(copy, file), text)
   })
   return copy
 }
 
-const releaseInCopy = (version: string): { readonly copy: string; readonly read: (file: string) => string } => {
-  const copy = copyReleaseFiles()
-  execFileSync(process.execPath, [join(copy, "scripts/version.ts"), version, "--no-git"], { stdio: "pipe" })
+const releaseScript = (copy: string, ...args: string[]): void => {
+  execFileSync(process.execPath, [join(copy, "scripts/version.ts"), ...args], { cwd: copy, stdio: "pipe" })
+}
+
+const releaseInCopy = (
+  version: string,
+  extra: Readonly<Record<string, string>> = {},
+): { readonly copy: string; readonly read: (file: string) => string } => {
+  const copy = copyReleaseFiles(extra)
+  releaseScript(copy, version, "--no-git")
   return { copy, read: (file) => readFileSync(join(copy, file), "utf8") }
 }
 
@@ -173,51 +184,68 @@ const checkTag = (copy: string, tag: string): { readonly code: number; readonly 
   return { code: result.status ?? 1, stderr: result.stderr }
 }
 
+const EXTRA_PACKAGE = { "packages/extra/package.json": '{\n  "name": "@yok/extra",\n  "version": "0.0.0"\n}\n' }
+
 // A release cut on the wrong runtime once silently did nothing. process.execPath is the runtime
 // running this suite, so test:scripts proves the script under Node and test:scripts:bun under Bun.
 describe("the release script, run as a command", () => {
-  test("a stable release rewrites both manifests and repins both marketplaces", () => {
-    const { copy, read } = releaseInCopy("99.99.99")
-    assert.match(read("package.json"), /"version": "99\.99\.99"/)
-    assert.match(read(".claude-plugin/plugin.json"), /"version": "99\.99\.99"/)
-    assert.match(read(".claude-plugin/marketplace.json"), /"ref": "v99\.99\.99"/)
-    assert.match(read(".claude-plugin/pre-release/marketplace.json"), /"ref": "v99\.99\.99"/)
+  test("SC120: a stable release writes its version to every manifest, a new package included, and pins both marketplaces", () => {
+    const { copy, read } = releaseInCopy("99.99.99", EXTRA_PACKAGE)
+    ;[...MANIFESTS, "packages/extra/package.json"].forEach((manifest) =>
+      assert.match(read(manifest), /"version": "99\.99\.99"/, manifest),
+    )
+    assert.ok(PACKAGE_MANIFESTS.includes("packages/sdk/package.json"))
+    assert.ok(PACKAGE_MANIFESTS.includes("packages/server/package.json"))
+    MARKETPLACES.forEach((marketplace) => assert.match(read(marketplace), /"ref": "v99\.99\.99"/, marketplace))
     assert.equal(checkTag(copy, "v99.99.99").code, 0)
   })
 
-  test("a pre-release repins only the pre-release marketplace", () => {
+  test("SC121: a pre-release pins both marketplaces to its own rc tag, the stable Claude one included", () => {
     const { copy, read } = releaseInCopy("99.99.99-rc.1")
-    assert.match(read(".claude-plugin/plugin.json"), /"version": "99\.99\.99-rc\.1"/)
-    assert.match(read(".claude-plugin/pre-release/marketplace.json"), /"ref": "v99\.99\.99-rc\.1"/)
-    assert.doesNotMatch(read(".claude-plugin/marketplace.json"), /99\.99\.99/)
+    MARKETPLACES.forEach((marketplace) => assert.match(read(marketplace), /"ref": "v99\.99\.99-rc\.1"/, marketplace))
     assert.equal(checkTag(copy, "v99.99.99-rc.1").code, 0)
+  })
+
+  test("SC149: a release writes its version into bun.lock's workspace packages and commits the lock", () => {
+    const copy = copyReleaseFiles()
+    const git = (...args: string[]): string =>
+      execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: copy, encoding: "utf8" })
+    git("init", "-q", "-b", "main")
+    git("add", ".")
+    git("commit", "-qm", "init")
+    const rootEntry = (lock: string): string => lock.slice(lock.indexOf('"": {'), lock.indexOf('"packages/'))
+    const rootBefore = rootEntry(readFileSync(join(copy, "bun.lock"), "utf8"))
+
+    releaseScript(copy, "patch")
+
+    const lock = readFileSync(join(copy, "bun.lock"), "utf8")
+    const versions = [...lock.matchAll(/"packages\/[^"]+": \{\n\s+"name": "[^"]+",\n\s+"version": "([^"]*)"/g)]
+    assert.equal(versions.length, PACKAGE_MANIFESTS.length)
+    versions.forEach(([, version]) => assert.equal(version, "0.0.1"))
+    assert.equal(rootEntry(lock), rootBefore)
+    assert.match(git("show", "--name-only", "--format=", "HEAD"), /^bun\.lock$/m)
+    execFileSync("bun", ["install"], { cwd: copy, stdio: "pipe" })
+    assert.equal(readFileSync(join(copy, "bun.lock"), "utf8"), lock)
   })
 })
 
 describe("check-release-tag.sh", () => {
-  test("names every file that disagrees with a stable tag", () => {
+  test("SC122: names every manifest and marketplace that disagrees with the tag", () => {
     const { code, stderr } = checkTag(copyReleaseFiles(), "v99.99.99")
     assert.equal(code, 1)
-    assert.match(stderr, /^package\.json /m)
-    assert.match(stderr, /^\.claude-plugin\/plugin\.json /m)
-    assert.match(stderr, /^\.claude-plugin\/marketplace\.json /m)
-    assert.match(stderr, /^\.claude-plugin\/pre-release\/marketplace\.json /m)
+    ;[...MANIFESTS, ...MARKETPLACES].forEach((file) =>
+      assert.match(stderr, new RegExp(`^${file.replaceAll(".", "\\.")} `, "m"), file),
+    )
   })
 
-  test("never asks the stable marketplace to pin a pre-release", () => {
-    const { copy } = releaseInCopy("99.99.99-rc.1")
-    const { stderr } = checkTag(copy, "v99.99.99-rc.1")
-    assert.doesNotMatch(stderr, /^\.claude-plugin\/marketplace\.json /m)
-  })
-
-  test("refuses to run without a tag", () => {
+  test("SC123: refuses to run without a tag", () => {
     assert.notEqual(checkTag(copyReleaseFiles(), "").code, 0)
   })
 })
 
 // Importing this module must not run the release. If the entrypoint check ever
 // regresses, `node --test` would cut a tag from inside the test suite.
-describe("module entry", () => {
+describe("SC123: module entry", () => {
   test("importing the script does not bump anything", () => {
     assert.equal(process.exitCode ?? 0, 0)
   })

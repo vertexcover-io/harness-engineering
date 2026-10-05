@@ -131,7 +131,7 @@ export const findPluginSkills = (
   if (found !== undefined) return { ok: true, value: found };
   return {
     ok: false,
-    error: `the yok plugin ${version} is not installed; run: yok plugin install --agent claude`,
+    error: `the yok plugin ${version} is not installed; run: yok plugin install --agent claude (or --agent codex)`,
   };
 };
 

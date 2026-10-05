@@ -29,14 +29,58 @@ Run the full pipeline end-to-end, or pick individual skills for smaller tasks.
 
 ## Installation
 
-### Claude Code
-
 ```bash
-claude plugin marketplace add vertexcover-io/harness-engineering
-claude plugin install yok@yok
+curl -fsSL https://raw.githubusercontent.com/vertexcover-io/harness-engineering/v2/install.sh | sh
 ```
 
-This persists across sessions — the plugin loads automatically on startup. It installs the latest stable release, not whatever `main` holds: the marketplace pins a release tag. `claude plugin marketplace update main` then `claude plugin update yok@yok` moves you to the next release.
+This downloads the `yok` binary for your machine, checks it against the release's `checksums.txt`,
+installs it to `~/.yok/bin`, adds that folder to `PATH` in your shell's start file, and installs
+the yok plugin, at the binary's own version, into every agent it finds (`claude`, `codex`).
+Run it again to upgrade. `YOK_VERSION=v0.0.2-rc.1` installs one exact release;
+`YOK_AGENTS=claude` limits the plugin install. No bun or node is needed.
+
+Then, inside a project:
+
+```bash
+yok doctor
+```
+
+The binary and the plugin always move together. `yok update --agent claude` installs the newest
+stable release and moves the plugin to it (`--pre-release` takes release candidates too).
+`yok plugin install --agent claude` puts the plugin back at the binary's version. `yok doctor`
+and `yok run` stop when the two differ. Running agent sessions keep the old skills until
+`/reload-plugins` or a restart.
+
+### Extensions
+
+Verifiers, hooks and schema files in your project import `@yok/sdk` and `zod`; the binary answers
+both imports itself, so they need no install. Any other package an extension imports must be in the
+project's own `node_modules`.
+
+### Running scripts
+
+`yok orchestrate script FILE [args...]` runs a `.ts`, `.js` or `.mjs` file with the same
+`@yok/sdk` and `zod` the binary serves to extensions. `yok orchestrate script --skill NAME FILE`
+reads FILE from that skill's folder: a project folder when NAME has a `/`, else the current run's
+workflow stage of that name, else the installed plugin's skill. If the file exports `main(argv)`,
+yok calls it and a number it returns is the exit code; otherwise the import runs the file's
+top-level code, which finds its arguments in `process.argv.slice(2)`. Inside
+`yok orchestrate script`, `import.meta.main` is `false`, so export `main` or leave the top-level
+code unguarded. Other packages still need the project's own `node_modules`.
+
+### Codex settings
+
+Merge the config snippet into `~/.codex/config.toml` to set subagent concurrency and apply the yok permissions profile:
+
+```bash
+mkdir -p ~/.codex
+cat references/codex-config.toml >> ~/.codex/config.toml
+```
+
+**Codex compatibility notes:**
+- Skills load from `skills/` via `.codex-plugin/plugin.json` after the plugin is installed and enabled.
+- Tool-name differences vs Claude Code are documented in [`references/codex-tools.md`](./references/codex-tools.md) (e.g. `TodoWrite` → `update_plan`, `Edit` → `apply_patch`, `WebSearch` → `web_search`).
+- Named subagent types map to TOML agent files at `.codex/agents/` (`explore.toml`, `plan.toml`, `worker.toml`).
 
 ### Working on yok itself
 
@@ -52,77 +96,20 @@ export PATH="$HOME/.bun/bin:$PATH"
 
 `yok-dev` keeps its runs, server and logs in `~/.yok-dev`, apart from the release's `~/.yok`, so the two never share a server. A run started by one does not show in the other's `yok view`. Set `YOK_HOME` to point either at another folder.
 
-### Codex
+### Releases
 
-Install Yok from a configured Codex marketplace:
-
-```bash
-codex plugin marketplace add vertexcover-io/harness-engineering
-codex plugin add yok --marketplace yok
-```
-
-Restart Codex after installing or updating the marketplace.
-
-If you added Yok before the Codex marketplace catalog existed and see
-`plugin 'yok' was not found in marketplace 'yok'`, remove the old
-snapshot and add it again:
+Releases are cut from the `v2` branch. Actions → Release → Run workflow on `v2`, pick the bump
+(`patch`, `minor`, `major`, or `none` to count up the current release candidate), and tick
+pre-release for an `-rc.N` version. The workflow bumps every manifest, pins both marketplaces to
+the new tag, builds the four binaries, checks the Linux one on a machine without bun, publishes the
+release, and test-installs it on Linux and macOS. Or cut one locally and push it:
 
 ```bash
-codex plugin marketplace remove main
-codex plugin marketplace add vertexcover-io/harness-engineering
-codex plugin add yok --marketplace yok
+bun run release:version patch --pre-release   # 0.0.1 -> 0.0.2-rc.1
+bun run release:version --pre-release         # 0.0.2-rc.1 -> 0.0.2-rc.2
+bun run release:version patch                 # 0.0.2-rc.2 -> 0.0.2
+git push origin v2 --follow-tags
 ```
-
-Merge the config snippet into `~/.codex/config.toml` to set subagent concurrency and apply the yok permissions profile:
-
-```bash
-mkdir -p ~/.codex
-cat references/codex-config.toml >> ~/.codex/config.toml
-```
-
-**Codex compatibility notes:**
-- Skills load from `skills/` via `.codex-plugin/plugin.json` after the plugin is installed and enabled.
-- Tool-name differences vs Claude Code are documented in [`references/codex-tools.md`](./references/codex-tools.md) (e.g. `TodoWrite` → `update_plan`, `Edit` → `apply_patch`, `WebSearch` → `web_search`).
-- Named subagent types map to TOML agent files at `.codex/agents/` (`explore.toml`, `plan.toml`, `worker.toml`).
-
-### Skills-only install (any agent)
-
-The open-standard [`skills` CLI](https://github.com/vercel-labs/skills) installs Yok's skills into any supported agent — it auto-discovers `SKILL.md` and needs no manifest:
-
-```bash
-npx skills add vertexcover-io/harness-engineering --agent claude-code
-npx skills add vertexcover-io/harness-engineering --agent codex
-```
-
-### Pre-releases
-
-Users install the tag a marketplace file on `main` pins, so `main` can run ahead of any release. There are two marketplaces:
-
-| Channel | File | Marketplace | Pins |
-|---|---|---|---|
-| stable | `.claude-plugin/marketplace.json` | `main` | the latest stable tag |
-| pre-release | `.claude-plugin/pre-release/marketplace.json` | `yok-pre-release` | the latest tag of any kind |
-
-**Cut a release** from GitHub: Actions → Release → Run workflow, then pick the bump and tick pre-release if you want one. The workflow bumps the version, repins the marketplaces, pushes the commit and tag to the branch you ran it on, and publishes the GitHub release. Or cut one locally and push it:
-
-```bash
-bun run release:version minor --pre-release   # 1.31.1 -> 1.32.0-rc.1
-bun run release:version --pre-release         # 1.32.0-rc.1 -> 1.32.0-rc.2
-bun run release:version minor                 # 1.32.0-rc.2 -> 1.32.0, the real release
-git push origin main --follow-tags
-```
-
-With npm, put `--` before the arguments: `npm run release:version -- minor --pre-release`. A pre-release repins only the pre-release marketplace; a stable release repins both. Users see a new pin once it reaches `main`.
-
-**Try a pre-release** by hand:
-
-```bash
-claude plugin marketplace add https://raw.githubusercontent.com/vertexcover-io/harness-engineering/main/.claude-plugin/pre-release/marketplace.json
-claude plugin install yok@yok-pre-release
-claude plugin uninstall yok@yok
-```
-
-Keep only one of `yok@yok` and `yok@yok-pre-release` installed: both load at once when both are.
 
 ## Quick Start
 

@@ -16,7 +16,9 @@ import {
   type RunRequest,
   spawn,
 } from "@yok/sdk";
+import { VERSION } from "@yok/sdk/internal";
 import * as z from "zod";
+import { pluginCheck } from "../plugin.ts";
 import { codexHookOverrides } from "./codex-hooks.ts";
 import {
   parseJsonAnswer,
@@ -266,7 +268,10 @@ export const codexProvider = ({
   return {
     type: "codex",
     skillPrefix: "$",
-    checks: [{ name: "codex", fix: ["npm i -g @openai/codex"], run: checkBinary(binary) }],
+    checks: [
+      { name: "codex", fix: ["npm i -g @openai/codex"], run: checkBinary(binary) },
+      pluginCheck("codex", binary, VERSION),
+    ],
     launch,
     relaunch,
     prompt,
