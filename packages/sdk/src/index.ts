@@ -166,7 +166,6 @@ export {
   parseYaml,
   readIfExists,
   readText,
-  runScriptFile,
   withLock,
 } from "./files.ts";
 export { createGit, type IGit, type WorktreeEntry } from "./git.ts";

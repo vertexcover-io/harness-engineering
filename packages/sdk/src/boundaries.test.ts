@@ -140,7 +140,6 @@ const PUBLIC_RUNTIME_NAMES = [
   "requireRun",
   "resolveRun",
   "runDirOf",
-  "runScriptFile",
   "sessionEnv",
   "spawn",
   "spawnDetached",

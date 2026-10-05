@@ -146,9 +146,13 @@ export const importModule = async (
 const isFunction = <F extends AnyFunction>(value: unknown): value is F =>
   typeof value === "function";
 
-// Runs a script file in this process: argv first, so top-level code sees its arguments, then the
-// import, then its `main(args)` when it exports one. A number main returns is the exit code;
-// undefined leaves process.exitCode as the script set it.
+// Runs FILE inside this process, as `bun FILE ARGS` would, but with the modules this process
+// serves (`@yok/sdk`, `zod`) in reach. process.argv is set before the import, because the
+// import is what runs the file's top-level code. If FILE exports `main`, it is then called with
+// ARGS. Returns the exit code main returned, or undefined when there is no number to report:
+// no main, or a main that returns nothing. The caller then keeps whatever process.exitCode the
+// script set itself, so a script that sets it and returns nothing still fails.
+// import.meta.main is false inside FILE, because FILE is imported, not run.
 export const runScriptFile = async (
   file: string,
   args: readonly string[],

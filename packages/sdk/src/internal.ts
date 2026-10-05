@@ -28,7 +28,13 @@ export {
   type StepOutcome,
   type StepReport,
 } from "./events.ts";
-export { importModule, loadFunction, type ModuleError, runLockPath } from "./files.ts";
+export {
+  importModule,
+  loadFunction,
+  type ModuleError,
+  runLockPath,
+  runScriptFile,
+} from "./files.ts";
 export { devPluginDir, isCompiled, prependPath, selfArgv, writeShim } from "./process.ts";
 export {
   createRegistry,
