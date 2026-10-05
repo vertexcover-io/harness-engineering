@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseFrontmatter, runScriptFile } from "./files.ts";
+import { importModule, parseFrontmatter, runScriptFile } from "./files.ts";
 
 describe("parseFrontmatter", () => {
   test("WS25 — a frontmatter block parses to its mapping", () => {
@@ -42,5 +42,15 @@ describe("runScriptFile", () => {
       argv: ["a", "--b"],
       processArgv: [process.execPath, file, "a", "--b"],
     });
+  });
+});
+
+describe("importModule", () => {
+  test("SC86: an unserved yok: name fails to load, naming it, and is never a missing file", async () => {
+    const result = await importModule("yok:nothing");
+
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error.kind).toBe("load-failed");
+    expect(result.error.message).toContain("yok:nothing");
   });
 });

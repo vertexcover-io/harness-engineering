@@ -17,7 +17,7 @@ import { isCompiled } from "./process.ts";
 
 // The release binary and yok-dev never share a home, so they never share a server.
 export const yokHome = (
-  env: NodeJS.ProcessEnv = process.env,
+  env: Readonly<Record<string, string | undefined>> = process.env,
   compiled: boolean = isCompiled,
 ): string => env.YOK_HOME ?? join(homedir(), compiled ? ".yok" : ".yok-dev");
 

@@ -270,6 +270,29 @@ yok/
 - Deny rules for dotfiles, `~/Library`, `/etc`, and other sensitive paths
 - [ccstatusline](https://www.npmjs.com/package/ccstatusline) integration
 
+## Writing extensions
+
+Verifiers, run hooks and schema modules are TypeScript files in your project that import the SDK:
+
+```ts
+import { NonEmptyStringSchema } from "@yok/sdk";
+import { z } from "zod";
+```
+
+You install neither package for yok: the binary answers both imports itself. For your editor
+and `tsc`, yok writes the SDK's type files to `.yok/types/` on every `yok run`, or when
+you run `yok types`. Then add one line to `tsconfig.json`, and zod for its types only:
+
+```jsonc
+{ "compilerOptions": { "paths": { "@yok/sdk": ["./.yok/types/index.d.ts"] } } }
+```
+
+```sh
+bun add -d zod@VERSION   # yok types prints the exact version
+```
+
+The type files need nothing else: no `@types/bun` or `@types/node`.
+
 ## Inspiration
 
 The skills and CLAUDE.md in this repo were heavily inspired by these projects:

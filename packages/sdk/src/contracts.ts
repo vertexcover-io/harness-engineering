@@ -211,10 +211,18 @@ const hookFields = {
   timeoutSeconds: z.int().positive(),
 };
 
+// A module the running program serves itself, such as the built-in notifier: it has no file on
+// disk, so it is a name, never a path.
+export const BuiltinModuleSchema = z.string().regex(/^yok:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+
 // One hook as init froze it: a module's export, or a shell command that reads the hook input as
-// JSON on stdin. Paths are absolute by then.
+// JSON on stdin. Paths are absolute by then; a built-in module keeps its yok: name.
 export const HookRefSchema = z.union([
-  z.strictObject({ ...hookFields, module: AbsolutePathSchema, handler: NonEmptyStringSchema }),
+  z.strictObject({
+    ...hookFields,
+    module: z.union([AbsolutePathSchema, BuiltinModuleSchema]),
+    handler: NonEmptyStringSchema,
+  }),
   z.strictObject({ ...hookFields, command: NonEmptyStringSchema, cwd: AbsolutePathSchema }),
 ]);
 export const HookRefsSchema = z.record(EventTypeSchema, z.array(HookRefSchema));

@@ -234,14 +234,14 @@ describe("bashAntipatterns", () => {
     );
   });
 
-  test("SC20 — a shell write to an ordinary file is refused, whichever agent sent it", async () => {
+  test("SC20, SC88 — a shell write to an ordinary file is refused, whichever agent sent it", async () => {
     const verdict = await run("echo hi > notes.md");
 
     expect(verdict.kind).toBe("deny");
     expect(verdict.kind === "deny" && verdict.message).toContain("Write tool");
   });
 
-  test("SC21 (regression) — the orchestrate done heredoc still passes", async () => {
+  test("SC21, SC88 (regression) — the orchestrate done heredoc still passes", async () => {
     const command = [
       "yok orchestrate done n1 --run feat-x --output - <<'JSON'",
       '{ "ok": true }',
@@ -257,7 +257,7 @@ describe("bashAntipatterns", () => {
     });
   });
 
-  test("SC22 — a script that cannot run lets the call through", async () => {
+  test("SC22, SC88 — a script that cannot run lets the call through", async () => {
     const saved = process.env.PATH;
     // /bin has bash and cat but not jq, which the script needs to read its input.
     process.env.PATH = "/bin";

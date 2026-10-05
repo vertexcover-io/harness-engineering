@@ -267,8 +267,9 @@ export const openNotifier = (type: Notifier["type"], env: Env = process.env): Re
 
 export type OpenNotifier = typeof openNotifier;
 
-// This file, which init freezes as the notifier hook's module.
-export const NOTIFIER_MODULE = import.meta.path;
+// What init freezes as the notifier hook's module: the CLI serves this file under that name, so
+// it loads in a compiled binary, where this file has no path on disk.
+export const NOTIFIER_MODULE = "yok:notifier";
 
 // The files, as real paths, that still sit inside the run's artifacts/. Checked where each points
 // now, not when done accepted it, so one swapped for a symlink to .env, say, is never sent.

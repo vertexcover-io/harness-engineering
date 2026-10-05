@@ -31,7 +31,7 @@ const runLeaf = async (
 ): Promise<NodeRecord> => {
   const node = await compileNode(root, lines);
   if (node.type !== "exec" && node.type !== "wait") throw new Error(`a is a ${node.type} node`);
-  return runStepLeaf(node, input, { cwd: root, path: "nr-a" });
+  return runStepLeaf(node, input, { cwd: root, path: "nr-a", scriptDir: join(root, "scripts") });
 };
 
 const isAlive = (pid: number): boolean => {

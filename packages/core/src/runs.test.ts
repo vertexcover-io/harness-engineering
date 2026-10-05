@@ -16,6 +16,7 @@ import {
   createGit,
   emitRunEvent,
   findRoot,
+  HookRefSchema,
   type ITerminal,
   noopLogger,
   type ResolvedTiers,
@@ -451,6 +452,23 @@ describe("the notifier at init", () => {
 
     if (!result.ok) throw new Error(result.error);
     expect(result.value.state.hooks).toEqual(expected(cwd));
+  });
+
+  test("SC85: a frozen notifier hook names yok:notifier and slack, and HookRefSchema takes only yok: names as built-ins", async () => {
+    const { init } = await notifierRun({ notifier: {} }, "");
+
+    const result = await init("fix-login");
+
+    if (!result.ok) throw new Error(result.error);
+    const refs = Object.values(result.value.state.hooks ?? {}).flat();
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      expect(ref).toMatchObject({ module: "yok:notifier", handler: "slack" });
+      expect(HookRefSchema.safeParse(ref).success).toBe(true);
+    }
+    const hook = { name: "x", blocking: true, timeoutSeconds: 5, handler: "slack" };
+    expect(HookRefSchema.safeParse({ ...hook, module: "notifier.ts" }).success).toBe(false);
+    expect(HookRefSchema.safeParse({ ...hook, module: "other:notifier" }).success).toBe(false);
   });
 
   test("SC213: a notifier with no Slack variables is a failed non-blocking call naming SLACK_BOT_TOKEN, and the run keeps running", async () => {

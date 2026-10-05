@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import {
   FindingSchema,
+  runDirOf,
   VerifierErrorReasonSchema,
   type VerifierInput,
   type VerifierResult,
@@ -78,7 +79,8 @@ const execute = async (
     return parseResult(id, await callFunction(verifier.fn, input, context, timeoutMs));
   }
   const { runtime, script } = verifier;
-  const record = await runScript({ runtime, script, input, cwd, timeoutMs });
+  const scriptDir = join(runDirOf(cwd, input.run), "scripts");
+  const record = await runScript({ runtime, script, input, cwd, scriptDir, timeoutMs });
   if (record.exitCode !== 0) {
     return errorIssue(id, "exit", `exit ${record.exitCode}: ${firstLines(record.stderr)}`);
   }
