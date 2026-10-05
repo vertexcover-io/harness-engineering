@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TicketFetcherOutputSchema, TicketSchema, validateTicketDir } from "./ticket.ts";
+import {
+  assertPublic,
+  TicketFetcherOutputSchema,
+  TicketSchema,
+  validateTicketDir,
+} from "./ticket.ts";
 
 const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
 
@@ -147,5 +152,22 @@ describe("validateTicketDir", () => {
     expect((await validateTicketDir(dir)).ok).toBe(false);
     writeFileSync(join(dir, "ticket.json"), "{not json");
     expect((await validateTicketDir(dir)).ok).toBe(false);
+  });
+});
+
+describe("assertPublic", () => {
+  test.each([
+    ["IPv6 loopback", "https://[::1]/x"],
+    ["IPv4-mapped loopback", "https://[::ffff:127.0.0.1]/x"],
+    ["IPv4-compatible loopback", "https://[::7f00:1]/x"],
+    ["NAT64 loopback", "https://[64:ff9b::7f00:1]/x"],
+    ["unique-local IPv6", "https://[fd00::1]/x"],
+    ["link-local IPv4", "https://169.254.169.254/x"],
+  ])("refuses %s", (_label, url) => {
+    expect(() => assertPublic(new URL(url))).toThrow("a local or private address");
+  });
+
+  test("allows a public IPv6 address", () => {
+    expect(() => assertPublic(new URL("https://[2606:4700::1111]/x"))).not.toThrow();
   });
 });

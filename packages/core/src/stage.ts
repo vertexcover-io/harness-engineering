@@ -200,10 +200,16 @@ type Located = Readonly<
   | { kind: "extend"; skill: string; path: string; extra: string }
 >;
 
-const locateReference = async (
-  options: ResolveOptions & Readonly<{ ref: string }>,
-): Promise<Result<Located>> => {
-  const { skill, ref, root } = options;
+type SkillReferences = Readonly<{
+  name: string;
+  skillDir: string;
+  references: Stage["references"];
+  extensions: NonNullable<Config["extensions"][string]>["references"];
+}>;
+
+// A skill's references with the project's extensions for them, once those extensions fit.
+const loadReferences = async (options: ResolveOptions): Promise<Result<SkillReferences>> => {
+  const { skill, root } = options;
   const skillDir = findStageDir(skill, root, options.skillsDir);
   const loaded = await loadSkill(skillDir);
   if (!loaded.ok) return loaded;
@@ -213,14 +219,41 @@ const locateReference = async (
   const misfit = Object.entries(extensions).find(
     ([key, extension]) => "add" in extension === (own(references, key) !== undefined),
   );
-  if (misfit !== undefined) {
-    const [key, extension] = misfit;
-    const problem =
-      "add" in extension
-        ? `already has reference ${key}; use replace or extend`
-        : `has no reference ${key}`;
-    return { ok: false, error: `extensions.${name}.references.${key}: ${skill} ${problem}` };
-  }
+  if (misfit === undefined) return { ok: true, value: { name, skillDir, references, extensions } };
+  const [key, extension] = misfit;
+  const problem =
+    "add" in extension
+      ? `already has reference ${key}; use replace or extend`
+      : `has no reference ${key}`;
+  return { ok: false, error: `extensions.${name}.references.${key}: ${skill} ${problem}` };
+};
+
+export type ReferenceListing = Readonly<{ name: string; description: string | null }>;
+
+// The skill's own references, then the ones the project adds, so a skill can choose among them.
+export const listReferences = async (
+  options: ResolveOptions,
+): Promise<Result<readonly ReferenceListing[]>> => {
+  const loaded = await loadReferences(options);
+  if (!loaded.ok) return loaded;
+  const { references, extensions } = loaded.value;
+  const shipped = Object.entries(references).map(([name, { description }]) => ({
+    name,
+    description,
+  }));
+  const added = Object.entries(extensions).flatMap(([name, extension]) =>
+    "add" in extension ? [{ name, description: extension.description ?? null }] : [],
+  );
+  return { ok: true, value: [...shipped, ...added] };
+};
+
+const locateReference = async (
+  options: ResolveOptions & Readonly<{ ref: string }>,
+): Promise<Result<Located>> => {
+  const { skill, ref, root } = options;
+  const loaded = await loadReferences(options);
+  if (!loaded.ok) return loaded;
+  const { name, skillDir, references, extensions } = loaded.value;
   const extension = own(extensions, ref);
   if (extension !== undefined && "add" in extension) {
     return { ok: true, value: { kind: "add", skill: name, path: join(root, extension.add) } };

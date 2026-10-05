@@ -51,6 +51,7 @@ import {
 } from "./runs.ts";
 import {
   harnessSkillsDir,
+  listReferences,
   orchestrateArgv,
   resolveExtension,
   resolveReference,
@@ -356,9 +357,16 @@ const skillCommand = () => {
     .command("ref")
     .argument("<SKILL.REF>", "skill name, a dot, and a reference from its frontmatter")
     .option("--path", "print where the reference's file is instead of its text, to run it")
+    .option("--list", "take a skill name and print its references, the project's added ones too")
     .option("--run <name>", RUN_HELP)
     .option("--run-id <id>", RUN_ID_HELP)
     .action((target: string, flags) => {
+      if (flags.list) {
+        return printResolved(target, flags, async (options) => {
+          const listed = await listReferences(options);
+          return listed.ok ? { ok: true, value: `${JSON.stringify(listed.value)}\n` } : listed;
+        });
+      }
       const dot = target.lastIndexOf(".");
       if (dot <= 0 || dot === target.length - 1) {
         return fail(`expected SKILL.REF, such as baseline.script; got "${target}"`);

@@ -1,18 +1,23 @@
 #!/usr/bin/env bun
-import { createHash } from "node:crypto";
-import { open, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { readProjectEnv } from "@harness/sdk";
-import * as z from "zod";
-import { SafeFilenameSchema } from "./ticket.ts";
+import {
+  type Api,
+  type AssetInfo,
+  downloadFile,
+  loadApi,
+  runProviderCli,
+  type Target,
+  targetPath,
+} from "./ticket.ts";
 
-const DEFAULT_API_URL = "https://api.linear.app/graphql";
+const SOURCE = {
+  keyVar: "LINEAR_API_KEY",
+  urlVar: "LINEAR_API_URL",
+  defaultUrl: "https://api.linear.app/graphql",
+};
 // Only the first 50 comments and attachments are read; a longer ticket is cut off there.
 const LIMIT = 50;
 const KEY_PATTERN = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
-
-export type Api = Readonly<{ url: string; key: string; allowedOrigin?: string }>;
 
 type Json = Record<string, unknown>;
 
@@ -30,14 +35,6 @@ export const parseIssueRef = (input: string): string => {
   const fromUrl = URL.parse(trimmed)?.pathname.match(/\/issue\/([A-Za-z][A-Za-z0-9]*-\d+)(?:\/|$)/);
   if (fromUrl?.[1] !== undefined) return fromUrl[1];
   throw new Error(`not a Linear issue key or URL: ${input}`);
-};
-
-export const loadApiKey = async (cwd: string): Promise<string> => {
-  const key = await readProjectEnv(cwd, "LINEAR_API_KEY");
-  if (key === undefined || key === "") {
-    throw new Error("LINEAR_API_KEY is not set; add it to the project .env or the environment");
-  }
-  return key;
 };
 
 const graphql = async (api: Api, query: string, variables: Json): Promise<Json> => {
@@ -94,101 +91,14 @@ export const assetHostAllowed = (api: Api, url: string): boolean => {
   return api.allowedOrigin !== undefined && parsed.origin === api.allowedOrigin;
 };
 
-export type AssetInfo = Readonly<{ path: string; bytes: number; sha256: string; mimeType: string }>;
-export type Target = Readonly<{ dir: string; name: string }>;
-
-const exists = (path: string): Promise<boolean> =>
-  stat(path).then(
-    () => true,
-    () => false,
-  );
-
-const targetPath = async ({ dir, name }: Target): Promise<string> => {
-  const safe = SafeFilenameSchema.safeParse(name);
-  if (!safe.success) {
-    throw new Error(`unsafe file name ${JSON.stringify(name)}: ${z.prettifyError(safe.error)}`);
-  }
-  const path = join(dir, name);
-  if (await exists(path)) throw new Error(`${path} already exists`);
-  return path;
-};
-
-const writeStream = async (body: ReadableStream<Uint8Array>, path: string): Promise<string> => {
-  const file = await open(path, "wx");
-  const hash = createHash("sha256");
-  try {
-    await body.pipeTo(
-      new WritableStream<Uint8Array>({
-        write: async (chunk) => {
-          hash.update(chunk);
-          await file.write(chunk);
-        },
-      }),
-    );
-  } finally {
-    await file.close();
-  }
-  return hash.digest("hex");
-};
-
-const save = async (response: Response, path: string): Promise<AssetInfo> => {
-  if (!response.ok || response.body === null) {
-    throw new Error(`download returned HTTP ${response.status}`);
-  }
-  // A partial file would make the one allowed retry fail with "already exists".
-  const sha256 = await writeStream(response.body, path).catch(async (error: unknown) => {
-    await rm(path, { force: true });
-    throw error;
-  });
-  const mimeType = response.headers.get("content-type")?.split(";")[0]?.trim();
-  return {
-    path,
-    bytes: (await stat(path)).size,
-    sha256,
-    mimeType: mimeType || "application/octet-stream",
-  };
-};
-
-// Literal addresses only; a public name that resolves to a private address is not caught.
-const PRIVATE_IPV4 = /^(?:0|10|127)\.|^169\.254\.|^192\.168\.|^172\.(?:1[6-9]|2\d|3[01])\./;
-const PRIVATE_IPV6 = /^\[(?:::1?|::ffff:.*|f[cd].*|fe[89ab].*)\]$/;
-
-const isPrivateHost = (host: string): boolean =>
-  host === "localhost" ||
-  host.endsWith(".localhost") ||
-  PRIVATE_IPV4.test(host) ||
-  PRIVATE_IPV6.test(host);
-
-const assertPublic = (url: URL): void => {
-  if (url.protocol !== "https:") throw new Error(`refusing ${url}: only https URLs are fetched`);
-  if (isPrivateHost(url.hostname.toLowerCase())) {
-    throw new Error(`refusing ${url}: a local or private address`);
-  }
-};
-
-const MAX_REDIRECTS = 5;
-
-// Each hop is re-checked as a public URL and gets no credentials: only the first request carries them.
-const fetchFollowing = async (
-  url: URL,
-  headers: Record<string, string>,
-  hops = 0,
-): Promise<Response> => {
-  const response = await fetch(url, { headers, redirect: "manual", credentials: "omit" });
-  const location = response.headers.get("location");
-  if (response.status < 300 || response.status >= 400 || location === null) return response;
-  await response.body?.cancel();
-  if (hops >= MAX_REDIRECTS) throw new Error(`refusing ${url}: too many redirects`);
-  const next = URL.parse(location, url.href);
-  if (next === null) throw new Error(`refusing ${url}: invalid redirect to ${location}`);
-  assertPublic(next);
-  return fetchFollowing(next, {}, hops + 1);
-};
-
 export const downloadAsset = async (api: Api, url: string, target: Target): Promise<AssetInfo> => {
   if (!assetHostAllowed(api, url)) throw new Error(`refusing ${url}: not a Linear host`);
-  const path = await targetPath(target);
-  return save(await fetchFollowing(new URL(url), { authorization: api.key }), path);
+  return downloadFile({
+    url: new URL(url),
+    headers: { authorization: api.key },
+    path: await targetPath(target),
+    allowedOrigin: api.allowedOrigin,
+  });
 };
 
 const USAGE = `usage:
@@ -205,15 +115,6 @@ const parseLimit = (value: string | undefined): number => {
   return limit;
 };
 
-const loadApi = async (cwd: string): Promise<Api> => {
-  const override = process.env.LINEAR_API_URL;
-  return {
-    url: override ?? DEFAULT_API_URL,
-    key: await loadApiKey(cwd),
-    ...(override === undefined ? {} : { allowedOrigin: new URL(override).origin }),
-  };
-};
-
 const runCommand = async (cwd: string, argv: readonly string[]): Promise<unknown> => {
   const { positionals, values } = parseArgs({
     args: [...argv],
@@ -222,7 +123,7 @@ const runCommand = async (cwd: string, argv: readonly string[]): Promise<unknown
   });
   const [command, arg] = positionals;
   if (arg === undefined) throw new Error(USAGE);
-  const api = await loadApi(cwd);
+  const api = await loadApi(cwd, SOURCE);
   if (command === "search") return searchIssues(api, arg, parseLimit(values.limit));
   if (command === "issue") return fetchIssue(api, parseIssueRef(arg));
   const { dir, name } = values;
@@ -230,13 +131,4 @@ const runCommand = async (cwd: string, argv: readonly string[]): Promise<unknown
   return downloadAsset(api, arg, { dir, name });
 };
 
-const main = async (argv: readonly string[]): Promise<void> => {
-  try {
-    console.log(JSON.stringify(await runCommand(process.cwd(), argv)));
-  } catch (error) {
-    console.error(error);
-    process.exitCode = 1;
-  }
-};
-
-if (import.meta.main) await main(process.argv.slice(2));
+if (import.meta.main) await runProviderCli(runCommand, process.argv.slice(2));

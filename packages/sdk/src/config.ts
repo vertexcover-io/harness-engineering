@@ -93,11 +93,11 @@ const WorkspaceConfigSchema = z.strictObject({
   teardown: NonEmptyStringSchema.optional(),
 });
 
-// replace uses the project's file instead of the skill's; extend appends it after the skill's; add names a reference the skill does not have.
+// replace uses the project's file instead of the skill's; extend appends it after the skill's; add names a reference the skill does not have, with a description to list it by.
 const ReferenceExtensionSchema = z.union([
   z.strictObject({ replace: RepoPathSchema }),
   z.strictObject({ extend: RepoPathSchema }),
-  z.strictObject({ add: RepoPathSchema }),
+  z.strictObject({ add: RepoPathSchema, description: NonEmptyStringSchema.optional() }),
 ]);
 
 const ExtensionSchema = z.strictObject({

@@ -12,6 +12,7 @@ import {
 import { schemas as qaSchemas } from "../../../skills/qa/scripts/qa.ts";
 import { schemas as ticketSchemas } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import {
+  listReferences,
   loadStage,
   resolveExtension,
   resolveReference,
@@ -291,6 +292,37 @@ describe("resolveReference add", () => {
   });
 });
 
+describe("listReferences", () => {
+  test("lists the skill's references, then the project's added ones, each with its description", async () => {
+    const options = await setupResolve({
+      demo: {
+        references: {
+          notes: { extend: "ext/notes.md" },
+          jira: { add: "ext/notes.md", description: "Jira issues: yourco.atlassian.net URLs." },
+          bare: { add: "ext/notes.md" },
+        },
+      },
+    });
+    expect(await listReferences(options)).toEqual({
+      ok: true,
+      value: [
+        { name: "notes", description: "Notes." },
+        { name: "jira", description: "Jira issues: yourco.atlassian.net URLs." },
+        { name: "bare", description: null },
+      ],
+    });
+  });
+
+  test("an extension that does not fit the skill is an error, as it is for a single reference", async () => {
+    const options = await setupResolve({
+      demo: { references: { notes: { add: "ext/notes.md" } } },
+    });
+    const result = await listReferences(options);
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain("already has reference notes");
+  });
+});
+
 describe("resolveReferencePath", () => {
   test.each([
     [
@@ -389,23 +421,46 @@ describe("the real create-workspace skill", () => {
 describe("the real ticket-fetcher skill", () => {
   const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "ticket-fetcher");
 
-  test("SC24: loads through loadStage with its own schemas, an optional ticket artifact, a linear reference and a provider variable defaulting to linear", async () => {
+  test("SC24: loads through loadStage with its own schemas, an optional ticket artifact, linear and asana references on disk and a provider variable defaulting to auto", async () => {
     const result = await loadStage(skillDir, ticketSchemas);
     if (!result.ok) throw new Error(result.error);
-    expect(result.value.stage.produces).toEqual([{ artifact: "ticket", optional: true }]);
-    expect(result.value.stage.references.linear?.path).toBe("references/linear.md");
-    expect(result.value.stage.variables.provider?.default).toBe("linear");
+    const { produces, references, variables } = result.value.stage;
+    expect(produces).toEqual([{ artifact: "ticket", optional: true }]);
+    expect(references.linear?.path).toBe("references/linear.md");
+    expect(references.asana?.path).toBe("references/asana.md");
+    expect(existsSync(join(skillDir, references.asana?.path ?? ""))).toBe(true);
+    expect(variables.provider?.default).toBe("auto");
   });
 
-  test("SC25: a workflow that uses it compiles", async () => {
+  test("SC27: each provider's description names the URLs it handles, which auto matches against", async () => {
+    const result = await loadStage(skillDir, ticketSchemas);
+    if (!result.ok) throw new Error(result.error);
+    const { references } = result.value.stage;
+    expect(references.linear?.description).toContain("linear.app");
+    expect(references.asana?.description).toContain("app.asana.com");
+  });
+
+  const fetcherWorkflow = async (variables: string): Promise<string> => {
     const dir = await mkdtemp(join(tmpdir(), "ticket-wf-"));
     const path = join(dir, "wf.yaml");
     await writeFile(
       path,
-      'name: t\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n  - id: fetch\n    type: agent\n    stage: ticket-fetcher\n    input:\n      request: "{{ inputs.prompt }}"\n',
+      `name: t\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n  - id: fetch\n    type: agent\n    stage: ticket-fetcher\n${variables}    input:\n      request: "{{ inputs.prompt }}"\n`,
     );
-    const plan = await compileWorkflow(path, { cwd: dir });
+    return path;
+  };
+
+  test("SC25: a workflow that names its provider compiles", async () => {
+    const path = await fetcherWorkflow("    variables: { provider: asana }\n");
+    const plan = await compileWorkflow(path, { cwd: dirname(path) });
     expect(plan.nodes.map((node) => node.id)).toEqual(["fetch"]);
+  });
+
+  test("SC26: a workflow that leaves the provider unset compiles, the stage defaulting it to auto", async () => {
+    const path = await fetcherWorkflow("");
+    const plan = await compileWorkflow(path, { cwd: dirname(path) });
+    const [fetch] = plan.nodes;
+    expect(fetch?.type === "agent" && fetch.stage?.variables.provider?.default).toBe("auto");
   });
 });
 
@@ -426,7 +481,7 @@ describe("the real design skill", () => {
     const path = join(dir, "wf.yaml");
     await writeFile(
       path,
-      'name: t\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n  - id: fetch\n    type: agent\n    stage: ticket-fetcher\n    input:\n      request: "{{ inputs.prompt }}"\n  - id: design\n    type: agent\n    stage: design\n    dependsOn: [fetch]\n    input:\n      task: "{{ nodes.fetch.output.task }}"\n',
+      'name: t\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n  - id: fetch\n    type: agent\n    stage: ticket-fetcher\n    variables: { provider: linear }\n    input:\n      request: "{{ inputs.prompt }}"\n  - id: design\n    type: agent\n    stage: design\n    dependsOn: [fetch]\n    input:\n      task: "{{ nodes.fetch.output.task }}"\n',
     );
     const plan = await compileWorkflow(path, { cwd: dir });
     expect(plan.nodes.map((node) => node.id)).toEqual(["fetch", "design"]);

@@ -22,6 +22,7 @@
     "ticket": "bun skills/ticket-fetcher/scripts/ticket.ts",
     "baseline": "bun skills/baseline/scripts/baseline.ts",
     "linear": "bun skills/ticket-fetcher/scripts/linear.ts",
+    "asana": "bun skills/ticket-fetcher/scripts/asana.ts",
     "release:version": "bun scripts/version.ts",
     "release:version:node": "node scripts/version.ts",
     "test:scripts": "node --test scripts/*.test.ts",
