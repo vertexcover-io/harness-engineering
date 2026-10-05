@@ -1,5 +1,5 @@
 ---
-name: user-flow-regression-tests
+name: regression-tests
 description: Discover regression scenarios for an existing user flow, obtain plan approval through Plannotator, delegate test implementation, require test review, then commit and open a PR. Use when a user wants regression tests for a product flow taken through reviewed delivery.
 ---
 
@@ -119,7 +119,7 @@ Check the subagent's work against the approved plan. Sort out blocked results an
 
 ## 6. Invoke test review
 
-Start a fresh subagent that runs the `harness:regression-test-review` skill. Give it:
+Start a fresh subagent that runs the `harness:regression-review` skill. Give it:
 
 - The absolute path to the approved `plan.md`.
 - The final diff and the files it touches.
