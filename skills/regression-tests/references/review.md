@@ -1,11 +1,6 @@
----
-name: regression-review
-description: Review regression tests written from an approved plan.md and return findings without editing any file. Checks every scenario is covered, each test matches its scenario, the new tests pass and can fail, and they follow the repo's existing test patterns. Use from regression-tests after tests are written, or when asked to review regression tests against a plan.
----
-
 # Regression test review
 
-Purpose of this skill is to check that the new regression tests match the approved plan, pass, and look like the repo's existing tests, and to report every problem found. It runs in a subagent and never edits files. The main agent verifies each finding and makes the fixes.
+Purpose of this review is to check that the new regression tests match the approved plan, pass, and look like the repo's existing tests, and to report every problem found. It runs in a subagent and never edits files. The main agent verifies each finding and makes the fixes.
 
 You need the approved `plan.md`, the diff of the new tests, the scenario-to-test mapping, and the test commands.
 

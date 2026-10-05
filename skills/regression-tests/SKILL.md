@@ -130,8 +130,9 @@ Start two fresh subagents in one message so they run in parallel. Neither edits 
 
 ### Plan review
 
-The first subagent runs the `harness:regression-review` skill. Give it:
+The first subagent follows [review.md](references/review.md). Give it:
 
+- The absolute path to `references/review.md`.
 - The absolute path to the approved `plan.md`.
 - The final diff and the files it touches.
 - Which test covers each scenario.
