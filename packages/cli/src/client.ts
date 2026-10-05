@@ -4,6 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import {
   compileWorkflow,
   createLogger,
+  loadProjectConfig,
   resolveLevel,
   WorkflowError,
   type WorkflowPlan,
@@ -24,7 +25,7 @@ const cliLevel = (): ReturnType<typeof resolveLevel> => {
 };
 
 let logger: ILogger | null = null;
-// The CLI's own logger: stderr keeps stdout clean for command output, so `--json` stays parseable.
+// Logs go to stderr, so `--json` output on stdout stays parseable.
 export const cliLog = (): ILogger => {
   logger ??= createLogger(
     { service: "yok-cli" },
@@ -36,7 +37,6 @@ export const cliLog = (): ILogger => {
   return logger;
 };
 
-// A command's own lines, tagged with which command wrote them.
 export const commandLog = (command: string): ILogger =>
   cliLog().child({ component: "cli", command });
 
@@ -45,8 +45,7 @@ const stackOf = (error: Error): string => {
   return error.cause instanceof Error ? `${own}\nCaused by: ${stackOf(error.cause)}` : own;
 };
 
-// On the terminal an error shows its message; its stack is for debugging, under LOG_LEVEL=debug.
-// The server's own logs keep every stack.
+// The terminal shows only the message; LOG_LEVEL=debug adds the stack.
 export const fail = (problem: string | Error): void => {
   const debug = cliLevel() === "debug" || cliLevel() === "trace";
   const text = typeof problem === "string" ? problem : debug ? stackOf(problem) : problem.message;
@@ -54,7 +53,7 @@ export const fail = (problem: string | Error): void => {
   process.exitCode = 1;
 };
 
-// A compile error reads as CODE: message; the original stays as the cause for LOG_LEVEL=debug.
+// The original error stays as the cause, so LOG_LEVEL=debug still shows its stack.
 const errorText = (error: unknown): string | Error => {
   if (error instanceof WorkflowError) {
     return new Error(`${error.code}: ${error.message}`, { cause: error });
@@ -63,13 +62,24 @@ const errorText = (error: unknown): string | Error => {
 };
 
 // null means the error is already printed and the exit code set.
-export const compileOrFail = (path: string, cwd: string): Promise<WorkflowPlan | null> =>
-  compileWorkflow(path, { cwd }).catch((error: unknown) => {
+export const compileOrFail = async (
+  path: string,
+  cwd: string,
+  configFile: string | null = null,
+): Promise<WorkflowPlan | null> => {
+  const config = await loadProjectConfig(configFile, cwd);
+  if (!config.ok && configFile !== null) {
+    fail(config.error);
+    return null;
+  }
+  // A broken checkout config is the doctor's to report, so compile goes on without it.
+  const options = config.ok ? { cwd, config: config.value } : { cwd };
+  return compileWorkflow(path, options).catch((error: unknown) => {
     fail(errorText(error));
     return null;
   });
+};
 
-// How a server error reads on the terminal.
 export const apiErrorText = (error: ApiError): string => `${error.code}: ${error.message}`;
 
 export const yokClient = (home: string = yokHome()): YokClient =>
@@ -86,12 +96,11 @@ const waitForHealth = async (client: YokClient, deadline: number): Promise<boole
   return (await client.health()).ok;
 };
 
-// Starts `yok server start` when nothing answers /health. A lock stops two CLIs racing to
-// start two servers; a stale socket file from a crashed server is removed before spawning.
+// The lock stops two CLIs from starting two servers. A crashed server can leave a stale socket
+// file, so it is removed first.
 export const ensureServer = async (home: string = yokHome()): Promise<void> => {
   const client = yokClient(home);
-  // Fast path: a running server skips the lock. The check inside the lock covers another
-  // command having started the server while this one waited for it.
+  // Checked again inside the lock: another command may have started the server meanwhile.
   if ((await client.health()).ok) return;
   await withLock(join(home, ".start.lock"), async () => {
     if ((await client.health()).ok) return;
@@ -122,8 +131,7 @@ type OpenDecision = Readonly<{
   platform: NodeJS.Platform;
 }>;
 
-// On Linux without a display (an SSH session), xdg-open can start a text browser inside the
-// user's terminal and take it over.
+// Over SSH with no display, xdg-open can start a text browser that takes over the terminal.
 export const shouldOpenBrowser = ({ noOpen, isTTY, env, platform }: OpenDecision): boolean => {
   if (noOpen || !isTTY) return false;
   if (env.CI !== undefined && env.CI !== "" && env.CI !== "false") return false;

@@ -51,10 +51,8 @@ export { getNodeFacts, loadStartEnv } from "./runs.ts";
 export {
   findPluginSkills,
   findWorkflowPath,
-  type LoadedStage,
-  loadStage,
+  loadProjectConfig,
   orchestrateArgv,
-  type SchemaRegistry,
   type Stage,
   StageSchema,
 } from "./stage.ts";

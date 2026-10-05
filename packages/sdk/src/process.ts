@@ -16,8 +16,7 @@ export const isCompiled = import.meta.path.startsWith("/$bunfs/");
 
 const SelfArgvSchema = z.tuple([NonEmptyStringSchema], NonEmptyStringSchema);
 
-// The argv that starts this program again. The CLI entry sets YOK_SELF when it starts, and
-// every child inherits it, the way cargo passes $CARGO and npm passes $npm_execpath.
+// The argv that starts this program again. The CLI entry sets YOK_SELF and every child inherits it.
 export const selfArgv = (): readonly [string, ...string[]] => {
   const raw = process.env.YOK_SELF;
   if (raw === undefined) {
@@ -76,7 +75,7 @@ const killGroup = (pid: number | undefined): void => {
   }
 };
 
-// Kills every process spawn started that is still running; for a SIGINT/SIGTERM handler.
+// Meant for a SIGINT/SIGTERM handler.
 export const killRunning = (): void => {
   for (const pid of running) killGroup(pid);
   running.clear();
@@ -122,9 +121,8 @@ const collector = (maxBytes: number, onLine: ((line: string) => void) | undefine
   };
 };
 
-// Runs a command in its own process group and waits for it. The group is killed when the
-// command exits, so a background child it left behind cannot hold the output pipes open,
-// and on a timeout or abort, which settle at once with whatever output arrived.
+// The whole process group is killed when the command exits, so a leftover background child cannot
+// hold the output pipes open. A timeout or abort kills it too and settles with the output so far.
 export const spawn = (
   command: string,
   args: readonly string[],
@@ -224,8 +222,7 @@ export const spawnDetached = (
   return child.pid;
 };
 
-// spawn in the Exec shape that checks and git take: rejects when the command runs past the
-// deadline, so a caller can tell a hang from a failed command.
+// Rejects when the command runs past the deadline, so a caller can tell a hang from a failed command.
 export const execWithTimeout =
   (timeoutMs: number): Exec =>
   async (command, args, cwd) => {
@@ -234,8 +231,8 @@ export const execWithTimeout =
     return { code, stdout, stderr };
   };
 
-// The repo a source run comes from, handed to Claude as --plugin-dir so the agent reads the same
-// skills orchestrate does: three folders above the CLI entry YOK_SELF names.
+// When run from source, the repo three folders above the CLI entry. Claude gets it as
+// --plugin-dir, so the agent reads the same skills as the source it runs.
 export const devPluginDir = (): string | undefined => {
   if (isCompiled) return undefined;
   const argv = selfArgv();

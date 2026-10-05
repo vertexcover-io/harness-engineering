@@ -60,10 +60,9 @@ const isAwaitingInput = (screen: string): boolean =>
 export const canTypeComment = (screen: string): boolean =>
   hasEmptyInputBox(screen) && !DIALOG_FOOTER.test(screen);
 
-// On some versions Claude's limit menu has "Upgrade your plan" selected, so a bare Enter would buy
-// an upgrade; this picks "Stop and wait" instead. Returns the screen to judge next: unchanged when
-// no limit menu is open, re-read after answering it, or null for a menu it cannot answer safely.
-// It answers once: a menu still open afterwards leaves no empty input, so nothing gets typed.
+// Some Claude versions preselect "Upgrade your plan" in the limit menu, so a bare Enter would buy
+// an upgrade; this picks "Stop and wait". Returns the screen to judge next, or null for a menu it
+// cannot answer safely. It answers once: a menu still open leaves no empty box, so nothing is typed.
 const answerLimitMenu = async (
   terminal: ITerminal,
   screen: string,
@@ -81,8 +80,8 @@ const limitResetWait = async (terminal: ITerminal, message: string, now: Date) =
   return readResetWait({ message, screen: screen.ok ? screen.value : "", now });
 };
 
-// While busy the empty box is the only proof Enter submits; clearing it would wipe nothing, and a
-// user typing in the box makes it non-empty, so nothing of theirs is overwritten.
+// While busy, the box must already be empty to count as ready, so there is nothing to clear and
+// a user's half-typed text is never overwritten.
 const promptWhenReady = async (
   terminal: ITerminal,
   text: string,

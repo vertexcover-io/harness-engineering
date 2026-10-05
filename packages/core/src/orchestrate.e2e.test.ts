@@ -12,12 +12,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { type JsonValue, runDirOf, type WorkflowRun } from "@yok/sdk";
 import { appendRunEvent, jsonlEventStore, RegistryFileSchema } from "@yok/sdk/internal";
 import { validateTicketDir } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
-import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
+import { DEMO_STAGES, type DemoStage, writeStages } from "./workflow/test-stages.ts";
 
 const CLI = join(import.meta.dir, "..", "..", "cli", "src", "index.ts");
 
@@ -349,6 +349,14 @@ references:
 ---
 `;
 
+const demoSkills = (): string => {
+  const skillsDir = tempDir();
+  mkdirSync(join(skillsDir, "demo"));
+  writeFileSync(join(skillsDir, "demo/SKILL.md"), DEMO_SKILL);
+  writeFileSync(join(skillsDir, "demo/notes.md"), "base text\n");
+  return skillsDir;
+};
+
 const configuredRepo = (config: object): string => {
   const root = tempRepo();
   writeFileSync(join(root, "orchestrate.config.json"), JSON.stringify({ version: 2, ...config }));
@@ -436,6 +444,7 @@ describe("SC26: orchestrate skill", () => {
         demo: { references: { jira: { add: "jira.md", description: "Jira issues." } } },
       },
     });
+    writeFileSync(join(root, "jira.md"), "jira\n");
 
     const run = orchestrate(root, tempDir(), ["skill", "ref", "--list", "demo"], {
       YOK_SKILLS_DIR: skillsDir,
@@ -452,7 +461,7 @@ describe("SC26: orchestrate skill", () => {
     const run = orchestrate(configuredRepo({}), tempDir(), ["skill", "ref", "baseline"]);
 
     expect(run.code).toBe(1);
-    expect(run.stderr).toContain("SKILL.REF");
+    expect(run.stderr).toContain("STAGE.REF");
   });
 
   test("WS33 — skill ref for a skill that does not exist exits 1 naming the skill", () => {
@@ -462,20 +471,58 @@ describe("SC26: orchestrate skill", () => {
     expect(run.stderr).toContain("missing");
   });
 
-  test("skill extension prints the project's extension doc for the skill", () => {
+  test("skill extension prints the project's extension doc for the skill, and nothing without one", () => {
+    const skillsDir = demoSkills();
     const root = configuredRepo({ extensions: { demo: { skill: "demo-extra.md" } } });
     writeFileSync(join(root, "demo-extra.md"), "use pnpm\n");
+    const env = { YOK_SKILLS_DIR: skillsDir };
 
-    const run = orchestrate(root, tempDir(), ["skill", "extension", "demo"]);
+    const run = orchestrate(root, tempDir(), ["skill", "extension", "demo"], env);
+    const none = orchestrate(configuredRepo({}), tempDir(), ["skill", "extension", "demo"], env);
 
     expect(run.code).toBe(0);
     expect(run.stdout).toBe("use pnpm\n");
+    expect([none.code, none.stdout]).toEqual([0, ""]);
+  });
+
+  test("skill ref on a reference the project made a command exits 1 pointing at skill run", () => {
+    const root = configuredRepo({
+      extensions: { demo: { references: { notes: { command: "echo hi" } } } },
+    });
+
+    const run = orchestrate(root, tempDir(), ["skill", "ref", "demo.notes"], {
+      YOK_SKILLS_DIR: demoSkills(),
+    });
+
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("demo.notes is a command; run it with skill run");
+  });
+
+  test("inside a run, skill ref review.x reads the project skill the run's workflow names review", () => {
+    const { repo, home } = startedRun(
+      "name: r\nnodes:\n  - { id: check, type: agent, stage: stages/review, input: {} }\n",
+      undefined,
+      {},
+      {
+        stages: { review: { references: "{ x: { path: x.md, description: X. } }" } },
+        files: { "stages/review/x.md": "review x\n" },
+      },
+    );
+
+    const run = orchestrate(repo, home, ["skill", "ref", "review.x"], {
+      YOK_RUN_ID: "r-1",
+      YOK_SKILLS_DIR: tempDir(),
+    });
+
+    expect(run.stderr).toBe("");
+    expect(run.stdout).toBe("review x\n");
   });
 });
 
 // A run named feat-x in a fresh repo, started from SOURCE the way `yok run` + init leave it.
-// init compiles the workflow, so env must name the skills folder its stages come from and files
-// holds what else it reads (schema modules, included workflows), by path in the repo.
+// init compiles the workflow, so env must name the skills folder its stages come from, stages
+// holds the project stages it names under stages/ and files what else it reads (schema modules,
+// included workflows, extensions), by path in the repo.
 const startedRun = (
   source: string,
   config?: object,
@@ -483,13 +530,22 @@ const startedRun = (
   {
     env = { YOK_SKILLS_DIR: STAGE_SKILLS },
     files = {},
-  }: Readonly<{ env?: Env; files?: Readonly<Record<string, string>> }> = {},
+    stages = {},
+  }: Readonly<{
+    env?: Env;
+    files?: Readonly<Record<string, string>>;
+    stages?: Readonly<Record<string, DemoStage>>;
+  }> = {},
 ): Readonly<{ repo: string; home: string }> => {
   const repo = config === undefined ? tempRepo() : configuredRepo(config);
   const home = tempDir();
   const workflowPath = join(repo, "steps.yaml");
   writeFileSync(workflowPath, source);
-  for (const [path, text] of Object.entries(files)) writeFileSync(join(repo, path), text);
+  if (Object.keys(stages).length > 0) writeStages(join(repo, "stages"), stages);
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(repo, path)), { recursive: true });
+    writeFileSync(join(repo, path), text);
+  }
   writeRegistry(home, [savedRun(repo, { workflowPath, ...overrides })]);
   const init = orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"], env);
   if (init.code !== 0) throw new Error(init.stderr);
@@ -540,6 +596,7 @@ const worktreeRun = (runOverrides: Partial<WorkflowRun> = {}) => {
   );
   mkdirSync(join(worktree, "docs"));
   writeFileSync(join(worktree, "docs/demo.md"), "worktree-only reference\n");
+  writeFileSync(join(worktree, "docs/producer-ext.md"), "producer rules\n");
   const home = tempDir();
   const workflowPath = join(worktree, "stages.yaml");
   writeFileSync(workflowPath, STAGES_WORKFLOW);
@@ -584,6 +641,7 @@ describe("SC26: a run started in a linked worktree", () => {
       file,
       JSON.stringify({ version: 2, extensions: { producer: { skill: "producer-ext.md" } } }),
     );
+    writeFileSync(join(elsewhere, "producer-ext.md"), "elsewhere rules\n");
     const { main, home, env } = worktreeRun({ config: file });
     const session = { ...env, YOK_RUN_ID: "r-1" };
 
@@ -1209,20 +1267,24 @@ describe("SC26: stage verifiers", () => {
 });
 
 describe("SC26: orchestrate next and done with stages", () => {
-  const stageRun = (produces?: string, config?: object) => {
+  const stageRun = (
+    produces?: string,
+    config?: object,
+    files: Readonly<Record<string, string>> = {},
+  ) => {
     const skills = stageSkills(produces);
-    const run = startedRun(STAGES_WORKFLOW, config);
+    const run = startedRun(STAGES_WORKFLOW, config, {}, { files });
     const env = { YOK_SKILLS_DIR: skills };
     const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args, env);
     return { ...run, skills, step };
   };
 
   test("IW17, SC23 — next replies with the stage's skill path, the project's extension path, its input and a done command", () => {
-    const { repo, skills, step } = stageRun(undefined, {
-      extensions: { producer: { skill: "docs/producer-ext.md" } },
-    });
-    mkdirSync(join(repo, "docs"));
-    writeFileSync(join(repo, "docs/producer-ext.md"), "use short names\n");
+    const { repo, skills, step } = stageRun(
+      undefined,
+      { extensions: { producer: { skill: "docs/producer-ext.md" } } },
+      { "docs/producer-ext.md": "use short names\n" },
+    );
     const next = step(["next", "--run", "feat-x"]);
     expect(next.code).toBe(0);
     const reply = JSON.parse(next.stdout);

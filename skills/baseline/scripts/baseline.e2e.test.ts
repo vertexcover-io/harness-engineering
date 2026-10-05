@@ -14,15 +14,7 @@ import { runDirOf, type WorkflowRun } from "@yok/sdk";
 import { createState } from "@yok/sdk/internal";
 
 const CLI = join(import.meta.dir, "../../../packages/cli/src/index.ts");
-const BASELINE = [
-  "--no-env-file",
-  CLI,
-  "orchestrate",
-  "script",
-  "--skill",
-  "baseline",
-  "scripts/baseline.ts",
-];
+const BASELINE = ["--no-env-file", CLI, "orchestrate", "skill", "run", "baseline.script"];
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "baseline-e2e-")));
 
@@ -99,7 +91,7 @@ const waitFor = async (condition: () => boolean, timeoutMs = 10_000): Promise<vo
   }
 };
 
-describe("SC48: yok orchestrate script --skill baseline scripts/baseline.ts with no extension, as baseline.ts did", () => {
+describe("SC48: yok orchestrate skill run baseline.script with no extension, as baseline.ts did", () => {
   test("runs the configured script and writes artifacts/baseline.json", () => {
     const { repo, home } = baselineRun(`echo '{"tests":3}'`);
 

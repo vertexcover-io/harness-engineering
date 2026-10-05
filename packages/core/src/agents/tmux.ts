@@ -21,8 +21,8 @@ import {
 } from "@yok/sdk";
 import { isCompiled } from "@yok/sdk/internal";
 
-// Bundled as text, so a compiled yok binary carries it too.
 import { shellQuote } from "./common.ts";
+// Bundled as text, so a compiled yok binary carries it too.
 import TMUX_CONFIG from "./tmux.conf" with { type: "text" };
 
 const MIN_VERSION = [3, 3] as const;

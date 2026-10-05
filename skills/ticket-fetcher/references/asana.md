@@ -1,7 +1,7 @@
 # Asana reference
 
 Fetch one Asana task into the ticket folder you were given, then write `ticket.json`.
-`COMMAND` is `yok orchestrate script --skill ticket-fetcher scripts/asana.ts`. Its `task` and
+`COMMAND ARGS` below means running this skill's `asana-api` script with ARGS. Its `task` and
 `asset` subcommands read `ASANA_API_KEY` (a personal access token) from the project `.env`, then
 the environment. It prints JSON on stdout. On failure it exits 1 with a message on stderr; report
 that message and stop.

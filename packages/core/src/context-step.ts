@@ -247,11 +247,9 @@ const findStartedAction = async (runDir: string, nodeRunId: string) => {
   return started?.success ? started.data.payload : undefined;
 };
 
-// Claude runs its SessionStart hooks once a new session has started or a compact has finished,
-// and before it handles its next prompt: the moment an open context node's action is done. It
-// counts only when it matches the action the helper began. After a compact, the session gets the
-// resume prompt here; typed while Claude runs its hooks, it is queued and sent when they finish.
-// A new session needs none: it was launched with the resume prompt.
+// Claude runs SessionStart hooks after a new session starts or a compact ends, before its next
+// prompt, so that is when the action is done; it counts only if it matches the action the helper
+// began. After a compact the resume prompt is typed here, and Claude queues it until its hooks end.
 export const completeContextOnSessionStart = async (
   run: RunRef,
   sessionId: string,

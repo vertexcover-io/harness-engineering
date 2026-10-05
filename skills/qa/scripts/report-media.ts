@@ -5,8 +5,7 @@
 // With --inline it instead writes every file the finished report names into the report itself,
 // as data URIs in a `report-media` island the template resolves paths through, so the one html
 // file carries its own videos and frames wherever it is moved.
-// Usage: yok orchestrate script --skill qa scripts/report-media.ts VERIFICATION_DIR
-//        yok orchestrate script --skill qa scripts/report-media.ts --inline VERIFICATION_DIR
+// Usage: report-media.ts [--inline] VERIFICATION_DIR
 // Building prints one line per scenario — "ok NN_<slug>.mp4 crop=<window>", or
 // "FAILED NN_<slug> — <reason>" — and writes each NN_<slug>.mp4 beside the report.
 // Inlining prints one line per file — "ok <path> <bytes>B", or "FAILED <path> — <reason>" — and
@@ -148,14 +147,10 @@ function cropSize(cropWindow: string): FrameSize | null {
   return width > 0 && height > 0 ? { width, height } : null;
 }
 
-// cropdetect rounds the window it reports down to a multiple of 16 (its `round` default) and the
-// scaler rounds to an even size first, so a window can read up to 18px short of the real picture.
-// Those 18px cost little aspect on a 1280-wide window and a lot on the 128-wide one a tall phone
-// frame produces, so the tolerance scales with the window instead of being flat. Measured here:
-// an honest 390x2000 frame is 0.017 off its source aspect (8.8% of it) and a stretched 1280x800
-// one 0.178 off (11% of it), so no flat percentage separates them; and a wider-than-16:9 source
-// quantises on height instead, which no flat absolute covers. Honest builds use at most 70% of
-// this budget (390x844 -> crop=320:720 is 0.0176 against 0.0250), stretches overshoot it 4x up.
+// cropdetect and the scaler round the window down, so it can read up to 18px short of the real
+// picture. That costs a narrow phone window far more aspect than a wide one, so the tolerance
+// scales with the window: no flat percentage separates an honest 390x2000 frame (0.017 off) from
+// a stretched 1280x800 one (0.178 off). Honest builds use at most 70% of it; stretches go 4x over.
 const QUANTISATION_PX = 18;
 
 const aspectTolerance = (crop: FrameSize): number =>
@@ -260,7 +255,6 @@ function firstFrameSize(screenshotsDir: string, prefix: string): FrameSize | nul
   return first === undefined ? null : pngSize(join(screenshotsDir, first));
 }
 
-/** Builds and checks every scenario in the directory, in prefix order. */
 export function buildScenarios(dir: string): readonly ScenarioResult[] {
   const screenshots = join(dir, "screenshots");
   return scenarioPrefixes(screenshots).map((prefix) => {
@@ -329,7 +323,6 @@ export function withMediaIsland(html: string, media: Readonly<Record<string, str
   return html.replace(MEDIA_ISLAND, "").replace(DATA_ISLAND, (dataIsland) => island + dataIsland);
 }
 
-/** Whether a report-relative path stays inside the verification directory. */
 const isInside = (dir: string, path: string): boolean => {
   const fromDir = relative(dir, resolve(dir, path));
   return !fromDir.startsWith("..") && !isAbsolute(fromDir);
@@ -354,7 +347,7 @@ function inlineFile(dir: string, path: string): InlineResult {
   }
 }
 
-/** Inlines every file the report names, in the order it names them. Null when the island is unreadable. */
+/** Null when the report's data island is unreadable. */
 export function inlineMedia(dir: string): readonly InlineResult[] | null {
   const reportPath = join(dir, REPORT_NAME);
   const html = readFileSync(reportPath, "utf8");
@@ -411,9 +404,7 @@ export function main(args: readonly string[]): number {
   const inline = args[0] === "--inline";
   const target = inline ? args[1] : args[0];
   if (target === undefined || args.length > (inline ? 2 : 1)) {
-    console.error(
-      "usage: yok orchestrate script --skill qa scripts/report-media.ts [--inline] VERIFICATION_DIR",
-    );
+    console.error("usage: report-media.ts [--inline] VERIFICATION_DIR");
     return 2;
   }
 

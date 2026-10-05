@@ -255,7 +255,7 @@ const precheckAdd = async (
   }
   if (!existsSync(location.workspaceDir)) {
     return refused(
-      `no workspace at ${location.workspaceDir}; create it with yok orchestrate script --skill create-workspace scripts/workspace.ts create`,
+      `no workspace at ${location.workspaceDir}; create it first with the workspace script's create`,
     );
   }
   const planned = planMulti(location, options, "add");
@@ -393,8 +393,7 @@ const createOne = async (
 const logFor = (options: WorkspaceOptions): ILogger =>
   (options.log ?? noopLogger).child({ component: "workspace", branch: options.branch });
 
-// Records one event in the run; resolves to why it was not recorded, or undefined when it was
-// or when there is no run to record into.
+// Resolves to why the event was not recorded; undefined when it was, or when there is no run.
 const emit = async (
   run: RunRef | undefined,
   type: string,
@@ -638,10 +637,10 @@ export const workspaceInfo = (config: Config): WorkspaceInfo => {
   return { layout: config.workspace.layout, packages };
 };
 
-// stdout carries only the report, so failures are logged to stderr, at warn unless LOG_LEVEL says otherwise.
+// Logs go to stderr, so stdout carries only the report.
 const log = jsonLogger({ level: LogLevelSchema.catch("warn").parse(process.env.LOG_LEVEL) });
 
-const USAGE = `usage: yok orchestrate script --skill create-workspace scripts/workspace.ts COMMAND [flags]
+const USAGE = `usage: workspace.ts COMMAND [flags]
 
 Create, inspect, add to and remove the run's workspace: a git worktree per repo, with the
 project's setup and teardown.
@@ -739,8 +738,6 @@ const splitList = (value: string): string[] =>
 
 type Target = Readonly<{ run: RunRef | undefined; root: string; config: Config }>;
 
-// The run the flags or $YOK_RUN_ID name, if any; its config, else the current checkout's; and
-// the main checkout, where worktrees go.
 const findTarget = async (flags: Flags): Promise<Result<Target>> => {
   const run = await pickRun({
     registry: createRegistryReader(registryPath()),

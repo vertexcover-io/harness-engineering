@@ -1,27 +1,19 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { type ConfigInput, ConfigSchema } from "@yok/sdk";
 import { devPluginDir, VERSION } from "@yok/sdk/internal";
-import * as z from "zod";
-import {
-  CreateWorkspaceInputSchema,
-  CreateWorkspaceOutputSchema,
-} from "../../../skills/create-workspace/scripts/workspace.ts";
-import { schemas as qaSchemas } from "../../../skills/qa/scripts/qa.ts";
-import { schemas as ticketSchemas } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import { claudeSettings } from "./agents/claude-hooks.ts";
 import {
   findPluginSkills,
+  findReference,
+  findSkill,
   findWorkflowPath,
-  listReferences,
-  loadStage,
+  loadSkill,
   orchestrateArgv,
-  resolveExtension,
-  resolveReference,
-  resolveReferencePath,
+  type SkillScope,
   StageSchema,
   yokSkillsDir,
 } from "./stage.ts";
@@ -146,11 +138,6 @@ describe("StageSchema", () => {
   });
 });
 
-const registry = {
-  "planning.input.v1": z.object({ task: z.string() }),
-  "planning.output.v1": z.object({ summary: z.string() }),
-};
-
 const validFrontmatter = `name: planning
 description: Turn a selected task into an implementation plan.
 mode: subagent
@@ -199,52 +186,61 @@ const writeSkill = async (
   return skillDir;
 };
 
-describe("loadStage", () => {
-  test("WS26 — a skill folder whose SKILL.md names it loads with its schemas resolved", async () => {
-    const result = await loadStage(await writeSkill("planning", validFrontmatter), registry);
-    if (!result.ok) throw new Error(result.error);
-    expect(result.value.stage.name).toBe("planning");
-    expect(result.value.stage.references).toEqual({
-      rubric: { path: "references/rubric.md", description: "How to grade a plan." },
-    });
-    expect(result.value.stage.produces).toEqual([{ artifact: "plan", optional: false }]);
-    expect(result.value.inputSchema).toBe(registry["planning.input.v1"]);
-    expect(result.value.outputSchema).toBe(registry["planning.output.v1"]);
-  });
+const projectScope = (
+  root: string,
+  extensions: ConfigInput["extensions"] = {},
+  run?: SkillScope["run"],
+): SkillScope => ({
+  root,
+  config: { config: ConfigSchema.parse({ version: 2, extensions }), path: null, root },
+  ...(run === undefined ? {} : { run }),
+});
 
-  test("a stage with no inputs or outputs takes any JSON in and plain text out", async () => {
-    const bare = validFrontmatter.replace(/inputs:\n.*\n.*\noutputs:\n.*\n.*\n.*\n/, "");
-    const result = await loadStage(await writeSkill("planning", bare), registry);
+// A skill folder is a path with a "/", so an absolute one loads with no skills folder involved.
+const loadAt = (skillDir: string) => loadSkill(skillDir, projectScope(dir));
+
+describe("loadSkill", () => {
+  test("WS26 — a skill folder whose SKILL.md names it loads with its frontmatter and references", async () => {
+    const skillDir = await writeSkill("planning", validFrontmatter);
+    const result = await loadAt(skillDir);
     if (!result.ok) throw new Error(result.error);
-    expect(result.value.inputSchema.safeParse({ any: ["thing"] }).success).toBe(true);
-    expect(result.value.outputSchema.safeParse("plain text").success).toBe(true);
+    expect(result.value.name).toBe("planning");
+    expect(result.value.dir).toBe(skillDir);
+    expect(result.value.frontmatter.produces).toEqual([{ artifact: "plan", optional: false }]);
+    expect(result.value.references).toEqual({
+      rubric: {
+        kind: "file",
+        path: join(skillDir, "references/rubric.md"),
+        description: "How to grade a plan.",
+      },
+    });
+    expect(result.value.extensionDoc).toBeUndefined();
   });
 
   test("WS27 — a folder named planning holding name: plan is rejected, naming both", async () => {
     const frontmatter = validFrontmatter.replace("name: planning", "name: plan");
-    const result = await loadStage(await writeSkill("planning", frontmatter), registry);
+    const result = await loadAt(await writeSkill("planning", frontmatter));
     if (result.ok) throw new Error("expected a failure");
     expect(result.error).toContain('"plan"');
     expect(result.error).toContain("planning");
   });
 
   test("WS27 — a listed reference whose file is missing is rejected, naming the path", async () => {
-    const result = await loadStage(await writeSkill("planning", validFrontmatter, {}), registry);
+    const result = await loadAt(await writeSkill("planning", validFrontmatter, {}));
     if (result.ok) throw new Error("expected a failure");
     expect(result.error).toContain("references/rubric.md");
   });
 
   test("a SKILL.md with no tier loads with no tier, so its stage runs on the node's or the run's", async () => {
     const frontmatter = validFrontmatter.replace("tier: balanced\n", "");
-    const result = await loadStage(await writeSkill("planning", frontmatter), registry);
+    const result = await loadAt(await writeSkill("planning", frontmatter));
     if (!result.ok) throw new Error(result.error);
-    expect(result.value.stage.tier).toBeUndefined();
+    expect(result.value.frontmatter.tier).toBeUndefined();
   });
 
   test("WS28 — scopes: [] loads", async () => {
     const frontmatter = validFrontmatter.replace("scopes: [feature]", "scopes: []");
-    const result = await loadStage(await writeSkill("planning", frontmatter), registry);
-    expect(result.ok).toBe(true);
+    expect((await loadAt(await writeSkill("planning", frontmatter))).ok).toBe(true);
   });
 
   test.each([
@@ -271,16 +267,6 @@ describe("loadStage", () => {
       /references/,
     ],
     [
-      "an unknown input schema key",
-      validFrontmatter.replace("planning.input.v1", "planning.input.v9"),
-      /planning\.input\.v9/,
-    ],
-    [
-      "an unknown output schema key",
-      validFrontmatter.replace("planning.output.v1", "planning.output.v2"),
-      /planning\.output\.v2/,
-    ],
-    [
       "a model, since a stage asks for a model only through its tier",
       validFrontmatter.replace("tier: balanced", "tier: balanced\nmodel: opus"),
       /model/,
@@ -292,14 +278,15 @@ describe("loadStage", () => {
     ],
     ["malformed YAML", "name: [unclosed\n", /YAML/i],
   ])("rejects %s", async (_label, frontmatter, message) => {
-    const result = await loadStage(await writeSkill("planning", frontmatter), registry);
+    const result = await loadAt(await writeSkill("planning", frontmatter));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(message);
   });
 
-  test("a missing skill folder returns an error naming the path instead of throwing", async () => {
-    const skillDir = join(dir, "missing");
-    expect(await loadStage(skillDir, registry)).toEqual({
+  test("a folder with no SKILL.md returns an error naming the path instead of throwing", async () => {
+    const skillDir = join(dir, "empty");
+    await mkdir(skillDir);
+    expect(await loadAt(skillDir)).toEqual({
       ok: false,
       error: expect.stringContaining(join(skillDir, "SKILL.md")),
     });
@@ -313,7 +300,8 @@ const demoFrontmatter = validFrontmatter
     "references:\n  notes:\n    path: notes.md\n    description: Notes.\n",
   );
 
-const setupResolve = async (extensions: ConfigInput["extensions"]) => {
+// The demo skill in a skills folder, and a project at root whose config extends it.
+const setupDemo = async (extensions: ConfigInput["extensions"] = {}) => {
   const skillsDir = join(dir, "skills");
   const root = join(dir, "repo");
   await writeFiles(join(skillsDir, "demo"), {
@@ -321,185 +309,142 @@ const setupResolve = async (extensions: ConfigInput["extensions"]) => {
     "notes.md": "base text\n",
   });
   await writeFiles(root, { "ext/notes.md": "extension text\n", "ext/demo.md": "skill rules\n" });
-  const config = ConfigSchema.parse({ version: 2, extensions });
-  return { skillsDir, root, config, skill: "demo" };
+  process.env.YOK_SKILLS_DIR = skillsDir;
+  return { skillsDir, root, scope: projectScope(root, extensions) };
 };
 
-describe("resolveReference", () => {
-  test.each([
-    ["no extension", undefined, "base text\n"],
-    ["replace", { replace: "ext/notes.md" }, "extension text\n"],
-    ["extend", { extend: "ext/notes.md" }, "base text\n\nextension text\n"],
-  ])("WS29 — with %s", async (_label, notes, expected) => {
-    const options = await setupResolve(notes ? { demo: { references: { notes } } } : {});
-    expect(await resolveReference({ ...options, ref: "notes" })).toEqual({
-      ok: true,
-      value: expected,
-    });
+describe("loadSkill with the project's extensions", () => {
+  let savedSkillsDir: string | undefined;
+  beforeEach(() => {
+    savedSkillsDir = process.env.YOK_SKILLS_DIR;
+  });
+  afterEach(() => {
+    if (savedSkillsDir === undefined) delete process.env.YOK_SKILLS_DIR;
+    else process.env.YOK_SKILLS_DIR = savedSkillsDir;
   });
 
   test.each([
-    ["an unlisted ref", {}, "ghost", 'unknown reference "ghost"; demo has: notes'],
+    ["no extension", undefined, (s: string, _r: string) => ({ path: join(s, "demo/notes.md") })],
     [
-      "an extension naming an unlisted ref",
-      { demo: { references: { ghost: { extend: "ext/notes.md" } } } },
-      "notes",
-      "extensions.demo.references.ghost",
+      "replace",
+      { replace: "ext/notes.md" },
+      (_s: string, r: string) => ({ path: join(r, "ext/notes.md") }),
     ],
     [
-      "an extension path that does not exist",
-      { demo: { references: { notes: { replace: "ext/missing.md" } } } },
-      "notes",
-      "ext/missing.md",
+      "extend",
+      { extend: "ext/notes.md" },
+      (s: string, r: string) => ({
+        path: join(s, "demo/notes.md"),
+        extraPath: join(r, "ext/notes.md"),
+      }),
     ],
-    [
-      "an add on a key the skill declares",
-      { demo: { references: { notes: { add: "ext/notes.md" } } } },
-      "notes",
-      "already has reference notes",
-    ],
-    [
-      "an unknown reference, listing added keys",
-      { demo: { references: { extra: { add: "ext/notes.md" } } } },
-      "ghost",
-      "notes, extra",
-    ],
-  ])("WS30 — %s is an error", async (_label, extensions, ref, message) => {
-    const options = await setupResolve(extensions);
-    const result = await resolveReference({ ...options, ref });
-    if (result.ok) throw new Error("expected a failure");
-    expect(result.error).toContain(message);
-  });
-});
-
-describe("resolveReference add", () => {
-  test("WS36 — an add on an undeclared key resolves to the project file", async () => {
-    const options = await setupResolve({
-      demo: { references: { extra: { add: "ext/notes.md" } } },
-    });
-    expect(await resolveReference({ ...options, ref: "extra" })).toEqual({
-      ok: true,
-      value: "extension text\n",
+  ])("WS29 — with %s, notes reads the file it names", async (_label, notes, expected) => {
+    const { skillsDir, root, scope } = await setupDemo(
+      notes ? { demo: { references: { notes } } } : {},
+    );
+    const result = await loadSkill("demo", scope);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.references).toEqual({
+      notes: { kind: "file", description: "Notes.", ...expected(skillsDir, root) },
     });
   });
-});
 
-describe("listReferences", () => {
-  test("lists the skill's references, then the project's added ones, each with its description", async () => {
-    const options = await setupResolve({
+  test("WS36 — an add is listed after the skill's own references, with its description or null", async () => {
+    const { root, scope } = await setupDemo({
       demo: {
         references: {
-          notes: { extend: "ext/notes.md" },
           jira: { add: "ext/notes.md", description: "Jira issues: yourco.atlassian.net URLs." },
           bare: { add: "ext/notes.md" },
         },
       },
     });
-    expect(await listReferences(options)).toEqual({
-      ok: true,
-      value: [
-        { name: "notes", description: "Notes." },
-        { name: "jira", description: "Jira issues: yourco.atlassian.net URLs." },
-        { name: "bare", description: null },
-      ],
+    const result = await loadSkill("demo", scope);
+    if (!result.ok) throw new Error(result.error);
+    const { references } = result.value;
+    expect(Object.keys(references)).toEqual(["notes", "jira", "bare"]);
+    expect(references.jira).toEqual({
+      kind: "file",
+      path: join(root, "ext/notes.md"),
+      description: "Jira issues: yourco.atlassian.net URLs.",
     });
+    expect(references.bare?.description).toBeNull();
   });
 
-  test("an extension that does not fit the skill is an error, as it is for a single reference", async () => {
-    const options = await setupResolve({
-      demo: { references: { notes: { add: "ext/notes.md" } } },
+  test("SC41: a command extension turns notes into that command, while an added reference still reads its file", async () => {
+    const { root, scope } = await setupDemo({
+      demo: { references: { notes: { command: "echo hi" }, extra: { add: "ext/notes.md" } } },
     });
-    const result = await listReferences(options);
-    if (result.ok) throw new Error("expected a failure");
-    expect(result.error).toContain("already has reference notes");
+    const result = await loadSkill("demo", scope);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.references.notes).toEqual({
+      kind: "command",
+      command: "echo hi",
+      description: "Notes.",
+    });
+    expect(result.value.references.extra).toMatchObject({ path: join(root, "ext/notes.md") });
   });
-});
-
-describe("resolveReferencePath", () => {
-  test.each([
-    [
-      "no extension",
-      "notes",
-      undefined,
-      (skillsDir: string, _root: string) => join(skillsDir, "demo", "notes.md"),
-    ],
-    [
-      "replace",
-      "notes",
-      { notes: { replace: "ext/notes.md" } },
-      (_s: string, root: string) => join(root, "ext/notes.md"),
-    ],
-    [
-      "add",
-      "extra",
-      { extra: { add: "ext/notes.md" } },
-      (_s: string, root: string) => join(root, "ext/notes.md"),
-    ],
-  ])(
-    "with %s, it is the path of the file the reference reads",
-    async (_label, ref, references, expected) => {
-      const options = await setupResolve(references ? { demo: { references } } : {});
-      expect(await resolveReferencePath({ ...options, ref })).toEqual({
-        ok: true,
-        value: expected(options.skillsDir, options.root),
-      });
-    },
-  );
 
   test.each([
     [
-      "an extend, which has no single file",
-      { notes: { extend: "ext/notes.md" } },
-      "notes",
-      "replace",
+      "an extension naming a reference the skill lacks",
+      { demo: { references: { ghost: { extend: "ext/notes.md" } } } },
+      "extensions.demo.references.ghost: demo has no reference ghost",
     ],
     [
-      "a replace whose file does not exist",
-      { notes: { replace: "ext/missing.md" } },
-      "notes",
+      "a command for a reference the skill lacks",
+      { demo: { references: { ghost: { command: "echo hi" } } } },
+      "has no reference ghost",
+    ],
+    [
+      "an add on a key the skill declares",
+      { demo: { references: { notes: { add: "ext/notes.md" } } } },
+      "already has reference notes; use replace or extend",
+    ],
+    [
+      "an extension file that does not exist",
+      { demo: { references: { notes: { replace: "ext/missing.md" } } } },
+      "extensions.demo.references.notes",
+    ],
+    [
+      "an added file that does not exist",
+      { demo: { references: { extra: { add: "ext/missing.md" } } } },
       "ext/missing.md",
     ],
-    ["an unlisted ref", {}, "ghost", 'unknown reference "ghost"'],
-  ])("%s is an error", async (_label, references, ref, message) => {
-    const options = await setupResolve({ demo: { references } });
-    const result = await resolveReferencePath({ ...options, ref });
+    [
+      "an extension doc that does not exist",
+      { demo: { skill: "ext/missing.md" } },
+      "extensions.demo.skill",
+    ],
+  ])("WS30 — %s is an error", async (_label, extensions, message) => {
+    const { scope } = await setupDemo(extensions);
+    const result = await loadSkill("demo", scope);
     if (result.ok) throw new Error("expected a failure");
     expect(result.error).toContain(message);
   });
-});
 
-describe("a command reference", () => {
-  test("SC41: notes as a command is refused as text and as a path, naming its key, while extra still resolves", async () => {
-    const options = await setupResolve({
-      demo: { references: { notes: { command: "echo hi" }, extra: { add: "ext/notes.md" } } },
-    });
-    const asText = await resolveReference({ ...options, ref: "notes" });
-    const asPath = await resolveReferencePath({ ...options, ref: "notes" });
-    if (asText.ok || asPath.ok) throw new Error("expected failures");
-    expect(asText.error).toContain("extensions.demo.references.notes");
-    expect(asText.error).toContain("command");
-    expect(asPath.error).toContain("extensions.demo.references.notes");
-    expect(await resolveReference({ ...options, ref: "extra" })).toEqual({
-      ok: true,
-      value: "extension text\n",
-    });
+  test("WS31 — extensions.demo.skill becomes the skill's extension doc", async () => {
+    const { root, scope } = await setupDemo({ demo: { skill: "ext/demo.md" } });
+    const result = await loadSkill("demo", scope);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.extensionDoc).toBe(join(root, "ext/demo.md"));
   });
-});
 
-describe("a stage path", () => {
-  test("WS35 — skill ref on a stage with a / reads its reference from the project folder, with the extension set for its skill name", async () => {
+  test("WS35 — a stage path reads the skill from the project folder, with the extension set for its skill name", async () => {
     const root = join(dir, "project");
     await writeFiles(join(root, "stages", "demo"), {
       "SKILL.md": `---\n${demoFrontmatter}---\n`,
       "notes.md": "project text\n",
     });
     await writeFiles(root, { "ext/notes.md": "extension text\n" });
-    const extensions = { demo: { references: { notes: { extend: "ext/notes.md" } } } };
-    const config = ConfigSchema.parse({ version: 2, extensions });
-    const options = { skillsDir: join(dir, "no-skills"), root, config, skill: "stages/demo" };
-    expect(await resolveReference({ ...options, ref: "notes" })).toEqual({
-      ok: true,
-      value: "project text\n\nextension text\n",
+    process.env.YOK_SKILLS_DIR = join(dir, "no-skills");
+    const scope = projectScope(root, {
+      demo: { references: { notes: { extend: "ext/notes.md" } } },
+    });
+    const result = await loadSkill("stages/demo", scope);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.references.notes).toMatchObject({
+      path: join(root, "stages/demo/notes.md"),
+      extraPath: join(root, "ext/notes.md"),
     });
   });
 });
@@ -520,48 +465,113 @@ describe("findWorkflowPath", () => {
   });
 });
 
-describe("resolveExtension", () => {
-  test.each([
-    ["extensions.demo.skill set", { demo: { skill: "ext/demo.md" } }, "skill rules\n"],
-    ["no skill extension", {}, ""],
-  ])("WS31 — with %s", async (_label, extensions, expected) => {
-    const options = await setupResolve(extensions);
-    expect(await resolveExtension(options)).toEqual({ ok: true, value: expected });
+describe("findReference", () => {
+  test("WS30 — an unknown reference names the skill and every key it has, added ones too", async () => {
+    const skillDir = await writeSkill("demo", demoFrontmatter, { "notes.md": "n\n" });
+    await writeFiles(dir, { "ext/jira.md": "j\n" });
+    const scope = projectScope(dir, { demo: { references: { jira: { add: "ext/jira.md" } } } });
+    const skill = await loadSkill(skillDir, scope);
+    if (!skill.ok) throw new Error(skill.error);
+    expect(findReference(skill.value, "ghost")).toEqual({
+      ok: false,
+      error: 'unknown reference "ghost"; demo has: notes, jira',
+    });
+    expect(findReference(skill.value, "notes")).toMatchObject({ ok: true });
+  });
+});
+
+describe("findSkill", () => {
+  let savedSkillsDir: string | undefined;
+  let root: string;
+  let skills: string;
+
+  beforeEach(async () => {
+    savedSkillsDir = process.env.YOK_SKILLS_DIR;
+    root = await mkdtemp(join(tmpdir(), "find-root-"));
+    skills = await mkdtemp(join(tmpdir(), "find-skills-"));
+    process.env.YOK_SKILLS_DIR = skills;
+    await mkdir(join(root, "tools", "my-skill"), { recursive: true });
+    await mkdir(join(skills, "ticket-fetcher"), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (savedSkillsDir === undefined) delete process.env.YOK_SKILLS_DIR;
+    else process.env.YOK_SKILLS_DIR = savedSkillsDir;
+  });
+
+  test("SC40: without a run, a name with / is a project folder, a bare name a skills-folder skill, and a miss names where it looked", () => {
+    const scope = projectScope(root);
+    expect(findSkill("tools/my-skill", scope)).toEqual({
+      ok: true,
+      value: join(root, "tools", "my-skill"),
+    });
+    expect(findSkill("ticket-fetcher", scope)).toEqual({
+      ok: true,
+      value: join(skills, "ticket-fetcher"),
+    });
+    const bare = findSkill("nope", scope);
+    const pathed = findSkill("tools/nope", scope);
+    if (bare.ok || pathed.ok) throw new Error("expected failures");
+    expect(bare.error).toContain(join(skills, "nope"));
+    expect(pathed.error).toContain(join(root, "tools", "nope"));
+  });
+
+  test("SC58: with a run, the run's stage named ticket-fetcher wins over the skills folder, and a miss names the run's workflow and the skills folder", () => {
+    const stageDir = join(root, "stages", "ticket-fetcher");
+    const scope = projectScope(
+      root,
+      {},
+      { name: "feat-x", stages: { "ticket-fetcher": stageDir } },
+    );
+    expect(findSkill("ticket-fetcher", scope)).toEqual({ ok: true, value: stageDir });
+    const missing = findSkill("ghost", scope);
+    if (missing.ok) throw new Error("expected a failure");
+    expect(missing.error).toContain("run feat-x's workflow");
+    expect(missing.error).toContain(join(skills, "ghost"));
   });
 });
 
 describe("the real create-workspace skill", () => {
-  test("WS34 — loads through loadStage with its own schemas, listing select-repos whose file exists", async () => {
+  test("WS34 — loads, listing select-repos and the workspace script, each file on disk", async () => {
     const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "create-workspace");
-    const result = await loadStage(skillDir, {
-      "create-workspace.input.v1": CreateWorkspaceInputSchema,
-      "create-workspace.output.v1": CreateWorkspaceOutputSchema,
-    });
+    const result = await loadSkill(skillDir, projectScope(dir));
     if (!result.ok) throw new Error(result.error);
-    const selectRepos = result.value.stage.references["select-repos"];
-    expect(selectRepos?.path).toBe("references/select-repos.md");
-    expect(existsSync(join(skillDir, selectRepos?.path ?? ""))).toBe(true);
+    const { references } = result.value;
+    expect(references["select-repos"]).toMatchObject({
+      path: join(skillDir, "references/select-repos.md"),
+    });
+    expect(references.workspace).toMatchObject({ path: join(skillDir, "scripts/workspace.ts") });
   });
 });
 
 describe("the real ticket-fetcher skill", () => {
   const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "ticket-fetcher");
 
-  test("SC24: loads through loadStage with its own schemas, an optional ticket artifact, linear and asana references on disk and a provider variable defaulting to auto", async () => {
-    const result = await loadStage(skillDir, ticketSchemas);
+  test("SC24: loads with an optional ticket artifact, linear and asana references and their scripts on disk, and a provider variable defaulting to auto", async () => {
+    const result = await loadSkill(skillDir, projectScope(dir));
     if (!result.ok) throw new Error(result.error);
-    const { produces, references, variables } = result.value.stage;
+    const { produces, variables } = result.value.frontmatter;
+    const paths = Object.fromEntries(
+      Object.entries(result.value.references).map(([name, ref]) => [
+        name,
+        ref.kind === "file" ? relative(skillDir, ref.path) : null,
+      ]),
+    );
     expect(produces).toEqual([{ artifact: "ticket", optional: true }]);
-    expect(references.linear?.path).toBe("references/linear.md");
-    expect(references.asana?.path).toBe("references/asana.md");
-    expect(existsSync(join(skillDir, references.asana?.path ?? ""))).toBe(true);
+    expect(paths).toEqual({
+      linear: "references/linear.md",
+      asana: "references/asana.md",
+      validate: "scripts/ticket.ts",
+      "linear-api": "scripts/linear.ts",
+      "asana-api": "scripts/asana.ts",
+    });
     expect(variables.provider?.default).toBe("auto");
   });
 
   test("SC27: each provider's description names the URLs it handles, which auto matches against", async () => {
-    const result = await loadStage(skillDir, ticketSchemas);
+    const result = await loadSkill(skillDir, projectScope(dir));
     if (!result.ok) throw new Error(result.error);
-    const { references } = result.value.stage;
+    const { references } = result.value;
     expect(references.linear?.description).toContain("linear.app");
     expect(references.asana?.description).toContain("app.asana.com");
   });
@@ -594,12 +604,13 @@ describe("the real design skill", () => {
   const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "design");
 
   test("DS1: loads as an inline stage with no output schema, producing a design artifact, its references on disk", async () => {
-    const result = await loadStage(skillDir, {});
+    const result = await loadSkill(skillDir, projectScope(dir));
     if (!result.ok) throw new Error(result.error);
-    expect(result.value.stage.mode).toBe("inline");
-    expect(result.value.stage.outputs).toBeUndefined();
-    expect(result.value.stage.produces).toEqual([{ artifact: "design", optional: false }]);
-    expect(Object.keys(result.value.stage.references).sort()).toEqual(["coverage", "design-doc"]);
+    const { frontmatter, references } = result.value;
+    expect(frontmatter.mode).toBe("inline");
+    expect(frontmatter.outputs).toBeUndefined();
+    expect(frontmatter.produces).toEqual([{ artifact: "design", optional: false }]);
+    expect(Object.keys(references).sort()).toEqual(["coverage", "design-doc"]);
   });
 
   test("DS2: a workflow that feeds it the ticket-fetcher's task compiles", async () => {
@@ -617,19 +628,20 @@ describe("the real design skill", () => {
 describe("the real qa skill", () => {
   const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "qa");
 
-  test("SC5: loads as an inline stage with qa.output.v1, an optional proof-report artifact and its six references", async () => {
-    const result = await loadStage(skillDir, qaSchemas);
+  test("SC5: loads as an inline stage with qa.output.v1, an optional proof-report artifact, its six references and its report-media script", async () => {
+    const result = await loadSkill(skillDir, projectScope(dir));
     if (!result.ok) throw new Error(result.error);
-    const { stage } = result.value;
+    const stage = result.value.frontmatter;
     expect([stage.name, stage.mode, stage.outputs?.schema]).toEqual([
       "qa",
       "inline",
       "qa.output.v1",
     ]);
     expect(stage.produces).toEqual([{ artifact: "proof-report", optional: true }]);
-    expect(Object.keys(stage.references).sort()).toEqual([
+    expect(Object.keys(result.value.references).sort()).toEqual([
       "driving-the-browser",
       "headless-verification",
+      "report-media",
       "report-template",
       "stack-up",
       "visual-verification",
@@ -638,8 +650,8 @@ describe("the real qa skill", () => {
   });
 
   test("takes an environment variable that defaults to the config's default entry", async () => {
-    const result = await loadStage(skillDir, qaSchemas);
+    const result = await loadSkill(skillDir, projectScope(dir));
     if (!result.ok) throw new Error(result.error);
-    expect(result.value.stage.variables.environment?.default).toBe("default");
+    expect(result.value.frontmatter.variables.environment?.default).toBe("default");
   });
 });

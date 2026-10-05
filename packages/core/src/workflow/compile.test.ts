@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Notifier } from "@yok/sdk";
-import { compileWorkflow } from "./compile.ts";
+import { ConfigSchema, type Notifier, runDirOf } from "@yok/sdk";
+import { noProjectConfig } from "../stage.ts";
+import { compileWorkflow, runStageDirs } from "./compile.ts";
 import { evaluateBoolean, resolveValue, type Scope } from "./evaluate.ts";
 import { DEMO_STAGES, writeStages } from "./test-stages.ts";
 import { NodeFailure, WorkflowError, type WorkflowErrorCode } from "./types.ts";
@@ -933,6 +934,101 @@ describe("compile with stages", () => {
       expect(error.code).toBe("missing-stage");
       expect(error.message).toContain(stage);
     }
+  });
+});
+
+// stages/producer has a notes reference for the project's extensions to change.
+const compileExtended = async (references: Readonly<Record<string, unknown>>) => {
+  const project = mkdtempSync(join(tmpdir(), "wf-extended-"));
+  writeStages(join(project, "stages"), {
+    producer: { references: "{ notes: { path: notes.md, description: Notes. } }" },
+  });
+  writeFileSync(join(project, "stages", "producer", "notes.md"), "notes\n");
+  writeFileSync(join(project, "mine.md"), "mine\n");
+  const path = join(project, "workflow.yml");
+  writeFileSync(path, workflow(stageNode("make", "stages/producer")));
+  const extensions = { producer: { references } };
+  const config = {
+    config: ConfigSchema.parse({ version: 2, extensions }),
+    path: null,
+    root: project,
+  };
+  return compileWorkflow(path, { cwd: project, config });
+};
+
+describe("compile with the project's extensions", () => {
+  test("a replace of a reference the stage has compiles", async () => {
+    const plan = await compileExtended({ notes: { replace: "mine.md" } });
+    expect(plan.nodes.map((node) => node.id)).toEqual(["make"]);
+  });
+
+  test.each([
+    [
+      "an add of a reference the stage already has",
+      { notes: { add: "mine.md" } },
+      "already has reference notes",
+    ],
+    [
+      "a replace of a reference the stage lacks",
+      { ghost: { replace: "mine.md" } },
+      "has no reference ghost",
+    ],
+    [
+      "a replace whose file is missing",
+      { notes: { replace: "gone.md" } },
+      "gone.md does not exist",
+    ],
+  ])(
+    "%s fails compile as missing-stage, naming the extension",
+    async (_label, references, message) => {
+      const error = await compileExtended(references).catch((caught: unknown) => caught);
+      if (!(error instanceof WorkflowError)) throw new Error("expected a compile error");
+      expect(error.code).toBe("missing-stage");
+      expect(error.message).toContain("extensions.producer.references");
+      expect(error.message).toContain(message);
+    },
+  );
+});
+
+describe("runStageDirs", () => {
+  test("SC58: maps each stage of the run's workflow to its folder, inside a loop, a switch case and an included workflow", async () => {
+    const project = mkdtempSync(join(tmpdir(), "wf-run-stages-"));
+    writeStages(join(project, "stages"), { looped: {}, switched: {}, included: {} });
+    const child = join(project, "child.yaml");
+    writeFileSync(
+      child,
+      "name: child\nnodes:\n  - { id: inner, type: agent, stage: stages/included, input: {} }\n",
+    );
+    const run = { cwd: project, name: "feat-x" };
+    mkdirSync(runDirOf(project, run.name), { recursive: true });
+    writeFileSync(
+      join(runDirOf(project, run.name), "workflow.yaml"),
+      `name: test
+nodes:
+  - id: fetch
+    type: loop
+    maxIterations: 1
+    until: "{{ true }}"
+    input: null
+    nodes:
+      - { id: ticket, type: agent, stage: stages/looped, input: {} }
+  - id: route
+    type: switch
+    expression: "{{ 'a' }}"
+    input: {}
+    cases:
+      - id: a
+        value: a
+        nodes:
+          - { id: picked, type: agent, stage: stages/switched, input: {} }
+  - { id: sub, type: include, workflow: ${child}, input: null }
+`,
+    );
+    expect(await runStageDirs(run, noProjectConfig(project))).toEqual({
+      looped: join(project, "stages", "looped"),
+      switched: join(project, "stages", "switched"),
+      included: join(project, "stages", "included"),
+    });
   });
 });
 

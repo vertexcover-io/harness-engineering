@@ -9,7 +9,7 @@ import {
   verdict,
   workflowChecks,
 } from "@yok/core";
-import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@yok/sdk";
+import { createGit, type JsonObject, spawnInteractive } from "@yok/sdk";
 import { isCompiled, VERSION } from "@yok/sdk/internal";
 import { runtimeChecks } from "@yok/server";
 import {
@@ -30,8 +30,6 @@ const collectInput = (pair: string, acc: Record<string, string>): Record<string,
   return { ...acc, [pair.slice(0, index)]: pair.slice(index + 1) };
 };
 
-// The verdict alone names the failing checks; each one's detail says what went wrong, and its
-// fixes follow it.
 const blockedText = (report: DoctorReport): string =>
   [
     verdict(report),
@@ -54,15 +52,10 @@ export const runCommand = () =>
       const cwd = process.cwd();
       const workflowPath = findWorkflowPath(workflowArg, cwd);
 
-      const plan = await compileOrFail(workflowPath, cwd);
+      const config = opts.config === undefined ? undefined : resolve(cwd, opts.config);
+      const plan = await compileOrFail(workflowPath, cwd, config ?? null);
       if (plan === null) return;
       log.debug({ workflow: plan.name, path: workflowPath }, "workflow compiled");
-
-      const config = opts.config === undefined ? undefined : resolve(cwd, opts.config);
-      if (config !== undefined) {
-        const loaded = await loadNamedConfig(config);
-        if (!loaded.ok) return fail(loaded.error);
-      }
 
       // Built once: the doctor's env checks and the session see the same values.
       const env = await loadStartEnv(config ?? null, cwd, plan);

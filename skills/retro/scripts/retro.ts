@@ -547,8 +547,8 @@ export const citeLines = (options: CiteOptions): string => {
 };
 
 const USAGE = `usage:
-  yok orchestrate script --skill retro scripts/retro.ts extract (--run NAME | --main PATH) --out DIR [--tz ZONE] [--projects DIR] [--gate-time ISO]
-  yok orchestrate script --skill retro scripts/retro.ts cite TRANSCRIPT LINE [LINE ...] [--context N] [--tz ZONE] [--full]`;
+  retro.ts extract (--run NAME | --main PATH) --out DIR [--tz ZONE] [--projects DIR] [--gate-time ISO]
+  retro.ts cite TRANSCRIPT LINE [LINE ...] [--context N] [--tz ZONE] [--full]`;
 
 const validZone = (zone: string | undefined): boolean => {
   try {

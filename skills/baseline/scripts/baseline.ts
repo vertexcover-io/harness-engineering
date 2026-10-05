@@ -41,7 +41,6 @@ type BaselineEntry = z.infer<typeof BaselineEntrySchema>;
 
 export type CapturedBaseline = Readonly<{ path: string; baseline: Baseline }>;
 
-// The stage reports this file as its `baseline` artifact through orchestrate done.
 const BASELINE_PATH = "artifacts/baseline.json";
 
 export type BaselineError = Readonly<{
@@ -81,9 +80,8 @@ const failure = (code: BaselineError["code"], message: string): Result<never, Ba
 const isFolder = (path: string): boolean =>
   statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
-// A missing folder would make spawn fail with exit 127 and read as a command that cannot start,
-// and state.json keeps workspace.path after `yok orchestrate script --skill create-workspace
-// scripts/workspace.ts remove`, so the folder is checked here.
+// state.json keeps the workspace path after the workspace is removed, and spawning in a missing
+// folder exits 127 like a command that can't start, so the folder is checked first.
 const resolveWorkspace = async (
   options: BaselineOptions,
 ): Promise<Result<string, BaselineError>> => {
@@ -243,10 +241,10 @@ export const captureBaseline = async (
   return { ok: true, value: { path, baseline: baseline.value } };
 };
 
-// stdout carries only the report, so failures are logged to stderr, at warn unless LOG_LEVEL says otherwise.
+// Logs go to stderr, so stdout carries only the report.
 const log = jsonLogger({ level: LogLevelSchema.catch("warn").parse(process.env.LOG_LEVEL) });
 
-const USAGE = `usage: yok orchestrate script --skill baseline scripts/baseline.ts [--run NAME | --run-id ID] [--packages A,B] [--dir DIR]
+const USAGE = `usage: baseline.ts [--run NAME | --run-id ID] [--packages A,B] [--dir DIR]
 
 Runs the run's config's baseline scripts in its workspace (--dir, else state.json's
 workspace.path), writes artifacts/baseline.json and prints { path, workspace, packages }.

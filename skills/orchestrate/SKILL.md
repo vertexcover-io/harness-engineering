@@ -61,7 +61,10 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      When the skill needs one of its references, run
      `yok orchestrate skill ref STAGE.REF`. It needs no `--run`: it finds the run through
      `YOK_RUN_ID` and reads the config that run started with. Never open a reference file by
-     its path, since that skips the project's changes to it. When the skill is done, run the reply's `done`
+     its path, since that skips the project's changes to it. When the skill says to run one of
+     its scripts, run `yok orchestrate skill run STAGE.REF ARGS`, where REF names the script
+     and ARGS are the arguments the skill gives it; it needs no `--run` either, and runs the
+     project's replacement when there is one. When the skill is done, run the reply's `done`
      command with `--output -`, plus `--artifact NAME=artifacts/PATH` for each artifact the
      skill wrote under `.yok/NAME/`, and pass the output on stdin in a quoted heredoc. The
      output is JSON when the skill declares `outputs` (or the node an `output` schema), and plain

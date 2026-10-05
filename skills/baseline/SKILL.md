@@ -29,12 +29,9 @@ RUN below is the run's spec name.
 
 ## Steps
 
-1. Run the baseline. It runs the project's replacement when it has one. Add
-   `--packages NAME1,NAME2` when the input has `packages`:
-
-   ```bash
-   yok orchestrate script --skill baseline scripts/baseline.ts --run RUN
-   ```
+1. Run the baseline script, the `script` reference, with `--run RUN`, adding
+   `--packages NAME1,NAME2` when the input has `packages`. It runs the project's replacement
+   when it has one.
 
    It runs every script before it prints, which can take minutes. Run it in the background and
    wait for it to finish rather than cutting it off. If it cannot find the run, its config or the

@@ -30,6 +30,15 @@ references:
     description: >-
       Asana tasks: app.asana.com task URLs and numeric task ids. How to fetch one and its files
       into the ticket bundle.
+  validate:
+    path: scripts/ticket.ts
+    description: The script that checks a ticket bundle. A script, not a provider.
+  linear-api:
+    path: scripts/linear.ts
+    description: The script the linear reference calls Linear's API with. A script, not a provider.
+  asana-api:
+    path: scripts/asana.ts
+    description: The script the asana reference calls Asana's API with. A script, not a provider.
 variables:
   provider:
     description: >-
@@ -62,7 +71,7 @@ this skill and the provider's reference list.
    is `auto`, run `yok orchestrate skill ref --list ticket-fetcher`: it prints every
    reference as `{ name, description }`, the project's added ones included, and each description
    names the URLs and keys that provider handles. PROVIDER is the one reference whose description
-   matches the request's URL or key. When none matches, or more than one does, stop and finish
+   matches the request's URL or key; the ones described as scripts are not providers. When none matches, or more than one does, stop and finish
    the stage with an error that names the request's URL or key and the listed providers.
 3. Read the provider's reference with `yok orchestrate skill ref ticket-fetcher.PROVIDER`.
    If it fails, stop and report its message. `linear` and `asana` ship with this skill. A
@@ -77,8 +86,8 @@ this skill and the provider's reference list.
      `path` is one flat filename in that folder.
 5. When the ticket is clear but has no ID and the provider's search returns several candidates,
    ask the user to choose with `AskUserQuestion`. Do not pick one yourself.
-6. Run `yok orchestrate script --skill ticket-fetcher scripts/ticket.ts validate .yok/RUN/artifacts/ticket`. On issues, fix `ticket.json` or
-   the files and run it again. A partial bundle is fine: set `complete` to `false` and list each
+6. Run the `validate` script with `validate .yok/RUN/artifacts/ticket`. On issues, fix
+   `ticket.json` or the files and run it again. A partial bundle is fine: set `complete` to `false` and list each
    file that could not be fetched as an `unavailable` asset with its reason.
 7. Register the bundle and reply with the `ticket-fetcher.output.v1` JSON:
 

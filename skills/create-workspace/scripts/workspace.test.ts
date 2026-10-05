@@ -829,7 +829,7 @@ describe("addRepositories", () => {
     const result = await addRepositories({ run, root, branch: "b", repos: ["serana", "courier"] });
     expect(result.ok ? "" : result.error).toContain("no workspace");
     expect(result.ok ? "" : result.error).toContain(
-      "create it with yok orchestrate script --skill create-workspace scripts/workspace.ts create",
+      "create it first with the workspace script's create",
     );
     expect(await eventsOf(run)).toEqual([]);
     expect(git(join(root, "serana"), "branch", "--list", "b")).toBe("");

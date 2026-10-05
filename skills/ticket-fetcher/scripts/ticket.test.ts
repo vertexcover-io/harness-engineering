@@ -173,7 +173,7 @@ describe("assertPublic", () => {
   });
 });
 
-describe("yok orchestrate script --skill ticket-fetcher scripts/ticket.ts validate", () => {
+describe("yok orchestrate skill run ticket-fetcher.validate", () => {
   const CLI = join(import.meta.dir, "../../../packages/cli/src/index.ts");
   const validate = (dir: string) =>
     spawnSync(
@@ -182,10 +182,9 @@ describe("yok orchestrate script --skill ticket-fetcher scripts/ticket.ts valida
         "--no-env-file",
         CLI,
         "orchestrate",
-        "script",
-        "--skill",
-        "ticket-fetcher",
-        "scripts/ticket.ts",
+        "skill",
+        "run",
+        "ticket-fetcher.validate",
         "validate",
         dir,
       ],

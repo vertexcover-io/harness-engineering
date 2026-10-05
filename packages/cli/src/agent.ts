@@ -8,7 +8,7 @@ const pluginArgs = (agent: WorkflowAgent): readonly string[] => {
   return agent === "claude" && dir !== undefined ? claudeArgs({ pluginDir: dir }) : [];
 };
 
-// Opens the agent with this program as its `yok`, the way `cargo +nightly` picks a toolchain.
+// Opens the agent with this program as its `yok`.
 export const agentCommand = (agent: WorkflowAgent) =>
   new Command(agent)
     .description(`Open ${agent} with this yok as the session's yok command`)

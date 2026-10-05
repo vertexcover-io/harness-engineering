@@ -196,15 +196,7 @@ describe("downloadAsset", () => {
 });
 
 const CLI = join(import.meta.dir, "../../../packages/cli/src/index.ts");
-const ASANA = [
-  "--no-env-file",
-  CLI,
-  "orchestrate",
-  "script",
-  "--skill",
-  "ticket-fetcher",
-  "scripts/asana.ts",
-];
+const ASANA = ["--no-env-file", CLI, "orchestrate", "skill", "run", "ticket-fetcher.asana-api"];
 
 // Async spawn: a sync one would block this process's fake server from answering.
 const runCli = async (args: readonly string[], key: string | null = "cli-key") => {
@@ -225,7 +217,7 @@ const runCli = async (args: readonly string[], key: string | null = "cli-key") =
   return { cwd, code, stdout, stderr };
 };
 
-describe("the asana CLI through yok orchestrate script", () => {
+describe("the asana CLI through yok orchestrate skill run", () => {
   test("task URL prints the task with its comments, using the key from .env", async () => {
     const { code, stdout } = await runCli(["task", "https://app.asana.com/0/111/222/f"]);
     expect(code).toBe(0);

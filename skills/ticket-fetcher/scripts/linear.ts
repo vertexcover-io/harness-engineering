@@ -102,9 +102,9 @@ export const downloadAsset = async (api: Api, url: string, target: Target): Prom
 };
 
 const USAGE = `usage:
-  yok orchestrate script --skill ticket-fetcher scripts/linear.ts search QUERY [--limit N]
-  yok orchestrate script --skill ticket-fetcher scripts/linear.ts issue KEY_OR_URL
-  yok orchestrate script --skill ticket-fetcher scripts/linear.ts asset URL --dir DIR --name NAME`;
+  linear.ts search QUERY [--limit N]
+  linear.ts issue KEY_OR_URL
+  linear.ts asset URL --dir DIR --name NAME`;
 
 const parseLimit = (value: string | undefined): number => {
   if (value === undefined) return 10;

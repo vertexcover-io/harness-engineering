@@ -21,7 +21,6 @@ import {
   noopLogger,
   type ResolvedTiers,
   resolveRun,
-  runDirOf,
   StateSchema,
   type WorkflowRun,
 } from "@yok/sdk";
@@ -29,14 +28,7 @@ import { appendRunEvent, createRegistry, jsonlEventStore, type Registry } from "
 import corePackage from "../package.json";
 import { currentTerminal } from "./agents/tmux.ts";
 import { NOTIFIER_EVENTS, NOTIFIER_MODULE } from "./notifier.ts";
-import {
-  type InitOptions,
-  initializeRun,
-  linkRunSession,
-  nextStep,
-  resolveSkillDir,
-  terminalName,
-} from "./runs.ts";
+import { type InitOptions, initializeRun, linkRunSession, nextStep, terminalName } from "./runs.ts";
 import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
@@ -837,101 +829,5 @@ describe("nextStep with stage tiers", () => {
       ok: true,
       value: { kind: "stage", nodeId: "make" },
     });
-  });
-});
-
-describe("resolveSkillDir", () => {
-  let savedSkillsDir: string | undefined;
-  let root: string;
-  let skills: string;
-
-  beforeEach(() => {
-    savedSkillsDir = process.env.YOK_SKILLS_DIR;
-    root = tempDir();
-    skills = tempDir();
-    process.env.YOK_SKILLS_DIR = skills;
-    mkdirSync(join(root, "tools", "my-skill"), { recursive: true });
-    mkdirSync(join(skills, "ticket-fetcher"), { recursive: true });
-  });
-
-  afterEach(() => {
-    if (savedSkillsDir === undefined) delete process.env.YOK_SKILLS_DIR;
-    else process.env.YOK_SKILLS_DIR = savedSkillsDir;
-  });
-
-  test("SC40: without a run, a name with / is a project folder, a bare name a skills-folder skill, and a miss names where it looked", async () => {
-    expect(await resolveSkillDir("tools/my-skill", { root })).toEqual({
-      ok: true,
-      value: join(root, "tools", "my-skill"),
-    });
-    expect(await resolveSkillDir("ticket-fetcher", { root })).toEqual({
-      ok: true,
-      value: join(skills, "ticket-fetcher"),
-    });
-    const bare = await resolveSkillDir("nope", { root });
-    const pathed = await resolveSkillDir("tools/nope", { root });
-    if (bare.ok || pathed.ok) throw new Error("expected failures");
-    expect(bare.error).toContain(join(skills, "nope"));
-    expect(pathed.error).toContain(join(root, "tools", "nope"));
-  });
-
-  test("SC58: with a run, a stage named ticket-fetcher inside a loop wins over the skills folder, and a miss names the run's workflow and the skills folder", async () => {
-    writeStages(join(root, "stages"), { "ticket-fetcher": {} });
-    const run = { cwd: root, name: "feat-x" };
-    mkdirSync(runDirOf(root, run.name), { recursive: true });
-    writeFileSync(
-      join(runDirOf(root, run.name), "workflow.yaml"),
-      `name: test
-nodes:
-  - id: fetch
-    type: loop
-    maxIterations: 1
-    until: "{{ true }}"
-    input: null
-    nodes:
-      - { id: ticket, type: agent, stage: stages/ticket-fetcher, input: {} }
-`,
-    );
-    expect(await resolveSkillDir("ticket-fetcher", { root, run })).toEqual({
-      ok: true,
-      value: join(root, "stages", "ticket-fetcher"),
-    });
-    const missing = await resolveSkillDir("ghost", { root, run });
-    if (missing.ok) throw new Error("expected a failure");
-    expect(missing.error).toContain("run feat-x's workflow");
-    expect(missing.error).toContain(join(skills, "ghost"));
-  });
-
-  test("SC58: with a run, stages under a switch case and in an included workflow are found too", async () => {
-    writeStages(join(root, "stages"), { switched: {}, included: {} });
-    const run = { cwd: root, name: "feat-x" };
-    mkdirSync(runDirOf(root, run.name), { recursive: true });
-    const child = join(root, "child.yaml");
-    writeFileSync(
-      child,
-      "name: child\nnodes:\n  - { id: inner, type: agent, stage: stages/included, input: {} }\n",
-    );
-    writeFileSync(
-      join(runDirOf(root, run.name), "workflow.yaml"),
-      `name: test
-nodes:
-  - id: route
-    type: switch
-    expression: "{{ 'a' }}"
-    input: {}
-    cases:
-      - id: a
-        value: a
-        nodes:
-          - { id: picked, type: agent, stage: stages/switched, input: {} }
-  - { id: sub, type: include, workflow: ${child}, input: null }
-`,
-    );
-    for (const name of ["switched", "included"]) {
-      expect(await resolveSkillDir(name, { root, run })).toEqual({
-        ok: true,
-        value: join(root, "stages", name),
-      });
-    }
   });
 });
