@@ -20,10 +20,11 @@
 
 ## How to figure out the bring-up (don't assume a stack)
 
-**Where `orchestrate.config.json` carries an `environments` block, this is already declared** and
-deriving it again is the wrong move: read the entry for the run's `ENVIRONMENT` and run the steps it
-declares, with the package's `e2e` command against them. The invariants above still bind — they are
-what a declared stack must satisfy.
+**Where the orchestrate config carries an `environments` block, this is already declared** and
+deriving it again is the wrong move: bring up its default entry as the qa skill's `stack-up` reference
+says (`bun run orchestrate skill ref qa.stack-up`), with the project's rules for its placeholders, and run
+the package's `e2e` command against it. The invariants above still bind — they are what a declared stack
+must satisfy.
 
 With no such block, derive every command from the repository. Answer these from the project, in
 order:

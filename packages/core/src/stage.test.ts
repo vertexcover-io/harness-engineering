@@ -491,7 +491,7 @@ describe("the real design skill", () => {
 describe("the real qa skill", () => {
   const skillDir = join(import.meta.dir, "..", "..", "..", "skills", "qa");
 
-  test("SC5: loads as an inline stage with qa.output.v1, an optional proof-report artifact and its five references", async () => {
+  test("SC5: loads as an inline stage with qa.output.v1, an optional proof-report artifact and its six references", async () => {
     const result = await loadStage(skillDir, qaSchemas);
     if (!result.ok) throw new Error(result.error);
     const { stage } = result.value;
@@ -505,8 +505,15 @@ describe("the real qa skill", () => {
       "driving-the-browser",
       "headless-verification",
       "report-template",
+      "stack-up",
       "visual-verification",
       "writing-the-report",
     ]);
+  });
+
+  test("takes an environment variable that defaults to the config's default entry", async () => {
+    const result = await loadStage(skillDir, qaSchemas);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.stage.variables.environment?.default).toBe("default");
   });
 });
