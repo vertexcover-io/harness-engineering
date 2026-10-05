@@ -19,7 +19,7 @@ Use current behavior as the baseline unless the user provides different requirem
 
 Trace the supplied flow through its inputs, available actions, defaults, validation, permissions, calculations, persistence, and immediate or deferred effects. Investigate the conditions and interactions that change outcomes within this flow.
 
-Write one distinct observable behavior per scenario. Include successful journeys, rejection, partial failure, and deferred effects where supported by evidence. Investigate combinations that change observable behavior. Cover several values in one scenario only if the code shows they behave the same way, and say in the plan why they're grouped.
+Write one scenario per rule: a decision in the code that sets an outcome the user can see. Include successful journeys, rejection, partial failure, and deferred effects where supported by evidence. Investigate combinations that change observable behavior. When one rule gives different outcomes for different values of an input, keep those values in one scenario and list each one with its expected outcome.
 
 Write for QA and Product readers using complete sentences and familiar product language. Give each scenario enough context to understand the user journey independently. Each field can take one or two complete sentences, or more when needed for clarity.
 
@@ -54,9 +54,9 @@ Use this format, adapting the content to established behavior:
 
 If the flow can fail, write separate scenarios for failing before anything is saved and failing after it's saved. To prove something was saved, fetch it again instead of trusting the response. When conditions combine, write that combination as one scenario and list every condition in Given.
 
-Check each scenario against the others and against existing tests. If two have the same starting state, action, rule and outcome, merge them. Keep any real difference as its own scenario, and don't change IDs when merging.
+Check each scenario against the others and against existing tests. If the same rule decides the outcome in two scenarios, merge them, even when their outcomes differ. If a scenario repeats a check another scenario owns, remove it. Don't change IDs when merging.
 
-Every condition you looked at must end up in one of three places: covered by a scenario, grouped with one that behaves the same, or listed as out of scope. If a condition has no test yet, look into it and base the expected outcome on evidence.
+Every condition you looked at must end up in one of three places: covered by a scenario, listed under the scenario for the rule that decides it, or listed as out of scope. If a condition has no test yet, look into it and base the expected outcome on evidence.
 
 Settle open questions as you go. Check the code and evidence first. Ask the user only when you need them to decide scope, expected behavior, or how to test. Keep investigating other parts while you wait. Write the plan once every question is answered, and put each answer into the scenarios it affects.
 
@@ -107,6 +107,8 @@ Start a test-writing subagent. Give it the absolute path to the approved `.harne
 ### Test-writing instructions
 
 Read the approved plan first. Write tests only for approved scenarios, and put each scenario ID in the test name or in a mapping kept in the repo. Follow the repo's existing test style and reuse its fixtures and helpers. Add to existing tests where they fit, and write new ones only for behavior nothing covers yet.
+
+When several tests need the same setup, write a helper for it. Put it in the repo's shared test support if existing tests already build the same thing by hand, or if you can point to other tests that will need it. Otherwise keep it in the test file. Keep assertions that belong to one scenario in that scenario's test file.
 
 Write each scenario's test at the level it was tagged with. You can add lower-level tests under a scenario when they help. If a scenario needs a different level to prove its outcome, tell the parent why so the plan can be revised and approved again.
 
