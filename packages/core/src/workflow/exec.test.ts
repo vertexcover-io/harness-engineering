@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { JsonValue } from "@harness/sdk";
+import type { JsonValue } from "@yok/sdk";
 import { compileWorkflow } from "./compile.ts";
 import { runStepLeaf } from "./exec.ts";
 import { type NodeRecord, type PlanNode, WorkflowError } from "./types.ts";

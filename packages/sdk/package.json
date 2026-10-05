@@ -1,5 +1,5 @@
 {
-  "name": "@harness/sdk",
+  "name": "@yok/sdk",
   "version": "0.0.0",
   "private": true,
   "type": "module",

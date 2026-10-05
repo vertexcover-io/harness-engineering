@@ -3,15 +3,15 @@ import { join } from "node:path";
 import {
   type EmitInput,
   type HookDeps,
-  harnessHome,
   type PreToolUseHandler,
   registryPath,
   spawn,
   type ToolCall,
   type ToolUse,
   type ToolVerdict,
-} from "@harness/sdk";
-import { appendRunEvent } from "@harness/sdk/internal";
+  yokHome,
+} from "@yok/sdk";
+import { appendRunEvent } from "@yok/sdk/internal";
 import { findSessionRun, recordSessionEvent } from "./common.ts";
 import { expandPath, type PathBase, shellWriteTargets } from "./write-targets.ts";
 
@@ -20,14 +20,14 @@ export type ProtectedRecord =
   | Readonly<{ kind: "registry"; path: string }>;
 
 const ALLOW: ToolVerdict = { kind: "allow" };
-const RUN_RECORD = /[\\/]\.harness[\\/]([^\\/]+)[\\/](state\.json|event\.jsonl)$/;
+const RUN_RECORD = /[\\/]\.yok[\\/]([^\\/]+)[\\/](state\.json|event\.jsonl)$/;
 const BASH_ANTIPATTERNS = join(import.meta.dir, "..", "..", "vendor", "bash-antipatterns.sh");
 const BASH_ANTIPATTERNS_TIMEOUT_MS = 10_000;
 
 export const protectedRecordOf = (path: string, base: PathBase): ProtectedRecord | undefined => {
   const abs = expandPath(path, base);
   if (abs === undefined) return undefined;
-  if (abs === registryPath(base.harnessHome)) return { kind: "registry", path: abs };
+  if (abs === registryPath(base.yokHome)) return { kind: "registry", path: abs };
   const match = RUN_RECORD.exec(abs);
   const runName = match?.[1];
   if (runName === undefined) return undefined;
@@ -37,7 +37,7 @@ export const protectedRecordOf = (path: string, base: PathBase): ProtectedRecord
 const recordMessage = (record: ProtectedRecord): string => {
   if (record.kind === "registry") {
     return (
-      `${record.path} is the harness registry, so this call was refused. It changes only ` +
+      `${record.path} is the yok registry, so this call was refused. It changes only ` +
       "through `bun run orchestrate init NAME` and " +
       "`bun run orchestrate link-session --run NAME --agent AGENT --session-id ID`. " +
       "Reading it is fine."
@@ -61,7 +61,7 @@ const callTargets = (call: ToolCall, base: PathBase): readonly string[] => {
 export const recordGuard: PreToolUseHandler = {
   name: "record-guard",
   run: async ({ cwd, call }, { env }) => {
-    const base = { cwd, home: homedir(), harnessHome: harnessHome(env) };
+    const base = { cwd, home: homedir(), yokHome: yokHome(env) };
     const record = callTargets(call, base)
       .map((target) => protectedRecordOf(target, base))
       .find((found) => found !== undefined);

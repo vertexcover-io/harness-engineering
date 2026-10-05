@@ -14,8 +14,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { type JsonValue, runDirOf, type WorkflowRun } from "@harness/sdk";
-import { appendRunEvent, jsonlEventStore, RegistryFileSchema } from "@harness/sdk/internal";
+import { type JsonValue, runDirOf, type WorkflowRun } from "@yok/sdk";
+import { appendRunEvent, jsonlEventStore, RegistryFileSchema } from "@yok/sdk/internal";
 import { validateTicketDir } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
@@ -33,7 +33,7 @@ const makeRepo = (dir: string, ignored: string): string => {
   return dir;
 };
 
-const tempRepo = (): string => makeRepo(tempDir(), ".worktrees/\n.harness/\n");
+const tempRepo = (): string => makeRepo(tempDir(), ".worktrees/\n.yok/\n");
 
 const savedRun = (cwd: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => {
   const workflowPath = join(cwd, "ok.yaml");
@@ -78,7 +78,7 @@ const eventsOf = (cwd: string, name = "feat-x") => jsonlEventStore(runDirOf(cwd,
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-// A run id or harness home from the shell running the tests must never reach a real registry.
+// A run id or yok home from the shell running the tests must never reach a real registry.
 const orchestrate = (
   cwd: string,
   home: string,
@@ -94,8 +94,8 @@ const orchestrate = (
     env: {
       ...process.env,
       FORCE_COLOR: undefined,
-      HARNESS_RUN_ID: undefined,
-      HARNESS_HOME: home,
+      YOK_RUN_ID: undefined,
+      YOK_HOME: home,
       ...env,
     },
   });
@@ -114,8 +114,8 @@ const orchestrateAsync = async (
     env: {
       ...process.env,
       FORCE_COLOR: undefined,
-      HARNESS_RUN_ID: undefined,
-      HARNESS_HOME: home,
+      YOK_RUN_ID: undefined,
+      YOK_HOME: home,
       ...env,
     },
     stdout: "pipe",
@@ -138,24 +138,24 @@ describe("orchestrate init", () => {
     const init = orchestrate(repo, home, ["init", "fix-login", "--run-id", "r-1"]);
 
     expect(init.code).toBe(0);
-    const dir = join(repo, ".harness", "fix-login");
+    const dir = join(repo, ".yok", "fix-login");
     expect(JSON.parse(init.stdout)).toEqual({ runId: "r-1", dir });
     expect(existsSync(join(dir, "state.json"))).toBe(true);
     expect(readRegistry(home).runs["r-1"]?.name).toBe("fix-login");
   });
 
-  test("init takes the run id from HARNESS_RUN_ID", () => {
+  test("init takes the run id from YOK_RUN_ID", () => {
     const repo = tempRepo();
     const home = tempDir();
     writeRegistry(home, [savedRun(repo)]);
 
-    const init = orchestrate(repo, home, ["init", "fix-login"], { HARNESS_RUN_ID: "r-1" });
+    const init = orchestrate(repo, home, ["init", "fix-login"], { YOK_RUN_ID: "r-1" });
 
     expect(init.code).toBe(0);
     expect(JSON.parse(init.stdout).runId).toBe("r-1");
   });
 
-  test("SC24: init with no --run-id and no HARNESS_RUN_ID exits 1 with the no-run message", () => {
+  test("SC24: init with no --run-id and no YOK_RUN_ID exits 1 with the no-run message", () => {
     const init = orchestrate(tempRepo(), tempDir(), ["init", "fix-login"]);
 
     expect(init.code).toBe(1);
@@ -169,7 +169,7 @@ describe("orchestrate init", () => {
 
     expect(init.code).toBe(1);
     expect(init.stderr).toContain("r-missing");
-    expect(existsSync(join(repo, ".harness"))).toBe(false);
+    expect(existsSync(join(repo, ".yok"))).toBe(false);
   });
 });
 
@@ -367,7 +367,7 @@ describe("orchestrate skill", () => {
     writeFileSync(join(root, "notes-extra.md"), "extension text\n");
 
     const run = orchestrate(root, tempDir(), ["skill", "ref", "demo.notes"], {
-      HARNESS_SKILLS_DIR: skillsDir,
+      YOK_SKILLS_DIR: skillsDir,
     });
 
     expect(run.code).toBe(0);
@@ -394,14 +394,14 @@ describe("orchestrate skill", () => {
     writeFileSync(join(root, "my-notes.md"), "project text\n");
 
     const run = orchestrate(root, tempDir(), ["skill", "ref", "--path", "demo.notes"], {
-      HARNESS_SKILLS_DIR: skillsDir,
+      YOK_SKILLS_DIR: skillsDir,
     });
 
     expect(run.code).toBe(0);
     expect(run.stdout).toBe(expected(skillsDir, root));
   });
 
-  test("skill ref with no HARNESS_SKILLS_DIR reads the harness repo's own skills folder", () => {
+  test("skill ref with no YOK_SKILLS_DIR reads the yok repo's own skills folder", () => {
     const shipped = join(
       import.meta.dir,
       "..",
@@ -418,7 +418,7 @@ describe("orchestrate skill", () => {
       tempDir(),
       ["skill", "ref", "create-workspace.select-repos"],
       {
-        HARNESS_SKILLS_DIR: undefined,
+        YOK_SKILLS_DIR: undefined,
       },
     );
 
@@ -438,7 +438,7 @@ describe("orchestrate skill", () => {
     });
 
     const run = orchestrate(root, tempDir(), ["skill", "ref", "--list", "demo"], {
-      HARNESS_SKILLS_DIR: skillsDir,
+      YOK_SKILLS_DIR: skillsDir,
     });
 
     expect(run.code).toBe(0);
@@ -473,7 +473,7 @@ describe("orchestrate skill", () => {
   });
 });
 
-// A run named feat-x in a fresh repo, started from SOURCE the way `harness run` + init leave it.
+// A run named feat-x in a fresh repo, started from SOURCE the way `yok run` + init leave it.
 // init compiles the workflow, so env must name the skills folder its stages come from and files
 // holds what else it reads (schema modules, included workflows), by path in the repo.
 const startedRun = (
@@ -481,7 +481,7 @@ const startedRun = (
   config?: object,
   overrides: Partial<WorkflowRun> = {},
   {
-    env = { HARNESS_SKILLS_DIR: STAGE_SKILLS },
+    env = { YOK_SKILLS_DIR: STAGE_SKILLS },
     files = {},
   }: Readonly<{ env?: Env; files?: Readonly<Record<string, string>> }> = {},
 ): Readonly<{ repo: string; home: string }> => {
@@ -529,7 +529,7 @@ const WORKTREE_CONFIG = {
 };
 
 // A run started in a linked worktree of a repo whose main checkout has a config without the
-// worktree's extensions, initialized the way harness run + init leave it.
+// worktree's extensions, initialized the way yok run + init leave it.
 const worktreeRun = (runOverrides: Partial<WorkflowRun> = {}) => {
   const main = configuredRepo({});
   const worktree = join(main, ".worktrees", "dev");
@@ -544,7 +544,7 @@ const worktreeRun = (runOverrides: Partial<WorkflowRun> = {}) => {
   const workflowPath = join(worktree, "stages.yaml");
   writeFileSync(workflowPath, STAGES_WORKFLOW);
   writeRegistry(home, [savedRun(worktree, { workflowPath, ...runOverrides })]);
-  const env = { HARNESS_SKILLS_DIR: stageSkills() };
+  const env = { YOK_SKILLS_DIR: stageSkills() };
   const init = orchestrate(worktree, home, ["init", "feat-x", "--run-id", "r-1"], env);
   if (init.code !== 0) throw new Error(init.stderr);
   return { main, worktree, home, env };
@@ -553,7 +553,7 @@ const worktreeRun = (runOverrides: Partial<WorkflowRun> = {}) => {
 describe("a run started in a linked worktree", () => {
   test("VER-289: skill ref and next, given no flags inside the run's session, read the worktree's config that main lacks", () => {
     const { main, worktree, home, env } = worktreeRun();
-    const session = { ...env, HARNESS_RUN_ID: "r-1" };
+    const session = { ...env, YOK_RUN_ID: "r-1" };
 
     const ref = orchestrate(main, home, ["skill", "ref", "producer.demo"], session);
     const next = orchestrate(main, home, ["next"], session);
@@ -577,7 +577,7 @@ describe("a run started in a linked worktree", () => {
     expect(fromMain.stderr).toContain('unknown reference "demo"');
   });
 
-  test("a run started with harness run --config reads that file for every command, wherever it lives", () => {
+  test("a run started with yok run --config reads that file for every command, wherever it lives", () => {
     const elsewhere = tempDir();
     const file = join(elsewhere, "custom.json");
     writeFileSync(
@@ -585,7 +585,7 @@ describe("a run started in a linked worktree", () => {
       JSON.stringify({ version: 2, extensions: { producer: { skill: "producer-ext.md" } } }),
     );
     const { main, home, env } = worktreeRun({ config: file });
-    const session = { ...env, HARNESS_RUN_ID: "r-1" };
+    const session = { ...env, YOK_RUN_ID: "r-1" };
 
     const next = orchestrate(main, home, ["next"], session);
     const ref = orchestrate(main, home, ["skill", "ref", "producer.demo"], session);
@@ -617,12 +617,12 @@ describe("picking the run", () => {
     expect(JSON.parse(next.stdout).nodeId).toBe("make");
   });
 
-  test("--run wins over $HARNESS_RUN_ID, and --run with a --run-id naming another run is refused", () => {
+  test("--run wins over $YOK_RUN_ID, and --run with a --run-id naming another run is refused", () => {
     const { worktree, home, env } = worktreeRun();
 
     const ghost = orchestrate(worktree, home, ["next", "--run", "ghost"], {
       ...env,
-      HARNESS_RUN_ID: "r-1",
+      YOK_RUN_ID: "r-1",
     });
     const clash = orchestrate(worktree, home, ["next", "--run", "ghost", "--run-id", "r-1"], env);
 
@@ -632,15 +632,40 @@ describe("picking the run", () => {
     expect(clash.stderr).toContain("--run ghost and --run-id r-1 name different runs");
   });
 
-  test("a command with no --run, no --run-id and no $HARNESS_RUN_ID is refused", () => {
+  test("a command with no --run, no --run-id and no $YOK_RUN_ID is refused", () => {
     const { worktree, home } = worktreeRun();
 
     const next = orchestrate(worktree, home, ["next"]);
 
     expect(next.code).toBe(1);
-    expect(next.stderr).toContain(
-      "no run: pass --run or --run-id, or run inside a harness session",
-    );
+    expect(next.stderr).toContain("no run: pass --run or --run-id, or run inside a yok session");
+  });
+
+  test("SC11: next finds its run from $YOK_RUN_ID, a --run-id flag wins over it, and the old variable is not read", () => {
+    const { worktree, home, env } = worktreeRun();
+    const workflowPath = join(worktree, "stages.yaml");
+    writeRegistry(home, [
+      ...Object.values(readRegistry(home).runs),
+      savedRun(worktree, { id: "r-2", workflowPath }),
+    ]);
+    expect(orchestrate(worktree, home, ["init", "feat-y", "--run-id", "r-2"], env).code).toBe(0);
+    const runOf = (result: ReturnType<typeof orchestrate>) => JSON.parse(result.stdout).done;
+
+    const fromEnv = orchestrate(worktree, home, ["next"], { ...env, YOK_RUN_ID: "r-1" });
+    const fromFlag = orchestrate(worktree, home, ["next", "--run-id", "r-2"], {
+      ...env,
+      YOK_RUN_ID: "r-1",
+    });
+    // Split so the sweep for the old product name (SC10) does not flag this test.
+    const oldOnly = orchestrate(worktree, home, ["next"], {
+      ...env,
+      [`${["HAR", "NESS"].join("")}_RUN_ID`]: "r-1",
+    });
+
+    expect(runOf(fromEnv)).toContain("--run feat-x");
+    expect(runOf(fromFlag)).toContain("--run feat-y");
+    expect(oldOnly.code).toBe(1);
+    expect(oldOnly.stderr).toContain("no run: pass --run or --run-id");
   });
 
   test("--root is no longer accepted", () => {
@@ -656,7 +681,7 @@ describe("picking the run", () => {
     const { worktree, home } = worktreeRun();
 
     const done = orchestrate(worktree, home, ["done", "nr-1", "--output", "x"], {
-      HARNESS_RUN_ID: "r-ghost",
+      YOK_RUN_ID: "r-ghost",
     });
 
     expect(done.code).toBe(1);
@@ -798,7 +823,7 @@ nodes:
   });
 });
 
-// A skills folder holding the producer and consumer demo stages, for HARNESS_SKILLS_DIR.
+// A skills folder holding the producer and consumer demo stages, for YOK_SKILLS_DIR.
 const stageSkills = (produces = DEMO_STAGES.producer.produces): string => {
   const dir = tempDir();
   writeStages(dir, { ...DEMO_STAGES, producer: { produces } });
@@ -829,7 +854,7 @@ describe("run hooks", () => {
       hooks: { "workflow.node.completed": [{ name: "touch", command: "cat > fired.json" }] },
     });
     const step = (args: readonly string[]) =>
-      orchestrate(repo, home, args, { HARNESS_SKILLS_DIR: skills });
+      orchestrate(repo, home, args, { YOK_SKILLS_DIR: skills });
     const make = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
     writeFileSync(join(runDirOf(repo, "feat-x"), "artifacts", "plan.md"), "plan\n");
 
@@ -857,7 +882,7 @@ describe("stage verifiers", () => {
       consumer: { consumes: DEMO_STAGES.consumer.consumes, ...(verifiers ? { verifiers } : {}) },
     });
     const run = startedRun(workflow);
-    const env = { HARNESS_SKILLS_DIR: skills };
+    const env = { YOK_SKILLS_DIR: skills };
     const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args, env);
     const artifactsDir = join(runDirOf(run.repo, "feat-x"), "artifacts");
     const finishProducer = () => {
@@ -1135,7 +1160,7 @@ describe("orchestrate next and done with stages", () => {
   const stageRun = (produces?: string, config?: object) => {
     const skills = stageSkills(produces);
     const run = startedRun(STAGES_WORKFLOW, config);
-    const env = { HARNESS_SKILLS_DIR: skills };
+    const env = { YOK_SKILLS_DIR: skills };
     const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args, env);
     return { ...run, skills, step };
   };
@@ -1175,7 +1200,7 @@ nodes:
     variables: { audience: "{{ inputs.prompt }}" }
 `);
     const next = orchestrate(run.repo, run.home, ["next", "--run", "feat-x"], {
-      HARNESS_SKILLS_DIR: skills,
+      YOK_SKILLS_DIR: skills,
     });
     expect(next.stderr).toBe("");
     expect(JSON.parse(next.stdout)).toMatchObject({
@@ -1351,8 +1376,8 @@ nodes:
       "plan=artifacts/plan.md",
     ];
     const results = await Promise.all([
-      orchestrateAsync(repo, home, args, { HARNESS_SKILLS_DIR: skills }),
-      orchestrateAsync(repo, home, args, { HARNESS_SKILLS_DIR: skills }),
+      orchestrateAsync(repo, home, args, { YOK_SKILLS_DIR: skills }),
+      orchestrateAsync(repo, home, args, { YOK_SKILLS_DIR: skills }),
     ]);
     expect(results.map((result) => result.code).sort()).toEqual([0, 1]);
     const rejected = results.find((result) => result.code === 1);
@@ -1581,7 +1606,7 @@ nodes:
 
   test("IW30 — done reads --output - and --error - from stdin, keeping quotes and $(…) as plain text", () => {
     const { repo, home, skills } = stageRun();
-    const env = { HARNESS_SKILLS_DIR: skills };
+    const env = { YOK_SKILLS_DIR: skills };
     const next = () => JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"], env).stdout);
     const make = next();
     const output = '{"note":"can\'t stop; $(touch PWNED)"}';
@@ -1759,7 +1784,7 @@ describe("orchestrate call log", () => {
 
   test("OL2 — a stage reply, a refused done, a completed done and the next stage are logged", async () => {
     const run = startedRun(STAGES_WORKFLOW);
-    const env = { HARNESS_SKILLS_DIR: stageSkills() };
+    const env = { YOK_SKILLS_DIR: stageSkills() };
     const step = (args: readonly string[]) => orchestrate(run.repo, run.home, args, env);
     const stage = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
     const done = ["done", stage.nodeRunId, "--run", "feat-x"];
@@ -1893,7 +1918,7 @@ nodes:
 
 describe("orchestrate hook stop", () => {
   const STOP = JSON.stringify({ session_id: "s1", stop_hook_active: false });
-  const RUN_ENV = { HARNESS_RUN_ID: "r-1" };
+  const RUN_ENV = { YOK_RUN_ID: "r-1" };
 
   // A run whose claude session s1 was handed node plan by next and has not run done.
   const openNodeRun = () => {
@@ -2026,7 +2051,7 @@ describe("orchestrate hook stop", () => {
 });
 
 describe("orchestrate hook pre-tool-use", () => {
-  const RUN_ENV = { HARNESS_RUN_ID: "r-1" };
+  const RUN_ENV = { YOK_RUN_ID: "r-1" };
 
   const openNodeRun = () => {
     const run = startedRun(ONE_AGENT);
@@ -2060,7 +2085,7 @@ describe("orchestrate hook pre-tool-use", () => {
     const run = openNodeRun();
 
     const result = preToolUse(run, "Bash", {
-      command: "mv /tmp/s .harness/feat-x/state.json",
+      command: "mv /tmp/s .yok/feat-x/state.json",
     });
 
     expect(result.code).toBe(0);
@@ -2088,7 +2113,7 @@ describe("orchestrate hook pre-tool-use", () => {
   test("an unknown handler prints nothing, so no agent is ever trapped", () => {
     const run = openNodeRun();
 
-    const result = preToolUse(run, "Bash", { command: "rm .harness/feat-x/state.json" }, "nope");
+    const result = preToolUse(run, "Bash", { command: "rm .yok/feat-x/state.json" }, "nope");
 
     expect(result).toMatchObject({ code: 0, stdout: "" });
   });
@@ -2096,11 +2121,11 @@ describe("orchestrate hook pre-tool-use", () => {
   test("SC17 — a read passes silently", () => {
     const run = openNodeRun();
 
-    expect(preToolUse(run, "Read", { file_path: ".harness/feat-x/state.json" })).toMatchObject({
+    expect(preToolUse(run, "Read", { file_path: ".yok/feat-x/state.json" })).toMatchObject({
       code: 0,
       stdout: "",
     });
-    expect(preToolUse(run, "Bash", { command: "jq . .harness/feat-x/state.json" })).toMatchObject({
+    expect(preToolUse(run, "Bash", { command: "jq . .yok/feat-x/state.json" })).toMatchObject({
       code: 0,
       stdout: "",
     });
@@ -2144,9 +2169,9 @@ describe("the task workflow's ticket-fetcher stage", () => {
     fetchedAt: "2026-09-30T12:00:00Z",
   };
 
-  // Registered with no tiers, so its stages need no model switch; they are the harness's own skills.
+  // Registered with no tiers, so its stages need no model switch; they are the yok's own skills.
   const taskRun = (prompt: string) => {
-    const run = startedRun(TASK, {}, {}, { env: { HARNESS_SKILLS_DIR: undefined } });
+    const run = startedRun(TASK, {}, {}, { env: { YOK_SKILLS_DIR: undefined } });
     const registry = readRegistry(run.home);
     writeRegistry(run.home, [
       ...Object.values(registry.runs).map((r) => ({ ...r, inputs: { prompt } })),
@@ -2219,7 +2244,7 @@ describe("the task workflow's ticket-fetcher stage", () => {
 });
 
 describe("orchestrate hook session-start", () => {
-  const RUN_ENV = { HARNESS_RUN_ID: "r-1" };
+  const RUN_ENV = { YOK_RUN_ID: "r-1" };
   const START = JSON.stringify({ session_id: "B", source: "clear", cwd: "/x" });
 
   const sessionStart = (
@@ -2268,7 +2293,7 @@ describe("orchestrate hook session-start", () => {
     const registryBefore = readRegistry(run.home);
 
     expect(sessionStart(run, START, {})).toMatchObject({ code: 0, stdout: "" });
-    expect(sessionStart(run, START, { HARNESS_RUN_ID: "unknown" })).toMatchObject({
+    expect(sessionStart(run, START, { YOK_RUN_ID: "unknown" })).toMatchObject({
       code: 0,
       stdout: "",
     });
@@ -2310,7 +2335,7 @@ const runInPane = async (
   env: Env = {},
 ) => {
   const run = startedRun(source, undefined, overrides, {
-    env: { HARNESS_SKILLS_DIR: STAGE_SKILLS, ...env },
+    env: { YOK_SKILLS_DIR: STAGE_SKILLS, ...env },
   });
   const out = join(tempDir(), "agent.jsonl");
   const tmux = (...args: string[]) =>
@@ -2324,10 +2349,10 @@ const runInPane = async (
   const inPane = {
     TMUX: `${socketPath},1,0`,
     TMUX_PANE: pane,
-    HARNESS_CLAUDE_BIN: FAKE_AGENT,
+    YOK_CLAUDE_BIN: FAKE_AGENT,
   };
   const step = (args: readonly string[], extra: Env = {}, input = "") =>
-    orchestrate(run.repo, run.home, args, { HARNESS_RUN_ID: "r-1", ...env, ...extra }, input);
+    orchestrate(run.repo, run.home, args, { YOK_RUN_ID: "r-1", ...env, ...extra }, input);
   const next = () => JSON.parse(step(["next", "--run", "feat-x"]).stdout);
   const records = (): Array<Record<string, unknown>> =>
     existsSync(out)
@@ -2383,7 +2408,7 @@ const contextOutput = async (repo: string) =>
 
 describe("context node through a real tmux pane", () => {
   test("new: the helper restarts the agent in its pane on a new session, whose SessionStart completes the node", async () => {
-    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    const socket = `yok-e2e-${crypto.randomUUID()}`;
     try {
       const flow = await runToContextNode("action: new", socket);
       expect(flow.context).toMatchObject({ kind: "context", action: "new", nodeId: "fresh" });
@@ -2409,7 +2434,7 @@ describe("context node through a real tmux pane", () => {
   }, 30_000);
 
   test("new: the restarted session starts with the project's .env and the workflow's env", async () => {
-    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    const socket = `yok-e2e-${crypto.randomUUID()}`;
     try {
       const flow = await runToContextNode(
         "action: new",
@@ -2425,7 +2450,7 @@ describe("context node through a real tmux pane", () => {
       expect(flow.launches()[1]?.env).toMatchObject({
         E2E_FLOW: "workflow",
         E2E_DOTENV: "dotenv",
-        HARNESS_RUN_ID: "r-1",
+        YOK_RUN_ID: "r-1",
       });
     } finally {
       spawnSync("tmux", ["-L", socket, "kill-server"]);
@@ -2433,7 +2458,7 @@ describe("context node through a real tmux pane", () => {
   }, 30_000);
 
   test("new: with no switch made, the restarted session launches on the default tier's model and effort", async () => {
-    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    const socket = `yok-e2e-${crypto.randomUUID()}`;
     try {
       const flow = await runToContextNode("action: new", socket, {
         tiers: { default: "deep", models: { deep: { model: "opus", effort: "high" } } },
@@ -2451,7 +2476,7 @@ describe("context node through a real tmux pane", () => {
   }, 30_000);
 
   test("SC18: new: after a switch from the default fast tier's sonnet-x to opus-x is applied, the restarted session launches with --model opus-x", async () => {
-    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    const socket = `yok-e2e-${crypto.randomUUID()}`;
     try {
       const tiers = { default: "fast", models: { fast: { model: "sonnet-x" } } };
       const flow = await runToContextNode("action: new", socket, { tiers });
@@ -2479,7 +2504,7 @@ describe("context node through a real tmux pane", () => {
   }, 30_000);
 
   test("model: before a deep stage on a run launched on fast, next asks for opus-x; the stop's helper resumes session A on it, and its SessionStart records the switch", async () => {
-    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    const socket = `yok-e2e-${crypto.randomUUID()}`;
     try {
       const flow = await runInPane(
         `name: tiered
@@ -2495,7 +2520,7 @@ nodes:
             models: { fast: { model: "sonnet-x" }, deep: { model: "opus-x" } },
           },
         },
-        { HARNESS_SKILLS_DIR: stageSkills() },
+        { YOK_SKILLS_DIR: stageSkills() },
       );
       expect(flow.next()).toEqual({ kind: "model", nodeId: "think", model: "opus-x" });
 
@@ -2524,7 +2549,7 @@ nodes:
   }, 30_000);
 
   test("compact: the helper types /compact; the compact's SessionStart completes the node and types the resume prompt", async () => {
-    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    const socket = `yok-e2e-${crypto.randomUUID()}`;
     try {
       const flow = await runToContextNode('action: compact, prompt: "keep the plan"', socket);
       expect(flow.context).toMatchObject({ kind: "context", action: "compact" });
@@ -2549,7 +2574,7 @@ nodes:
 
 describe("orchestrate hook stop-failure", () => {
   // The test itself may run inside tmux; the helper must not find this pane and type into it.
-  const RUN_ENV = { HARNESS_RUN_ID: "r-1", TMUX: undefined, TMUX_PANE: undefined };
+  const RUN_ENV = { YOK_RUN_ID: "r-1", TMUX: undefined, TMUX_PANE: undefined };
 
   test("a usage limit is logged as agent.limit.reached and its detached wait starts, which with no terminal only logs why it cannot type", async () => {
     const run = startedRun(ONE_AGENT);
@@ -2616,22 +2641,22 @@ describe("orchestrate statusline", () => {
     const { repo, home } = runWithRunningNode();
     const stdin = JSON.stringify({ model: { display_name: "Opus" } });
 
-    const result = orchestrate(repo, home, ["statusline"], { HARNESS_RUN_ID: "r-1" }, stdin);
+    const result = orchestrate(repo, home, ["statusline"], { YOK_RUN_ID: "r-1" }, stdin);
 
     expect(result.code).toBe(0);
     expect(stripVTControlCharacters(result.stdout)).toMatch(
-      /^harness feat-x ▸ design \[░░░░░░░░░░\] 0\/2 · \d+s · Opus\n$/,
+      /^yok feat-x ▸ design \[░░░░░░░░░░\] 0\/2 · \d+s · Opus\n$/,
     );
   });
 
-  test("SC14, SC17: --run-id prints the running node of that run with empty stdin and no HARNESS_RUN_ID", () => {
+  test("SC14, SC17: --run-id prints the running node of that run with empty stdin and no YOK_RUN_ID", () => {
     const { repo, home } = runWithRunningNode();
 
     const result = orchestrate(repo, home, ["statusline", "--run-id", "r-1"], {}, "");
 
     expect(result.code).toBe(0);
     expect(stripVTControlCharacters(result.stdout)).toMatch(
-      /^harness feat-x ▸ design \[░░░░░░░░░░\] 0\/2 · \d+s\n$/,
+      /^yok feat-x ▸ design \[░░░░░░░░░░\] 0\/2 · \d+s\n$/,
     );
   });
 
@@ -2640,10 +2665,10 @@ describe("orchestrate statusline", () => {
 
     const result = orchestrate(repo, home, ["statusline", "--run-id", "r-nope"], {}, "");
 
-    expect(result).toMatchObject({ code: 0, stdout: "harness · starting\n" });
+    expect(result).toMatchObject({ code: 0, stdout: "yok · starting\n" });
   });
 
-  test("SC9: with HARNESS_RUN_ID unset it prints nothing and exits 0", () => {
+  test("SC9: with YOK_RUN_ID unset it prints nothing and exits 0", () => {
     const { repo, home } = runWithRunningNode();
 
     const result = orchestrate(repo, home, ["statusline"], {}, "{}");
@@ -2655,23 +2680,23 @@ describe("orchestrate statusline", () => {
     const { repo, home, statePath } = runWithRunningNode();
     writeFileSync(statePath, "{ corrupt");
 
-    const result = orchestrate(repo, home, ["statusline"], { HARNESS_RUN_ID: "r-1" }, "{}");
+    const result = orchestrate(repo, home, ["statusline"], { YOK_RUN_ID: "r-1" }, "{}");
 
-    expect(result).toMatchObject({ code: 0, stdout: "harness feat-x\n" });
+    expect(result).toMatchObject({ code: 0, stdout: "yok feat-x\n" });
   });
 
   test("SC9: a corrupt registry prints the starting line and exits 0", () => {
     const { repo, home } = runWithRunningNode();
     writeFileSync(join(home, "registry.json"), "{ corrupt");
 
-    const result = orchestrate(repo, home, ["statusline"], { HARNESS_RUN_ID: "r-1" }, "{}");
+    const result = orchestrate(repo, home, ["statusline"], { YOK_RUN_ID: "r-1" }, "{}");
 
-    expect(result).toMatchObject({ code: 0, stdout: "harness · starting\n" });
+    expect(result).toMatchObject({ code: 0, stdout: "yok · starting\n" });
   });
 });
 
 describe("orchestrate hook --agent codex", () => {
-  const RUN_ENV = { HARNESS_RUN_ID: "r-1" };
+  const RUN_ENV = { YOK_RUN_ID: "r-1" };
   const common = { cwd: "/x", hook_event_name: "X", model: "gpt-5", permission_mode: "default" };
 
   const hook = (
@@ -2707,7 +2732,7 @@ describe("orchestrate hook --agent codex", () => {
       session_id: "c1",
       tool_name: "apply_patch",
       tool_input: {
-        command: "*** Begin Patch\n*** Update File: .harness/feat-x/state.json\n*** End Patch",
+        command: "*** Begin Patch\n*** Update File: .yok/feat-x/state.json\n*** End Patch",
       },
       cwd: run.repo,
     });

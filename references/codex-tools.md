@@ -1,6 +1,6 @@
 # Codex compatibility guide
 
-Harness was authored against the Claude Code vocabulary, but Codex CLI (`openai/codex`) provides native equivalents for nearly every surface. This document is the authoritative mapping.
+Yok was authored against the Claude Code vocabulary, but Codex CLI (`openai/codex`) provides native equivalents for nearly every surface. This document is the authoritative mapping.
 
 ## Tool equivalents
 
@@ -14,7 +14,7 @@ Harness was authored against the Claude Code vocabulary, but Codex CLI (`openai/
 | `WebFetch` / `WebSearch` | `web_search` | First-party tool. Disable via `web_search = "disabled"` in `config.toml`. |
 | `Skill` tool | `/skills` or `$skill-name` | Codex has a native skills concept. Skills also auto-activate from their `description` frontmatter. |
 | `Agent` / `Task` (subagent dispatch) | TOML agent definitions under `.codex/agents/*.toml` (project) or `~/.codex/agents/*.toml` (user) | Codex spawns implicitly; there is no user-facing spawn/wait/close tool. Concurrency controlled by `[agents] max_threads` (default 6) and `max_depth` (default 1) in `config.toml`. |
-| `subagent_type: "Explore" / "Plan" / "general-purpose"` | `.codex/agents/explore.toml`, `plan.toml`, `worker.toml` | Harness ships these; see `.codex/agents/` at the plugin root. |
+| `subagent_type: "Explore" / "Plan" / "general-purpose"` | `.codex/agents/explore.toml`, `plan.toml`, `worker.toml` | Yok ships these; see `.codex/agents/` at the plugin root. |
 | `AskUserQuestion` | inline question to the user | Plain text — no structured-choice tool. |
 | `ScheduleWakeup` / `CronCreate` | not available | No scheduling primitives. |
 
@@ -77,7 +77,7 @@ max_depth = 1
 job_max_runtime_seconds = 1800
 ```
 
-Harness ships three agents at `.codex/agents/` to mirror Claude Code's subagent roles: `explore.toml`, `plan.toml`, `worker.toml`.
+Yok ships three agents at `.codex/agents/` to mirror Claude Code's subagent roles: `explore.toml`, `plan.toml`, `worker.toml`.
 
 ## MCP servers
 
@@ -91,7 +91,7 @@ There is no `settings.json` in Codex — everything lives in `config.toml`.
 - Approval policies: `on-request` | `never` | `untrusted` | granular object with `sandbox_approval`, `rules`, `mcp_elicitations`, `request_permissions`, `skill_approval`.
 - Filesystem and network allowlists: `[permissions.<profile>.filesystem]` and `[permissions.<profile>.network.domains]`, selected via `default_permissions`.
 
-A starter permissions block matching the harness allowlist is at `references/codex-config.toml`.
+A starter permissions block matching the yok allowlist is at `references/codex-config.toml`.
 
 ## Slash commands
 

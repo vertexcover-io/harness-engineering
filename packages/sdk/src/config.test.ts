@@ -52,7 +52,7 @@ environments:
 
 extensions:
   planning:
-    skill: harness/planning.md
+    skill: yok/planning.md
 
 env:
   SLACK_CHANNEL_ID: C09XXXXXXXX
@@ -223,7 +223,7 @@ describe("ConfigSchema", () => {
       "stackDown",
     ]);
     expect(config.extensions).toEqual({
-      planning: { skill: "harness/planning.md", references: {} },
+      planning: { skill: "yok/planning.md", references: {} },
     });
   });
 
@@ -392,13 +392,13 @@ describe("hooks", () => {
       `version: 2
 hooks:
   workflow.node.completed:
-    - { name: asana, module: harness/asana.ts, handler: onDone }
+    - { name: asana, module: yok/asana.ts, handler: onDone }
     - { name: log-it, command: "cat >> hooks.txt", blocking: false, timeoutSeconds: 5 }
 `,
     );
 
     const [asana, logIt] = config.hooks["workflow.node.completed"] ?? [];
-    expect(asana).toEqual({ name: "asana", module: "harness/asana.ts", handler: "onDone" });
+    expect(asana).toEqual({ name: "asana", module: "yok/asana.ts", handler: "onDone" });
     expect(logIt).toEqual({
       name: "log-it",
       command: "cat >> hooks.txt",

@@ -23,7 +23,7 @@ A test stage for workflow runs. The input is `{ "topic": TOPIC }`.
 
 ## Steps
 
-1. Write two sentences about `TOPIC` to `.harness/RUN_NAME/artifacts/brief.md`, where
+1. Write two sentences about `TOPIC` to `.yok/RUN_NAME/artifacts/brief.md`, where
    `RUN_NAME` is the run's name.
 2. Finish the node with `--artifact brief=artifacts/brief.md`, and reply with:
 

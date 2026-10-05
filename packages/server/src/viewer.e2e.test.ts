@@ -3,9 +3,9 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { WorkflowRun } from "@harness/sdk";
-import { noopLogger } from "@harness/sdk";
-import { createRegistry } from "@harness/sdk/internal";
+import type { WorkflowRun } from "@yok/sdk";
+import { noopLogger } from "@yok/sdk";
+import { createRegistry } from "@yok/sdk/internal";
 import { stopDeliveries } from "./delivery.ts";
 import { claudeOver, EMPTY_BOX, fakeHost } from "./fake-host.ts";
 import { startViewer, type Viewer } from "./viewer.ts";
@@ -13,7 +13,7 @@ import { startViewer, type Viewer } from "./viewer.ts";
 const ORCHESTRATE = join(import.meta.dir, "..", "..", "core", "src", "orchestrate.ts");
 const SESSION = `viewer-e2e-${process.pid}`;
 
-const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "harness-viewer-e2e-")));
+const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "yok-viewer-e2e-")));
 
 const DESIGN = [
   "# Design",
@@ -179,7 +179,7 @@ describe("viewer in a browser", () => {
     home = tempDir();
     cwd = tempDir();
     execFileSync("git", ["init", "-q"], { cwd });
-    runDir = join(cwd, ".harness", "demo");
+    runDir = join(cwd, ".yok", "demo");
     mkdirSync(join(runDir, "artifacts"), { recursive: true });
     writeFileSync(join(runDir, "artifacts", "design.md"), DESIGN);
     writeFileSync(join(runDir, "artifacts", "mock.html"), MOCKUP);
@@ -229,7 +229,7 @@ describe("viewer in a browser", () => {
   test("SC33: Comment mode gates the selection bar, and a sent comment reaches the agent's status", async () => {
     await browser("open", `${url}#artifacts/design.md`);
     await until("!!document.querySelector('#docRoot')");
-    await evaluate("localStorage.setItem('harness-viewer:comment-mode','off')");
+    await evaluate("localStorage.setItem('yok-viewer:comment-mode','off')");
     await browser("reload");
     await until("!!document.querySelector('#docRoot')");
 
@@ -279,7 +279,7 @@ describe("viewer in a browser", () => {
       {
         cwd,
         encoding: "utf8",
-        env: { ...process.env, HARNESS_RUN_ID: undefined, HARNESS_HOME: home },
+        env: { ...process.env, YOK_RUN_ID: undefined, YOK_HOME: home },
       },
     );
     expect(reply.status).toBe(0);

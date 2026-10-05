@@ -112,7 +112,6 @@ const PUBLIC_RUNTIME_NAMES = [
   "fail",
   "findConfigRoot",
   "findRoot",
-  "harnessHome",
   "isNormalizedRelativePath",
   "jsonLogger",
   "killRunning",
@@ -152,6 +151,7 @@ const PUBLIC_RUNTIME_NAMES = [
   "unknownPackage",
   "warn",
   "withLock",
+  "yokHome",
 ];
 
 describe("source boundaries", () => {
@@ -170,7 +170,7 @@ describe("source boundaries", () => {
 
   test("SC3: no source file imports the deleted agents package, and the package is gone", () => {
     // Built from parts so this file's own needle text can't match itself.
-    const agentsImport = ["@harness", "agents"].join("/");
+    const agentsImport = ["@yok", "agents"].join("/");
     const sources = ["packages/*/src/**/*.ts", "skills/**/*.{ts,mts,js,mjs}"].flatMap((pattern) =>
       filesContaining(pattern, agentsImport),
     );
@@ -180,7 +180,7 @@ describe("source boundaries", () => {
 
   test("sdk never imports core, so it installs as a library on its own", () => {
     // Built from parts so this file's own needle text can't match itself.
-    const coreImport = `from "${["@harness", "core"].join("/")}"`;
+    const coreImport = `from "${["@yok", "core"].join("/")}"`;
     expect(filesContaining("packages/sdk/**/*.ts", coreImport)).toEqual([]);
   });
 
@@ -194,12 +194,12 @@ describe("source boundaries", () => {
     expect(sources).toEqual(["packages/sdk/src/state.ts"]);
   });
 
-  test("EH12 — no skill script imports @harness/core; skills act on a run through the orchestrate script or the sdk", () => {
-    expect(filesContaining("skills/**/*.{ts,mts,js,mjs}", /["']@harness\/core["'/]/)).toEqual([]);
+  test("EH12 — no skill script imports @yok/core; skills act on a run through the orchestrate script or the sdk", () => {
+    expect(filesContaining("skills/**/*.{ts,mts,js,mjs}", /["']@yok\/core["'/]/)).toEqual([]);
   });
 
-  test("SC5: @harness/sdk exports exactly the agreed runtime names", async () => {
-    const names = Object.keys(await import("@harness/sdk")).sort();
+  test("SC5, SC7: @yok/sdk exports exactly the agreed runtime names", async () => {
+    const names = Object.keys(await import("@yok/sdk")).sort();
     expect(names).toEqual(PUBLIC_RUNTIME_NAMES);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -234,7 +234,7 @@ describe("source boundaries", () => {
   });
 
   test("SC7: no skill script imports the sdk's internal entry", () => {
-    const internalImport = ["@harness/sdk", "internal"].join("/");
+    const internalImport = ["@yok/sdk", "internal"].join("/");
     expect(
       filesContaining("skills/**/*.{ts,mts,js,mjs}", internalImport, { excludeTests: true }),
     ).toEqual([]);

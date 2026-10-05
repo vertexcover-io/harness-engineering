@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ITerminal, ITerminalHost, TerminalSpec } from "@harness/sdk";
+import type { ITerminal, ITerminalHost, TerminalSpec } from "@yok/sdk";
 import * as z from "zod";
 import { codexArgs, codexProvider, codexRunArgs, redactCodexRunArgs } from "./codex.ts";
 
@@ -206,7 +206,7 @@ describe("codexProvider.launch", () => {
 
     await provider.launch({
       cwd: "/repo",
-      env: { HARNESS_RUN_ID: "r-9" },
+      env: { YOK_RUN_ID: "r-9" },
       orchestrateArgv: ["bun", "/o/orchestrate.ts"],
     });
 
@@ -223,7 +223,7 @@ describe("codexProvider.launch", () => {
     const created: Created = {};
     const provider = codexProvider({ host: fakeHost(created), newId: () => "u1" });
 
-    await provider.launch({ cwd: "/repo", env: { HARNESS_RUN_ID: "r-9" } });
+    await provider.launch({ cwd: "/repo", env: { YOK_RUN_ID: "r-9" } });
 
     expect(created.spec?.statusLine).toBeUndefined();
   });

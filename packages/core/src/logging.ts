@@ -66,7 +66,7 @@ export type CaptureLogger = {
 export const captureLogger = (): CaptureLogger => {
   const lines: CapturedLine[] = [];
   const log = createLogger(
-    { service: "harness-test" },
+    { service: "yok-test" },
     {
       level: "debug",
       destination: {

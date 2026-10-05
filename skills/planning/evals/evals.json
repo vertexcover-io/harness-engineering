@@ -4,7 +4,7 @@
     {
       "id": 1,
       "name": "builds-from-the-design-without-regrilling",
-      "prompt": "Run the planning stage. .harness/csv-export/artifacts/design.md is approved: it adds a CSV export of the runs list as a new server route reusing the existing list query, with D1 'stream the rows' instead of 'build the file in memory'.",
+      "prompt": "Run the planning stage. .yok/csv-export/artifacts/design.md is approved: it adds a CSV export of the runs list as a new server route reusing the existing list query, with D1 'stream the rows' instead of 'build the file in memory'.",
       "expected_output": "The stage reads design.md, sweeps the code with Explore agents, and writes plan.md and phase files that build the streaming route. It asks the user nothing the design already answers, and its only question is the Approve? gate.",
       "files": [],
       "expectations": [
@@ -22,7 +22,7 @@
     {
       "id": 2,
       "name": "every-change-is-a-diff",
-      "prompt": "plan: rename the `owner` field on Invoice to `issuedBy` across the API, the store and the two React forms that write it. The design is approved at .harness/rename-owner/artifacts/design.md.",
+      "prompt": "plan: rename the `owner` field on Invoice to `issuedBy` across the API, the store and the two React forms that write it. The design is approved at .yok/rename-owner/artifacts/design.md.",
       "expected_output": "Phase files whose steps show each change as a ```diff fence under a line naming the file and range: removed lines with -, added lines with +, a hunk header when line numbers are known. Existing code appears only as - lines, or as a labelled pattern block when the step imitates it.",
       "files": [],
       "expectations": [
@@ -57,7 +57,7 @@
     {
       "id": 4,
       "name": "no-finish-without-approval",
-      "prompt": "Run the planning stage for the approved design at .harness/node-timeout/artifacts/design.md. When shown the plan, I'll answer Revise and ask for phases 2 and 3 to be merged.",
+      "prompt": "Run the planning stage for the approved design at .yok/node-timeout/artifacts/design.md. When shown the plan, I'll answer Revise and ask for phases 2 and 3 to be merged.",
       "expected_output": "The first Approve? question gets Revise. The stage merges the phases in the files, re-runs its self-review, says what changed, and asks Approve? again. The stage finishes only after an Approve answer.",
       "files": [],
       "expectations": [

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Event, EventSchema, runDirOf } from "@harness/sdk";
+import { type Event, EventSchema, runDirOf } from "@yok/sdk";
 import {
   citeLines,
   extractMain,

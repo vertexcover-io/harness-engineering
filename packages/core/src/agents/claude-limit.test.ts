@@ -1,7 +1,7 @@
 // Banner and menu cases adapted from claude-auto-retry test/time-parser.test.js and
 // test/patterns.test.js (https://github.com/cheapestinference/claude-auto-retry, commit cb99967f, MIT).
 import { describe, expect, test } from "bun:test";
-import type { ResetWait } from "@harness/sdk";
+import type { ResetWait } from "@yok/sdk";
 import { limitMenuKeys, readResetWait } from "./claude-limit.ts";
 
 const MINUTE = 60_000;

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type CommentDraft, CommentDraftSchema } from "@harness/sdk/internal";
+import { type CommentDraft, CommentDraftSchema } from "@yok/sdk/internal";
 import {
   addComments,
   addUserReply,
@@ -16,7 +16,7 @@ import {
 } from "./comments.ts";
 
 const NOW = new Date("2026-01-01T00:00:00.000Z");
-const runDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "harness-comments-")));
+const runDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "yok-comments-")));
 
 const anchor = { quote: "After saving a batch", before: "b", after: "a" };
 const comment = (text: string): CommentDraft => ({

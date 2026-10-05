@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigSchema } from "./config.ts";
-import { loadEnv, readProjectEnv } from "./env.ts";
+import { loadEnv, readProjectEnv, sessionEnv } from "./env.ts";
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "sdk-env-")));
 
@@ -14,7 +14,7 @@ const git = (cwd: string, ...args: string[]): string =>
 const makeRepo = (dir = tempDir()): string => {
   mkdirSync(dir, { recursive: true });
   git(dir, "init", "-q", "-b", "main");
-  writeFileSync(join(dir, ".gitignore"), ".worktrees/\n.harness/\n");
+  writeFileSync(join(dir, ".gitignore"), ".worktrees/\n.yok/\n");
   git(dir, "add", ".");
   git(dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init");
   return dir;
@@ -253,4 +253,13 @@ describe("loadEnv", () => {
       expect(errorOf(env)).toContain(join(repo, "missing.env"));
     },
   );
+});
+
+describe("sessionEnv", () => {
+  test("SC2: a session starts with YOK_RUN_ID and YOK_HOME over the run's env, and no variable of the old name", () => {
+    const env = sessionEnv({ A: "1" }, "run-1", "/h");
+    expect(env).toEqual({ A: "1", YOK_RUN_ID: "run-1", YOK_HOME: "/h" });
+    const oldPrefix = `${["HAR", "NESS"].join("")}_`;
+    expect(Object.keys(env).filter((key) => key.startsWith(oldPrefix))).toEqual([]);
+  });
 });

@@ -1,11 +1,11 @@
 import { isAbsolute, join } from "node:path";
-import { WorkflowAgentSchema } from "@harness/core";
-import { harnessHome, JsonObjectSchema, SlugSchema, TiersConfigSchema } from "@harness/sdk";
+import { WorkflowAgentSchema } from "@yok/core";
+import { JsonObjectSchema, SlugSchema, TiersConfigSchema, yokHome } from "@yok/sdk";
 import * as z from "zod";
 
-export const socketPath = (home: string = harnessHome()): string => join(home, "harness.sock");
-export const pidPath = (home: string = harnessHome()): string => join(home, "server.pid");
-export const logPath = (home: string = harnessHome()): string => join(home, "server.log");
+export const socketPath = (home: string = yokHome()): string => join(home, "yok.sock");
+export const pidPath = (home: string = yokHome()): string => join(home, "server.pid");
+export const logPath = (home: string = yokHome()): string => join(home, "server.log");
 
 const AbsolutePathSchema = z
   .string()
@@ -30,10 +30,10 @@ export const StartRunBodySchema = z.strictObject({
   agent: WorkflowAgentSchema.default("claude"),
   // the workflow's tiers, merged over the built-in and the config's into the run's tier set
   tiers: TiersConfigSchema.default({}),
-  // the env the session starts with, which harness run builds from the project's .env, the config
+  // the env the session starts with, which yok run builds from the project's .env, the config
   // and the workflow; required, so a caller that forgets it is refused rather than run without it
   env: z.record(z.string(), z.string()),
-  // the config file harness run --config named; the run reads it instead of its checkout's
+  // the config file yok run --config named; the run reads it instead of its checkout's
   config: AbsolutePathSchema.optional(),
 });
 export type StartRunBody = z.infer<typeof StartRunBodySchema>;

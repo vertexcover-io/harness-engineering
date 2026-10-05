@@ -23,7 +23,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-import type { ResetWait } from "@harness/sdk";
+import type { ResetWait } from "@yok/sdk";
 
 const MINUTE_MS = 60_000;
 const DAY_MINUTES = 24 * 60;

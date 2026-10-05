@@ -1,7 +1,7 @@
 # Test workflow for a project-added ticket provider. ticket-fetcher reads the `demo` reference,
 # which orchestrate.config.yaml adds with extensions.ticket-fetcher.references.demo, and runs
 # demo-workflows/scripts/demo-tickets.ts. echo then prints the task text, which holds the ticket body.
-# Try it with: harness run demo-workflows/ticket-demo.yaml --prompt "work on DEMO-42"
+# Try it with: yok run demo-workflows/ticket-demo.yaml --prompt "work on DEMO-42"
 name: ticket-demo
 inputs:
   prompt: { type: string, required: true }

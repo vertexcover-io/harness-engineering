@@ -73,7 +73,7 @@ contradicts a default. What it cannot do is silently remove a rule by not mentio
 absence is a gap, filled by the next source down.
 
 1. The input's `standards`, or `$ARGUMENTS` standalone, when it is a path to an existing file
-2. `.claude/rules/*` and `.claude/harness/code-review-reference.md` in the project root
+2. `.claude/rules/*` and `.claude/yok/code-review-reference.md` in the project root
 3. Any standards the repo documents — `CODING_STANDARDS.md`, `CONTRIBUTING.md`,
    `STYLE_GUIDE.md`, `docs/` equivalents, or the conventions section of `CLAUDE.md`/`AGENTS.md`
 4. The `references/persona-*.md` file each agent is given, and the `code-quality` and `tdd`
@@ -91,10 +91,10 @@ names are flags: `/code-review [--plan PATH] [--pr NUMBER] [--commits RANGE] [--
 | Field | Meaning |
 |---|---|
 | `workspace` | the create-workspace stage's output. Review inside each repo's `worktreeDir`; without it, the current checkout. |
-| `plan` | the plan or design doc the change was written from, for the Spec agent. In a run it defaults to `.harness/RUN/artifacts/plan.md`, with `design.md` beside it. With neither, the Spec agent infers intent from the commits, PR description and branch name. |
+| `plan` | the plan or design doc the change was written from, for the Spec agent. In a run it defaults to `.yok/RUN/artifacts/plan.md`, with `design.md` beside it. With neither, the Spec agent infers intent from the commits, PR description and branch name. |
 | `pr` | review a PR diff (`gh pr diff NUMBER`). |
 | `commits` | review a commit range, such as `HEAD~3..HEAD`. |
-| `output` | where to write the report. In a run it is always `.harness/RUN/artifacts/review.md`. |
+| `output` | where to write the report. In a run it is always `.yok/RUN/artifacts/review.md`. |
 
 **Scope** (first match wins): `pr` → the PR diff · `commits` → that range, three-dot against its
 start ref · in a run → the run's branch against its merge-base with the base branch · none →
@@ -203,11 +203,11 @@ pick a single winner across axes.
 
 **Where it goes** — always write the file:
 
-- **In a run** → `.harness/RUN/artifacts/review.md`.
+- **In a run** → `.yok/RUN/artifacts/review.md`.
 - **Standalone with `--output PATH`** → write there and report the verdict plus every blocking
   finding.
-- **Standalone without it** → write `.harness/review.md`, falling back to `./REVIEW.md` when
-  there's no `.harness/`, **and** print the full review inline. A human asked; make them open a
+- **Standalone without it** → write `.yok/review.md`, falling back to `./REVIEW.md` when
+  there's no `.yok/`, **and** print the full review inline. A human asked; make them open a
   file to see the answer and they won't.
 
 ## Step 4 — Apply the fixes

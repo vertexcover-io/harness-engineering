@@ -16,8 +16,8 @@ import {
   type Result,
   type RunRef,
   runDirOf,
-} from "@harness/sdk";
-import { jsonlEventStore } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { jsonlEventStore } from "@yok/sdk/internal";
 import {
   addRepositories as addWith,
   CreateWorkspaceInputSchema,
@@ -676,7 +676,7 @@ describe("create events", () => {
     const root = makeRepo(tempDir());
     const result = await createWorkspace({ root, branch: "feat-x" });
     expect(result.ok && result.value.repos.map((repo) => repo.status)).toEqual(["ready"]);
-    expect(existsSync(join(root, ".harness"))).toBe(false);
+    expect(existsSync(join(root, ".yok"))).toBe(false);
   });
 
   test("WS17 — a multi create of two repos records one workspace.created listing both under their repo ids", async () => {

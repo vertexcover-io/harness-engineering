@@ -9,9 +9,9 @@ import {
   runDoctor,
   verdict,
   workflowChecks,
-} from "@harness/core";
-import { stopRunningOnSignal } from "@harness/sdk";
-import { runtimeChecks } from "@harness/server";
+} from "@yok/core";
+import { stopRunningOnSignal } from "@yok/sdk";
+import { runtimeChecks } from "@yok/server";
 import { cliLog, commandLog, compileOrFail } from "./client.ts";
 
 const HEADERS = ["CHECK", "REQUIRED", "STATUS", "DETAIL", "FIX"] as const;
@@ -91,7 +91,7 @@ const declaredChecks = async (workflow: string | undefined) => {
 
 export const doctorCommand = () =>
   new Command("doctor")
-    .description("Check the tools, repository and config a harness run needs")
+    .description("Check the tools, repository and config a yok run needs")
     .option("--json", "print the report as JSON")
     .option("--workflow <name|path>", "also run the checks this workflow declares")
     .action(async ({ json, workflow }) => {

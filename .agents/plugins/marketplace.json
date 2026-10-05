@@ -1,11 +1,11 @@
 {
-  "name": "harness",
+  "name": "yok",
   "interface": {
-    "displayName": "Harness"
+    "displayName": "Yok"
   },
   "plugins": [
     {
-      "name": "harness",
+      "name": "yok",
       "source": {
         "source": "url",
         "url": "https://github.com/vertexcover-io/harness-engineering.git"

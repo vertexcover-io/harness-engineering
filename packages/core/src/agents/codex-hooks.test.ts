@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { noopLogger, type RegistryReader } from "@harness/sdk";
+import { noopLogger, type RegistryReader } from "@yok/sdk";
 import { recordGuard } from "../hooks/pre-tool-use.ts";
 import { continueWorkflow } from "../hooks/stop.ts";
 import { codexAdapter, readCodexTranscript } from "./codex-hooks.ts";
@@ -12,7 +12,7 @@ const NO_RUNS: RegistryReader = {
   findRunsByName: async () => [],
   listRuns: async () => [],
 };
-const deps = { registry: NO_RUNS, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger };
+const deps = { registry: NO_RUNS, env: { YOK_RUN_ID: "r-1" }, log: noopLogger };
 
 const line = (type: string, payload: unknown): string =>
   JSON.stringify({ timestamp: "2026-01-01T00:00:00Z", type, payload });
@@ -50,10 +50,10 @@ describe("codexAdapter.stop", () => {
 describe("codexAdapter.preToolUse", () => {
   const stdin = (tool_name: string, tool_input: Record<string, unknown>) =>
     JSON.stringify({ session_id: "s1", tool_name, tool_input, cwd: "/repo" });
-  const TARGET = ".harness/x/state.json";
+  const TARGET = ".yok/x/state.json";
 
   test("SC10: a shell write to state.json and an apply_patch on event.jsonl are denied in Codex's format", async () => {
-    const patch = `*** Begin Patch\n*** Add File: notes.md\n+hi\n*** Update File: .harness/x/event.jsonl\n@@\n+x\n*** End Patch`;
+    const patch = `*** Begin Patch\n*** Add File: notes.md\n+hi\n*** Update File: .yok/x/event.jsonl\n@@\n+x\n*** End Patch`;
     for (const input of [
       stdin("Bash", { command: `rm ${TARGET}` }),
       stdin("exec_command", { command: `mv a ${TARGET}` }),

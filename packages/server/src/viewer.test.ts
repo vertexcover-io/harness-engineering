@@ -9,10 +9,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { addComments, readComments, replyToComment } from "@harness/core";
-import type { State, WorkflowRun } from "@harness/sdk";
-import { noopLogger } from "@harness/sdk";
-import { createRegistry } from "@harness/sdk/internal";
+import { addComments, readComments, replyToComment } from "@yok/core";
+import type { State, WorkflowRun } from "@yok/sdk";
+import { noopLogger } from "@yok/sdk";
+import { createRegistry } from "@yok/sdk/internal";
 import { stopDeliveries } from "./delivery.ts";
 import { claudeOver, EMPTY_BOX, fakeHost, RULE } from "./fake-host.ts";
 import {
@@ -25,7 +25,7 @@ import {
 } from "./viewer.ts";
 
 const tempDir = (prefix: string): string =>
-  realpathSync(mkdtempSync(join(tmpdir(), `harness-${prefix}-`)));
+  realpathSync(mkdtempSync(join(tmpdir(), `yok-${prefix}-`)));
 
 const put = (root: string, rel: string, content: string | Uint8Array): void => {
   mkdirSync(dirname(join(root, rel)), { recursive: true });
@@ -274,7 +274,7 @@ describe("listArtifacts symlinks", () => {
 
 describe("resolveArtifactPath", () => {
   test("SC4: a path that leaves the artifacts folder is refused", () => {
-    const runDir = "/runs/x/.harness/n";
+    const runDir = "/runs/x/.yok/n";
     expect(resolveArtifactPath(runDir, "artifacts/../state.json")).toBeNull();
     expect(resolveArtifactPath(runDir, "../../etc/passwd")).toBeNull();
     expect(resolveArtifactPath(runDir, "/etc/passwd")).toBeNull();
@@ -323,7 +323,7 @@ const setup = async (screen?: string, alive = true) => {
       headers: { host: "localhost:4000", "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-  return { cwd, registry, app, get, post, calls, opened, runDir: join(cwd, ".harness", "demo") };
+  return { cwd, registry, app, get, post, calls, opened, runDir: join(cwd, ".yok", "demo") };
 };
 
 const until = async (check: () => Promise<boolean>): Promise<void> => {
@@ -645,7 +645,7 @@ describe("run stream", () => {
       );
 
       await registry.initRun("r-late", "late");
-      const lateDir = join(cwd, ".harness", "late");
+      const lateDir = join(cwd, ".yok", "late");
       await sse.waitFor(
         (e) =>
           e.event === "files" &&

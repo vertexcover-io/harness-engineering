@@ -3,8 +3,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registryPath, type WorkflowRun } from "@harness/sdk";
-import { createRegistry } from "@harness/sdk/internal";
+import { registryPath, type WorkflowRun } from "@yok/sdk";
+import { createRegistry } from "@yok/sdk/internal";
 
 const CLI = join(import.meta.dir, "index.ts");
 
@@ -14,11 +14,11 @@ afterEach(() => {
 });
 
 const setup = async () => {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "harness-view-repo-")));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "yok-view-repo-")));
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd });
-  const home = mkdtempSync(join(tmpdir(), "harness-view-home-"));
+  const home = mkdtempSync(join(tmpdir(), "yok-view-home-"));
   writeFileSync(join(home, ".keep"), "");
-  mkdirSync(join(cwd, ".harness", "fix-login"), { recursive: true });
+  mkdirSync(join(cwd, ".yok", "fix-login"), { recursive: true });
   const record: WorkflowRun = {
     id: "r-1a2b3c4d",
     workflow: "ok",
@@ -33,7 +33,7 @@ const setup = async () => {
     createdAt: new Date().toISOString(),
   };
   await createRegistry(registryPath(home)).addRun(record);
-  const env = { ...process.env, HARNESS_HOME: home };
+  const env = { ...process.env, YOK_HOME: home };
   const view = (...args: string[]) => {
     const result = spawnSync("bun", [CLI, "view", ...args], { cwd, encoding: "utf8", env });
     return { code: result.status ?? 1, stdout: result.stdout.trim(), stderr: result.stderr.trim() };
@@ -45,7 +45,7 @@ const setup = async () => {
   return { view, record };
 };
 
-describe("harness view", () => {
+describe("yok view", () => {
   test("SC12: prints the page URL of a run in this repo, and refuses unknown or ambiguous targets", async () => {
     const { view, record } = await setup();
 

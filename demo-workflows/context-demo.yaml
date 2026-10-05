@@ -1,5 +1,5 @@
 # Test workflow for context nodes: a new session, then a compact with almost nothing to compact,
-# then a real compact steered by a prompt. Run it with `harness run`, so the agent sits in a tmux
+# then a real compact steered by a prompt. Run it with `yok run`, so the agent sits in a tmux
 # pane. Expected run:
 #   remember        the first session is told the secret word BLUEBERRY
 #   fresh           Claude restarts in the same pane on a new session (output applied: true)

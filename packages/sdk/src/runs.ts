@@ -48,7 +48,7 @@ const loadConfigWithRoot = async (path: string, root: string): Promise<Result<Ch
   return loaded.ok ? { ok: true, value: { config: loaded.value.config, path, root } } : loaded;
 };
 
-// The file `harness run --config` named; its relative paths resolve against its own folder.
+// The file `yok run --config` named; its relative paths resolve against its own folder.
 export const loadNamedConfig = (path: string): Promise<Result<CheckoutConfig>> =>
   loadConfigWithRoot(path, dirname(path));
 
@@ -62,7 +62,7 @@ export const loadCheckoutConfig = async (cwd: string): Promise<Result<CheckoutCo
   return { ok: true, value: { config: defaultConfig(), path: null, root: root.value } };
 };
 
-// The config a run starting in cwd reads: the file `harness run --config` named, else the checkout's.
+// The config a run starting in cwd reads: the file `yok run --config` named, else the checkout's.
 export const loadStartConfig = (
   config: string | null,
   cwd: string,
@@ -96,7 +96,7 @@ const toRunRef = (run: WorkflowRun, name: string): Result<RunRef> => {
   return { ok: true, value: { id: run.id, cwd: run.cwd, name } };
 };
 
-// harness run saves the folder it started in, which can be a linked worktree or a multi-layout
+// yok run saves the folder it started in, which can be a linked worktree or a multi-layout
 // sub-repo, so a run belongs to the root its own folder resolves to.
 const belongsTo = async (run: WorkflowRun, root: string): Promise<boolean> => {
   if (run.cwd === root) return true;
@@ -158,11 +158,11 @@ export type PickRunInput = Readonly<{
   cwd: string;
 }>;
 
-// --run-id, else --run, else $HARNESS_RUN_ID: a flag always wins over the session's environment.
+// --run-id, else --run, else $YOK_RUN_ID: a flag always wins over the session's environment.
 // Nothing naming a run picks none, for the commands that can go on without one.
 export const pickRun = async (input: PickRunInput): Promise<Result<RunRef | undefined>> => {
   const { registry, name, cwd } = input;
-  const id = input.id ?? (name === undefined ? input.env.HARNESS_RUN_ID || undefined : undefined);
+  const id = input.id ?? (name === undefined ? input.env.YOK_RUN_ID || undefined : undefined);
   if (id === undefined) {
     return name === undefined ? { ok: true, value: undefined } : findRunByName(registry, name, cwd);
   }
@@ -178,7 +178,7 @@ export const requireRun = async (input: PickRunInput): Promise<Result<RunRef>> =
   const picked = await pickRun(input);
   if (!picked.ok) return picked;
   return picked.value === undefined
-    ? { ok: false, error: "no run: pass --run or --run-id, or run inside a harness session" }
+    ? { ok: false, error: "no run: pass --run or --run-id, or run inside a yok session" }
     : { ok: true, value: picked.value };
 };
 

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type ConfigInput, ConfigSchema } from "@harness/sdk";
+import { type ConfigInput, ConfigSchema } from "@yok/sdk";
 import * as z from "zod";
 import {
   CreateWorkspaceInputSchema,

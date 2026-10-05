@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { noopLogger, registryPath, runDirOf, type WorkflowRun } from "@harness/sdk";
-import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
+import { noopLogger, registryPath, runDirOf, type WorkflowRun } from "@yok/sdk";
+import { createRegistry, jsonlEventStore } from "@yok/sdk/internal";
 import { linkSession } from "./session-start.ts";
 
 const setup = async (name: string | null) => {
-  const home = mkdtempSync(join(tmpdir(), "harness-session-start-"));
-  const cwd = mkdtempSync(join(tmpdir(), "harness-session-start-repo-"));
+  const home = mkdtempSync(join(tmpdir(), "yok-session-start-"));
+  const cwd = mkdtempSync(join(tmpdir(), "yok-session-start-repo-"));
   const run: WorkflowRun = {
     id: "r-1",
     workflow: "demo",
@@ -25,7 +25,7 @@ const setup = async (name: string | null) => {
   const registry = createRegistry(registryPath(home), noopLogger);
   await registry.addRun(run);
   if (name !== null) mkdirSync(runDirOf(cwd, name), { recursive: true });
-  const deps = { registry, env: { HARNESS_RUN_ID: "r-1", HARNESS_HOME: home }, log: noopLogger };
+  const deps = { registry, env: { YOK_RUN_ID: "r-1", YOK_HOME: home }, log: noopLogger };
   return { registry, deps, events: () => jsonlEventStore(runDirOf(cwd, name ?? "none")).read() };
 };
 

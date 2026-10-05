@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type EmitInput, type JsonValue, type Result, readIfExists, withLock } from "@harness/sdk";
+import { type EmitInput, type JsonValue, type Result, readIfExists, withLock } from "@yok/sdk";
 import {
   type AgentStatusSchema,
   type CommentDraft,
   CommentFieldsSchema,
   CommentStatusSchema,
   runLockPath,
-} from "@harness/sdk/internal";
+} from "@yok/sdk/internal";
 import * as z from "zod";
 
 const CommentSchema = CommentFieldsSchema.extend({

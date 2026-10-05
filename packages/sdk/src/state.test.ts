@@ -65,7 +65,7 @@ const seed: State = {
   lastEventSeq: 0,
   runId: "r-test",
   runName: "add-login",
-  runDir: "/work/.harness/add-login",
+  runDir: "/work/.yok/add-login",
   version: "2.0.0",
   workflow: { name: "feature", path: "workflow.yaml" },
   input: {},
@@ -457,7 +457,7 @@ const repoIn = async (name: string): Promise<string> => {
 describe("createState", () => {
   test("SC18: builds a valid first state from the run folder and the frozen handler list, and writes it as state.json", async () => {
     const repo = await repoIn("Fix Login App");
-    const runDir = join(repo, ".harness", "fix-login");
+    const runDir = join(repo, ".yok", "fix-login");
     await mkdir(runDir, { recursive: true });
     await writeFile(join(runDir, "workflow.yaml"), "name: demo\nnodes: []\n");
 

@@ -3,19 +3,19 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registryPath, type WorkflowRun } from "@harness/sdk";
-import { createRegistry } from "@harness/sdk/internal";
+import { registryPath, type WorkflowRun } from "@yok/sdk";
+import { createRegistry } from "@yok/sdk/internal";
 
 const CLI = join(import.meta.dir, "index.ts");
 
 const makeRepo = (): string => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "harness-attach-repo-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "yok-attach-repo-")));
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
   return dir;
 };
 
 const runFolder = (cwd: string, name: string): void => {
-  mkdirSync(join(cwd, ".harness", name), { recursive: true });
+  mkdirSync(join(cwd, ".yok", name), { recursive: true });
 };
 
 const run = (id: string, name: string, cwd: string, terminal: string | null): WorkflowRun => ({
@@ -36,15 +36,15 @@ const attach = (cwd: string, home: string, ...args: string[]) => {
   const result = spawnSync("bun", [CLI, "attach", "--print", ...args], {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, HARNESS_HOME: home, HARNESS_TMUX_SOCKET: "attach-test" },
+    env: { ...process.env, YOK_HOME: home, YOK_TMUX_SOCKET: "attach-test" },
   });
   return { code: result.status ?? 1, stdout: result.stdout.trim(), stderr: result.stderr.trim() };
 };
 
-describe("harness attach", () => {
+describe("yok attach", () => {
   test("SC7: finds a run by name, and refuses unknown names and runs without a terminal", async () => {
     const cwd = makeRepo();
-    const home = mkdtempSync(join(tmpdir(), "harness-attach-home-"));
+    const home = mkdtempSync(join(tmpdir(), "yok-attach-home-"));
     writeFileSync(join(home, ".keep"), "");
     const registry = createRegistry(registryPath(home));
     await registry.addRun(run("r-1a2b3c4d", "fix-login", cwd, "claude-fix-login-3c4d"));
@@ -67,7 +67,7 @@ describe("harness attach", () => {
 
   test("takes a run id only through --run-id, and refuses a name and --run-id that disagree", async () => {
     const cwd = makeRepo();
-    const home = mkdtempSync(join(tmpdir(), "harness-attach-home-"));
+    const home = mkdtempSync(join(tmpdir(), "yok-attach-home-"));
     const registry = createRegistry(registryPath(home));
     await registry.addRun(run("r-1a2b3c4d", "fix-login", cwd, "claude-fix-login-3c4d"));
     runFolder(cwd, "fix-login");
@@ -95,7 +95,7 @@ describe("harness attach", () => {
     execFileSync("git", ["commit", "-q", "--allow-empty", "-m", "init"], { cwd });
     const worktree = join(cwd, "wt");
     execFileSync("git", ["worktree", "add", "-q", worktree, "-b", "wt"], { cwd });
-    const home = mkdtempSync(join(tmpdir(), "harness-attach-home-"));
+    const home = mkdtempSync(join(tmpdir(), "yok-attach-home-"));
     const registry = createRegistry(registryPath(home));
     await registry.addRun(run("r-9c0d1e2f", "in-worktree", worktree, "claude-in-worktree-1e2f"));
     runFolder(worktree, "in-worktree");

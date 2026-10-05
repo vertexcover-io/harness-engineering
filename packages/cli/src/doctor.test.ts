@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DoctorJsonSchema, type DoctorReport, type DoctorRow, summarize } from "@harness/core";
+import { DoctorJsonSchema, type DoctorReport, type DoctorRow, summarize } from "@yok/core";
 import { exitCodeFor, renderJson, renderTable, renderText } from "./doctor.ts";
 
 const row = (overrides: Partial<DoctorRow>): DoctorRow => ({

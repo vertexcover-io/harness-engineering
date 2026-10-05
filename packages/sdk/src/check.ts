@@ -17,7 +17,7 @@ export type Outcome = {
   readonly fix?: readonly string[] | undefined;
 };
 
-// config: the file `harness run --config` named, read in place of the repo's own config.
+// config: the file `yok run --config` named, read in place of the repo's own config.
 export type CheckContext = {
   readonly root: string;
   readonly exec: Exec;

@@ -31,7 +31,7 @@ import {
   stopRunningOnSignal,
   toRepoId,
   unknownPackage,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 
 type Package = Config["packages"][string];
@@ -650,7 +650,7 @@ project's setup and teardown.
   remove BRANCH         remove BRANCH's worktrees
 
   --run NAME        spec name of the run whose event log records this change and whose
-                    config applies (default: $HARNESS_RUN_ID, else none)
+                    config applies (default: $YOK_RUN_ID, else none)
   --run-id ID       the run by id instead of name
   --repos A,B       multi layout: comma-separated packages to branch (remove default: all)
   --base BRANCH     branch a new branch starts from, fetched from origin first
@@ -737,7 +737,7 @@ const splitList = (value: string): string[] =>
 
 type Target = Readonly<{ run: RunRef | undefined; root: string; config: Config }>;
 
-// The run the flags or $HARNESS_RUN_ID name, if any; its config, else the current checkout's; and
+// The run the flags or $YOK_RUN_ID name, if any; its config, else the current checkout's; and
 // the main checkout, where worktrees go.
 const findTarget = async (flags: Flags): Promise<Result<Target>> => {
   const run = await pickRun({

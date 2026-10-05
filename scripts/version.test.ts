@@ -89,11 +89,11 @@ describe("agreedVersion", () => {
   })
 
   test("lets a manifest with no version field be filled in from the others", () => {
-    assert.equal(agreedVersion(['{"version": "1.30.0"}', '{"name": "harness"}']), "1.30.0")
+    assert.equal(agreedVersion(['{"version": "1.30.0"}', '{"name": "yok"}']), "1.30.0")
   })
 
   test("starts at 0.0.0 when no manifest declares a version", () => {
-    assert.equal(agreedVersion(['{"name": "harness"}']), "0.0.0")
+    assert.equal(agreedVersion(['{"name": "yok"}']), "0.0.0")
   })
 })
 
@@ -103,24 +103,24 @@ describe("readVersion", () => {
   })
 
   test("returns null when there is no version field", () => {
-    assert.equal(readVersion('{"name": "harness"}'), null)
+    assert.equal(readVersion('{"name": "yok"}'), null)
   })
 })
 
 describe("setVersion", () => {
   test("rewrites an existing version and leaves the rest of the file alone", () => {
-    const source = '{\n  "name": "harness",\n  "version": "1.30.0",\n  "private": true\n}\n'
+    const source = '{\n  "name": "yok",\n  "version": "1.30.0",\n  "private": true\n}\n'
     assert.equal(
       setVersion(source, "1.31.0"),
-      '{\n  "name": "harness",\n  "version": "1.31.0",\n  "private": true\n}\n',
+      '{\n  "name": "yok",\n  "version": "1.31.0",\n  "private": true\n}\n',
     )
   })
 
   test("inserts a version after the name when the manifest has none", () => {
-    const source = '{\n  "name": "harness",\n  "private": true\n}\n'
+    const source = '{\n  "name": "yok",\n  "private": true\n}\n'
     assert.equal(
       setVersion(source, "1.31.0"),
-      '{\n  "name": "harness",\n  "version": "1.31.0",\n  "private": true\n}\n',
+      '{\n  "name": "yok",\n  "version": "1.31.0",\n  "private": true\n}\n',
     )
   })
 

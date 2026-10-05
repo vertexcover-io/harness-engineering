@@ -33,7 +33,7 @@ RUN below is the run's name. The input may hold:
 The first that applies is the assignment:
 
 1. `feedback` in the input: fix those items.
-2. `.harness/RUN/artifacts/plan.md` exists: build its phases.
+2. `.yok/RUN/artifacts/plan.md` exists: build its phases.
 3. Otherwise the user's request, or the plan or phase file they name.
 
 ## 2. Load the working instructions
@@ -43,7 +43,7 @@ at the repo root). Each package's `commands` holds its
 `test_all`, `test_file`, `typecheck` and `lint`; use the packages that own the assigned files.
 A missing config or a declared command that cannot run is a blocker. An omitted command is
 `NOT_APPLICABLE`, with a reason. The run's baseline, when there is one, is
-`.harness/RUN/artifacts/baseline.json`; use it to tell an existing failure from a regression.
+`.yok/RUN/artifacts/baseline.json`; use it to tell an existing failure from a regression.
 
 Load `code-quality` before edits and `tdd` before changing code.
 
@@ -117,7 +117,7 @@ For each phase:
 
 `tdd` owns when an e2e test is required and what makes one hermetic. A phase also owes evidence:
 
-- **The report.** The runner writes its own JSON to `.harness/RUN/artifacts/phase-N-e2e.json`.
+- **The report.** The runner writes its own JSON to `.yok/RUN/artifacts/phase-N-e2e.json`.
   The flag each runner needs is in the `tdd` skill's `references/hermetic-e2e.md`. Nothing in
   the file is hand-written.
 - **The flow is given.** The phase's `### E2E` block is the spec; use it as written. Before
@@ -127,7 +127,7 @@ For each phase:
   behavior under test is switched on. Only when setup still cannot run is the phase `BLOCKED`.
 - **Skipping.** Only when the phase changes no behavior seen from outside: an internal
   refactor, docs, config with no runtime effect. Write
-  `.harness/RUN/artifacts/phase-N-e2e-skipped.md` naming the reason.
+  `.yok/RUN/artifacts/phase-N-e2e-skipped.md` naming the reason.
 
 ## 4. When blocked
 
@@ -141,7 +141,7 @@ needs a decision, missing access or a change of scope:
 
 ## 5. Report and finish
 
-Load `writing-style`, then write `.harness/RUN/artifacts/implementation.md`:
+Load `writing-style`, then write `.yok/RUN/artifacts/implementation.md`:
 
 - one row per phase: `COMPLETED` or `BLOCKED`, its commit SHA, the files changed
 - each scenario id and the test that proves it

@@ -1,5 +1,5 @@
 {
-  "name": "harness",
+  "name": "yok",
   "version": "1.31.1",
   "description": "Systematic software engineering pipeline: brainstorm, plan, TDD, quality gates, code review, and full orchestration from spec to PR.",
   "author": {
@@ -18,9 +18,9 @@
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Harness",
+    "displayName": "Yok",
     "shortDescription": "Engineering discipline for AI-assisted development",
-    "longDescription": "Harness guides Codex through design, planning, test-driven development, quality gates, code review, documentation sync, and full spec-to-PR orchestration workflows.",
+    "longDescription": "Yok guides Codex through design, planning, test-driven development, quality gates, code review, documentation sync, and full spec-to-PR orchestration workflows.",
     "developerName": "Vertexcover Labs",
     "category": "Coding",
     "capabilities": [

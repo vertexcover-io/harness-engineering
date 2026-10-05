@@ -1,9 +1,9 @@
 # orchestrate in Codex
 
 Read this when you are Codex. It names the tools that SKILL.md describes by what they do. Items
-marked unverified come from Codex's documentation and were not run against a live harness session.
+marked unverified come from Codex's documentation and were not run against a live yok session.
 
-- **Invoking:** Codex finds this skill under `.agents/skills/` and the harness starts it with
+- **Invoking:** Codex finds this skill under `.agents/skills/` and the yok starts it with
   `$orchestrate --workflow PATH --inputs JSON`. A resumed session receives
   `$orchestrate --resume NAME`.
 - **Asking the user:** Codex has no `AskUserQuestion` tool. End the turn with one direct question.

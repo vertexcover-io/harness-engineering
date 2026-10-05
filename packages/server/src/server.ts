@@ -3,13 +3,13 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import {
   agentProvider,
   createLogger,
-  harnessTerminalHost,
   resolveLevel,
   type WorkflowAgent,
-} from "@harness/core";
-import type { Check, IAgentProvider, ILogger, ITerminalHost } from "@harness/sdk";
-import { noopLogger, registryPath } from "@harness/sdk";
-import { createRegistry } from "@harness/sdk/internal";
+  yokTerminalHost,
+} from "@yok/core";
+import type { Check, IAgentProvider, ILogger, ITerminalHost } from "@yok/sdk";
+import { noopLogger, registryPath } from "@yok/sdk";
+import { createRegistry } from "@yok/sdk/internal";
 import prettyFactory from "pino-pretty";
 import serverPackage from "../package.json";
 import { createApp } from "./app.ts";
@@ -22,7 +22,7 @@ export type Runtime = Readonly<{
 }>;
 
 export const defaultRuntime = (log: ILogger = noopLogger): Runtime => {
-  const host = harnessTerminalHost(process.env, log);
+  const host = yokTerminalHost(process.env, log);
   return { host, providerFor: (agent) => agentProvider({ agent, host, env: process.env, log }) };
 };
 
@@ -42,7 +42,7 @@ export const startServer = async ({
   const isTTY = process.stdout.isTTY === true;
   const level = resolveLevel(process.env);
   const log = createLogger(
-    { service: "harness-server" },
+    { service: "yok-server" },
     isTTY
       ? {
           level,

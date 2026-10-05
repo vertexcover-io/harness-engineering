@@ -233,7 +233,7 @@ describe("emitEvent", () => {
 });
 
 describe("emitRunEvent", () => {
-  test("SC31: stores the event in the run's .harness/NAME folder with the run's id", async () => {
+  test("SC31: stores the event in the run's .yok/NAME folder with the run's id", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "repo-"));
     const run = { id: "r-1", cwd, name: "fix-login" };
 
@@ -245,7 +245,7 @@ describe("emitRunEvent", () => {
 
     if (!result.ok) throw new Error(result.error);
     expect(result.value).toMatchObject({ seq: 1, runId: "r-1" });
-    expect(runDirOf(cwd, "fix-login")).toBe(join(cwd, ".harness", "fix-login"));
+    expect(runDirOf(cwd, "fix-login")).toBe(join(cwd, ".yok", "fix-login"));
     expect(await jsonlEventStore(runDirOf(cwd, "fix-login")).read()).toEqual([result.value]);
   });
 
@@ -290,7 +290,7 @@ const seed: State = {
   lastEventSeq: 0,
   runId: "r-1",
   runName: "add-login",
-  runDir: "/work/.harness/add-login",
+  runDir: "/work/.yok/add-login",
   version: "2.0.0",
   workflow: { name: "feature", path: "workflow.yaml" },
   input: {},

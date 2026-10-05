@@ -84,9 +84,9 @@ export const loadEnv = async (
   return { ok: true, value: { ...projectEnv, ...config.value, ...own.value } };
 };
 
-// What a run's agent session starts with: the run's env, under the harness's own variables.
+// What a run's agent session starts with: the run's env, under yok's own variables.
 export const sessionEnv = (
   env: Readonly<Record<string, string>>,
   runId: string,
   home: string,
-): Record<string, string> => ({ ...env, HARNESS_RUN_ID: runId, HARNESS_HOME: home });
+): Record<string, string> => ({ ...env, YOK_RUN_ID: runId, YOK_HOME: home });

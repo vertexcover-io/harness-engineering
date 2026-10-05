@@ -10,8 +10,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConfigSchema, noopLogger, type RunRef, runDirOf } from "@harness/sdk";
-import { createState, jsonlEventStore } from "@harness/sdk/internal";
+import { ConfigSchema, noopLogger, type RunRef, runDirOf } from "@yok/sdk";
+import { createState, jsonlEventStore } from "@yok/sdk/internal";
 import { type Baseline, captureBaseline } from "./baseline.ts";
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "baseline-")));

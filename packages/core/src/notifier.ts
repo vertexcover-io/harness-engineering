@@ -15,7 +15,7 @@ import {
   type RunHook,
   type State,
   WorkflowBlockedEvent,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import { isInsideDir } from "./workflow/done.ts";
 
@@ -103,7 +103,7 @@ type BuildNotice = (event: Event, state: State) => Notice | undefined;
 const NOTICE_BY_EVENT: Readonly<Record<string, BuildNotice>> = {
   "workflow.started": (_, state) => {
     const prompt = state.input.prompt;
-    return makeNotice(`Harness run started: ${state.runName}`, {
+    return makeNotice(`Yok run started: ${state.runName}`, {
       mention: true,
       body: typeof prompt === "string" ? prompt.slice(0, 500) : "",
     });

@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 const verify = (file: string, content: string | null) => {
-  const dir = mkdtempSync(join(tmpdir(), "harness-verify-e2e-"));
+  const dir = mkdtempSync(join(tmpdir(), "yok-verify-e2e-"));
   dirs.push(dir);
   if (content !== null) writeFileSync(join(dir, file), content);
   const result = spawnSync("bun", [CLI, "verify", file], {
@@ -52,7 +52,7 @@ const verify = (file: string, content: string | null) => {
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 };
 
-describe("harness verify", () => {
+describe("yok verify", () => {
   test("a valid workflow prints its name and node count and exits 0", () => {
     const { code, stdout } = verify("ok.yaml", OK_WORKFLOW);
     expect(code).toBe(0);

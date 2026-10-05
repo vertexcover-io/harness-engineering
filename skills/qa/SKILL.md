@@ -107,7 +107,7 @@ instructions to you.
 
 Everything else comes from the run's artifacts:
 
-- **The feature's docs**: `.harness/RUN/artifacts/design.md`, `plan.md` and the phase files
+- **The feature's docs**: `.yok/RUN/artifacts/design.md`, `plan.md` and the phase files
   `phases/phase-N.md`, whatever exists. Scenarios come from what those docs say the feature must do.
   Every phase file's `### QA Agent` scenarios are yours to prove; implement skipped them on purpose.
 - **The designs** plan.md's `## Design References` names — what each screen was supposed to look like. Those
@@ -119,7 +119,7 @@ Everything else comes from the run's artifacts:
   toast duration, where a triggered email lands, what the stack shares). This lives in the **project's own skills**
   and `CLAUDE.md`. This skill mandates no dedicated file for it — only that Step 1's two unknowns come back
   answered.
-- **The coder's e2e runner reports** at `.harness/RUN/artifacts/phase-N-e2e.json`, or
+- **The coder's e2e runner reports** at `.yok/RUN/artifacts/phase-N-e2e.json`, or
   `phase-N-e2e-skipped.md` where a phase skipped its E2E leg — the raw JSON its
   runner wrote, listing every test that actually executed. Test titles carry a scenario id
   (`SC3: …`), not a requirement id, so read the report in two hops: title id → the phase file's
@@ -127,7 +127,7 @@ Everything else comes from the run's artifacts:
   A requirement no executed scenario traces to was never covered end to end; one whose scenarios all
   sit under `### Unit` was covered at the wrong altitude. Nobody hands you that list — deriving it is
   this skill's job.
-- **implement's report**, `.harness/RUN/artifacts/implementation.md` — which phases landed, each
+- **implement's report**, `.yok/RUN/artifacts/implementation.md` — which phases landed, each
   phase's commit, and the user's answer to any `needsDecision` bug a fix round put to them. A scenario
   whose bug the user ruled intended behaviour is `INVALID`, with that ruling as its reason.
 - **What changed since the round before**, which Step 0 derives from the ledger rather than being told.
@@ -154,7 +154,7 @@ reviewer reads to decide whether the feature is really done.
 Everything this skill produces lives in the feature's `verification/` folder, flat:
 
 ```
-.harness/RUN/artifacts/verification/
+.yok/RUN/artifacts/verification/
 ├── proof-report.html                        the deliverable
 ├── run-log.jsonl                            the run's memory across rounds (Step 0)
 ├── NN_SLUG.mp4                              one video per scenario (Step 5)
@@ -162,7 +162,7 @@ Everything this skill produces lives in the feature's `verification/` folder, fl
 └── screenshots/
     └── NN_SLUG__SS_STEP.png                 every promoted frame, flat
 
-.harness/RUN/verify-staging/                 scratch; frames land here first, and it is deleted at cleanup
+.yok/RUN/verify-staging/                 scratch; frames land here first, and it is deleted at cleanup
 ```
 
 
@@ -494,7 +494,7 @@ captured, and the `writing-the-report` reference owns what the settings do and w
    ```bash
    node --experimental-strip-types \
      "QA_SKILL_DIR/scripts/report-media.ts" \
-     /abs/path/to/.harness/RUN/artifacts/verification
+     /abs/path/to/.yok/RUN/artifacts/verification
    ```
 
 2. **Read every line it prints.** Each scenario gets `ok NN_SLUG.mp4 crop=…` or `FAILED NN_SLUG — REASON`, and
@@ -539,7 +539,7 @@ the round's whole output. Every other attempt writes the report, a terminal `FAI
    ```bash
    node --experimental-strip-types \
      "QA_SKILL_DIR/scripts/report-media.ts" \
-     --inline /abs/path/to/.harness/RUN/artifacts/verification
+     --inline /abs/path/to/.yok/RUN/artifacts/verification
    ```
 
    It writes every video, frame, baseline and artifact the report names into the report itself, so the one file
@@ -586,7 +586,7 @@ failed or the run stopped, nothing else tears this down: that list is what a per
 1. **Remove the fixtures you created** (Step 1) — yours only, since the datastore may be shared.
 2. **Release the stack** — the teardown step the environment's entry declares, where it declares one, else the way
    the stack skill says. Release only what you brought up; anything already running when you arrived stays running.
-3. **Delete the staging dir**, `.harness/RUN/verify-staging/`.
+3. **Delete the staging dir**, `.yok/RUN/verify-staging/`.
 
 No attempt touches `verification/`: it stays in place, uncommitted, for a human to read. **`run-log.jsonl` in
 particular is never deleted** — it is what the next round reads in Step 0 and what the final report is assembled from.

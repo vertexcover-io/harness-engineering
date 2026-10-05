@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { open, readFile, realpath, rm, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
-import { NonEmptyStringSchema, readProjectEnv } from "@harness/sdk";
+import { NonEmptyStringSchema, readProjectEnv } from "@yok/sdk";
 import * as z from "zod";
 
 export const SafeFilenameSchema = NonEmptyStringSchema.refine(

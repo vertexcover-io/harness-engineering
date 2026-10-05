@@ -6,7 +6,7 @@ import {
   type VerifierResult,
   VerifierResultSchema,
   type VerifierRun,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import { z } from "zod";
 import type { Verifier } from "../stage.ts";
 import { callFunction, loadFunction, runScript } from "./executors.ts";

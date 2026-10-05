@@ -1,4 +1,4 @@
-import type { JsonValue, NodeRun } from "@harness/sdk";
+import type { JsonValue, NodeRun } from "@yok/sdk";
 import { NodeFailure } from "./types.ts";
 
 // What an expression can read of a node, from its node run in state.json.

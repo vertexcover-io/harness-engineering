@@ -52,7 +52,7 @@ Nothing has stopped locally yet, so bring the conflict here first, then run the 
    resolve; never `--abort`.
 
 4. Discover the project's **automated checks** and run them, typically typecheck, then tests, then
-   format. Fix anything the merge broke. In a harness repo the commands are already named per
+   format. Fix anything the merge broke. In a yok repo the commands are already named per
    package under `packages.NAME.commands` in `orchestrate.config.yaml`; read them from there
    rather than guessing.
 
@@ -70,5 +70,5 @@ is a silent rewrite of somebody's change.
 
 Adapted from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering/resolving-merge-conflicts)
 (MIT). The five steps are his. Changed here: the description carries triggers and a boundary
-against `git-commit`, step 4 names where a harness repo keeps its check commands, the reporting line,
+against `git-commit`, step 4 names where a yok repo keeps its check commands, the reporting line,
 the open-PR section and the stale-base checks are new, and step 5 defers to a project that asks before committing.

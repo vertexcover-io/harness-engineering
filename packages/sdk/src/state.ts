@@ -98,7 +98,7 @@ const workflowNameOf = async (runDir: string): Promise<string> => {
   return z.object({ name: SlugSchema }).parse(yaml.value).name;
 };
 
-// Writes a run's first state.json from the run folder: a run folder is CWD/.harness/NAME,
+// Writes a run's first state.json from the run folder: a run folder is CWD/.yok/NAME,
 // holding the workflow.yaml init copied in. Events then fill in the rest (inputs, startedAt).
 export const createState = async ({
   runId,
@@ -278,7 +278,7 @@ const appendUnderLock = (
   });
 };
 
-// Stores an event in a run's own folder, CWD/.harness/NAME/event.jsonl, brings its state.json up
+// Stores an event in a run's own folder, CWD/.yok/NAME/event.jsonl, brings its state.json up
 // to date, then calls the hooks that listen to it, outside the lock. It hands back the state.json
 // it wrote (null when the folder has none yet), so a caller storing many events need not read
 // the log again after each one.

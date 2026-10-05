@@ -1,9 +1,9 @@
 # Audit method
 
-You are the auditor a `harness-retro` dispatch started. Read this whole file before Step 0.
+You are the auditor a `retro` dispatch started. Read this whole file before Step 0.
 
-You audit the **harness**, not the feature. The feature's code is evidence only. It tells you
-what a stage did or missed. Your reader builds the harness. Your reader has never heard of the
+You audit **yok**, not the feature. The feature's code is evidence only. It tells you
+what a stage did or missed. Your reader builds yok. Your reader has never heard of the
 task, the repo, or the product. Every issue must stand alone for that reader.
 
 ## Contents
@@ -12,7 +12,7 @@ task, the repo, or the product. Every issue must stand alone for that reader.
 - Never quote a secret
 - Three rules — run the scripts, cite every claim, check the present
 - Step 0 — Extract
-- Other inputs — the skills folder, the project repo, the harness version, the PR
+- Other inputs — the skills folder, the project repo, the yok version, the PR
 - Step 1 — Run the detectors (D1 to D12, the bracket rule, blocked time)
 - The plan gate — what it is, the pre-gate triggers, post-gate messages
 - Step 2 — Walk the leads (the four walks)
@@ -45,21 +45,21 @@ raw transcript or a `cite`, is the one to watch.
 2. **Cite every claim.** Write `main-1.jsonl:1234` for the main transcript and `agent-ID.jsonl:558`
    for a sub-agent. A run with several sessions cites `main-K.jsonl:N`, with K from `00-run.txt`.
    Delete a claim you cannot cite. Label an estimate as an estimate.
-3. **Check the present before you recommend.** The repo and the harness moved on after the run.
+3. **Check the present before you recommend.** The repo and yok moved on after the run.
    Read the current skill file and the current repo state first. When the current version already
    fixes the defect, keep the issue and say so in the **Fix** field.
 
 ## Step 0 — Extract
 
 ```bash
-bun run retro extract --run RUN --out .harness/RUN/retro
+bun run retro extract --run RUN --out .yok/RUN/retro
 ```
 
 When `bun run retro` is not found, stop and report that; do not read the transcripts by hand. The
 dispatching stage then finishes with `--error -`.
 
 For a transcript with no run around it, `bun run retro extract --main PATH --out DIR`. The run's
-sessions come from its `.harness/RUN/event.jsonl`; `00-run.txt` lists each one, with Codex
+sessions come from its `.yok/RUN/event.jsonl`; `00-run.txt` lists each one, with Codex
 sessions and missing transcripts marked skipped.
 
 Times print in the machine's timezone. Add `--tz ZONE` only when the brief or the user names a
@@ -99,9 +99,9 @@ By hand, ask for whichever the user did not supply. As a stage, the brief suppli
 could not find is a line under the report's "What the recordings could not tell me", never a
 question.
 
-- **Harness skills directory** — the `skills/` folder that holds this skill, in the harness
+- **Yok skills directory** — the `skills/` folder that holds this skill, in the yok
   checkout the run used. Fixes point at these paths.
-- **Harness version** — the `version` field of the `package.json` at the root of that harness
+- **Yok version** — the `version` field of the `package.json` at the root of that yok
   checkout, the folder that holds `skills/`. When it cannot be read, write `unknown`.
 - **The project repo** — read-only. Use it to check whether a defect still exists.
 - **Pull request numbers** — optional. Human review comments on the PR show what the pipeline's
@@ -301,7 +301,7 @@ to be right. The method ships to the next run; the lucky conclusion does not.
 
 | Fix type | The fix goes in |
 |----------|-----------------|
-| `harness-setup` | Pipeline machinery: worktree creation, stage dispatch, config resolution |
+| `yok-setup` | Pipeline machinery: worktree creation, stage dispatch, config resolution |
 | `skill-gap` | A stage's `SKILL.md` lacked a rule or a check. Name the rule |
 | `handoff` | The fact existed in stage N and never reached stage N+1. No single skill is at fault |
 | `missing-context` | Project knowledge the agent needed, that nobody ever wrote down |
@@ -313,7 +313,7 @@ to be right. The method ships to the next run; the lucky conclusion does not.
 | `tooling` | The shell or CLI itself: a command that failed silently, a missing subcommand, a quoting trap |
 | `capacity` | Platform limits: session caps, rate limits, context exhaustion. Nothing was misconfigured; the platform ran out |
 | `policy` | The agent broke a standing rule the user had already given, such as committing without approval |
-| `spec-source` | Ambiguity or error in the ticket or the design. No harness change fixes it. Recommend a process change, never a skill patch |
+| `spec-source` | Ambiguity or error in the ticket or the design. No yok change fixes it. Recommend a process change, never a skill patch |
 
 Give one fix type per issue. Use the root cause's type, not the symptom's. When an issue fits
 none, propose a new type in the report and say why.
@@ -348,7 +348,7 @@ generalization that survives the noun test.
 ## Step 4 — Write the report
 
 Write one file: the report path the brief gave you. By hand that is
-`.harness/RUN/artifacts/retro.md` for a run, and `retro.md` in the current directory for a
+`.yok/RUN/artifacts/retro.md` for a run, and `retro.md` in the current directory for a
 transcript with no run.
 
 ### How to write
@@ -382,7 +382,7 @@ they are labels, not sentences.
 | Session id | the id only |
 | Task | ticket id and title |
 | Kickoff | the run mode, then the human's first instruction in one line |
-| Harness | the harness version from Other inputs, or `unknown` |
+| Yok | the yok version from Other inputs, or `unknown` |
 | Started | local time, with the timezone named |
 | Total time | human-readable, such as `31h 12m` |
 | Waiting on human | human-readable. Blocked time only |
@@ -392,7 +392,7 @@ they are labels, not sentences.
 
 Then the glosses a stranger needs to read anything below: the repos or services in one line each,
 what a `main-1.jsonl:1234` citation is, and — if the run and the audit used different machines or
-harness versions — one sentence saying so, or every version claim reads as impossible.
+yok versions — one sentence saying so, or every version claim reads as impossible.
 
 Then **"If you only do N things"** — two to four bullets, each naming an issue id, each an
 instruction rather than a description. "Fix I1 first, it is one change." "Do not merge until I3 is

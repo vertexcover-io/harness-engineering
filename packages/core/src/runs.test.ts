@@ -22,13 +22,8 @@ import {
   resolveRun,
   StateSchema,
   type WorkflowRun,
-} from "@harness/sdk";
-import {
-  appendRunEvent,
-  createRegistry,
-  jsonlEventStore,
-  type Registry,
-} from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { appendRunEvent, createRegistry, jsonlEventStore, type Registry } from "@yok/sdk/internal";
 import corePackage from "../package.json";
 import { currentTerminal } from "./agents/tmux.ts";
 import { NOTIFIER_EVENTS, NOTIFIER_MODULE } from "./notifier.ts";
@@ -50,7 +45,7 @@ const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   ...overrides,
 });
 
-const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "harness-run-")));
+const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "yok-run-")));
 const gitCmd = (cwd: string, ...args: string[]): string =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
@@ -77,7 +72,7 @@ const SWITCHING: ReadonlySet<AgentType> = new Set(["claude"]);
 const WORKFLOW =
   'name: ok\nnodes:\n  - { id: a, type: exec, input: null, runtime: sh, script: "true" }\n';
 
-// A run `harness run` saved in a fresh git repo, not yet initialized.
+// A run `yok run` saved in a fresh git repo, not yet initialized.
 const savedRun = async (overrides: Partial<WorkflowRun> = {}) => {
   const cwd = overrides.cwd ?? makeRepo();
   const workflowPath = join(cwd, "ok.yaml");
@@ -105,7 +100,7 @@ describe("initializeRun", () => {
     const result = await init("fix-login");
 
     if (!result.ok) throw new Error(result.error);
-    const dir = join(cwd, ".harness", "fix-login");
+    const dir = join(cwd, ".yok", "fix-login");
     expect(result.value.dir).toBe(dir);
     expect(readFileSync(join(dir, "workflow.yaml"), "utf8")).toBe(
       readFileSync(workflowPath, "utf8"),
@@ -129,7 +124,7 @@ describe("initializeRun", () => {
     expect((await registry.findRun(run.id))?.name).toBe("fix-login");
   });
 
-  test("SC8: seeds activeSessions with the session harness run launched", async () => {
+  test("SC8: seeds activeSessions with the session yok run launched", async () => {
     const session = { agent: "claude", sessionId: "s1" } as const;
     const { init } = await savedRun({ sessions: [session] });
 
@@ -151,8 +146,8 @@ describe("initializeRun", () => {
     });
 
     await registry.addRun(makeRun({ id: "r-2", cwd, workflowPath }));
-    mkdirSync(join(cwd, ".harness", "dupe"), { recursive: true });
-    expect(await init("dupe", "r-2")).toEqual({ ok: false, error: ".harness/dupe already exists" });
+    mkdirSync(join(cwd, ".yok", "dupe"), { recursive: true });
+    expect(await init("dupe", "r-2")).toEqual({ ok: false, error: ".yok/dupe already exists" });
 
     const badName = await init("Bad Name", "r-2");
     expect(badName.ok ? "" : badName.error).toContain("Bad Name");
@@ -171,7 +166,7 @@ describe("initializeRun", () => {
     const result = await init("fix-login");
 
     expect(result.ok ? "" : result.error).toContain('expected "version: 2"');
-    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+    expect(existsSync(join(cwd, ".yok", "fix-login"))).toBe(false);
     expect((await registry.findRun(run.id))?.name).toBeNull();
   });
 
@@ -213,7 +208,7 @@ describe("initializeRun", () => {
     });
     expect(emitted.ok).toBe(true);
     const state = StateSchema.parse(
-      JSON.parse(readFileSync(join(cwd, ".harness", "fix-login", "state.json"), "utf8")),
+      JSON.parse(readFileSync(join(cwd, ".yok", "fix-login", "state.json"), "utf8")),
     );
     expect(state.custom).toEqual({ note: "looks good" });
   });
@@ -279,7 +274,7 @@ describe("initializeRun", () => {
     const result = await init("fix-login");
 
     expect(result.ok ? "" : result.error).toContain(missing);
-    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+    expect(existsSync(join(cwd, ".yok", "fix-login"))).toBe(false);
   });
 
   const hookConfig = (cwd: string, hooks: object): void =>
@@ -361,7 +356,7 @@ describe("initializeRun", () => {
       ok: false,
       error: "hooks for workflow.started: the config and the workflow name the same hook",
     });
-    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+    expect(existsSync(join(cwd, ".yok", "fix-login"))).toBe(false);
   });
 
   test("init refuses a workflow with no nodes, since it reads the whole file, leaving no run folder", async () => {
@@ -369,7 +364,7 @@ describe("initializeRun", () => {
     writeFileSync(workflowPath, "name: ok\nnodes: []\n");
 
     await expect(init("fix-login")).rejects.toThrow("nodes:");
-    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+    expect(existsSync(join(cwd, ".yok", "fix-login"))).toBe(false);
   });
 
   test("a registry that fails to name the run after the folder is filled removes the folder, so a retry can succeed", async () => {
@@ -383,7 +378,7 @@ describe("initializeRun", () => {
       "registry is locked",
     );
 
-    expect(existsSync(join(cwd, ".harness", "fix-login"))).toBe(false);
+    expect(existsSync(join(cwd, ".yok", "fix-login"))).toBe(false);
     expect((await init("fix-login")).ok).toBe(true);
   });
 });
@@ -524,12 +519,12 @@ describe("resolveRun", () => {
 
   test("SC27: a run whose folder was deleted is refused, and nothing is recreated", async () => {
     const { cwd, registry } = await initializedRun();
-    rmSync(join(cwd, ".harness"), { recursive: true });
+    rmSync(join(cwd, ".yok"), { recursive: true });
 
     const result = await resolveRun({ registry, root: cwd, name: "fix-login" });
 
     expect(result.ok ? "" : result.error).toContain("no longer exists");
-    expect(existsSync(join(cwd, ".harness"))).toBe(false);
+    expect(existsSync(join(cwd, ".yok"))).toBe(false);
   });
 });
 
@@ -560,7 +555,7 @@ const tmux = (socket: string, ...args: string[]): string =>
   execFileSync("tmux", ["-L", socket, ...args], { encoding: "utf8" }).trim();
 
 const privateTmux = () => {
-  const socket = `harness-init-${crypto.randomUUID()}`;
+  const socket = `yok-init-${crypto.randomUUID()}`;
   tmux(socket, "new-session", "-d", "-s", "old-name", "sleep", "60");
   const path = tmux(socket, "display-message", "-p", "#{socket_path}");
   const pane = tmux(socket, "list-panes", "-a", "-F", "#{pane_id}");
@@ -703,7 +698,7 @@ describe("initializeRun with tiers", () => {
       error:
         'stages/odd has tier "balanced", stages/other has tier "turbo"; the claude tiers are fast, deep',
     });
-    expect(existsSync(join(cwd, ".harness", "tiered"))).toBe(false);
+    expect(existsSync(join(cwd, ".yok", "tiered"))).toBe(false);
   });
 
   test("a claude run whose prompt agent node in a switch case declares tier: turbo fails naming the node, and leaves no run folder", async () => {
@@ -723,7 +718,7 @@ describe("initializeRun with tiers", () => {
       ok: false,
       error: 'ask has tier "turbo"; the claude tiers are fast, deep',
     });
-    expect(existsSync(join(cwd, ".harness", "tiered"))).toBe(false);
+    expect(existsSync(join(cwd, ".yok", "tiered"))).toBe(false);
   });
 
   test("a node tier: deep over a stage tier balanced nothing maps inits, since the node's tier wins", async () => {
@@ -756,7 +751,7 @@ describe("nextStep with stage tiers", () => {
 
     const step = { kind: "model", nodeId: "make", model: "claude-sonnet-5-5" } as const;
     expect(reply).toEqual({ ok: true, value: step });
-    const events = await jsonlEventStore(join(cwd, ".harness", "tiered")).read();
+    const events = await jsonlEventStore(join(cwd, ".yok", "tiered")).read();
     expect(events.at(-1)).toMatchObject({ type: "orchestrate.next", payload: { output: step } });
   });
 
@@ -803,7 +798,7 @@ describe("nextStep with stage tiers", () => {
       ok: true,
       value: { kind: "model", nodeId: "make", model: "sonnet-y" },
     });
-    const events = await jsonlEventStore(join(ref.cwd, ".harness", "tiered")).read();
+    const events = await jsonlEventStore(join(ref.cwd, ".yok", "tiered")).read();
     const requestSeq = events.find((event) => event.type === "workflow.model.requested")?.seq;
     const applied = await appendRunEvent(ref, {
       type: "workflow.model.applied",

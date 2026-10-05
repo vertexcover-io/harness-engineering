@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { parseJson } from "@harness/sdk";
+import { parseJson } from "@yok/sdk";
 
 // A Claude Code transcript record: Claude writes it, so every field is read defensively.
 export type Rec = Readonly<{ line: number; data: Readonly<Record<string, unknown>> }>;

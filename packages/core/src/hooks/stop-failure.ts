@@ -1,4 +1,4 @@
-import type { StopFailureHandler, StopFailureInput } from "@harness/sdk";
+import type { StopFailureHandler, StopFailureInput } from "@yok/sdk";
 import { startLimitWait } from "../limit-wait.ts";
 import { recordSessionEvent } from "./common.ts";
 

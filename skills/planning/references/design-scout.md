@@ -16,7 +16,7 @@ design links in its body:
   what INDEX names and what the plan embeds; the HTML stays beside it for reference
 - **Figma frames** — exported to PNG through the Figma MCP, one file per frame
 
-Images and exported frames land directly in `.harness/RUN/design/`. An HTML mockup keeps its
+Images and exported frames land directly in `.yok/RUN/design/`. An HTML mockup keeps its
 own folder — `design/SLUG/index.html` beside the assets it references — so its relative links
 resolve without rewriting the document. `design/INDEX.md` sits alongside:
 

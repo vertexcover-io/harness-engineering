@@ -1,4 +1,4 @@
-import { NonEmptyStringSchema } from "@harness/sdk";
+import { NonEmptyStringSchema } from "@yok/sdk";
 import * as z from "zod";
 
 export const QaOutputSchema = z

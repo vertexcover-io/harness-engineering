@@ -22,7 +22,7 @@ import {
   spawn,
   stopRunningOnSignal,
   unknownPackage,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 
 const BaselineEntrySchema = z.strictObject({
@@ -249,7 +249,7 @@ const USAGE = `usage: baseline.ts [--run NAME | --run-id ID] [--packages A,B] [-
 
 Runs the run's config's baseline scripts in its workspace (--dir, else state.json's
 workspace.path), writes artifacts/baseline.json and prints { path, workspace, packages }.
-With neither --run nor --run-id, the run is $HARNESS_RUN_ID.
+With neither --run nor --run-id, the run is $YOK_RUN_ID.
 `;
 
 const FLAGS = {

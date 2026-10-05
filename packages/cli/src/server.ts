@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Command } from "@commander-js/extra-typings";
-import { harnessHome } from "@harness/sdk";
-import { socketPath, startServer } from "@harness/server";
-import { commandLog, fail, harnessClient } from "./client.ts";
+import { yokHome } from "@yok/sdk";
+import { socketPath, startServer } from "@yok/server";
+import { commandLog, fail, yokClient } from "./client.ts";
 
 const STOP_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 100;
@@ -12,14 +12,14 @@ const POLL_INTERVAL_MS = 100;
 const socketGone = (path: string): boolean => !existsSync(path);
 
 export const serverCommand = () => {
-  const server = new Command("server").description("Manage the harness server process");
+  const server = new Command("server").description("Manage the yok server process");
 
   server
     .command("start")
-    .description("Run the harness server in the foreground")
+    .description("Run the yok server in the foreground")
     .action(async () => {
-      const home = harnessHome();
-      const running = await harnessClient(home).health();
+      const home = yokHome();
+      const running = await yokClient(home).health();
       if (running.ok) {
         commandLog("server start").info({ pid: running.value.pid }, "server already running");
         console.log(`already running (pid ${running.value.pid})`);
@@ -31,11 +31,11 @@ export const serverCommand = () => {
 
   server
     .command("stop")
-    .description("Stop the running harness server")
+    .description("Stop the running yok server")
     .action(async () => {
-      const home = harnessHome();
+      const home = yokHome();
       // Signal the pid the live server reports, never a pid file a crash may have left behind.
-      const running = await harnessClient(home).health();
+      const running = await yokClient(home).health();
       if (!running.ok) {
         return fail("not running");
       }
@@ -56,9 +56,9 @@ export const serverCommand = () => {
 
   server
     .command("status")
-    .description("Show whether the harness server is running")
+    .description("Show whether the yok server is running")
     .action(async () => {
-      const result = await harnessClient().health();
+      const result = await yokClient().health();
       if (!result.ok) {
         console.log("not running");
         process.exitCode = 1;

@@ -25,7 +25,7 @@
       "expected_output": "The stage produces an approved one-page design.md with a decisions table and at most one diagram, and stops. It edits no source file, cuts no phases, and writes no file-by-file steps, even though the prompt asks for a build.",
       "files": [],
       "expectations": [
-        "The only file written is .harness/RUN/artifacts/design.md.",
+        "The only file written is .yok/RUN/artifacts/design.md.",
         "design.md holds at most one fenced mermaid block.",
         "design.md has a ## Decisions table with What we do, Instead of and Because columns, and a ## Hard to undo section."
       ],

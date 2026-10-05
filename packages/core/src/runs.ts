@@ -35,7 +35,7 @@ import {
   stackOf,
   type VerifierRun,
   type WorkflowRun,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import {
   appendRunEvent,
   appendRunEventIf,
@@ -48,7 +48,7 @@ import {
   type StepReport,
   syncState,
   uniqueNames,
-} from "@harness/sdk/internal";
+} from "@yok/sdk/internal";
 import * as z from "zod";
 import corePackage from "../package.json";
 import { buildNotifierHooks, pickNotifier } from "./notifier-hooks.ts";
@@ -90,7 +90,7 @@ export type InitOptions = Readonly<{
   log: ILogger;
   // the agent's terminal, when init runs inside one
   terminal?: ITerminal | undefined;
-  // the agents whose session the harness can switch to another model between stages
+  // the agents whose session yok can switch to another model between stages
   modelSwitchAgents: ReadonlySet<AgentType>;
 }>;
 
@@ -275,7 +275,7 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
     () => false,
   );
   if (taken) {
-    return { ok: false, error: `.harness/${name} already exists` };
+    return { ok: false, error: `.yok/${name} already exists` };
   }
   if ((await git.repoRoot(run.cwd)) === null) {
     return { ok: false, error: `${run.cwd} is not inside a git repository` };
@@ -453,7 +453,7 @@ type RunDirRef = Pick<RunRef, "cwd" | "name">;
 const compileWorkflowPlan = (run: RunDirRef): Promise<WorkflowPlan> =>
   compileWorkflow(join(runDirOf(run.cwd, run.name), "workflow.yaml"), { cwd: run.cwd });
 
-// The env the first session of a run started from cwd gets. harness run builds it once, for its
+// The env the first session of a run started from cwd gets. yok run builds it once, for its
 // doctor and for the server; agent is the one the session launches.
 export const loadStartEnv = async (
   config: string | null,

@@ -12,7 +12,7 @@ import {
   ProcessRecordSchema,
   type TiersConfig,
   TiersConfigSchema,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import { z } from "zod";
 import type { ArtifactDeclaration, Stage } from "../stage.ts";
 
@@ -215,7 +215,7 @@ export const WorkflowSchema = z.strictObject({
   name: NonEmptyStringSchema,
   version: z.union([z.string(), z.number()]).optional(),
   agent: WorkflowAgentSchema.default("claude"),
-  // over the harness's and the config's agents.AGENT.tiers, for this workflow's agent. Only the
+  // over the yok's and the config's agents.AGENT.tiers, for this workflow's agent. Only the
   // top workflow's apply; an included one's are ignored.
   tiers: TiersConfigSchema.default({}),
   // set in every agent session of the run, over the config's; envFile is relative to the folder

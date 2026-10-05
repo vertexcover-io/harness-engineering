@@ -2,15 +2,15 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addComments, readComments } from "@harness/core";
-import type { WorkflowRun } from "@harness/sdk";
-import { runDirOf } from "@harness/sdk";
+import { addComments, readComments } from "@yok/core";
+import type { WorkflowRun } from "@yok/sdk";
+import { runDirOf } from "@yok/sdk";
 import { claudeOver, EMPTY_BOX, fakeHost } from "./fake-host.ts";
 import { startServer } from "./server.ts";
 
 test("SC26: a restarted server types the comments an earlier one left behind, with no viewer request", async () => {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "harness-srv-")));
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "harness-srv-cwd-")));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "yok-srv-")));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "yok-srv-cwd-")));
   const run: WorkflowRun = {
     id: "r-1",
     workflow: "w",

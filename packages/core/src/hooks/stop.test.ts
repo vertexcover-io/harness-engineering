@@ -11,7 +11,7 @@ import {
 import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as sdk from "@harness/sdk";
+import * as sdk from "@yok/sdk";
 import {
   emitRunEvent,
   type NodeRun,
@@ -23,8 +23,8 @@ import {
   type State,
   type StopInput,
   type TranscriptEntry,
-} from "@harness/sdk";
-import { appendRunEvent, createRegistry, jsonlEventStore } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { appendRunEvent, createRegistry, jsonlEventStore } from "@yok/sdk/internal";
 import { ORCHESTRATE_SCRIPT } from "../stage.ts";
 import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
 import { decideStop, runStopHook, type StopCheck } from "./stop.ts";
@@ -34,7 +34,7 @@ const seed: State = {
   lastEventSeq: 0,
   runId: "r-1",
   runName: "feat-x",
-  runDir: "/repo/.harness/feat-x",
+  runDir: "/repo/.yok/feat-x",
   version: "2.0.0",
   workflow: { name: "feature", path: "workflow.yaml" },
   input: {},
@@ -205,7 +205,7 @@ const setUp = async (nodeRuns: State["nodeRuns"], agent: "claude" | "codex" = "c
   const runDir = runDirOf(cwd, "feat-x");
   await mkdir(runDir, { recursive: true });
   await writeFile(join(runDir, "state.json"), JSON.stringify({ ...seed, nodeRuns }));
-  return { runDir, cwd, deps: { registry, env: { HARNESS_RUN_ID: "r-1" }, log: noopLogger } };
+  return { runDir, cwd, deps: { registry, env: { YOK_RUN_ID: "r-1" }, log: noopLogger } };
 };
 
 const input = (
@@ -226,10 +226,10 @@ const orchestrateAfterPrompt: TranscriptEntry[] = [
 ];
 
 describe("runStopHook", () => {
-  test("SC10 — HARNESS_STOP_MAX_BLOCKS sets how many blocks in a row, and a bad value keeps the default of 1", async () => {
+  test("SC10 — YOK_STOP_MAX_BLOCKS sets how many blocks in a row, and a bad value keeps the default of 1", async () => {
     const replies = async (maxBlocks: string | undefined) => {
       const { deps } = await setUp(planOpen);
-      const env = { ...deps.env, HARNESS_STOP_MAX_BLOCKS: maxBlocks };
+      const env = { ...deps.env, YOK_STOP_MAX_BLOCKS: maxBlocks };
       const kinds: string[] = [];
       for (const _ of [1, 2, 3, 4]) {
         kinds.push((await runStopHook(input(undefined), { ...deps, env })).kind);

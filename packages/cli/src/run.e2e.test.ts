@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DoctorJsonSchema } from "@harness/core";
+import { DoctorJsonSchema } from "@yok/core";
 
 const TIMEOUT_MS = 40_000;
 // Bun would load the repo's .env into the CLI, and from there the server and tmux, by itself.
@@ -66,8 +66,8 @@ const buildBinary = (): string => {
   const { scripts } = JSON.parse(readFileSync(join(cliDir, "package.json"), "utf8")) as {
     scripts: { build: string };
   };
-  const binary = join(mkdtempSync(join(tmpdir(), "harness-bin-")), "harness");
-  const built = spawnSync("sh", ["-c", scripts.build.replace("dist/harness", binary)], {
+  const binary = join(mkdtempSync(join(tmpdir(), "yok-bin-")), "yok");
+  const built = spawnSync("sh", ["-c", scripts.build.replace("dist/yok", binary)], {
     cwd: cliDir,
     encoding: "utf8",
   });
@@ -76,10 +76,10 @@ const buildBinary = (): string => {
 };
 
 const makeRepo = (): string => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "harness-run-e2e-repo-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "yok-run-e2e-repo-")));
   const git = (...args: string[]) => execFileSync("git", args, { cwd: dir });
   git("init", "-q", "-b", "main");
-  writeFileSync(join(dir, ".gitignore"), ".harness/\n");
+  writeFileSync(join(dir, ".gitignore"), ".yok/\n");
   writeFileSync(join(dir, "orchestrate.config.json"), '{ "version": 2 }\n');
   writeFileSync(join(dir, "ok.yaml"), OK_WORKFLOW);
   writeFileSync(join(dir, "bad.yaml"), CYCLE_WORKFLOW);
@@ -88,7 +88,7 @@ const makeRepo = (): string => {
   return dir;
 };
 
-// A server started by ensureServer runs with its cwd set to HARNESS_HOME.
+// A server started by ensureServer runs with its cwd set to YOK_HOME.
 const serverPids = (home: string): readonly number[] =>
   spawnSync("lsof", ["-t", "-a", "-d", "cwd", "+d", home], { encoding: "utf8" })
     .stdout.split("\n")
@@ -108,9 +108,9 @@ afterEach(() => {
 });
 
 const makeEnv = (): TestEnv => {
-  const home = mkdtempSync(join(tmpdir(), "harness-run-e2e-home-"));
-  const socket = `harness-e2e-${randomUUID()}`;
-  const fakeOut = join(mkdtempSync(join(tmpdir(), "harness-run-e2e-out-")), "out.jsonl");
+  const home = mkdtempSync(join(tmpdir(), "yok-run-e2e-home-"));
+  const socket = `yok-e2e-${randomUUID()}`;
+  const fakeOut = join(mkdtempSync(join(tmpdir(), "yok-run-e2e-out-")), "out.jsonl");
   cleanups.push(() => {
     for (const pid of serverPids(home)) process.kill(pid, "SIGKILL");
     spawnSync("tmux", ["-L", socket, "kill-server"]);
@@ -122,15 +122,15 @@ const makeEnv = (): TestEnv => {
     fakeOut,
     env: {
       ...process.env,
-      HARNESS_HOME: home,
-      HARNESS_TMUX_SOCKET: socket,
-      HARNESS_CLAUDE_BIN: FAKE_AGENT,
+      YOK_HOME: home,
+      YOK_TMUX_SOCKET: socket,
+      YOK_CLAUDE_BIN: FAKE_AGENT,
       FAKE_AGENT_OUT: fakeOut,
     },
   };
 };
 
-const harness = (
+const yok = (
   cwd: string,
   env: NodeJS.ProcessEnv,
   ...args: string[]
@@ -158,7 +158,7 @@ const spawnHarness = (
   });
 
 const stopServer = (cwd: string, env: NodeJS.ProcessEnv): void => {
-  harness(cwd, env, "server", "stop");
+  yok(cwd, env, "server", "stop");
 };
 
 const readLines = (path: string): Array<Record<string, unknown>> =>
@@ -182,14 +182,14 @@ const waitFor = (predicate: () => boolean, timeoutMs = 5000): void => {
   }
 };
 
-describe("harness run", () => {
+describe("yok run", () => {
   test(
     "a supplied --name reaches the launched agent without replacing the prompt input",
     () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
 
-      const result = harness(
+      const result = yok(
         repo,
         env,
         "run",
@@ -223,7 +223,7 @@ describe("harness run", () => {
         JSON.stringify({ version: 2, agents: { claude: { tiers } } }),
       );
 
-      expect(harness(repo, env, "run", "ok.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
+      expect(yok(repo, env, "run", "ok.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
       waitFor(() => readLines(fakeOut).some(isLaunch));
       const argv = readLines(fakeOut).find(isLaunch)?.argv;
       const args = Array.isArray(argv) ? argv.map(String) : [];
@@ -236,7 +236,7 @@ describe("harness run", () => {
   );
 
   test(
-    "SC24: harness run sends the workflow's tiers, so the default deep tier launches on the workflow's opus-y over the config's opus-x",
+    "SC24: yok run sends the workflow's tiers, so the default deep tier launches on the workflow's opus-y over the config's opus-x",
     () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
@@ -252,7 +252,7 @@ describe("harness run", () => {
         `tiers:\n  models:\n    deep: { model: opus-y }\n${OK_WORKFLOW}`,
       );
 
-      expect(harness(repo, env, "run", "deep.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
+      expect(yok(repo, env, "run", "deep.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
       waitFor(() => readLines(fakeOut).some(isLaunch));
       const argv = readLines(fakeOut).find(isLaunch)?.argv;
       const args = Array.isArray(argv) ? argv.map(String) : [];
@@ -280,7 +280,7 @@ describe("harness run", () => {
         `envFile: flow.env\nenv:\n  E2E_SHARED: workflow\n${OK_WORKFLOW}`,
       );
 
-      expect(harness(repo, env, "run", "env.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
+      expect(yok(repo, env, "run", "env.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
       waitFor(() => readLines(fakeOut).some(isLaunch));
       const launched = readLines(fakeOut).find(isLaunch)?.env as Record<string, string>;
 
@@ -297,7 +297,7 @@ describe("harness run", () => {
   );
 
   test(
-    "the built harness binary loads no .env, so a repo's agent variables never reach the pane",
+    "the built yok binary loads no .env, so a repo's agent variables never reach the pane",
     () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
@@ -327,7 +327,7 @@ describe("harness run", () => {
       const { env, fakeOut } = makeEnv();
       writeFileSync(join(repo, "turbo.yaml"), `tiers: { default: turbo }\n${OK_WORKFLOW}`);
 
-      const result = harness(repo, env, "run", "turbo.yaml", "--prompt", "hi", "--no-open");
+      const result = yok(repo, env, "run", "turbo.yaml", "--prompt", "hi", "--no-open");
 
       expect(result.code).not.toBe(0);
       expect(result.stderr).toContain('default tier "turbo"');
@@ -348,7 +348,7 @@ describe("harness run", () => {
         JSON.stringify({ version: 2, tiers: { deep: { agent: "claude", model: "opus" } } }),
       );
 
-      const result = harness(repo, env, "run", "ok.yaml", "--prompt", "hi", "--no-open");
+      const result = yok(repo, env, "run", "ok.yaml", "--prompt", "hi", "--no-open");
 
       expect(result.code).not.toBe(0);
       expect(result.stderr).toContain("BLOCKED orchestrate-config");
@@ -365,7 +365,7 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
 
-      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "hi");
+      const run = yok(repo, env, "run", "ok.yaml", "--prompt", "hi");
       expect(run.code).toBe(0);
       const isSession = (record: Record<string, unknown>) => isLaunch(record);
       waitFor(() => readLines(fakeOut).some(isSession));
@@ -379,7 +379,7 @@ describe("harness run", () => {
       });
 
       expect(init.status).toBe(0);
-      expect(existsSync(join(repo, ".harness", "fix-login", "state.json"))).toBe(true);
+      expect(existsSync(join(repo, ".yok", "fix-login", "state.json"))).toBe(true);
 
       stopServer(repo, env);
     },
@@ -387,12 +387,12 @@ describe("harness run", () => {
   );
 
   test(
-    "SC26 — the session harness run launches carries the Stop hook",
+    "SC26 — the session yok run launches carries the Stop hook",
     () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
 
-      expect(harness(repo, env, "run", "ok.yaml", "--prompt", "hi").code).toBe(0);
+      expect(yok(repo, env, "run", "ok.yaml", "--prompt", "hi").code).toBe(0);
       const isSession = (record: Record<string, unknown>) => isLaunch(record);
       waitFor(() => readLines(fakeOut).some(isSession));
       const argv = readLines(fakeOut).find(isSession)?.argv;
@@ -409,12 +409,12 @@ describe("harness run", () => {
   );
 
   test(
-    "SC18 — the session harness run launches carries the PreToolUse hook",
+    "SC18 — the session yok run launches carries the PreToolUse hook",
     () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
 
-      expect(harness(repo, env, "run", "ok.yaml", "--prompt", "hi").code).toBe(0);
+      expect(yok(repo, env, "run", "ok.yaml", "--prompt", "hi").code).toBe(0);
       const isSession = (record: Record<string, unknown>) => isLaunch(record);
       waitFor(() => readLines(fakeOut).some(isSession));
       const argv = readLines(fakeOut).find(isSession)?.argv;
@@ -437,7 +437,7 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env, fakeOut, home, socket } = makeEnv();
 
-      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "hi");
+      const run = yok(repo, env, "run", "ok.yaml", "--prompt", "hi");
       expect(run.code).toBe(0);
       const runId = run.stdout.trim().split("\n")[0] ?? "";
       waitFor(() => readLines(fakeOut).some((record) => isLaunch(record)));
@@ -480,13 +480,13 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
 
-      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "hi");
+      const run = yok(repo, env, "run", "ok.yaml", "--prompt", "hi");
       expect(run.code).toBe(0);
       const [runId, attach] = run.stdout.trim().split("\n");
       expect(runId).toMatch(/^r-[0-9a-f]{8}$/);
-      expect(attach).toBe(`harness attach --run-id ${runId}`);
+      expect(attach).toBe(`yok attach --run-id ${runId}`);
 
-      const status = harness(repo, env, "server", "status");
+      const status = yok(repo, env, "server", "status");
       expect(status.code).toBe(0);
       expect(status.stdout).toMatch(/^pid \d+/);
 
@@ -507,7 +507,7 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env, home } = makeEnv();
 
-      const run = harness(repo, { ...env, LOG_LEVEL: "debug" }, "run", "ok.yaml", "--prompt", "hi");
+      const run = yok(repo, { ...env, LOG_LEVEL: "debug" }, "run", "ok.yaml", "--prompt", "hi");
       expect(run.code).toBe(0);
       const runId = run.stdout.trim().split("\n")[0];
       const cliLines = run.stderr
@@ -537,15 +537,15 @@ describe("harness run", () => {
       const doctor = [
         "doctor:",
         "  - check: env",
-        "    key: HARNESS_E2E_UNSET_KEY",
-        "    fix: Set HARNESS_E2E_UNSET_KEY in .env",
+        "    key: YOK_E2E_UNSET_KEY",
+        "    fix: Set YOK_E2E_UNSET_KEY in .env",
       ];
       writeFileSync(join(repo, "needs-key.yaml"), [...doctor, OK_WORKFLOW].join("\n"));
-      const { HARNESS_E2E_UNSET_KEY: _, ...withoutKey } = env;
+      const { YOK_E2E_UNSET_KEY: _, ...withoutKey } = env;
 
-      const run = harness(repo, withoutKey, "run", "needs-key.yaml", "--prompt", "x");
+      const run = yok(repo, withoutKey, "run", "needs-key.yaml", "--prompt", "x");
       expect(run.code).toBe(1);
-      expect(run.stderr).toContain("BLOCKED env:HARNESS_E2E_UNSET_KEY");
+      expect(run.stderr).toContain("BLOCKED env:YOK_E2E_UNSET_KEY");
       const launches = readLines(fakeOut).filter((record) => isLaunch(record));
       expect(launches).toEqual([]);
       expect(existsSync(join(home, "registry.json"))).toBe(false);
@@ -566,11 +566,11 @@ describe("harness run", () => {
         `env:\n  SLACK_BOT_TOKEN: xoxb-e2e\n  SLACK_CHANNEL_ID: C1\n${notifierWorkflow}`,
       );
 
-      const blocked = harness(repo, withoutKeys, "run", "bare.yaml", "--prompt", "x");
+      const blocked = yok(repo, withoutKeys, "run", "bare.yaml", "--prompt", "x");
       expect(blocked.code).toBe(1);
       expect(blocked.stderr).toContain("BLOCKED notifier");
 
-      const started = harness(repo, withoutKeys, "run", "keyed.yaml", "--prompt", "x", "--no-open");
+      const started = yok(repo, withoutKeys, "run", "keyed.yaml", "--prompt", "x", "--no-open");
       expect(started.stderr).not.toContain("BLOCKED");
       expect(started.code).toBe(0);
 
@@ -589,7 +589,7 @@ describe("harness run", () => {
       writeFileSync(file, '{ "version": 2 }\n');
       const { env, home, fakeOut } = makeEnv();
 
-      const run = harness(
+      const run = yok(
         join(repo, "configs"),
         env,
         "run",
@@ -612,9 +612,7 @@ describe("harness run", () => {
         encoding: "utf8",
       });
       expect(init.status).toBe(0);
-      const state = JSON.parse(
-        readFileSync(join(repo, ".harness", "fix-login", "state.json"), "utf8"),
-      );
+      const state = JSON.parse(readFileSync(join(repo, ".yok", "fix-login", "state.json"), "utf8"));
       expect(state.config).toEqual({ path: file, root: join(repo, "configs") });
 
       stopServer(repo, env);
@@ -627,14 +625,14 @@ describe("harness run", () => {
     ["an invalid file", (file: string) => writeFileSync(file, "{")],
     ["a directory", (file: string) => mkdirSync(file)],
   ])(
-    "--config naming %s stops harness run before any run or session starts",
+    "--config naming %s stops yok run before any run or session starts",
     (_case, create) => {
       const repo = makeRepo();
       const file = join(repo, "custom.json");
       create(file);
       const { env, home, fakeOut } = makeEnv();
 
-      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "x", "--config", "custom.json");
+      const run = yok(repo, env, "run", "ok.yaml", "--prompt", "x", "--config", "custom.json");
 
       expect(run.code).toBe(1);
       expect(run.stderr).toContain(file);
@@ -650,7 +648,7 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env, home } = makeEnv();
 
-      const run = harness(repo, env, "run", "bad.yaml", "--prompt", "x");
+      const run = yok(repo, env, "run", "bad.yaml", "--prompt", "x");
       expect(run.code).toBe(1);
       expect(run.stderr).toContain("cycle: dependency cycle among");
       expect(existsSync(join(home, "registry.json"))).toBe(false);
@@ -664,18 +662,11 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env } = makeEnv();
 
-      const plain = harness(repo, { ...env, LOG_LEVEL: "" }, "run", "bad.yaml", "--prompt", "x");
+      const plain = yok(repo, { ...env, LOG_LEVEL: "" }, "run", "bad.yaml", "--prompt", "x");
       expect(plain.stderr).toContain("dependency cycle");
       expect(plain.stderr).not.toContain("    at ");
 
-      const debug = harness(
-        repo,
-        { ...env, LOG_LEVEL: "debug" },
-        "run",
-        "bad.yaml",
-        "--prompt",
-        "x",
-      );
+      const debug = yok(repo, { ...env, LOG_LEVEL: "debug" }, "run", "bad.yaml", "--prompt", "x");
       expect(debug.stderr).toContain("    at ");
       expect(debug.stderr).toContain("compile.ts");
     },
@@ -688,9 +679,9 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env, home } = makeEnv();
       mkdirSync(home, { recursive: true });
-      writeFileSync(join(home, "harness.sock"), "");
+      writeFileSync(join(home, "yok.sock"), "");
 
-      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "x");
+      const run = yok(repo, env, "run", "ok.yaml", "--prompt", "x");
       expect(run.code).toBe(0);
 
       stopServer(repo, env);
@@ -733,12 +724,12 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env, home, socket } = makeEnv();
 
-      const run = harness(repo, env, "run", "ok.yaml", "--prompt", "x");
+      const run = yok(repo, env, "run", "ok.yaml", "--prompt", "x");
       expect(run.code).toBe(0);
 
-      const stop = harness(repo, env, "server", "stop");
+      const stop = yok(repo, env, "server", "stop");
       expect(stop.code).toBe(0);
-      expect(existsSync(join(home, "harness.sock"))).toBe(false);
+      expect(existsSync(join(home, "yok.sock"))).toBe(false);
       expect(existsSync(join(home, "server.pid"))).toBe(false);
 
       const sessions = spawnSync("tmux", ["-L", socket, "list-sessions", "-F", "#{session_name}"], {
@@ -755,7 +746,7 @@ describe("harness run", () => {
       const repo = makeRepo();
       const { env } = makeEnv();
 
-      const result = harness(repo, env, "doctor", "--json");
+      const result = yok(repo, env, "doctor", "--json");
       const json = DoctorJsonSchema.parse(JSON.parse(result.stdout));
       const names = json.results.map((row) => row.name);
       expect(names).toContain("tmux");

@@ -19,8 +19,8 @@ import {
   type ResetWait,
   type RunRef,
   runDirOf,
-} from "@harness/sdk";
-import { appendRunEvent, jsonlEventStore } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { appendRunEvent, jsonlEventStore } from "@yok/sdk/internal";
 import { runLimitWait } from "./limit-wait.ts";
 
 const setUp = () => {

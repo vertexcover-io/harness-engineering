@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DoctorJsonSchema } from "@harness/core";
-import type { CheckStatus } from "@harness/sdk";
+import { DoctorJsonSchema } from "@yok/core";
+import type { CheckStatus } from "@yok/sdk";
 
 const CLI = join(import.meta.dir, "index.ts");
 
@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 const doctor = (files: Record<string, string>, args: readonly string[]) => {
-  const dir = mkdtempSync(join(tmpdir(), "harness-doctor-e2e-"));
+  const dir = mkdtempSync(join(tmpdir(), "yok-doctor-e2e-"));
   dirs.push(dir);
   spawnSync("git", ["init", "-q"], { cwd: dir });
   for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
@@ -50,7 +50,7 @@ const doctor = (files: Record<string, string>, args: readonly string[]) => {
 const rowOf = (stdout: string, name: string) =>
   DoctorJsonSchema.parse(JSON.parse(stdout)).results.find((row) => row.name === name);
 
-describe("harness doctor --workflow", () => {
+describe("yok doctor --workflow", () => {
   test("a declared env key missing from .env blocks and shows the declared fix", () => {
     const { code, stdout } = doctor({ "wf.yaml": WORKFLOW }, ["--workflow", "wf.yaml", "--json"]);
     expect(code).toBe(1);
@@ -107,7 +107,7 @@ describe("harness doctor --workflow", () => {
 const NOTIFIER_WORKFLOW = WORKFLOW.replace("name: needs-key\n", "name: notifies\nnotifier: {}\n");
 const SLACK_ENV = "SLACK_BOT_TOKEN: xoxb-e2e\n  SLACK_CHANNEL_ID: C1";
 
-describe("harness doctor's notifier row", () => {
+describe("yok doctor's notifier row", () => {
   test.each<[string, Record<string, string>, readonly string[], CheckStatus]>([
     [
       "a workflow notifier with the Slack keys in the workflow's env is ok",

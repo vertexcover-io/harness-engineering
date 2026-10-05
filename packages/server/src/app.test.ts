@@ -3,18 +3,18 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { captureLogger } from "@harness/core";
-import type { IAgentProvider, ITerminal, LaunchOptions, Result } from "@harness/sdk";
-import { noopLogger, WorkflowRunSchema } from "@harness/sdk";
-import { createRegistry } from "@harness/sdk/internal";
+import { captureLogger } from "@yok/core";
+import type { IAgentProvider, ITerminal, LaunchOptions, Result } from "@yok/sdk";
+import { noopLogger, WorkflowRunSchema } from "@yok/sdk";
+import { createRegistry } from "@yok/sdk/internal";
 import * as z from "zod";
 import { createApp } from "./app.ts";
-import { createHarnessClient } from "./client.ts";
+import { createYokClient } from "./client.ts";
 import { socketPath } from "./protocol.ts";
 
-// A git checkout, as harness run sends: the server reads its config to pick the launch model.
+// A git checkout, as yok run sends: the server reads its config to pick the launch model.
 const tempWorkspace = (): { workflowPath: string; cwd: string } => {
-  const cwd = mkdtempSync(join(tmpdir(), "harness-app-"));
+  const cwd = mkdtempSync(join(tmpdir(), "yok-app-"));
   execFileSync("git", ["init", "-q"], { cwd });
   const workflowPath = join(cwd, "ok.yaml");
   writeFileSync(workflowPath, "name: ok\nnodes: []\n");
@@ -58,7 +58,7 @@ const buildDeps = async (
   ) => Promise<Result<{ terminalName: string; terminal: ITerminal }>>,
   log = noopLogger,
 ) => {
-  const registryPath = join(mkdtempSync(join(tmpdir(), "harness-registry-")), "registry.json");
+  const registryPath = join(mkdtempSync(join(tmpdir(), "yok-registry-")), "registry.json");
   const registry = createRegistry(registryPath, log);
   const asked: string[] = [];
   return {
@@ -70,7 +70,7 @@ const buildDeps = async (
       return fakeProvider(agent, launch);
     },
     log,
-    home: "/home/.harness",
+    home: "/home/.yok",
     viewerOrigin: "http://localhost:1",
     pid: 4242,
     version: "0.0.0-test",
@@ -140,7 +140,7 @@ describe("POST /runs", () => {
     expect(launchOptions?.prompt).toBe(
       `/orchestrate --workflow ${workflowPath} --inputs ${JSON.stringify({ a: 1 })}`,
     );
-    expect(launchOptions?.env?.HARNESS_RUN_ID).toBe(json.run.id);
+    expect(launchOptions?.env?.YOK_RUN_ID).toBe(json.run.id);
 
     expect((await deps.registry.findRun(json.run.id))?.terminal).toBe("session-xyz");
   });
@@ -251,7 +251,7 @@ describe("POST /runs", () => {
     const { workflowPath, cwd } = tempWorkspace();
     let savedAtLaunch: unknown;
     const deps = await buildDeps(async (options) => {
-      savedAtLaunch = await deps.registry.findRun(String(options.env?.HARNESS_RUN_ID));
+      savedAtLaunch = await deps.registry.findRun(String(options.env?.YOK_RUN_ID));
       return { ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } };
     });
     const app = createApp(deps);
@@ -371,7 +371,7 @@ describe("POST /runs", () => {
     expect(launched).toEqual([{ model: "haiku-x", effort: undefined }]);
   });
 
-  test("the session starts with the env the request carries, under the harness's own variables", async () => {
+  test("the session starts with the env the request carries, under yok's own variables", async () => {
     const { workflowPath, cwd } = tempWorkspace();
     const seen: LaunchOptions[] = [];
     const deps = await buildDeps((options) => {
@@ -387,7 +387,7 @@ describe("POST /runs", () => {
         workflowPath,
         inputs: {},
         cwd,
-        env: { API_URL: "http://x", HARNESS_RUN_ID: "spoofed" },
+        env: { API_URL: "http://x", YOK_RUN_ID: "spoofed" },
       }),
     });
 
@@ -395,8 +395,8 @@ describe("POST /runs", () => {
     const { run } = z.object({ run: WorkflowRunSchema }).parse(await res.json());
     expect(seen[0]?.env).toEqual({
       API_URL: "http://x",
-      HARNESS_RUN_ID: run.id,
-      HARNESS_HOME: deps.home,
+      YOK_RUN_ID: run.id,
+      YOK_HOME: deps.home,
     });
   });
 
@@ -541,9 +541,9 @@ describe("POST /runs logging", () => {
   });
 });
 
-describe("createHarnessClient", () => {
+describe("createYokClient", () => {
   const serveOn = (fetch: (request: Request) => Response | Promise<Response>) => {
-    const home = mkdtempSync(join(tmpdir(), "harness-home-"));
+    const home = mkdtempSync(join(tmpdir(), "yok-home-"));
     return { home, server: Bun.serve({ unix: socketPath(home), fetch }) };
   };
 
@@ -554,7 +554,7 @@ describe("createHarnessClient", () => {
     );
     const { home, server } = serveOn(createApp(deps).fetch);
     try {
-      const client = createHarnessClient({ home });
+      const client = createYokClient({ home });
 
       const health = await client.health();
       expect(health).toEqual({ ok: true, value: { pid: 4242, version: "0.0.0-test" } });
@@ -581,7 +581,7 @@ describe("createHarnessClient", () => {
   test("a non-JSON error reply comes back as an internal error, not a thrown parse error", async () => {
     const { home, server } = serveOn(() => new Response("Internal Server Error", { status: 500 }));
     try {
-      expect(await createHarnessClient({ home }).health()).toEqual({
+      expect(await createYokClient({ home }).health()).toEqual({
         ok: false,
         error: { code: "internal", message: "500 Internal Server Error" },
       });
@@ -591,8 +591,8 @@ describe("createHarnessClient", () => {
   });
 
   test("no server behind the socket is an unreachable error", async () => {
-    const home = mkdtempSync(join(tmpdir(), "harness-home-"));
-    expect(await createHarnessClient({ home }).health()).toEqual({
+    const home = mkdtempSync(join(tmpdir(), "yok-home-"));
+    expect(await createYokClient({ home }).health()).toEqual({
       ok: false,
       error: { code: "internal", message: "server unreachable" },
     });

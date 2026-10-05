@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { orchestrateArgv, type WorkflowAgent } from "@harness/core";
+import { orchestrateArgv, type WorkflowAgent } from "@yok/core";
 import {
   type IAgentProvider,
   loadStartConfig,
@@ -9,8 +9,8 @@ import {
   sessionEnv,
   tierLaunch,
   type WorkflowRun,
-} from "@harness/sdk";
-import { type Registry, resolveTiers } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { type Registry, resolveTiers } from "@yok/sdk/internal";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { errorResponse, jsonBody, type Vars } from "./api.ts";

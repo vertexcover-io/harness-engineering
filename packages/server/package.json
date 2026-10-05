@@ -1,5 +1,5 @@
 {
-  "name": "@harness/server",
+  "name": "@yok/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@harness/core": "workspace:*",
-    "@harness/sdk": "workspace:*",
+    "@yok/core": "workspace:*",
+    "@yok/sdk": "workspace:*",
     "@hono/zod-validator": "^0.9.1",
     "highlight.js": "^11.12.0",
     "hono": "^4.13.9",

@@ -1,5 +1,5 @@
-import type { ILogger } from "@harness/sdk";
 import { zValidator } from "@hono/zod-validator";
+import type { ILogger } from "@yok/sdk";
 import type { Context } from "hono";
 import * as z from "zod";
 import type { ErrorBody, ErrorCode } from "./protocol.ts";

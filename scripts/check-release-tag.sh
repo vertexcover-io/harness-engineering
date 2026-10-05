@@ -27,7 +27,7 @@ done
 marketplaces=(.claude-plugin/pre-release/marketplace.json)
 case "$tag" in *-*) ;; *) marketplaces+=(.claude-plugin/marketplace.json) ;; esac
 for marketplace in "${marketplaces[@]}"; do
-  pinned=$(jq -r '.plugins[] | select(.name == "harness") | .source.ref' "$marketplace")
+  pinned=$(jq -r '.plugins[] | select(.name == "yok") | .source.ref' "$marketplace")
   if [ "$pinned" != "$tag" ]; then
     echo "$marketplace pins $pinned, not $tag" >&2
     status=1

@@ -29,10 +29,10 @@ workspace holds one git worktree per repo, each on the branch `SPEC_NAME`.
 The input is a `create-workspace.input.v1` object: `specName`, and optionally `request` (the text
 of what the run should do), `baseBranch` and `repos`.
 
-This is a pipeline stage for harness v2. It reads its extension and reference with the
+This is a pipeline stage for yok v2. It reads its extension and reference with the
 orchestrate script, `bun run orchestrate …`, and makes the worktrees with this skill's own
 script, `scripts/workspace.ts`, run as `bun run workspace …`. Both run from the repo's
-`package.json`, which installs the `@harness/sdk` library the script needs.
+`package.json`, which installs the `@yok/sdk` library the script needs.
 
 If either script is not found, stop and report that; do not create worktrees by hand.
 

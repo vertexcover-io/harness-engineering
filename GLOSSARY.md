@@ -1,6 +1,6 @@
-# Harness
+# Yok
 
-Harness walks an AI coding agent through a workflow of stages, from a task to an open pull request. It keeps each run's history, so any step can be checked, resumed or audited.
+Yok walks an AI coding agent through a workflow of stages, from a task to an open pull request. It keeps each run's history, so any step can be checked, resumed or audited.
 
 ## Workflows and runs
 
@@ -149,7 +149,7 @@ Moving a run's session onto another model between stages, because the next node'
 A run pausing until the agent's usage limit resets, then resuming the session.
 
 **Stuck**:
-An agent the Stop hook sent back too many times in a row, so the harness let its turn end.
+An agent the Stop hook sent back too many times in a row, so yok let its turn end.
 
 ## Events and state
 
@@ -183,7 +183,7 @@ A run hook the run waits on before it moves on.
 A run hook that runs on its own, without holding up the run.
 
 **Agent hook**:
-A hook the agent itself fires at points in its session (start, tool use, stop) that the harness answers.
+A hook the agent itself fires at points in its session (start, tool use, stop) that yok answers.
 _Avoid_: Run hook
 
 **Stop hook**:
@@ -192,7 +192,7 @@ The agent hook that decides whether the agent may end its turn or must go back t
 ## Workspace and project
 
 **Config**:
-A project's harness settings: packages, commands, environments, tiers, extensions and hooks.
+A project's yok settings: packages, commands, environments, tiers, extensions and hooks.
 
 **Workspace**:
 The folder where a run makes its changes, holding one or more repositories.
@@ -215,7 +215,7 @@ The check that a machine, repository and config have everything a run needs.
 ## People and feedback
 
 **Comment**:
-A note a person leaves on a run's artifact, which the harness types into the agent's session.
+A note a person leaves on a run's artifact, which yok types into the agent's session.
 _Avoid_: Review comment (for PR review comments)
 
 **Question**:
@@ -225,7 +225,7 @@ Something the agent asks the person and waits on.
 The built-in run hook that posts a run's progress to a chat thread.
 
 **Retro**:
-The stage that audits a finished run for harness defects.
+The stage that audits a finished run for yok defects.
 _Avoid_: Post-mortem
 
 ## Relationships

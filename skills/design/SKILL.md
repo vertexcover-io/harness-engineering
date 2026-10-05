@@ -30,7 +30,7 @@ wrong shape. The user leaves this stage having confirmed the problem, the scope,
 decisions that shape the build, and what the build is hard to walk back from.
 
 The input holds `task`: a plain prompt, or a ticket's text with its local files. The stage's
-work is one file, `.harness/RUN/artifacts/design.md`, where RUN is the run's spec name.
+work is one file, `.yok/RUN/artifacts/design.md`, where RUN is the run's spec name.
 Standalone, use a short kebab-case name for the topic as RUN.
 
 This stage stops at the shape. It writes no code, cuts no phases, and lists no file-by-file

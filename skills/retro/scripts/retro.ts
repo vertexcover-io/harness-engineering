@@ -10,7 +10,7 @@ import {
   type SessionRef,
   SessionRefSchema,
   WorkflowStartedEvent,
-} from "@harness/sdk";
+} from "@yok/sdk";
 import * as z from "zod";
 import {
   type Agent,
@@ -430,7 +430,7 @@ const stagesText = (rows: readonly StageRow[], zone: string | undefined): string
   ].join("\n");
 };
 
-// An event this harness version does not know is left out; the retro reads only the ones it needs.
+// An event this yok version does not know is left out; the retro reads only the ones it needs.
 const readEvents = (path: string): readonly Event[] =>
   readJsonLines(path).flatMap(({ value }) => {
     const parsed = EventSchema.safeParse(value);

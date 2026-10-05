@@ -27,8 +27,8 @@ import {
   type RunRef,
   runDirOf,
   type State,
-} from "@harness/sdk";
-import { appendRunEvent, createRegistry, jsonlEventStore } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { appendRunEvent, createRegistry, jsonlEventStore } from "@yok/sdk/internal";
 import {
   completeContextOnSessionStart,
   findOpenContextRun,
@@ -179,7 +179,7 @@ afterEach(() => {
 });
 
 const LAUNCH = { cwd: "/repo", orchestrateArgv: ["/o.ts"] };
-const HOME = "/home/.harness";
+const HOME = "/home/.yok";
 
 type Context = Awaited<ReturnType<typeof setUp>>;
 
@@ -278,9 +278,9 @@ describe("runContextStep: new", () => {
     expect(typesOf(fake.typed)).toEqual(["C-u", RESUME, "Enter"]);
   });
 
-  test("the new session launches with the run's .env and workflow env, under the harness's own", async () => {
+  test("the new session launches with the run's .env and workflow env, under yok's own", async () => {
     const context = await setUp("type: context, action: new", "env: { FROM_WORKFLOW: '1' }\n");
-    writeFileSync(join(context.run.cwd, ".env"), "FROM_DOTENV=1\nHARNESS_RUN_ID=spoofed\n");
+    writeFileSync(join(context.run.cwd, ".env"), "FROM_DOTENV=1\nYOK_RUN_ID=spoofed\n");
     const starting = startingProvider(context);
 
     await helper(context, fakeTerminal(() => IDLE).terminal, starting.provider);
@@ -288,8 +288,8 @@ describe("runContextStep: new", () => {
     expect(starting.relaunches[0]?.options.env).toEqual({
       FROM_DOTENV: "1",
       FROM_WORKFLOW: "1",
-      HARNESS_RUN_ID: "r-1",
-      HARNESS_HOME: HOME,
+      YOK_RUN_ID: "r-1",
+      YOK_HOME: HOME,
     });
   });
 

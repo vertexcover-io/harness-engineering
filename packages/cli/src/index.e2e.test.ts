@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { DoctorJsonSchema } from "@harness/core";
+import { DoctorJsonSchema } from "@yok/core";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..");
-const BIN = join(REPO_ROOT, "node_modules", ".bin", "harness");
+const BIN = join(REPO_ROOT, "node_modules", ".bin", "yok-dev");
 
 const runBin = (args: readonly string[]): Promise<{ code: number; stdout: string }> =>
   new Promise((resolve, reject) => {
@@ -17,7 +17,7 @@ const runBin = (args: readonly string[]): Promise<{ code: number; stdout: string
     child.on("close", (code) => resolve({ code: code ?? 1, stdout }));
   });
 
-describe("harness doctor (installed bin)", () => {
+describe("yok doctor (installed bin)", () => {
   test("SC11: prints ENVIRONMENT, a header row, a git row and a VERDICT line, exiting per the verdict", async () => {
     const { code, stdout } = await runBin(["doctor"]);
     expect(stdout.startsWith("ENVIRONMENT")).toBe(true);
@@ -28,7 +28,7 @@ describe("harness doctor (installed bin)", () => {
     expect(code).toBe(verdictLine?.startsWith("BLOCKED") ? 1 : 0);
   }, 40_000);
 
-  test("--json prints a report that parses against DoctorJsonSchema, exiting per the verdict", async () => {
+  test("SC12: yok-dev doctor --json prints a report that parses against DoctorJsonSchema, exiting per the verdict", async () => {
     const { code, stdout } = await runBin(["doctor", "--json"]);
     const json = DoctorJsonSchema.parse(JSON.parse(stdout));
     expect(json.results.map((row) => row.name)).toContain("git");

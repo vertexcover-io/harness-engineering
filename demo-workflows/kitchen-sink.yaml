@@ -137,7 +137,7 @@ nodes:
   - id: report
     type: agent
     prompt: >
-      Write a short report of this run to .harness/RUN_NAME/artifacts/report.md: one line per
+      Write a short report of this run to .yok/RUN_NAME/artifacts/report.md: one line per
       node in the input, with its status. Finish with --artifact report=artifacts/report.md and
       reply { "report": "artifacts/report.md" }.
     # A node that depends on a skipped node is skipped too, so report leaves out the skipped ones.

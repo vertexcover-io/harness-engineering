@@ -49,7 +49,7 @@ printf '{\n  "name": "shop",\n  "dependencies": {}\n}\n' > package.json
 printf '{\n  "name": "shop",\n  "lockfileVersion": 3,\n  "packages": {}\n}\n' > package-lock.json
 printf '{\n  "compilerOptions": { "strict": false }\n}\n' > tsconfig.json
 printf '# Shop\n\nA tiny shoping cart.\n' > README.md
-printf 'node_modules/\n.harness/*\n!.harness/knowledge/\n' > .gitignore
+printf 'node_modules/\n.yok/*\n!.yok/knowledge/\n' > .gitignore
 git add -A
 git commit -qm "feat(cart): add cart model"
 
@@ -127,16 +127,16 @@ EOF
     base="$(git rev-parse HEAD)"
     checkpoint_branch
     pre="$(git rev-parse HEAD)"
-    mkdir -p .harness/demo
-    git log --reverse --format='%h %s%n%b' "$base..$pre" > .harness/demo/working-commits.txt
+    mkdir -p .yok/demo
+    git log --reverse --format='%h %s%n%b' "$base..$pre" > .yok/demo/working-commits.txt
     git reset -q --mixed "$base"
     git diff -z --name-only --no-renames --diff-filter=A "$base" "$pre" | xargs -0 git add -N --
     ;;
   5)
     add_discount
     printf 'node_modules/\n' > .gitignore
-    mkdir -p .harness/demo
-    printf '# Plan\n\n1. Add discounts.\n' > .harness/demo/plan.md
+    mkdir -p .yok/demo
+    printf '# Plan\n\n1. Add discounts.\n' > .yok/demo/plan.md
     ;;
   6)
     printf '{\n  "name": "shop",\n  "dependencies": { "zod": "^3.23.8" }\n}\n' > package.json
@@ -167,7 +167,7 @@ EOF
         git restore --worktree --source=HEAD README.md
         ;;
       10)
-        printf 'node_modules/\n.harness/*\n!.harness/knowledge/\ndist/\n' > .gitignore
+        printf 'node_modules/\n.yok/*\n!.yok/knowledge/\ndist/\n' > .gitignore
         mkdir -p dist
         printf 'export{};\n' > dist/bundle.js
         git add .gitignore && git add -f dist/bundle.js

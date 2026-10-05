@@ -25,7 +25,7 @@ const git = (cwd: string, ...args: string[]): string =>
 const makeRepo = (dir = tempDir()): string => {
   mkdirSync(dir, { recursive: true });
   git(dir, "init", "-q", "-b", "main");
-  writeFileSync(join(dir, ".gitignore"), ".worktrees/\n.harness/\n");
+  writeFileSync(join(dir, ".gitignore"), ".worktrees/\n.yok/\n");
   git(dir, "add", ".");
   git(dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init");
   return dir;
@@ -132,7 +132,7 @@ const initializedRun = async (
   config?: Readonly<{ path: string | null; root: string }>,
 ): Promise<RunRef> => {
   const run = { id: "r-1", cwd, name: "feat-x" };
-  const runDir = join(cwd, ".harness", run.name);
+  const runDir = join(cwd, ".yok", run.name);
   mkdirSync(runDir, { recursive: true });
   writeFileSync(join(runDir, "workflow.yaml"), "name: ok\nnodes: []\n");
   await createState({ runId: run.id, runDir, version: "1.0.0", eventHandlers: {}, config });
@@ -206,24 +206,24 @@ describe("pickRun", () => {
     await registry.addRun(savedRun("r-1", repo, "feat-x"));
     await registry.addRun(savedRun("r-2", repo, "feat-y"));
     await registry.addRun(savedRun("r-new", repo, null));
-    mkdirSync(join(repo, ".harness", "feat-x"), { recursive: true });
-    mkdirSync(join(repo, ".harness", "feat-y"), { recursive: true });
+    mkdirSync(join(repo, ".yok", "feat-x"), { recursive: true });
+    mkdirSync(join(repo, ".yok", "feat-y"), { recursive: true });
     const pick = (flags: { name?: string; id?: string }, env: Record<string, string> = {}) =>
       pickRun({ registry, ...flags, env, cwd: repo });
     return { repo, pick };
   };
 
-  test("--run-id wins over --run, which wins over $HARNESS_RUN_ID", async () => {
+  test("--run-id wins over --run, which wins over $YOK_RUN_ID", async () => {
     const { repo, pick } = await setUp();
     const x = { id: "r-1", cwd: repo, name: "feat-x" };
     const y = { id: "r-2", cwd: repo, name: "feat-y" };
 
-    expect(await pick({ id: "r-1" }, { HARNESS_RUN_ID: "r-2" })).toEqual({ ok: true, value: x });
-    expect(await pick({ name: "feat-x" }, { HARNESS_RUN_ID: "r-2" })).toEqual({
+    expect(await pick({ id: "r-1" }, { YOK_RUN_ID: "r-2" })).toEqual({ ok: true, value: x });
+    expect(await pick({ name: "feat-x" }, { YOK_RUN_ID: "r-2" })).toEqual({
       ok: true,
       value: x,
     });
-    expect(await pick({}, { HARNESS_RUN_ID: "r-2" })).toEqual({ ok: true, value: y });
+    expect(await pick({}, { YOK_RUN_ID: "r-2" })).toEqual({ ok: true, value: y });
     expect(await pick({ id: "r-1", name: "feat-x" })).toEqual({ ok: true, value: x });
   });
 
@@ -231,7 +231,7 @@ describe("pickRun", () => {
     const { pick } = await setUp();
 
     expect(await pick({})).toEqual({ ok: true, value: undefined });
-    expect(await pick({}, { HARNESS_RUN_ID: "" })).toEqual({ ok: true, value: undefined });
+    expect(await pick({}, { YOK_RUN_ID: "" })).toEqual({ ok: true, value: undefined });
   });
 
   test("--run and --run-id naming different runs is an error naming both", async () => {
@@ -247,7 +247,7 @@ describe("pickRun", () => {
     const { pick } = await setUp();
 
     expect(errorOf(await pick({ id: "r-ghost" }))).toContain("run r-ghost not found");
-    expect(errorOf(await pick({}, { HARNESS_RUN_ID: "r-new" }))).toContain(
+    expect(errorOf(await pick({}, { YOK_RUN_ID: "r-new" }))).toContain(
       "run r-new is not initialized; run orchestrate init",
     );
   });
@@ -258,15 +258,15 @@ describe("requireRun", () => {
     const repo = makeRepo();
     const registry = createRegistry(join(tempDir(), "registry.json"));
     await registry.addRun(savedRun("r-1", repo, "feat-x"));
-    mkdirSync(join(repo, ".harness", "feat-x"), { recursive: true });
+    mkdirSync(join(repo, ".yok", "feat-x"), { recursive: true });
     const require = (env: Record<string, string>) => requireRun({ registry, env, cwd: repo });
 
-    expect(await require({ HARNESS_RUN_ID: "r-1" })).toEqual({
+    expect(await require({ YOK_RUN_ID: "r-1" })).toEqual({
       ok: true,
       value: { id: "r-1", cwd: repo, name: "feat-x" },
     });
     expect(errorOf(await require({}))).toBe(
-      "no run: pass --run or --run-id, or run inside a harness session",
+      "no run: pass --run or --run-id, or run inside a yok session",
     );
   });
 });

@@ -5,15 +5,15 @@ import { summarizeLint, summarizeTests, summarizeTypecheck } from "./check.ts"
 describe("summarizeTypecheck", () => {
   test("counts the lines tsc reports as errors", () => {
     const output = [
-      "@harness/core typecheck: src/runs.ts(698,7): error TS2322: Type 'x' is not assignable.",
-      "@harness/cli typecheck: ../core/src/runs.ts(698,7): error TS2322: Type 'x' is not assignable.",
-      "@harness/sdk typecheck: Exited with code 0",
+      "@yok/core typecheck: src/runs.ts(698,7): error TS2322: Type 'x' is not assignable.",
+      "@yok/cli typecheck: ../core/src/runs.ts(698,7): error TS2322: Type 'x' is not assignable.",
+      "@yok/sdk typecheck: Exited with code 0",
     ].join("\n")
     assert.deepEqual(summarizeTypecheck(output), { errors: 2 })
   })
 
   test("a clean run has no errors", () => {
-    assert.deepEqual(summarizeTypecheck("@harness/core typecheck: Exited with code 0"), { errors: 0 })
+    assert.deepEqual(summarizeTypecheck("@yok/core typecheck: Exited with code 0"), { errors: 0 })
   })
 })
 

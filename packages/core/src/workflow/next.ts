@@ -10,8 +10,8 @@ import {
   stackOf,
   type TierModel,
   tierLaunch,
-} from "@harness/sdk";
-import { findNodeRuns, type ModelSwitch, nodePath } from "@harness/sdk/internal";
+} from "@yok/sdk";
+import { findNodeRuns, type ModelSwitch, nodePath } from "@yok/sdk/internal";
 import { z } from "zod";
 import { own } from "../stage.ts";
 import { findConsumedArtifacts } from "./done.ts";

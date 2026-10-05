@@ -15,7 +15,7 @@ Every line of production code is written in response to a failing test.
 from its `packages` block.
 
 **Project overrides.** Read `$ARGUMENTS` if it names a file, else
-`.claude/harness/tdd-reference.md` if it exists. Either outranks the defaults below on conflict.
+`.claude/yok/tdd-reference.md` if it exists. Either outranks the defaults below on conflict.
 
 **Load the `code-quality` skill before writing anything** — production code and tests alike.
 TDD governs the *order* you write in; `code-quality` governs *what you write*.
