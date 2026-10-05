@@ -1,12 +1,12 @@
-#!/usr/bin/env node --experimental-strip-types
+#!/usr/bin/env bun
 // Builds one video per verification scenario from its promoted frames, then cropdetects each video
 // and fails the scenario unless the window it reports still carries the source frame's aspect
 // ratio — a frame stretched to fill the canvas shows a geometry that was never on screen.
 // With --inline it instead writes every file the finished report names into the report itself,
 // as data URIs in a `report-media` island the template resolves paths through, so the one html
 // file carries its own videos and frames wherever it is moved.
-// Usage: report-media.ts VERIFICATION_DIR
-//        report-media.ts --inline VERIFICATION_DIR
+// Usage: yok orchestrate script --skill qa scripts/report-media.ts VERIFICATION_DIR
+//        yok orchestrate script --skill qa scripts/report-media.ts --inline VERIFICATION_DIR
 // Building prints one line per scenario — "ok NN_<slug>.mp4 crop=<window>", or
 // "FAILED NN_<slug> — <reason>" — and writes each NN_<slug>.mp4 beside the report.
 // Inlining prints one line per file — "ok <path> <bytes>B", or "FAILED <path> — <reason>" — and
@@ -23,12 +23,10 @@ import {
   readdirSync,
   readFileSync,
   readSync,
-  realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 type ScenarioResult = {
   readonly prefix: string;
@@ -413,7 +411,9 @@ export function main(args: readonly string[]): number {
   const inline = args[0] === "--inline";
   const target = inline ? args[1] : args[0];
   if (target === undefined || args.length > (inline ? 2 : 1)) {
-    console.error("usage: report-media.ts [--inline] VERIFICATION_DIR");
+    console.error(
+      "usage: yok orchestrate script --skill qa scripts/report-media.ts [--inline] VERIFICATION_DIR",
+    );
     return 2;
   }
 
@@ -426,15 +426,6 @@ export function main(args: readonly string[]): number {
   return inline ? inlineMain(dir) : buildMain(dir);
 }
 
-const invokedScript = (): string => {
-  const argv1 = resolve(process.argv[1] ?? "");
-  try {
-    return realpathSync(argv1);
-  } catch {
-    return argv1;
-  }
-};
-
-if (fileURLToPath(import.meta.url) === invokedScript()) {
+if (import.meta.main) {
   process.exit(main(process.argv.slice(2)));
 }

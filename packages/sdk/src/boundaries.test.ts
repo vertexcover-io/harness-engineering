@@ -140,6 +140,7 @@ const PUBLIC_RUNTIME_NAMES = [
   "requireRun",
   "resolveRun",
   "runDirOf",
+  "runScriptFile",
   "sessionEnv",
   "spawn",
   "spawnDetached",
@@ -176,6 +177,41 @@ describe("source boundaries", () => {
     );
     expect(sources).toEqual([]);
     expect(existsSync("packages/agents")).toBe(false);
+  });
+
+  test("SC25: no skill, demo stage or engine source tells anyone to run orchestrate through bun run", () => {
+    // Built from parts so this file's own needle text can't match itself.
+    const bunRun = new RegExp(["bun run", "(--silent )?orchestrate"].join(" "));
+    const sources = ["skills/**/*", "demo-workflows/**/*", "packages/*/src/**/*.ts"].flatMap(
+      (pattern) => filesContaining(pattern, bunRun, { excludeTests: true }),
+    );
+    expect(sources).toEqual([]);
+  });
+
+  test("SC44: no skill text runs a script through bun run or node, and every yok orchestrate script --skill it names exists and exports main", () => {
+    // Built from parts so this file's own needle text can't match itself.
+    const oldRunners = new RegExp(
+      [
+        ...["workspace", "ticket", "linear", "baseline"].map((name) => `bun run ${name}`),
+        ["node", "--experimental-strip-types"].join(" "),
+      ].join("|"),
+    );
+    expect(filesContaining("skills/**/*.md", oldRunners)).toEqual([]);
+    const named = [...new Glob("skills/**/*.md").scanSync(".")].flatMap((file) =>
+      [
+        ...readFileSync(file, "utf8").matchAll(
+          /yok orchestrate script --skill ([\w-]+) (\S+\.[cm]?[jt]s)\b/g,
+        ),
+      ].map(([, skill, script]) => `skills/${skill}/${script}`),
+    );
+    const scripts = [...new Set(named)].sort();
+    expect(scripts.length).toBeGreaterThan(0);
+    const broken = scripts.filter(
+      (path) =>
+        !existsSync(path) ||
+        !/export (const|(async )?function) main\b/.test(readFileSync(path, "utf8")),
+    );
+    expect(broken).toEqual([]);
   });
 
   test("sdk never imports core, so it installs as a library on its own", () => {

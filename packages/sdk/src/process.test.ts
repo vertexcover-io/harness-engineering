@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   execWithTimeout,
+  isCompiled,
   killRunning,
   NOT_FOUND,
+  selfArgv,
   spawn,
   spawnDetached,
   spawnInteractive,
@@ -41,6 +43,31 @@ const backgroundSleep = async (): Promise<{ dir: string; pidFile: string; script
   const pidFile = join(dir, "pid");
   return { dir, pidFile, script: `sleep 30 & echo $! > ${pidFile}; wait` };
 };
+
+describe("selfArgv", () => {
+  const setSelf = (value: string | undefined): void => {
+    if (value === undefined) delete process.env.YOK_SELF;
+    else process.env.YOK_SELF = value;
+  };
+  const withSelf = <T>(value: string | undefined, read: () => T): T => {
+    const saved = process.env.YOK_SELF;
+    setSelf(value);
+    try {
+      return read();
+    } finally {
+      setSelf(saved);
+    }
+  };
+
+  test("SC20: from source the program reads as not compiled, selfArgv returns YOK_SELF's argv, and an unset, empty or non-JSON value throws", () => {
+    expect(isCompiled).toBe(false);
+    const argv = JSON.stringify(["/b", "--no-env-file", "/c/index.ts"]);
+    expect(withSelf(argv, selfArgv)).toEqual(["/b", "--no-env-file", "/c/index.ts"]);
+    expect(() => withSelf(undefined, selfArgv)).toThrow("YOK_SELF is unset");
+    expect(() => withSelf("[]", selfArgv)).toThrow();
+    expect(() => withSelf("not json", selfArgv)).toThrow();
+  });
+});
 
 describe("spawn", () => {
   test("returns the exit code, stdout and stderr", async () => {

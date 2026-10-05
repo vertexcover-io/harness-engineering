@@ -31,7 +31,7 @@ is the run's name.
 ## Steps
 
 1. Read `.yok/RUN_NAME/artifacts/brief.md`.
-2. Run `bun run orchestrate skill ref demo-workflows/stages/demo-draft draft-format` and follow the
+2. Run `yok orchestrate skill ref demo-workflows/stages/demo-draft draft-format` and follow the
    layout it prints.
 3. Write the draft to `.yok/RUN_NAME/artifacts/drafts/NAME.md`.
 4. Finish the node with `--artifact draft=artifacts/drafts/NAME.md`, and reply with:

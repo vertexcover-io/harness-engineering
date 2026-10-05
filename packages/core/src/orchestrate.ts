@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
@@ -23,6 +22,8 @@ import {
   registryPath,
   requireRun,
   runDirOf,
+  runScriptFile,
+  spawnInteractive,
   stopRunningOnSignal,
   tierLaunch,
   type WorkflowRun,
@@ -30,9 +31,11 @@ import {
 } from "@yok/sdk";
 import {
   AgentStatusSchema,
+  callMode,
   createRegistry,
   foldModelSwitch,
   jsonlEventStore,
+  runMode,
   type StepOutcome,
 } from "@yok/sdk/internal";
 import { agentAdapters, agentProvider, findSessionAgent, HOOK_AGENTS } from "./agents/index.ts";
@@ -57,13 +60,13 @@ import {
   linkRunSession,
   nextStep,
 } from "./runs.ts";
+import { scriptToRun } from "./script.ts";
 import {
   listReferences,
   orchestrateArgv,
   resolveExtension,
   resolveReference,
   resolveReferencePath,
-  yokSkillsDir,
 } from "./stage.ts";
 import { renderStatusline } from "./statusline.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
@@ -359,7 +362,7 @@ const printResolved = async (
   const loaded = await configFor(flags);
   if (!loaded.ok) return fail(loaded.error);
   const { root, config } = loaded.value;
-  const options = { skillsDir: yokSkillsDir(), root, config, skill };
+  const options = { root, config, skill };
   const text = await resolveText(options);
   if (!text.ok) return fail(text.error);
   process.stdout.write(text.value);
@@ -402,6 +405,34 @@ const skillCommand = () => {
     .action((name, flags) => printResolved(name, flags, resolveExtension));
   return skill;
 };
+
+// Options after FILE are the script's own, so passThroughOptions leaves them in args.
+const scriptCommand = () =>
+  new Command("script")
+    .description("Run a script file; with --skill, a file inside that skill's folder")
+    .option("--skill <name>", "read FILE from this skill's folder")
+    .option("--run <name>", "the run whose workflow --skill searches for a stage")
+    .option("--run-id <id>", "the run, by id")
+    .argument("<file>", "the .ts, .js or .mjs file to run")
+    .argument("[args...]", "passed to the script unchanged")
+    .passThroughOptions()
+    .action(async (file, args, flags) => {
+      const target = await scriptToRun(file, flags);
+      if (!target.ok) return fail(target.error);
+      if ("command" in target.value) {
+        const shell = ["-c", `${target.value.command} "$@"`, "sh", ...args];
+        process.exitCode = await spawnInteractive("sh", shell, { cwd: process.cwd() });
+        return;
+      }
+      try {
+        const ran = await runScriptFile(target.value.file, args);
+        if (!ran.ok) return fail(ran.error.message);
+        if (ran.value !== undefined) process.exitCode = ran.value;
+      } catch (error) {
+        console.error(error);
+        process.exitCode = 1;
+      }
+    });
 
 type HookSpec<H> = Readonly<{
   name: string;
@@ -670,24 +701,55 @@ const commentsCommand = () => {
   return comments;
 };
 
-stopRunningOnSignal();
+const exitWith = (work: Promise<number>): Promise<never> =>
+  work.then(
+    (code) => process.exit(code),
+    (error: unknown) => {
+      console.error(error);
+      process.exit(1);
+    },
+  );
 
-await new Command()
-  .name("orchestrate")
-  .description("Actions a skill takes on a yok run; each one calls core directly")
-  .addCommand(initCommand())
-  .addCommand(linkSessionCommand())
-  .addCommand(emitCommand())
-  .addCommand(nextCommand())
-  .addCommand(execCommand())
-  .addCommand(doneCommand())
-  .addCommand(nodeCommand())
-  .addCommand(skillCommand())
-  .addCommand(hookCommand())
-  .addCommand(statuslineCommand())
-  .addCommand(contextCommand())
-  .addCommand(modelCommand())
-  .addCommand(limitWaitCommand())
-  .addCommand(commentsCommand())
-  .parseAsync(process.argv)
-  .catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
+// The sdk starts these to call one run hook in a process of its own; skills never run them.
+const runHookCommand = () => {
+  const runHook = new Command("run-hook").description("Call one run hook (started by the sdk)");
+  runHook
+    .command("call")
+    .description("Call the module hook given as { hook, input } on stdin; print its output")
+    .action(() => exitWith(callMode()));
+  runHook
+    .command("run")
+    .description("Run one non-blocking hook for one stored event, and record the call")
+    .argument("<cwd>")
+    .argument("<name>")
+    .argument("<runId>")
+    .argument("<eventId>")
+    .argument("<hook>")
+    .action((cwd, name, runId, eventId, hook) =>
+      exitWith(runMode({ cwd, name, id: runId, eventId, hook })),
+    );
+  return runHook;
+};
+
+export const orchestrateCommand = () =>
+  new Command("orchestrate")
+    .description("Actions a skill takes on a yok run; each one calls core directly")
+    // script's passThroughOptions throws unless every parent command parses options positionally.
+    .enablePositionalOptions()
+    .hook("preAction", () => stopRunningOnSignal())
+    .addCommand(initCommand())
+    .addCommand(linkSessionCommand())
+    .addCommand(emitCommand())
+    .addCommand(nextCommand())
+    .addCommand(execCommand())
+    .addCommand(doneCommand())
+    .addCommand(nodeCommand())
+    .addCommand(skillCommand())
+    .addCommand(scriptCommand())
+    .addCommand(hookCommand())
+    .addCommand(statuslineCommand())
+    .addCommand(contextCommand())
+    .addCommand(modelCommand())
+    .addCommand(limitWaitCommand())
+    .addCommand(commentsCommand())
+    .addCommand(runHookCommand(), { hidden: true });

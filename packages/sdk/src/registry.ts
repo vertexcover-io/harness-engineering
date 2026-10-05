@@ -13,9 +13,13 @@ import {
 } from "./contracts.ts";
 import { readIfExists, withLock } from "./files.ts";
 import { type ILogger, noopLogger } from "./logger.ts";
+import { isCompiled } from "./process.ts";
 
-export const yokHome = (env: NodeJS.ProcessEnv = process.env): string =>
-  env.YOK_HOME ?? join(homedir(), ".yok");
+// The release binary and yok-dev never share a home, so they never share a server.
+export const yokHome = (
+  env: NodeJS.ProcessEnv = process.env,
+  compiled: boolean = isCompiled,
+): string => env.YOK_HOME ?? join(homedir(), compiled ? ".yok" : ".yok-dev");
 
 export const registryPath = (home: string = yokHome()): string => join(home, "registry.json");
 

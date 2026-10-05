@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -169,5 +170,47 @@ describe("assertPublic", () => {
 
   test("allows a public IPv6 address", () => {
     expect(() => assertPublic(new URL("https://[2606:4700::1111]/x"))).not.toThrow();
+  });
+});
+
+describe("yok orchestrate script --skill ticket-fetcher scripts/ticket.ts validate", () => {
+  const CLI = join(import.meta.dir, "../../../packages/cli/src/index.ts");
+  const validate = (dir: string) =>
+    spawnSync(
+      "bun",
+      [
+        "--no-env-file",
+        CLI,
+        "orchestrate",
+        "script",
+        "--skill",
+        "ticket-fetcher",
+        "scripts/ticket.ts",
+        "validate",
+        dir,
+      ],
+      { encoding: "utf8", env: { ...process.env, YOK_RUN_ID: undefined } },
+    );
+
+  test("SC52: a valid bundle prints ok and exits 0, and one listing a missing asset prints its issues and exits 1", () => {
+    const good = mkdtempSync(join(tmpdir(), "ticket-"));
+    writeFileSync(join(good, "m.png"), "hello");
+    writeFileSync(
+      join(good, "ticket.json"),
+      JSON.stringify(ticket({ assets: [downloaded("m.png")] })),
+    );
+    const broken = mkdtempSync(join(tmpdir(), "ticket-"));
+    writeFileSync(
+      join(broken, "ticket.json"),
+      JSON.stringify(ticket({ assets: [downloaded("m.png")] })),
+    );
+
+    const passed = validate(good);
+    const failed = validate(broken);
+
+    expect(passed.status).toBe(0);
+    expect(JSON.parse(passed.stdout)).toEqual({ ok: true, path: join(good, "ticket.json") });
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toContain("m.png");
   });
 });

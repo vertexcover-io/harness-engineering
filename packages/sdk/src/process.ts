@@ -1,11 +1,30 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { openSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
+import * as z from "zod";
 import type { Exec } from "./check.ts";
+import { NonEmptyStringSchema } from "./contracts.ts";
 
 export const NOT_FOUND = 127;
 // What a shell returns for a command it found but could not run, e.g. EACCES.
 const CANNOT_RUN = 126;
+
+// Bun places every module of a compiled binary under /$bunfs/; source files have real paths.
+export const isCompiled = import.meta.path.startsWith("/$bunfs/");
+
+const SelfArgvSchema = z.tuple([NonEmptyStringSchema], NonEmptyStringSchema);
+
+// The argv that starts this program again. The CLI entry sets YOK_SELF when it starts, and
+// every child inherits it, the way cargo passes $CARGO and npm passes $npm_execpath.
+export const selfArgv = (): readonly [string, ...string[]] => {
+  const raw = process.env.YOK_SELF;
+  if (raw === undefined) {
+    throw new Error("YOK_SELF is unset: selfArgv runs only inside the yok CLI");
+  }
+  const parsed = SelfArgvSchema.safeParse(JSON.parse(raw));
+  if (!parsed.success) throw new Error(`YOK_SELF is not a JSON array of strings: ${raw}`);
+  return parsed.data;
+};
 
 // Added to the parent's environment; an undefined value removes that variable.
 export type SpawnEnv = Readonly<Record<string, string | undefined>>;

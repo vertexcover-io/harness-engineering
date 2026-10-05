@@ -22,7 +22,7 @@
 
 **Where the orchestrate config carries an `environments` block, this is already declared** and
 deriving it again is the wrong move: bring up its default entry as the qa skill's `stack-up` reference
-says (`bun run orchestrate skill ref qa.stack-up`), with the project's rules for its placeholders, and run
+says (`yok orchestrate skill ref qa.stack-up`), with the project's rules for its placeholders, and run
 the package's `e2e` command against it. The invariants above still bind — they are what a declared stack
 must satisfy.
 

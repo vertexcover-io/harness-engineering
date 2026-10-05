@@ -547,8 +547,8 @@ export const citeLines = (options: CiteOptions): string => {
 };
 
 const USAGE = `usage:
-  bun run retro extract (--run NAME | --main PATH) --out DIR [--tz ZONE] [--projects DIR] [--gate-time ISO]
-  bun run retro cite TRANSCRIPT LINE [LINE ...] [--context N] [--tz ZONE] [--full]`;
+  yok orchestrate script --skill retro scripts/retro.ts extract (--run NAME | --main PATH) --out DIR [--tz ZONE] [--projects DIR] [--gate-time ISO]
+  yok orchestrate script --skill retro scripts/retro.ts cite TRANSCRIPT LINE [LINE ...] [--context N] [--tz ZONE] [--full]`;
 
 const validZone = (zone: string | undefined): boolean => {
   try {
@@ -559,7 +559,7 @@ const validZone = (zone: string | undefined): boolean => {
   }
 };
 
-const main = async (argv: readonly string[]): Promise<void> => {
+export const main = async (argv: readonly string[]): Promise<void> => {
   const { values, positionals } = parseArgs({
     args: [...argv],
     allowPositionals: true,

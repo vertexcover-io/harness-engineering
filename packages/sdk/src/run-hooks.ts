@@ -20,7 +20,7 @@ import {
 } from "./events.ts";
 import { loadFunction, runLockPath, withLock } from "./files.ts";
 import type { HookInput, RunHook } from "./hooks.ts";
-import { spawn, spawnDetached } from "./process.ts";
+import { selfArgv, spawn, spawnDetached } from "./process.ts";
 import { appendRunEvent, readState, syncState } from "./state.ts";
 
 export type Call =
@@ -31,8 +31,13 @@ type ModuleHook = Extract<HookRef, { module: string }>;
 
 const OUTPUT_LIMIT = 10_000;
 const SPAWN_OUTPUT_BYTES = 1_000_000;
-// This file, which the hook processes run as a script (see the end of the file).
-const THIS_FILE = import.meta.path;
+// The program again, with the hidden orchestrate subcommand that calls one hook (section 4).
+const runHookArgv = (mode: "call" | "run"): readonly [string, ...string[]] => [
+  ...selfArgv(),
+  "orchestrate",
+  "run-hook",
+  mode,
+];
 
 // 1. Entry: which hooks an event fires, and how each call is recorded.
 
@@ -89,8 +94,8 @@ const buildCallRecord = (
 
 // 2. Calling one hook: a command or blocking module in a child process, any other module here.
 
-// A hook that throws is a failed call, never an error of the caller. A blocking module runs in this
-// file's call mode, so one that never settles dies with that process instead of holding the
+// A hook that throws is a failed call, never an error of the caller. A blocking module runs in
+// `run-hook call`, so one that never settles dies with that process instead of holding the
 // caller's open.
 export const callHook = async (hook: HookRef, input: HookInput): Promise<Call> => {
   const seconds = hook.timeoutSeconds;
@@ -99,13 +104,8 @@ export const callHook = async (hook: HookRef, input: HookInput): Promise<Call> =
       return await runProcess("sh", ["-c", hook.command], hook.cwd, input, seconds);
     }
     if (hook.blocking) {
-      return await runProcess(
-        process.execPath,
-        [THIS_FILE, "call"],
-        process.cwd(),
-        { hook, input },
-        seconds,
-      );
+      const [program, ...args] = runHookArgv("call");
+      return await runProcess(program, args, process.cwd(), { hook, input }, seconds);
     }
     return await callModuleHere(hook, input);
   } catch (error) {
@@ -140,7 +140,7 @@ const runProcess = async (
 };
 
 // In this process, so only where the process exits once the call ends: the background runner, and
-// this file's call mode.
+// `run-hook call`.
 const callModuleHere = async (hook: ModuleHook, input: HookInput): Promise<Call> => {
   const loaded = await loadFunction<RunHook>(hook.module, hook.handler);
   if (!loaded.ok) return failCall(loaded.error.kind, loaded.error.message);
@@ -189,7 +189,8 @@ const failWithError = (kind: string, error: unknown): Call =>
 // A runner that cannot start is dropped, like a call whose record fails.
 const startBackgroundRunner = (run: RunRef, event: Event, hook: HookRef): void => {
   try {
-    spawnDetached(process.execPath, [THIS_FILE, run.cwd, run.name, run.id, event.id, hook.name], {
+    const [program, ...args] = runHookArgv("run");
+    spawnDetached(program, [...args, run.cwd, run.name, run.id, event.id, hook.name], {
       cwd: run.cwd,
       output: "ignore",
     });
@@ -245,7 +246,7 @@ const recordLockFailure = async (
   await appendRunEvent(run, buildCallRecord(event, hook, failWithError("lock", error), 0));
 };
 
-// 4. Script entry: `call` for callHook's blocking modules, else the background runner.
+// 4. Entries for `yok orchestrate run-hook call|run`.
 
 const CallRequestSchema = z.object({
   // the module variant of a hook
@@ -259,7 +260,7 @@ const CallRequestSchema = z.object({
 
 // `call`: reads { hook, input } on stdin and answers like a command hook: the output as JSON on
 // stdout and exit 0, or the error on stderr and exit 1.
-const callMode = async (): Promise<number> => {
+export const callMode = async (): Promise<number> => {
   const { hook, input } = CallRequestSchema.parse(await Bun.stdin.json());
   const call = await callModuleHere(hook, input);
   if (call.status === "failed") {
@@ -270,24 +271,18 @@ const callMode = async (): Promise<number> => {
   return 0;
 };
 
-// CWD NAME RUN_ID EVENT_ID HOOK: runs and records one non-blocking hook for one stored event.
-const runMode = async (args: readonly string[]): Promise<number> => {
-  const [cwd, name, id, eventId, hook] = args;
-  if (cwd && name && id && eventId && hook) {
-    await runInBackground({ cwd, name, id }, eventId, hook).catch(() => undefined);
-  }
+// Runs and records one non-blocking hook for one stored event.
+export const runMode = async ({
+  eventId,
+  hook,
+  ...run
+}: Readonly<{
+  cwd: string;
+  name: string;
+  id: string;
+  eventId: string;
+  hook: string;
+}>): Promise<number> => {
+  await runInBackground(run, eventId, hook).catch(() => undefined);
   return 0;
 };
-
-// Only when bun runs this file itself, never when a process imports it. process.exit, because a
-// hook that outlived its timeout may still hold the event loop open.
-if (import.meta.main) {
-  const args = process.argv.slice(2);
-  (args[0] === "call" ? callMode() : runMode(args)).then(
-    (code) => process.exit(code),
-    (error: unknown) => {
-      console.error(error);
-      process.exit(1);
-    },
-  );
-}

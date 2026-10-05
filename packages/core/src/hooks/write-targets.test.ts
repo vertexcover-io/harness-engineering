@@ -71,7 +71,7 @@ describe("shellWriteTargets", () => {
 
   test("SC4 — heredoc bodies and quoted text are data", () => {
     const heredoc = [
-      "bun run orchestrate done n1 --run a --output - <<'JSON'",
+      "yok orchestrate done n1 --run a --output - <<'JSON'",
       `{"note": "rm .yok/a/state.json"}`,
       "JSON",
     ].join("\n");

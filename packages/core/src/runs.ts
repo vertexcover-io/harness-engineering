@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { access, copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -52,7 +53,7 @@ import {
 import * as z from "zod";
 import corePackage from "../package.json";
 import { buildNotifierHooks, pickNotifier } from "./notifier-hooks.ts";
-import { extensionPath } from "./stage.ts";
+import { extensionPath, findStageDir, yokSkillsDir } from "./stage.ts";
 import { compileWorkflow, readWorkflowFile } from "./workflow/compile.ts";
 import {
   type CompletionIssue,
@@ -77,6 +78,7 @@ import {
   type PlanAgentNode,
   type PlanContextNode,
   type PlanNode,
+  type PlanStage,
   WorkflowError,
   type WorkflowPlan,
 } from "./workflow/types.ts";
@@ -453,6 +455,43 @@ type RunDirRef = Pick<RunRef, "cwd" | "name">;
 const compileWorkflowPlan = (run: RunDirRef): Promise<WorkflowPlan> =>
   compileWorkflow(join(runDirOf(run.cwd, run.name), "workflow.yaml"), { cwd: run.cwd });
 
+// Every stage a compiled workflow runs, with includes, loops and switches searched.
+const planStages = (nodes: readonly PlanNode[]): readonly PlanStage[] =>
+  nodes.flatMap((node): readonly PlanStage[] => {
+    if (node.type === "agent") return node.stage === undefined ? [] : [node.stage];
+    if (node.type === "include") return planStages(node.plan.nodes);
+    if (node.type === "loop") return planStages(node.nodes);
+    if (node.type === "switch") {
+      return [...node.cases.flatMap((c) => planStages(c.nodes)), ...planStages(node.default ?? [])];
+    }
+    return [];
+  });
+
+const notFound = (name: string, tried: readonly string[]): Result<string> => ({
+  ok: false,
+  error: `no skill ${name}; tried: ${tried.join(", ")}`,
+});
+
+// The folder `yok orchestrate script --skill NAME` reads FILE from: a project folder when NAME
+// has a "/", else the run's workflow stage named NAME, else the skills folder.
+export const resolveSkillDir = async (
+  name: string,
+  options: Readonly<{ root: string; run?: RunDirRef | undefined }>,
+): Promise<Result<string>> => {
+  if (name.includes("/")) {
+    const dir = findStageDir(name, options.root);
+    return existsSync(dir) ? { ok: true, value: dir } : notFound(name, [dir]);
+  }
+  const { run } = options;
+  const stages = run === undefined ? [] : planStages((await compileWorkflowPlan(run)).nodes);
+  const stage = stages.find((candidate) => candidate.name === name);
+  if (stage !== undefined) return { ok: true, value: dirname(stage.skill) };
+  const dir = join(yokSkillsDir(), name);
+  if (existsSync(dir)) return { ok: true, value: dir };
+  const inRun = run === undefined ? [] : [`a stage named ${name} in run ${run.name}'s workflow`];
+  return notFound(name, [...inRun, dir]);
+};
+
 // The env the first session of a run started from cwd gets. yok run builds it once, for its
 // doctor and for the server; agent is the one the session launches.
 export const loadStartEnv = async (
@@ -490,10 +529,10 @@ const buildLeafReply = (
       nodeRunId,
       nodeId: node.id,
       mode,
-      command: orchestrateCommand({ verb: "exec", run, nodeRunId }),
+      command: orchestrateLine({ verb: "exec", run, nodeRunId }),
     };
   }
-  const done = orchestrateCommand({ verb: "done", run, nodeRunId });
+  const done = orchestrateLine({ verb: "done", run, nodeRunId });
   if (node.stage === undefined) {
     return { kind: "agent", nodeRunId, nodeId: node.id, prompt: node.prompt ?? "", input, done };
   }
@@ -913,25 +952,14 @@ export const getNodeFacts = async (run: string, nodeRunId: string, cwd: string) 
   };
 };
 
-export const getNodeRun = async (run: string, nodeRunId: string, cwd: string) => {
-  const { nodeId, stage, input, attempt } = await getNodeFacts(run, nodeRunId, cwd);
-  return { nodeId, stage, input, attempt };
-};
-
-export const getConsumed = async (
-  run: string,
-  nodeRunId: string,
-  cwd: string,
-): Promise<Readonly<Record<string, string>>> => (await getNodeFacts(run, nodeRunId, cwd)).consumed;
-
 // The command an agent runs to act on a run; step replies and hook messages both name it this way.
-export const orchestrateCommand = ({
+export const orchestrateLine = ({
   verb,
   run,
   nodeRunId,
 }: Readonly<{ verb: "next" | "exec" | "done"; run: RunRef; nodeRunId?: string }>): string =>
   [
-    "bun run orchestrate",
+    "yok orchestrate",
     verb,
     ...(nodeRunId === undefined ? [] : [nodeRunId]),
     "--run",

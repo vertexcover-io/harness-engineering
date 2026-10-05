@@ -123,8 +123,8 @@ export const downloadAsset = async (api: Api, gid: string, target: Target): Prom
 };
 
 const USAGE = `usage:
-  bun run asana task GID_OR_URL
-  bun run asana asset ATTACHMENT_GID --dir DIR --name NAME`;
+  yok orchestrate script --skill ticket-fetcher scripts/asana.ts task GID_OR_URL
+  yok orchestrate script --skill ticket-fetcher scripts/asana.ts asset ATTACHMENT_GID --dir DIR --name NAME`;
 
 const runCommand = async (cwd: string, argv: readonly string[]): Promise<unknown> => {
   const { positionals, values } = parseArgs({
@@ -140,4 +140,6 @@ const runCommand = async (cwd: string, argv: readonly string[]): Promise<unknown
   return downloadAsset(await loadApi(cwd, SOURCE), arg, { dir, name });
 };
 
-if (import.meta.main) await runProviderCli(runCommand, process.argv.slice(2));
+export const main = (argv: readonly string[]): Promise<void> => runProviderCli(runCommand, argv);
+
+if (import.meta.main) await main(process.argv.slice(2));

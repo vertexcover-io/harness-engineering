@@ -109,7 +109,7 @@ describe("readCodexTranscript", () => {
       line("response_item", {
         type: "function_call",
         name: "exec_command",
-        arguments: JSON.stringify({ cmd: "bun run orchestrate next --run x" }),
+        arguments: JSON.stringify({ cmd: "yok orchestrate next --run x" }),
       }),
       line("response_item", {
         type: "function_call",
@@ -134,7 +134,7 @@ describe("readCodexTranscript", () => {
 
     expect(await readCodexTranscript(path)).toEqual([
       { kind: "prompt", text: "go" },
-      { kind: "command", command: "bun run orchestrate next --run x" },
+      { kind: "command", command: "yok orchestrate next --run x" },
       { kind: "command", command: "ls -la" },
       { kind: "command", command: "git status" },
       { kind: "command", command: 'echo "hi"' },

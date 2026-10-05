@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   compileWorkflow,
@@ -9,6 +9,7 @@ import {
   type WorkflowPlan,
 } from "@yok/core";
 import { type ILogger, spawnDetached, withLock, yokHome } from "@yok/sdk";
+import { selfArgv } from "@yok/sdk/internal";
 import { type ApiError, logPath, socketPath } from "@yok/server";
 import { createYokClient, type YokClient } from "@yok/server/client";
 
@@ -74,11 +75,6 @@ export const apiErrorText = (error: ApiError): string => `${error.code}: ${error
 export const yokClient = (home: string = yokHome()): YokClient =>
   createYokClient({ home, log: cliLog() });
 
-// `[process.execPath, Bun.main]` re-runs the interpreted CLI; a compiled `dist/yok` binary
-// re-runs itself with just its own path.
-export const selfCommand = (): readonly string[] =>
-  basename(process.execPath) === "bun" ? [process.execPath, Bun.main] : [process.execPath];
-
 const tailOf = (path: string, lines = 20): string =>
   existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").slice(-lines).join("\n") : "";
 
@@ -103,9 +99,9 @@ export const ensureServer = async (home: string = yokHome()): Promise<void> => {
     rmSync(socketPath(home), { force: true });
 
     const log = cliLog().child({ component: "cli" });
-    const [command, ...args] = [...selfCommand(), "server", "start"];
+    const [command, ...args] = [...selfArgv(), "server", "start"];
     const startedAt = Date.now();
-    const pid = spawnDetached(command as string, args, { cwd: home, output: logPath(home) });
+    const pid = spawnDetached(command, args, { cwd: home, output: logPath(home) });
     log.info({ pid, command: [command, ...args], log: logPath(home) }, "server process started");
 
     const started = await waitForHealth(client, Date.now() + HEALTH_TIMEOUT_MS);

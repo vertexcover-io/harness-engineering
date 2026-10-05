@@ -6,7 +6,16 @@ import { join } from "node:path";
 import { runDirOf, type WorkflowRun } from "@yok/sdk";
 import { createState, jsonlEventStore } from "@yok/sdk/internal";
 
-const SCRIPT = join(import.meta.dir, "workspace.ts");
+const CLI = join(import.meta.dir, "../../../packages/cli/src/index.ts");
+const WORKSPACE = [
+  "--no-env-file",
+  CLI,
+  "orchestrate",
+  "script",
+  "--skill",
+  "create-workspace",
+  "scripts/workspace.ts",
+];
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "workspace-")));
 
@@ -37,6 +46,9 @@ const makeMulti = (): string => {
   return root;
 };
 
+const WORKFLOW =
+  'name: ok\nnodes:\n  - { id: a, type: exec, input: null, runtime: sh, script: "true" }\n';
+
 // An initialized run named feat-x in cwd, as `orchestrate init` leaves it.
 const initializedRun = (home: string, cwd: string): void => {
   const workflowPath = join(cwd, "ok.yaml");
@@ -57,6 +69,7 @@ const initializedRun = (home: string, cwd: string): void => {
   mkdirSync(home, { recursive: true });
   writeFileSync(join(home, "registry.json"), JSON.stringify({ version: 1, runs: { "r-1": run } }));
   mkdirSync(runDirOf(cwd, "feat-x"), { recursive: true });
+  writeFileSync(join(runDirOf(cwd, "feat-x"), "workflow.yaml"), WORKFLOW);
 };
 
 const eventsOf = (cwd: string) => jsonlEventStore(runDirOf(cwd, "feat-x")).read();
@@ -68,7 +81,7 @@ const workspace = (
   args: readonly string[],
   env: Readonly<Record<string, string>> = {},
 ) => {
-  const run = spawnSync("bun", [SCRIPT, ...args], {
+  const run = spawnSync("bun", [...WORKSPACE, ...args], {
     cwd,
     encoding: "utf8",
     env: { ...process.env, YOK_RUN_ID: undefined, YOK_HOME: home, ...env },
@@ -76,7 +89,7 @@ const workspace = (
   return { code: run.status, stdout: run.stdout, stderr: run.stderr };
 };
 
-describe("workspace.ts", () => {
+describe("SC49: yok orchestrate script --skill create-workspace scripts/workspace.ts, as workspace.ts did", () => {
   test("WS1 — create then remove in a mono repo both exit 0, the worktree comes and goes, and the run records both", async () => {
     const root = tempRepo();
     const home = tempDir();
@@ -176,7 +189,6 @@ describe("workspace.ts", () => {
       JSON.stringify({ version: 2, workspace: { setup: "echo from-run-config" } }),
     );
     const runDir = runDirOf(root, "feat-x");
-    writeFileSync(join(runDir, "workflow.yaml"), "name: ok\nnodes: []\n");
     await createState({
       runId: "r-1",
       runDir,

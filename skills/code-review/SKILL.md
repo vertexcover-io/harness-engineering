@@ -139,7 +139,7 @@ shallowly across all of them.
 | Efficiency | `efficiency` | — |
 | Altitude | `altitude` | — |
 
-Get each persona file's path with `bun run --silent orchestrate skill ref --path
+Get each persona file's path with `yok orchestrate skill ref --path
 code-review.NAME`, which honors a project's replacement. Outside a run, the files are this
 skill's `references/persona-NAME.md`.
 

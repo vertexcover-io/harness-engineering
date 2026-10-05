@@ -29,7 +29,7 @@ Use `--name` as the run name when supplied. Otherwise, derive a short kebab-case
 without extension). Then run:
 
 ```
-bun run orchestrate init NAME
+yok orchestrate init NAME
 ```
 
 `init` reads `YOK_RUN_ID` from this session's environment, so no `--run-id` flag is needed.
@@ -40,7 +40,7 @@ exit, show the command's error output and stop — do not retry with a different
 
 Tell the user the run folder `init` printed (`dir`). Then repeat:
 
-1. Run `bun run orchestrate next --run NAME`. It prints one JSON reply. Never run two `next`
+1. Run `yok orchestrate next --run NAME`. It prints one JSON reply. Never run two `next`
    commands at the same time.
 2. Act on the reply's `kind`:
    - `exec`: tell the user `▶ NODE_ID` (the reply's `nodeId`). Then run the reply's `command`
@@ -59,7 +59,7 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      extension wins. Follow the skill with the reply's `input` as its input, `variables` as the
      values of the variables the skill names, and `prompt` as extra instructions when present.
      When the skill needs one of its references, run
-     `bun run orchestrate skill ref STAGE.REF`. It needs no `--run`: it finds the run through
+     `yok orchestrate skill ref STAGE.REF`. It needs no `--run`: it finds the run through
      `YOK_RUN_ID` and reads the config that run started with. Never open a reference file by
      its path, since that skips the project's changes to it. When the skill is done, run the reply's `done`
      command with `--output -`, plus `--artifact NAME=artifacts/PATH` for each artifact the
@@ -68,7 +68,7 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      text otherwise:
 
      ```bash
-     bun run orchestrate done NODE_RUN_ID --run NAME --output - <<'OUT'
+     yok orchestrate done NODE_RUN_ID --run NAME --output - <<'OUT'
      { "the": "skill's output" }
      OUT
      ```
@@ -113,7 +113,7 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
    that it failed. After `--resume` the list starts empty.
 4. On any non-zero exit from `next`, show its error output and stop.
 
-`exec` and `done` record how each node ended. Never run `bun run orchestrate emit` for a node, and
+`exec` and `done` record how each node ended. Never run `yok orchestrate emit` for a node, and
 never edit `.yok/NAME/state.json`, `.yok/NAME/event.jsonl` or the yok `registry.json`
 yourself: a hook refuses any tool call that writes, moves or deletes them, and its message names
 the command to use instead. Reading them is fine.

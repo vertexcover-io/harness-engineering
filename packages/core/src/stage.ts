@@ -12,6 +12,7 @@ import {
   SlugSchema,
   spawnDetached,
 } from "@yok/sdk";
+import { selfArgv } from "@yok/sdk/internal";
 import * as z from "zod";
 
 const UniqueSlugsSchema = z
@@ -100,7 +101,12 @@ export type LoadedStage = {
   readonly outputSchema: z.ZodType;
 };
 
-type ResolveOptions = Readonly<{ skillsDir: string; root: string; config: Config; skill: string }>;
+type ResolveOptions = Readonly<{
+  skillsDir?: string | undefined;
+  root: string;
+  config: Config;
+  skill: string;
+}>;
 
 // Parsed records inherit Object.prototype, so a key like "constructor" must not read through to it.
 export const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined =>
@@ -111,11 +117,11 @@ export const own = <T>(record: Readonly<Record<string, T>>, key: string): T | un
 export const yokSkillsDir = (): string =>
   process.env.YOK_SKILLS_DIR || join(import.meta.dir, "..", "..", "..", "skills");
 
-// Agent hooks and the detached context helper run outside this repo's package.json, so they call
-// bun and the script by absolute path.
-export const ORCHESTRATE_SCRIPT = join(import.meta.dir, "orchestrate.ts");
+// Agent hooks, the status line and the detached helpers start this same program again, so a
+// release run calls the release binary and a dev run calls the source it started from.
+export const orchestrateArgv = (): readonly [string, ...string[]] => [...selfArgv(), "orchestrate"];
 
-// Re-runs the orchestrate script as a detached helper for a run's session, such as `context` or
+// Re-runs orchestrate as a detached helper for a run's session, such as `context` or
 // `limit-wait`: the hook that starts it must return before the agent goes idle.
 export const spawnOrchestrateHelper = ({
   command,
@@ -123,17 +129,15 @@ export const spawnOrchestrateHelper = ({
   run,
   sessionId,
 }: Readonly<{ command: string; id: string; run: RunRef; sessionId: string }>): void => {
-  const args = [ORCHESTRATE_SCRIPT, command, id, "--run-id", run.id, "--session-id", sessionId];
-  spawnDetached(process.execPath, args, { cwd: run.cwd, output: "ignore" });
+  const [program, ...self] = orchestrateArgv();
+  const args = [...self, command, id, "--run-id", run.id, "--session-id", sessionId];
+  spawnDetached(program, args, { cwd: run.cwd, output: "ignore" });
 };
 
-// The server that asks for this runs under bun, so execPath is bun.
-export const orchestrateArgv = (): readonly string[] => [process.execPath, ORCHESTRATE_SCRIPT];
-
 // A stage name is one of yok's own skills; a stage with a "/" is a skill folder in the
-// project at `root`.
-export const findStageDir = (stage: string, root: string, skillsDir = yokSkillsDir()): string =>
-  stage.includes("/") ? resolve(root, stage) : join(skillsDir, stage);
+// project at `root`, which needs no plugin installed, so the skills folder is looked up lazily.
+export const findStageDir = (stage: string, root: string, skillsDir?: string): string =>
+  stage.includes("/") ? resolve(root, stage) : join(skillsDir ?? yokSkillsDir(), stage);
 
 // Yok's default workflows ship beside this code, like its skills.
 export const yokWorkflowsDir = (): string =>
@@ -211,6 +215,7 @@ export const resolveExtension = async (options: ResolveOptions): Promise<Result<
 type Located = Readonly<
   | { kind: "skill" | "replace" | "add"; skill: string; path: string }
   | { kind: "extend"; skill: string; path: string; extra: string }
+  | { kind: "command"; skill: string; command: string }
 >;
 
 type SkillReferences = Readonly<{
@@ -283,17 +288,26 @@ const locateReference = async (
       value: { kind: "replace", skill: name, path: join(root, extension.replace) },
     };
   }
+  if (extension !== undefined && "command" in extension) {
+    return { ok: true, value: { kind: "command", skill: name, command: extension.command } };
+  }
   const path = join(skillDir, reference.path);
   if (extension === undefined) return { ok: true, value: { kind: "skill", skill: name, path } };
   const extra = join(root, extension.extend);
   return { ok: true, value: { kind: "extend", skill: name, path, extra } };
 };
 
+const commandHasNoFile = (skill: string, ref: string): Result<never> => ({
+  ok: false,
+  error: `extensions.${skill}.references.${ref}: a command reference has no text or file to resolve`,
+});
+
 export const resolveReference = async (
   options: ResolveOptions & Readonly<{ ref: string }>,
 ): Promise<Result<string>> => {
   const located = await locateReference(options);
   if (!located.ok) return located;
+  if (located.value.kind === "command") return commandHasNoFile(located.value.skill, options.ref);
   const base = await readText(located.value.path);
   if (!base.ok || located.value.kind !== "extend") return base;
   const extra = await readText(located.value.extra);
@@ -301,24 +315,56 @@ export const resolveReference = async (
   return { ok: true, value: `${base.value.trimEnd()}\n\n${extra.value}` };
 };
 
-// The file a reference reads, for a reference that is run rather than read, such as a script.
-// An extend appends text to the skill's file, so it has no single file to run.
-export const resolveReferencePath = async (
+export type ReferenceRun = Readonly<{ file: string } | { command: string }>;
+
+// What a reference that is run rather than read, such as a script, runs: a file, or the project's
+// command line. An extend appends text to the skill's file, so it has no single file to run.
+const resolveReferenceRun = async (
   options: ResolveOptions & Readonly<{ ref: string }>,
-): Promise<Result<string>> => {
+): Promise<Result<ReferenceRun>> => {
   const located = await locateReference(options);
   if (!located.ok) return located;
-  const { kind, skill, path } = located.value;
-  if (kind === "extend") {
-    const key = `extensions.${skill}.references.${options.ref}`;
+  const found = located.value;
+  if (found.kind === "command") return { ok: true, value: { command: found.command } };
+  if (found.kind === "extend") {
+    const key = `extensions.${found.skill}.references.${options.ref}`;
     return {
       ok: false,
       error: `${key}: a reference used by path can only be replaced, not extended`,
     };
   }
-  const found = await access(path).then(
+  const exists = await access(found.path).then(
     () => true,
     () => false,
   );
-  return found ? { ok: true, value: path } : { ok: false, error: `${path} does not exist` };
+  return exists
+    ? { ok: true, value: { file: found.path } }
+    : { ok: false, error: `${found.path} does not exist` };
+};
+
+export const resolveReferencePath = async (
+  options: ResolveOptions & Readonly<{ ref: string }>,
+): Promise<Result<string>> => {
+  const run = await resolveReferenceRun(options);
+  if (!run.ok) return run;
+  return "file" in run.value
+    ? { ok: true, value: run.value.file }
+    : commandHasNoFile(basename(options.skill), options.ref);
+};
+
+// What `orchestrate script --skill` runs for FILE in skillDir: when FILE is one of the skill's
+// references, the project's extension of it applies; any other file runs as it is.
+export const resolveSkillScript = async (
+  options: Readonly<{ skillDir: string; file: string; root: string; config: Config }>,
+): Promise<Result<ReferenceRun>> => {
+  const { skillDir, file, root, config } = options;
+  const unchanged: Result<ReferenceRun> = { ok: true, value: { file } };
+  if (own(config.extensions, basename(skillDir)) === undefined) return unchanged;
+  const loaded = await loadSkill(skillDir);
+  if (!loaded.ok) return loaded;
+  const ref = Object.entries(loaded.value.references).find(
+    ([, reference]) => resolve(skillDir, reference.path) === resolve(file),
+  )?.[0];
+  if (ref === undefined) return unchanged;
+  return resolveReferenceRun({ root, config, ref, skill: resolve(skillDir) });
 };

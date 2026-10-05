@@ -32,7 +32,7 @@ const global = (text: string): CommentDraft => ({
 });
 
 describe("deliveryMessage", () => {
-  test("SC16: each comment is one block in batch order, long quotes are cut, and the reply command closes it", () => {
+  test("SC16, SC23: each comment is one block in batch order, long quotes are cut, and the reply command closes it", () => {
     const long = "x".repeat(100);
     const base = { status: "sent", createdAt: NOW.toISOString() } as const;
     const user = (text: string) => ({ by: "user" as const, text, at: NOW.toISOString() });
@@ -78,7 +78,7 @@ describe("deliveryMessage", () => {
       "c6 · artifacts/review.md · whole file",
       "  Ship it after finding 2.",
       "c3 · reply on its thread: Can we bundle it later?",
-      "Reply to each: bun run orchestrate comments reply --run feat-x --id ID --status answered|changed|declined --text -",
+      "Reply to each: yok orchestrate comments reply --run feat-x --id ID --status answered|changed|declined --text -",
     ]);
   });
 });

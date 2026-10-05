@@ -19,7 +19,7 @@ import { appendRunEvent, jsonlEventStore, RegistryFileSchema } from "@yok/sdk/in
 import { validateTicketDir } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
-const SCRIPT = join(import.meta.dir, "orchestrate.ts");
+const CLI = join(import.meta.dir, "..", "..", "cli", "src", "index.ts");
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "orchestrate-")));
 
@@ -86,7 +86,7 @@ const orchestrate = (
   env: Env = {},
   input = "",
 ) => {
-  const run = spawnSync("bun", [SCRIPT, ...args], {
+  const run = spawnSync("bun", ["--no-env-file", CLI, "orchestrate", ...args], {
     cwd,
     encoding: "utf8",
     input,
@@ -108,7 +108,7 @@ const orchestrateAsync = async (
   args: readonly string[],
   env: Env = {},
 ): Promise<Readonly<{ code: number; stdout: string; stderr: string }>> => {
-  const child = Bun.spawn(["bun", SCRIPT, ...args], {
+  const child = Bun.spawn(["bun", "--no-env-file", CLI, "orchestrate", ...args], {
     cwd,
     // A FORCE_COLOR in the caller's shell would color the error text the tests parse as JSON.
     env: {
@@ -129,7 +129,7 @@ const orchestrateAsync = async (
   return { code, stdout, stderr };
 };
 
-describe("orchestrate init", () => {
+describe("SC26: orchestrate init", () => {
   test("SC23: init NAME --run-id prints { runId, dir }, writes state.json there, and names the run in the registry", () => {
     const repo = tempRepo();
     const home = tempDir();
@@ -173,7 +173,7 @@ describe("orchestrate init", () => {
   });
 });
 
-describe("orchestrate link-session", () => {
+describe("SC26: orchestrate link-session", () => {
   test("SC22: link-session --run NAME records the session once and prints the run's sessions", () => {
     const repo = tempRepo();
     const home = tempDir();
@@ -189,7 +189,7 @@ describe("orchestrate link-session", () => {
   });
 });
 
-describe("orchestrate emit", () => {
+describe("SC26: orchestrate emit", () => {
   test("SC22: emit --run NAME stores the event under the run's id and prints it", async () => {
     const repo = tempRepo();
     const home = tempDir();
@@ -355,7 +355,7 @@ const configuredRepo = (config: object): string => {
   return root;
 };
 
-describe("orchestrate skill", () => {
+describe("SC26: orchestrate skill", () => {
   test("WS32 — skill ref with an extend prints the base text, a blank line, then the extension", () => {
     const skillsDir = tempDir();
     mkdirSync(join(skillsDir, "demo"));
@@ -550,7 +550,7 @@ const worktreeRun = (runOverrides: Partial<WorkflowRun> = {}) => {
   return { main, worktree, home, env };
 };
 
-describe("a run started in a linked worktree", () => {
+describe("SC26: a run started in a linked worktree", () => {
   test("VER-289: skill ref and next, given no flags inside the run's session, read the worktree's config that main lacks", () => {
     const { main, worktree, home, env } = worktreeRun();
     const session = { ...env, YOK_RUN_ID: "r-1" };
@@ -563,7 +563,7 @@ describe("a run started in a linked worktree", () => {
     expect(next.code).toBe(0);
     const reply = JSON.parse(next.stdout);
     expect(reply.extension).toBe(join(worktree, "docs/producer-ext.md"));
-    expect(reply.done).toBe(`bun run orchestrate done ${reply.nodeRunId} --run feat-x`);
+    expect(reply.done).toBe(`yok orchestrate done ${reply.nodeRunId} --run feat-x`);
   });
 
   test("skill ref with no run reads the config of the checkout it runs in", () => {
@@ -607,7 +607,7 @@ describe("a run started in a linked worktree", () => {
   });
 });
 
-describe("picking the run", () => {
+describe("SC26: picking the run", () => {
   test("--run-id picks the run from a folder outside any repo", () => {
     const { home, env } = worktreeRun();
 
@@ -694,7 +694,7 @@ describe("picking the run", () => {
   });
 });
 
-describe("orchestrate next and exec", () => {
+describe("SC26: orchestrate next and exec", () => {
   test("IW10 — next and exec, called in turn, take an exec, wait and exec workflow from init to finished", async () => {
     const { repo, home } = startedRun(STEPS);
     const handedOut = ["a", "w", "b"].map((nodeId) => {
@@ -706,7 +706,7 @@ describe("orchestrate next and exec", () => {
         nodeRunId: expect.stringMatching(/^nr-[0-9a-f]{16}$/),
         nodeId,
         mode: "inline",
-        command: `bun run orchestrate exec ${reply.nodeRunId} --run feat-x`,
+        command: `yok orchestrate exec ${reply.nodeRunId} --run feat-x`,
       });
       const exec = orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
       expect(exec.code).toBe(0);
@@ -847,7 +847,7 @@ nodes:
     input: {}
 `;
 
-describe("run hooks", () => {
+describe("SC26: run hooks", () => {
   test("SC116: a config hook on workflow.node.completed fires when done completes a node", async () => {
     const skills = stageSkills();
     const { repo, home } = startedRun(STAGES_WORKFLOW, {
@@ -874,7 +874,7 @@ describe("run hooks", () => {
   });
 });
 
-describe("stage verifiers", () => {
+describe("SC26: stage verifiers", () => {
   const verifiedRun = (verifiers: string | undefined, workflow = STAGES_WORKFLOW) => {
     const skills = tempDir();
     writeStages(skills, {
@@ -1039,12 +1039,10 @@ describe("stage verifiers", () => {
     ]);
   });
 
-  test("a function verifier receives its input, args and context, and the helpers answer", () => {
+  test("SC31: a function verifier receives its input, args and context", () => {
     const file = join(tempDir(), "seen.json");
     const args = `, args: { file: ${JSON.stringify(file)} }`;
-    const { repo, finishProducer, finish, artifactsDir } = verifiedRun(
-      `[${fn("rec", "record", args)}]`,
-    );
+    const { repo, finishProducer, finish } = verifiedRun(`[${fn("rec", "record", args)}]`);
     const use = finishProducer();
     const refused = finish(use.nodeRunId);
     expect(refused.code).toBe(0);
@@ -1058,13 +1056,9 @@ describe("stage verifiers", () => {
     });
     expect(seen.cwd).toBe(repo);
     expect(seen.attempt).toBe(1);
-    expect(seen.helpers).toEqual({
-      node: { nodeId: "use", stage: "consumer", input: {}, attempt: 1 },
-      consumed: { plan: join(artifactsDir, "plan.md") },
-    });
   });
 
-  test("the third rejected done fails the node for good, whatever the rejections were, however long", async () => {
+  test("SC31: the third rejected done fails the node for good, whatever the rejections were, however long", async () => {
     const file = join(tempDir(), "seen.json");
     const record = fn("rec", "record", `, args: { file: ${JSON.stringify(file)} }`);
     const { repo, finishProducer, finish, step } = verifiedRun(
@@ -1081,7 +1075,7 @@ describe("stage verifiers", () => {
     expect(second.stderr.length).toBeGreaterThan(500);
     expect(refusal(second.stderr).retryable).toBe(true);
     const seen = JSON.parse(readFileSync(file, "utf8"));
-    expect([seen.attempt, seen.helpers.node.attempt]).toEqual([2, 2]);
+    expect(seen.attempt).toBe(2);
 
     const last = finish(use.nodeRunId);
     expect(last.code).toBe(1);
@@ -1156,7 +1150,7 @@ describe("stage verifiers", () => {
   });
 });
 
-describe("orchestrate next and done with stages", () => {
+describe("SC26: orchestrate next and done with stages", () => {
   const stageRun = (produces?: string, config?: object) => {
     const skills = stageSkills(produces);
     const run = startedRun(STAGES_WORKFLOW, config);
@@ -1165,7 +1159,7 @@ describe("orchestrate next and done with stages", () => {
     return { ...run, skills, step };
   };
 
-  test("IW17 — next replies with the stage's skill path, the project's extension path, its input and a done command", () => {
+  test("IW17, SC23 — next replies with the stage's skill path, the project's extension path, its input and a done command", () => {
     const { repo, skills, step } = stageRun(undefined, {
       extensions: { producer: { skill: "docs/producer-ext.md" } },
     });
@@ -1183,7 +1177,7 @@ describe("orchestrate next and done with stages", () => {
       extension: join(repo, "docs/producer-ext.md"),
       input: { request: "hi" },
       variables: {},
-      done: `bun run orchestrate done ${reply.nodeRunId} --run feat-x`,
+      done: `yok orchestrate done ${reply.nodeRunId} --run feat-x`,
     });
   });
 
@@ -1706,7 +1700,7 @@ nodes:
   - { id: say, type: exec, runtime: sh, script: cat, input: "{{ inputs.word }}" }
 `;
 
-describe("orchestrate next and exec with containers", () => {
+describe("SC26: orchestrate next and exec with containers", () => {
   test("IW28 — next and exec run a workflow mixing a loop, a switch and an include to finished", () => {
     const { repo, home } = startedRun(MIXED, undefined, {}, { files: { "child.yaml": CHILD } });
     const handedOut = ["test", "test", "test", "greet", "say", "last"].map((nodeId) => {
@@ -1755,7 +1749,7 @@ const call = (type: string, input: JsonValue, output: JsonValue, status?: string
   payload: { input, output, ...(status === undefined ? {} : { status }) },
 });
 
-describe("orchestrate call log", () => {
+describe("SC26: orchestrate call log", () => {
   test("OL1 — next and exec each log their input and whole reply, after the engine events the call recorded", async () => {
     const { repo, home } = startedRun(ONE_EXEC);
     const step = (args: readonly string[]) => JSON.parse(orchestrate(repo, home, args).stdout);
@@ -1916,7 +1910,7 @@ nodes:
     input: {}
 `;
 
-describe("orchestrate hook stop", () => {
+describe("SC26: orchestrate hook stop", () => {
   const STOP = JSON.stringify({ session_id: "s1", stop_hook_active: false });
   const RUN_ENV = { YOK_RUN_ID: "r-1" };
 
@@ -2035,11 +2029,11 @@ describe("orchestrate hook stop", () => {
   });
 
   test("a turn that ran orchestrate but not next is sent back with the next command", () => {
-    const { run, input } = betweenNodes("go", "bun run orchestrate done n1 --run feat-x");
+    const { run, input } = betweenNodes("go", "yok orchestrate done n1 --run feat-x");
 
     const reply = JSON.parse(stop(run, input).stdout);
 
-    expect(reply.reason).toContain("bun run orchestrate next --run feat-x");
+    expect(reply.reason).toContain("yok orchestrate next --run feat-x");
   });
 
   test("SC23 — a broken state.json lets the turn end", () => {
@@ -2050,7 +2044,7 @@ describe("orchestrate hook stop", () => {
   });
 });
 
-describe("orchestrate hook pre-tool-use", () => {
+describe("SC26: orchestrate hook pre-tool-use", () => {
   const RUN_ENV = { YOK_RUN_ID: "r-1" };
 
   const openNodeRun = () => {
@@ -2091,7 +2085,7 @@ describe("orchestrate hook pre-tool-use", () => {
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout).hookSpecificOutput).toMatchObject({
       permissionDecision: "deny",
-      permissionDecisionReason: expect.stringContaining("bun run orchestrate next --run feat-x"),
+      permissionDecisionReason: expect.stringContaining("yok orchestrate next --run feat-x"),
     });
     const events = await eventsOf(run.repo);
     expect(events.at(-1)).toMatchObject({
@@ -2148,7 +2142,7 @@ describe("orchestrate hook pre-tool-use", () => {
   });
 });
 
-describe("the task workflow's ticket-fetcher stage", () => {
+describe("SC26: the task workflow's ticket-fetcher stage", () => {
   const TASK = readFileSync(
     join(import.meta.dir, "..", "..", "..", "workflows", "task.yaml"),
     "utf8",
@@ -2243,7 +2237,7 @@ describe("the task workflow's ticket-fetcher stage", () => {
   });
 });
 
-describe("orchestrate hook session-start", () => {
+describe("SC26: orchestrate hook session-start", () => {
   const RUN_ENV = { YOK_RUN_ID: "r-1" };
   const START = JSON.stringify({ session_id: "B", source: "clear", cwd: "/x" });
 
@@ -2406,7 +2400,7 @@ const contextOutput = async (repo: string) =>
     (event) => event.type === "workflow.node.completed" && event.nodeId === "fresh",
   )?.payload;
 
-describe("context node through a real tmux pane", () => {
+describe("SC26: context node through a real tmux pane", () => {
   test("new: the helper restarts the agent in its pane on a new session, whose SessionStart completes the node", async () => {
     const socket = `yok-e2e-${crypto.randomUUID()}`;
     try {
@@ -2572,7 +2566,7 @@ nodes:
   }, 30_000);
 });
 
-describe("orchestrate hook stop-failure", () => {
+describe("SC26: orchestrate hook stop-failure", () => {
   // The test itself may run inside tmux; the helper must not find this pane and type into it.
   const RUN_ENV = { YOK_RUN_ID: "r-1", TMUX: undefined, TMUX_PANE: undefined };
 
@@ -2610,7 +2604,7 @@ describe("orchestrate hook stop-failure", () => {
   }, 20_000);
 });
 
-describe("orchestrate statusline", () => {
+describe("SC26: orchestrate statusline", () => {
   const runWithRunningNode = () => {
     const repo = tempRepo();
     const home = tempDir();
@@ -2695,7 +2689,7 @@ describe("orchestrate statusline", () => {
   });
 });
 
-describe("orchestrate hook --agent codex", () => {
+describe("SC26: orchestrate hook --agent codex", () => {
   const RUN_ENV = { YOK_RUN_ID: "r-1" };
   const common = { cwd: "/x", hook_event_name: "X", model: "gpt-5", permission_mode: "default" };
 
@@ -2758,7 +2752,7 @@ describe("orchestrate hook --agent codex", () => {
   });
 });
 
-describe("orchestrate comments", () => {
+describe("SC26: orchestrate comments", () => {
   test("SC27: the agent lists open comments and replies from the command line", async () => {
     const repo = tempRepo();
     const home = tempDir();

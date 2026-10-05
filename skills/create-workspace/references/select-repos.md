@@ -3,7 +3,7 @@
 Pick which repos from the workspace script's `info` go into a multi-repo workspace:
 
 ```bash
-bun run workspace info
+yok orchestrate script --skill create-workspace scripts/workspace.ts info
 ```
 
 You have the input's `request` (what the run should do) and the `packages` list, where each entry
@@ -19,11 +19,11 @@ has a `name`, a `path` and sometimes a `description`.
 Pass the picked names to the script's `create` as `--repos NAME1,NAME2`:
 
 ```bash
-bun run workspace create SPEC_NAME --run SPEC_NAME --repos NAME1,NAME2
+yok orchestrate script --skill create-workspace scripts/workspace.ts create SPEC_NAME --run SPEC_NAME --repos NAME1,NAME2
 ```
 
 A later stage that finds it needs another repo adds it to the existing workspace:
 
 ```bash
-bun run workspace add SPEC_NAME --repos NAME --run SPEC_NAME
+yok orchestrate script --skill create-workspace scripts/workspace.ts add SPEC_NAME --repos NAME --run SPEC_NAME
 ```

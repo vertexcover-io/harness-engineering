@@ -282,9 +282,9 @@ export const runProviderCli = async (
   }
 };
 
-const USAGE = "usage: bun run ticket validate DIR";
+const USAGE = "usage: yok orchestrate script --skill ticket-fetcher scripts/ticket.ts validate DIR";
 
-const main = async (argv: readonly string[]): Promise<void> => {
+export const main = async (argv: readonly string[]): Promise<void> => {
   const [command, dir] = argv;
   if (command !== "validate" || dir === undefined) {
     console.error(USAGE);

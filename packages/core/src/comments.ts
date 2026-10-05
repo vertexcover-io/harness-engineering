@@ -206,7 +206,7 @@ export const deliveryMessage = (comments: readonly Comment[], runName: string): 
   [
     `[review] ${comments.length} new comment${comments.length === 1 ? "" : "s"} from the viewer:`,
     ...comments.map(blockOf),
-    `Reply to each: bun run orchestrate comments reply --run ${runName} --id ID --status answered|changed|declined --text -`,
+    `Reply to each: yok orchestrate comments reply --run ${runName} --id ID --status answered|changed|declined --text -`,
   ].join("\n");
 
 // JSON.stringify drops the optional fields a comment leaves undefined, which a payload may not hold.
