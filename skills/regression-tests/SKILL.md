@@ -9,7 +9,7 @@ Purpose of this skill is to write regression tests for a product flow that alrea
 
 ## 1. Establish scope
 
-Use the user-supplied flow as the scope. Identify its starting and ending points and relevant repositories from that input. Ask for clarification only when missing infromation materially changes the scenarios.
+Use the user-supplied flow as the scope. Identify its starting and ending points and relevant repositories from that input. Ask for clarification only when missing information materially changes the scenarios.
 
 Read applicable repository guidance. Inspect entry points, implementation, configuration, dependencies, and existing scenarios/tests. Trace the relevant behavior across layers and dependencies.
 
@@ -56,7 +56,7 @@ Settle open questions as you go. Check the code and evidence first. Ask the user
 
 ## 3. Prepare the plan
 
-Write the plan to `.harness/<slug>/plan.md`. Derive `<slug>` from the supplied flow name using loweracse words separated by hyphens (for example, `create-invoice`). Create the directory as needed.
+Write the plan to `.harness/<slug>/plan.md`. Derive `<slug>` from the supplied flow name using lowercase words separated by hyphens (for example, `create-invoice`). Create the directory as needed.
 
 Use a descriptive document title followed by exactly these sections:
 
@@ -70,11 +70,19 @@ Before opening Plannotator, read every scenario as a QA or Product reviewer woul
 
 ## 4. Review through Plannotator
 
-Check Plannotator availability and open the saved plan:
+Check Plannotator is installed with `command -v plannotator`. If it's missing, ask the user to install it with this command, and continue once it's installed:
+
+```bash
+curl -fsSL https://plannotator.ai/install.sh | bash
+```
+
+Open the saved plan:
 
 ```bash
 plannotator annotate .harness/<slug>/plan.md --gate
 ```
+
+The command blocks until the user decides. Run it in the background and wait for it to exit. A timeout on your side is not a result.
 
 Check the installed Plannotator's docs for what each result means. Move on only when it returns an explicit approval.
 
@@ -83,8 +91,7 @@ Check the installed Plannotator's docs for what each result means. Move on only 
 - **Approve with Notes:** pass the notes on to the test-writing subagent. If a note changes scope or expected behavior, revise the plan and get it approved again.
 - **Close, cancel, timeout, or unclear result:** the plan is still waiting for review.
 
-Apply any edits Plannotator returns to the saved plan before you record the approval. If Plannotator isn't available, tell the user and stop at plan review.
-
+Apply any edits Plannotator returns to the saved plan before you record the approval.
 ## 5. Delegate implementation
 
 Once the plan is approved, create a feature branch or workspace used only by this workflow. Follow the repo's conventions and leave unrelated changes alone.
@@ -117,9 +124,13 @@ Mark every approved scenario as either newly tested or already covered by an exi
 
 Check the subagent's work against the approved plan. Sort out blocked results and missing coverage before starting test review. If scope or expected behavior has to change, send the plan back for review. Look over the final diff for unrelated changes or accidental edits to product code, and tell the user about anything significant.
 
-## 6. Invoke test review
+## 6. Review
 
-Start a fresh subagent that runs the `harness:regression-review` skill. Give it:
+Start two fresh subagents in one message so they run in parallel. Neither edits files. Both return findings to you, and you make every fix.
+
+### Plan review
+
+The first subagent runs the `harness:regression-review` skill. Give it:
 
 - The absolute path to the approved `plan.md`.
 - The final diff and the files it touches.
@@ -128,14 +139,24 @@ Start a fresh subagent that runs the `harness:regression-review` skill. Give it:
 
 Handle its results like this:
 
-- **PASS:** move on to commit.
-- **FINDINGS:** verify each finding against the code. Fix `test` findings. For `plan` findings, update `plan.md` and the matching tests yourself, without reopening Plannotator. Take `product` findings to the user. Rerun the tests, then run the review again.
+- **PASS:** move on once the simplify findings are handled.
+- **FINDINGS:** verify each finding against the code. Fix `test` findings. For `plan` findings, update `plan.md` and the matching tests yourself, without reopening Plannotator. Take `product` findings to the user. Rerun the tests, then run the plan review again.
 - **BLOCKED:** tell the user the reason and what's needed to unblock it.
 
-If you check a finding and it's wrong, note it and why in your report, and don't act on it. Any change to the tests after a PASS cancels that PASS, so review again.
+If the plan review still returns FINDINGS after three rounds, stop and take the remaining findings to the user.
+
+### Simplify
+
+The second subagent runs the native `simplify` skill on the new and changed test files, once. Tell it to report findings without applying them.
+
+Apply a finding only if the test still covers its scenario's Given, When and every Then. Then rerun the tests and the plan review.
+
+### Both reviews
+
+If you check a finding and it's wrong, note it and why in your report, and don't act on it. Any change to the tests after a PASS cancels that PASS, so run the plan review again.
 
 ## 7. Commit and open the PR
 
-After review returns PASS, use `harness:git-commit` to commit only the reviewed tests, then push the feature branch. Use `harness:git-pr` to open a draft PR, passing the approved plan, scenario IDs, test results and review outcome.
+After the plan review returns PASS and every simplify finding is applied or rejected, use `harness:git-commit` to commit only the reviewed tests, then push the feature branch. Use `harness:git-pr` to open a draft PR, passing the approved plan, scenario IDs, test results and review outcome.
 
 Finish by giving the user the PR link and the commands to run the tests.
