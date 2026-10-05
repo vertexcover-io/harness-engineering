@@ -182,6 +182,17 @@ describe("compile", () => {
     }
   });
 
+  test("an always: true node that reads another node is rejected, since that node may never have run", async () => {
+    const error = await rejection(
+      workflow(
+        `${script("a")}${script("c", "\n    always: true\n    dependsOn: [a]\n    when: \"{{ nodes.a.status == 'failed' }}\"")}`,
+      ),
+    );
+    expect(error.code).toBe("invalid-reference");
+    expect(error.message).toContain("always");
+    expect(error.message).toContain("nodes.a.status");
+  });
+
   test("SC7 — a dependency on a node that does not exist is rejected", async () => {
     const error = await rejection(workflow(script("b", "\n    dependsOn: [a]")));
     expect(error.code).toBe("missing-dependency");
@@ -736,6 +747,40 @@ describe("compile with stages", () => {
     );
     expect(error.code).toBe("missing-artifact");
     expect(error.message).toContain("allowFailure");
+  });
+
+  test("SC6: an always: true stage that needs a required artifact is refused, naming the node, the artifact and always", async () => {
+    const error = await stagesRejection(
+      workflow(
+        `${stageNode("make", "stages/producer")}${stageNode("use", "stages/consumer", ", always: true, dependsOn: [make]")}`,
+      ),
+    );
+    expect(error.code).toBe("missing-artifact");
+    expect(error.path).toBe("use");
+    expect(error.message).toContain('"plan"');
+    expect(error.message).toContain("may never be written before it starts: it is always: true");
+    expect(error.message).not.toContain("no node it depends on produces it");
+  });
+
+  test("an always: true loop around a stage that needs a required artifact is refused at that stage", async () => {
+    const error = await stagesRejection(
+      workflow(`${stageNode("make", "stages/producer")}
+  - id: retry
+    type: loop
+    always: true
+    dependsOn: [make]
+    until: "{{ iteration.index >= 1 }}"
+    maxIterations: 2
+    input: {}
+    nodes:
+      - { id: use, type: agent, stage: stages/consumer, input: {} }`),
+    );
+    expect(error.code).toBe("missing-artifact");
+    expect(error.path).toBe("retry.use");
+    expect(error.message).toContain(
+      "may never be written before it starts: it is inside an always: true node",
+    );
+    expect(error.message).not.toContain("no node it depends on produces it");
   });
 
   test("a required consumed artifact cannot depend only on a container that may fail", async () => {

@@ -119,7 +119,7 @@ const checkCases = (node: SwitchNode, scope: string): void => {
     );
 };
 
-const pathsOf = (
+const collectExpressionPaths = (
   node: WorkflowNode,
   scope: string,
   fields: JsonValue[] = expressionFields(node),
@@ -142,7 +142,7 @@ const checkReferences = (sorted: readonly WorkflowNode[], scope: string, inLoop:
   const ancestors = ancestorsOf(sorted);
   for (const node of sorted) {
     const allowed = ancestors.get(node.id) ?? new Set<string>();
-    const bad = pathsOf(node, scope).find(
+    const bad = collectExpressionPaths(node, scope).find(
       ([root, id = ""]) =>
         (root === "nodes" && !allowed.has(id)) ||
         (root === "iteration" && (!inLoop || id === "nodes")),
@@ -154,11 +154,28 @@ const checkReferences = (sorted: readonly WorkflowNode[], scope: string, inLoop:
         scope + node.id,
       );
     }
+    checkAlwaysReads(node, scope);
   }
 };
 
+// Refuses an `always` node whose input, `when` or variables read `nodes.X`. Such a node can start
+// after X never ran (a failure before X stopped it, and a node that never ran has no result), so
+// the read would fail the `always` node at start, in the one case it exists for.
+const checkAlwaysReads = (node: WorkflowNode, scope: string): void => {
+  if (!node.always) return;
+  const read = collectExpressionPaths(node, scope).find(([root]) => root === "nodes");
+  if (read === undefined) return;
+  throw new WorkflowError(
+    "invalid-reference",
+    `${node.id} is always: true, so it can start when "${read[1]}" never ran; it cannot read ${read.join(".")}`,
+    scope + node.id,
+  );
+};
+
 const checkUntil = (node: LoopNode, scope: string): void => {
-  const readsNodes = pathsOf(node, scope, [node.until]).some(([root]) => root === "nodes");
+  const readsNodes = collectExpressionPaths(node, scope, [node.until]).some(
+    ([root]) => root === "nodes",
+  );
   if (!isWholeExpression(node.until) || readsNodes) {
     throw new WorkflowError(
       "invalid-reference",
@@ -453,38 +470,57 @@ function listProducedArtifacts(node: PlanNode, guaranteedOnly = false): readonly
   return [];
 }
 
+const explainMissing = (nodes: readonly PlanNode[], artifact: string): string => {
+  const makers = nodes.filter((n) => listProducedArtifacts(n).includes(artifact));
+  if (makers.length === 0) return "no node in this scope produces it";
+  if (makers.every((maker) => !listProducedArtifacts(maker, true).includes(artifact))) {
+    return "every producer declares it optional or sets allowFailure; mark the consume optional or require production";
+  }
+  return `add dependsOn: [${makers.map((n) => n.id).join(", ")}]`;
+};
+
+const describeMissing = (
+  nodes: readonly PlanNode[],
+  node: PlanNode,
+  artifact: string,
+  underAlways: boolean,
+): string => {
+  const needs = `${node.id} needs artifact "${artifact}"`;
+  if (!underAlways && !node.always) {
+    return `${needs}, but no node it depends on produces it; ${explainMissing(nodes, artifact)}`;
+  }
+  const why = node.always ? "it is always: true" : "it is inside an always: true node";
+  return `${needs}, which may never be written before it starts: ${why}, so it can start after its producers failed or never ran; mark the consume optional`;
+};
+
 // A stage may start only once every artifact it needs is written, so each one must come from a
-// node it depends on, directly or through a chain, or from a node its container depends on.
+// node it depends on, directly or through a chain, or from a node its container depends on. An
+// `always` node can start after those producers failed or never ran, so it and everything inside
+// it count none of them.
 const checkArtifacts = (
   nodes: readonly PlanNode[],
   written: ReadonlySet<string>,
   scope: string,
+  underAlways = false,
 ): void => {
   const ancestors = ancestorsOf(nodes);
   for (const node of nodes) {
+    const always = underAlways || node.always;
     const deps = nodes.filter((candidate) => ancestors.get(node.id)?.has(candidate.id));
-    const before = new Set([
-      ...written,
-      ...deps.flatMap((dep) => listProducedArtifacts(dep, true)),
-    ]);
+    const before = node.always
+      ? written
+      : new Set([...written, ...deps.flatMap((dep) => listProducedArtifacts(dep, true))]);
     const stage = node.type === "agent" ? node.stage : undefined;
     const missing = stage?.consumes.find((c) => !c.optional && !before.has(c.artifact));
     if (missing !== undefined) {
-      const makers = nodes.filter((n) => listProducedArtifacts(n).includes(missing.artifact));
-      const fix =
-        makers.length === 0
-          ? "no node in this scope produces it"
-          : makers.every((maker) => !listProducedArtifacts(maker, true).includes(missing.artifact))
-            ? "every producer declares it optional or sets allowFailure; mark the consume optional or require production"
-            : `add dependsOn: [${makers.map((n) => n.id).join(", ")}]`;
       throw new WorkflowError(
         "missing-artifact",
-        `${scope}${node.id} needs artifact "${missing.artifact}", but no node it depends on produces it; ${fix}`,
+        scope + describeMissing(nodes, node, missing.artifact, underAlways),
         scope + node.id,
       );
     }
     for (const children of listChildren(node)) {
-      checkArtifacts(children, before, `${scope}${node.id}.`);
+      checkArtifacts(children, before, `${scope}${node.id}.`, always);
     }
   }
 };

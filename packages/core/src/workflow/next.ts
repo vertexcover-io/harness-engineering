@@ -203,13 +203,13 @@ const resolveVariables = (node: PlanNode, scope: Scope): Record<string, string> 
   return Object.fromEntries([...defaults, ...set]);
 };
 
-// Whether an unstarted node runs: skipped when a dependency was skipped or its `when` is false,
-// failed when its input or variables cannot be worked out. Nodes are walked in dependency order,
-// so its dependencies have ended.
+// Whether an unstarted node runs: skipped when a dependency was skipped (unless it is `always`)
+// or its `when` is false, failed when its input or variables cannot be worked out. Nodes are
+// walked in dependency order, so its dependencies have ended or will never start.
 const decideStart = (node: PlanNode, walk: Walk, state: State): Start => {
   const results = findNodeRuns(state.nodeRuns, node.parents);
   const skipped = node.dependsOn.filter((id) => own(results, id)?.status === "skipped");
-  if (skipped.length > 0) {
+  if (skipped.length > 0 && !node.always) {
     const ending: Ending = { reason: "dependency-skipped", proof: { dependencies: skipped } };
     return { kind: "end", ending };
   }
@@ -441,13 +441,13 @@ const executeLoop = async (
 };
 
 // Walks nodes in dependency order until one needs the skill. Once a node in this scope has failed
-// without allowFailure nothing more starts: the container around it sees the failure and ends
-// failed.
+// without allowFailure only `always` nodes still start: the container around it sees the failure
+// and ends failed.
 async function executeNodes(nodes: readonly PlanNode[], walk: Walk, state: State): Promise<Walked> {
   let current = state;
   for (const node of nodes) {
     const siblings = findNodeRuns(current.nodeRuns, node.parents);
-    if (findBlockingFailure(nodes, siblings) !== undefined) break;
+    if (!node.always && findBlockingFailure(nodes, siblings) !== undefined) continue;
     const nodeRun = findNodeRun(current, node);
     if (nodeRun !== undefined && nodeRun.status !== "running") continue;
     let walked: Walked;
