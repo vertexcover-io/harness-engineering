@@ -1,0 +1,10 @@
+{"schemaVersion": 1, "seq": 1, "id": "e-1", "ts": "2026-10-03T10:00:00Z", "type": "workflow.started", "source": "workflow", "runId": "eval2-run", "payload": {"workflow": "task", "inputs": {}, "activeSessions": [{"agent": "claude", "sessionId": "eval2-session"}]}}
+{"schemaVersion": 1, "seq": 2, "id": "e-2", "ts": "2026-10-03T10:01:00Z", "type": "workflow.node.started", "source": "workflow", "runId": "eval2-run", "nodeId": "planning", "nodeRunId": "nr-planning", "payload": {}}
+{"schemaVersion": 1, "seq": 3, "id": "e-3", "ts": "2026-10-03T10:20:00Z", "type": "workflow.node.completed", "source": "workflow", "runId": "eval2-run", "nodeId": "planning", "nodeRunId": "nr-planning", "payload": {}}
+{"schemaVersion": 1, "seq": 4, "id": "e-4", "ts": "2026-10-03T10:21:00Z", "type": "workflow.node.started", "source": "workflow", "runId": "eval2-run", "nodeId": "implement", "nodeRunId": "nr-implement", "payload": {}}
+{"schemaVersion": 1, "seq": 5, "id": "e-5", "ts": "2026-10-03T10:45:00Z", "type": "workflow.node.completed", "source": "workflow", "runId": "eval2-run", "nodeId": "implement", "nodeRunId": "nr-implement", "payload": {}}
+{"schemaVersion": 1, "seq": 6, "id": "e-6", "ts": "2026-10-03T10:46:00Z", "type": "workflow.node.started", "source": "workflow", "runId": "eval2-run", "nodeId": "qa", "nodeRunId": "nr-qa", "payload": {}}
+{"schemaVersion": 1, "seq": 7, "id": "e-7", "ts": "2026-10-03T10:52:00Z", "type": "workflow.node.completed", "source": "workflow", "runId": "eval2-run", "nodeId": "qa", "nodeRunId": "nr-qa", "payload": {}}
+{"schemaVersion": 1, "seq": 8, "id": "e-8", "ts": "2026-10-03T10:53:00Z", "type": "workflow.node.started", "source": "workflow", "runId": "eval2-run", "nodeId": "pr", "nodeRunId": "nr-pr", "payload": {}}
+{"schemaVersion": 1, "seq": 9, "id": "e-9", "ts": "2026-10-03T10:56:00Z", "type": "workflow.node.completed", "source": "workflow", "runId": "eval2-run", "nodeId": "pr", "nodeRunId": "nr-pr", "payload": {}}
+{"schemaVersion": 1, "seq": 10, "id": "e-10", "ts": "2026-10-03T10:57:00Z", "type": "workflow.node.started", "source": "workflow", "runId": "eval2-run", "nodeId": "retro", "nodeRunId": "nr-retro", "payload": {}}

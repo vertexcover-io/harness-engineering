@@ -8,6 +8,7 @@
       "skills/baseline/**",
       "skills/qa/**",
       "!skills/qa/references",
+      "skills/harness-retro/**",
       "*.json",
       "!!.worktrees"
     ]

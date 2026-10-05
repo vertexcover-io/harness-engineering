@@ -138,6 +138,7 @@ For smaller tasks, use individual skills like `/tdd`, `/code-review`, or `/git-c
 ```
 ticket-fetcher → create-workspace → baseline → design → planning → implement
   → code-review → qa (loops back to implement until it passes) → git-commit → visual-pr
+  → harness-retro (runs after a failed stage too)
 ```
 
 `ticket-fetcher` picks its provider from the ticket URL or key in the request: Linear
@@ -199,6 +200,8 @@ Some skills run automatically when you're writing code — through `/tdd`, `/imp
 | `/code-review` | Reviews a PR, produces verdict in REVIEW.md, then applies the fixes |
 | `/git-commit` | Groups changes into logical conventional commits; squashes a branch's commits first when asked |
 | `/visual-pr` | Creates or updates a PR with a visual change outline and validation evidence |
+| `/harness-retro` | Audits a finished run's session transcripts and writes a ranked report of harness defects |
+| `/resolve-merge-conflict` | Resolves a stopped merge or rebase, or a PR that conflicts, by recovering each side's intent |
 
 **Run automatically (no command needed):**
 `code-quality` · `refactor` · `writing-style`
@@ -224,11 +227,13 @@ harness/
     ├── create-workspace/
     ├── design/
     ├── git-commit/
+    ├── harness-retro/
     ├── implement/
     ├── orchestrate/
     ├── planning/
     ├── qa/
     ├── refactor/
+    ├── resolve-merge-conflict/
     ├── tdd/
     ├── ticket-fetcher/
     ├── visual-pr/
