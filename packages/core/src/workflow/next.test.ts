@@ -205,6 +205,54 @@ nodes:${exec("a", "\n    input: {}")}${exec("b", "\n    dependsOn: [a]\n    inpu
     expect(findRun(done.state, "c")).toBeUndefined();
   });
 
+  test("SC1: after a fails, b never starts but c with always: true is handed out, and the run still ends failed", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${exec("a", "\n    input: {}")}${exec("b", "\n    dependsOn: [a]\n    input: {}")}${exec("c", "\n    always: true\n    dependsOn: [b]\n    input: {}")}
+`);
+    const { state } = await runLeaves(plan, start(), ["failed"]);
+    const second = await advance(plan, state);
+    expect(expectLeaf(second.stop).node.id).toBe("c");
+    expect(findRun(second.state, "b")).toBeUndefined();
+    const ended = end(second.state, expectLeaf(second.stop).nodeRunId, "completed", { output: {} });
+    const done = await advance(plan, ended);
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
+    expect(findRun(done.state, "c")?.status).toBe("completed");
+    expect(findRun(done.state, "b")).toBeUndefined();
+  });
+
+  test("SC2: a failed always: true node with allowFailure leaves a passing run completed", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${exec("a", "\n    input: {}")}${exec("c", "\n    always: true\n    allowFailure: true\n    dependsOn: [a]\n    input: {}")}
+`);
+    const { state } = await runLeaves(plan, start(), ["completed", "failed"]);
+    const done = await advance(plan, state);
+    expect(done.stop).toEqual({ kind: "finished", status: "completed" });
+    expect(findRun(done.state, "c")?.status).toBe("failed");
+  });
+
+  test("SC3: an always: true node is handed out when its dependency was skipped, not recorded dependency-skipped", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${exec("a", '\n    when: "{{ false }}"\n    input: {}')}${exec("c", "\n    always: true\n    dependsOn: [a]\n    input: {}")}
+`);
+    const first = await advance(plan, start());
+    expect(findRun(first.state, "a")?.status).toBe("skipped");
+    expect(expectLeaf(first.stop).node.id).toBe("c");
+    expect(findRun(first.state, "c")?.status).toBe("running");
+  });
+
+  test("SC4: after a fails, an always: true node whose when is false is still skipped as when-false, and the run ends failed", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${exec("a", "\n    input: {}")}${exec("c", '\n    always: true\n    when: "{{ false }}"\n    input: {}')}
+`);
+    const { state } = await runLeaves(plan, start(), ["failed"]);
+    const done = await advance(plan, state);
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
+    expect(findRun(done.state, "c")).toMatchObject({
+      status: "skipped",
+      output: { reason: "when-false" },
+    });
+  });
+
   test("a failed node with allowFailure lets its dependent and the nodes after it run, and the run ends completed", async () => {
     const plan = await compilePlan(`name: t
 nodes:${exec("a", "\n    allowFailure: true\n    input: {}")}${exec("b", '\n    dependsOn: [a]\n    input: "{{ nodes.a.status }}"')}${exec("c", "\n    input: {}")}
@@ -669,6 +717,21 @@ nodes:
     expect(findRun(done.state, "fix")?.iteration).toBe(1);
     expect(findRun(done.state, "fix", "test")?.status).toBe("failed");
     expect(findRun(done.state, "other")).toBeUndefined();
+  });
+
+  test("SC7: after a fails in pass 1, the always: true body node b is handed out, then the loop ends failed with no pass 2 and so does the run", async () => {
+    const report = `
+      - { id: report, type: exec, runtime: sh, script: "true", always: true, dependsOn: [test], input: "pass {{ iteration.index }}" }`;
+    const plan = await compilePlan(loop("{{ iteration.index >= 3 }}", 5, report));
+    const { state } = await runLeaves(plan, start(), ["failed"]);
+    const second = await advance(plan, state);
+    expect(expectLeaf(second.stop)).toMatchObject({ node: { id: "report" }, input: "pass 1" });
+    const ended = end(second.state, expectLeaf(second.stop).nodeRunId, "completed", { output: {} });
+    const done = await advance(plan, ended);
+    expect(done.stop).toEqual({ kind: "finished", status: "failed" });
+    expect(findRun(done.state, "fix")).toMatchObject({ status: "failed", iteration: 1 });
+    expect(findRun(done.state, "fix", "test")?.status).toBe("failed");
+    expect(findRun(done.state, "fix", "report")?.status).toBe("completed");
   });
 
   test("a failed body node with allowFailure does not fail its loop", async () => {

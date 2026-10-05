@@ -736,6 +736,32 @@ nodes:
     expect(JSON.parse(next.stdout)).toEqual({ kind: "finished", status: "failed" });
   });
 
+  test("SC1 (e2e): after exec fails a, next skips b and hands out the always: true node c, and the run still ends failed", () => {
+    const { repo, home } = startedRun(`name: steps
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - { id: a, type: exec, runtime: sh, script: exit 3, input: {} }
+  - { id: b, type: exec, runtime: sh, script: "true", dependsOn: [a], input: {} }
+  - { id: c, type: exec, runtime: sh, script: "true", always: true, dependsOn: [b], input: {} }
+`);
+    const a = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+    expect(orchestrate(repo, home, ["exec", a.nodeRunId, "--run", "feat-x"]).code).toBe(1);
+
+    const c = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+    expect(c).toMatchObject({ kind: "exec", nodeId: "c" });
+    const exec = orchestrate(repo, home, ["exec", c.nodeRunId, "--run", "feat-x"]);
+    expect(JSON.parse(exec.stdout)).toMatchObject({ nodeId: "c", status: "completed" });
+
+    const last = orchestrate(repo, home, ["next", "--run", "feat-x"]);
+    expect(JSON.parse(last.stdout)).toEqual({ kind: "finished", status: "failed" });
+    const state = stateOf(repo);
+    expect(state.status).toBe("failed");
+    expect(state.nodeRuns.a.status).toBe("failed");
+    expect(state.nodeRuns.c.status).toBe("completed");
+    expect(state.nodeRuns).not.toHaveProperty("b");
+  });
+
   test("IW12 — exec refuses a node run that already ended or does not exist, recording only the refused calls", async () => {
     const { repo, home } = startedRun(STEPS);
     const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);

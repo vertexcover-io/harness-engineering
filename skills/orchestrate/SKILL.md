@@ -82,8 +82,8 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      `verifier-error` is a stage check that failed: read its `findings` or `message`, fix the
      work, and call `done` again. The third rejected `done` on a node fails it for good
      (`verify-exhausted`): log `✗` and go back to 1, since `next` decides whether that failure
-     ends the run (a node with `allowFailure` lets it go on). On any other error whose
-     `retryable` is `false`, stop and report the error. Do not call `next` until `done` reports
+     ends the run (a node with `allowFailure` lets it go on, and a node with `always` still
+     runs after it). On any other error whose `retryable` is `false`, stop and report the error. Do not call `next` until `done` reports
      completed, reports `verify-exhausted`, or you report an unrecoverable stage error with
      `done --error`. Log `✓` or `✗` from the printed JSON, then go back to 1.
    - `agent`: tell the user `▶ NODE_ID`. Do what `prompt` asks, with `input` as its data,

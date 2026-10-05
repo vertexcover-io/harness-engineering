@@ -33,6 +33,8 @@ const baseFields = {
   input: z.json(),
   dependsOn: z.array(NodeIdSchema).default([]),
   allowFailure: z.boolean().default(false),
+  // starts even after an earlier node in its scope failed, and when a dependency was skipped
+  always: z.boolean().default(false),
 };
 
 const guardedFields = { ...baseFields, when: ExpressionSchema.optional() };
