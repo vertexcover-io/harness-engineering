@@ -1,0 +1,29 @@
+{
+  "skill": "harness-retro",
+  "path": "/Users/vertexcover/Projects/harness-engineering/.worktrees/v1-retro-merge-conflict-skills/skills/harness-retro",
+  "findings": [],
+  "script_false_positives": [
+    {
+      "id": "I1",
+      "finding_type": "tool_not_allowed",
+      "location": "SKILL.md:12",
+      "evidence": "Agent",
+      "why": "allowed-tools is the YAML list `[Agent, Bash, ...]`; check.py splits on commas and spaces, so it reads the first entry as `[Agent`.",
+      "now": "After the split SKILL.md's body no longer names the Agent tool, so check.py no longer prints this. It returns if the body names `Agent` again."
+    },
+    {
+      "id": "I1",
+      "finding_type": "tool_not_allowed",
+      "location": "SKILL.md:399",
+      "evidence": "Task",
+      "why": "The only `Task` in the skill is the report's header field `| Task | ticket id and title |`, not the tool.",
+      "now": "The `| Task | ticket id and title |` header row moved to references/audit-method.md, which check.py does not scan for tools, so it no longer prints this."
+    }
+  ],
+  "out_of_rubric": [
+    {
+      "pattern": "judgment_types_not_in_closed_list",
+      "seen": "The closed finding_type list in check.py holds only script types, so every judgment finding above uses a descriptive name of my own."
+    }
+  ]
+}

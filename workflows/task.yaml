@@ -112,3 +112,13 @@ nodes:
     input:
       workspace: "{{ nodes.create-workspace.output }}"
       task: "{{ nodes.ticket-fetcher.output.task }}"
+
+  # Audits the run for harness defects. always: it runs after a failed node too; allowFailure:
+  # its own failure never changes the run's status.
+  - id: retro
+    type: agent
+    stage: harness-retro
+    dependsOn: [pr]
+    always: true
+    allowFailure: true
+    input: {}

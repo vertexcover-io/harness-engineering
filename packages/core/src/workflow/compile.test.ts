@@ -1051,7 +1051,7 @@ describe("the shipped task workflow", () => {
     const plan = await compileWorkflow(TASK_WORKFLOW);
     const workspace = "{{ nodes.create-workspace.output }}";
 
-    expect(plan.nodes.slice(-6, -3)).toMatchObject([
+    expect(plan.nodes.slice(-7, -4)).toMatchObject([
       {
         id: "planning",
         stage: { ref: "planning" },
@@ -1076,7 +1076,7 @@ describe("the shipped task workflow", () => {
   test("SC8: runs a qa loop after code-review that re-runs implement with qa's bugs until qa stops failing", async () => {
     const plan = await compileWorkflow(TASK_WORKFLOW);
 
-    expect(plan.nodes.at(-3)).toMatchObject({
+    expect(plan.nodes.at(-4)).toMatchObject({
       id: "qa-loop",
       type: "loop",
       dependsOn: ["code-review"],
@@ -1111,11 +1111,25 @@ describe("the shipped task workflow", () => {
     });
   });
 
-  test("ends with git-commit then visual-pr after the qa loop, each in the run's workspace", async () => {
+  test("SC20: the last node is an always, allow-failure harness-retro after pr, with input {}", async () => {
+    const plan = await compileWorkflow(TASK_WORKFLOW);
+
+    expect(plan.nodes.at(-1)).toMatchObject({
+      id: "retro",
+      type: "agent",
+      stage: { ref: "harness-retro" },
+      dependsOn: ["pr"],
+      always: true,
+      allowFailure: true,
+      input: {},
+    });
+  });
+
+  test("runs git-commit then visual-pr after the qa loop, each in the run's workspace", async () => {
     const plan = await compileWorkflow(TASK_WORKFLOW);
     const workspace = "{{ nodes.create-workspace.output }}";
 
-    expect(plan.nodes.slice(-2)).toMatchObject([
+    expect(plan.nodes.slice(-3, -1)).toMatchObject([
       {
         id: "commit",
         stage: { ref: "git-commit" },

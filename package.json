@@ -11,8 +11,8 @@
     "bun": ">=1.3.3"
   },
   "scripts": {
-    "typecheck": "bun run --filter '@harness/*' typecheck && tsc -p skills/create-workspace && tsc -p skills/ticket-fetcher && tsc -p skills/baseline && tsc -p skills/qa",
-    "test": "bun test ./packages ./skills/create-workspace ./skills/ticket-fetcher ./skills/baseline ./skills/qa",
+    "typecheck": "bun run --filter '@harness/*' typecheck && tsc -p skills/create-workspace && tsc -p skills/ticket-fetcher && tsc -p skills/baseline && tsc -p skills/qa && tsc -p skills/harness-retro",
+    "test": "bun test ./packages ./skills/create-workspace ./skills/ticket-fetcher ./skills/baseline ./skills/qa ./skills/harness-retro",
     "lint": "biome check",
     "check": "bun scripts/check.ts",
     "lint:fix": "biome check --write",
@@ -21,6 +21,7 @@
     "workspace": "bun skills/create-workspace/scripts/workspace.ts",
     "ticket": "bun skills/ticket-fetcher/scripts/ticket.ts",
     "baseline": "bun skills/baseline/scripts/baseline.ts",
+    "retro": "bun skills/harness-retro/scripts/retro.ts",
     "linear": "bun skills/ticket-fetcher/scripts/linear.ts",
     "asana": "bun skills/ticket-fetcher/scripts/asana.ts",
     "release:version": "bun scripts/version.ts",

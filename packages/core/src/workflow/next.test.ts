@@ -1011,25 +1011,32 @@ describe("the shipped task workflow's qa loop", () => {
   type Walked = Readonly<{ state: State; stop: Stop; handed: readonly Handed[] }>;
 
   // Walks task.yaml as the session would, answering each qa pass with the next verdict, and keeps
-  // the fix and qa leaves it was handed.
+  // the fix, qa and retro leaves it was handed. Nodes named in `failing` end failed.
   const walkTask = async (
     plan: WorkflowPlan,
     state: State,
     verdicts: readonly string[],
     handed: readonly Handed[] = [],
+    failing: readonly string[] = [],
   ): Promise<Walked> => {
     const next = await advance(plan, state);
     if (next.stop.kind !== "leaf") return { state: next.state, stop: next.stop, handed };
     const { node, nodeRunId, input } = next.stop;
     const isQa = node.id === "qa";
     const output = isQa ? (VERDICTS[verdicts[0] ?? ""] ?? null) : (OUTPUTS[node.id] ?? {});
-    const ended = end(next.state, nodeRunId, "completed", { nodeType: "agent", output, artifacts });
-    const inLoop = isQa || node.id === "fix";
+    const ended = failing.includes(node.id)
+      ? end(next.state, nodeRunId, "failed", {
+          nodeType: "agent",
+          error: { kind: "exit", message: "the retro sub-agent failed" },
+        })
+      : end(next.state, nodeRunId, "completed", { nodeType: "agent", output, artifacts });
+    const kept = isQa || node.id === "fix" || node.id === "retro";
     return walkTask(
       plan,
       ended,
       isQa ? verdicts.slice(1) : verdicts,
-      inLoop ? [...handed, { id: node.id, input }] : handed,
+      kept ? [...handed, { id: node.id, input }] : handed,
+      failing,
     );
   };
 
@@ -1040,7 +1047,10 @@ describe("the shipped task workflow's qa loop", () => {
       ["PASS"],
     );
 
-    expect(handed).toMatchObject([{ id: "qa", input: { task: "do X", round: 1, rounds: 4 } }]);
+    expect(handed).toMatchObject([
+      { id: "qa", input: { task: "do X", round: 1, rounds: 4 } },
+      { id: "retro" },
+    ]);
     expect(findRun(state, "qa-loop")).toMatchObject({ status: "completed", output: VERDICTS.PASS });
     expect(stop).toEqual({ kind: "finished", status: "completed" });
   });
@@ -1052,7 +1062,7 @@ describe("the shipped task workflow's qa loop", () => {
       ["FAIL", "PARTIAL"],
     );
 
-    expect(handed.map((leaf) => leaf.id)).toEqual(["qa", "fix", "qa"]);
+    expect(handed.map((leaf) => leaf.id)).toEqual(["qa", "fix", "qa", "retro"]);
     expect(handed[1]?.input).toMatchObject({ feedback: [{ ...bug, needsDecision: false }] });
     expect(handed[2]?.input).toMatchObject({ round: 2, rounds: 4 });
     expect(findRun(state, "qa-loop")).toMatchObject({
@@ -1068,11 +1078,49 @@ describe("the shipped task workflow's qa loop", () => {
       ["FAIL", "FAIL", "FAIL", "FAIL"],
     );
 
-    expect(handed.map((leaf) => leaf.id)).toEqual(["qa", "fix", "qa", "fix", "qa", "fix", "qa"]);
+    expect(handed.map((leaf) => leaf.id)).toEqual([
+      "qa",
+      "fix",
+      "qa",
+      "fix",
+      "qa",
+      "fix",
+      "qa",
+      "retro",
+    ]);
     expect(findRun(state, "qa-loop")).toMatchObject({
       status: "failed",
       iteration: 4,
     });
     expect(stop).toEqual({ kind: "finished", status: "failed" });
+  });
+
+  test("SC18: after the qa loop fails, retro is handed out with input {}, commit and pr never start, and the run still ends failed", async () => {
+    const { state, stop, handed } = await walkTask(
+      await compileWorkflow(TASK_WORKFLOW),
+      start({ prompt: "p" }),
+      ["FAIL", "FAIL", "FAIL", "FAIL"],
+    );
+
+    expect(handed.at(-1)).toEqual({ id: "retro", input: {} });
+    expect(findRun(state, "retro")?.status).toBe("completed");
+    expect(findRun(state, "commit")).toBeUndefined();
+    expect(findRun(state, "pr")).toBeUndefined();
+    expect(stop).toEqual({ kind: "finished", status: "failed" });
+  });
+
+  test("SC19: on a passing run retro is the last node handed out, and its failure leaves the run completed", async () => {
+    const { state, stop, handed } = await walkTask(
+      await compileWorkflow(TASK_WORKFLOW),
+      start({ prompt: "p" }),
+      ["PASS"],
+      [],
+      ["retro"],
+    );
+
+    expect(handed.map((leaf) => leaf.id)).toEqual(["qa", "retro"]);
+    expect(findRun(state, "pr")?.status).toBe("completed");
+    expect(findRun(state, "retro")?.status).toBe("failed");
+    expect(stop).toEqual({ kind: "finished", status: "completed" });
   });
 });
