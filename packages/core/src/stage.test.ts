@@ -93,6 +93,7 @@ describe("the skills folder", () => {
     if (result.ok) throw new Error("expected a failure");
     expect(result.error).toContain("0.0.1");
     expect(result.error).toContain("yok plugin install --agent claude");
+    expect(result.error).toContain("--agent codex");
   });
 
   test("SC83: from source, the repo's skills folder is used even when a plugin folder exists", async () => {

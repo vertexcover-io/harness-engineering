@@ -49,9 +49,9 @@ import {
   type StepReport,
   syncState,
   uniqueNames,
+  VERSION,
 } from "@yok/sdk/internal";
 import * as z from "zod";
-import corePackage from "../package.json";
 import { buildNotifierHooks, pickNotifier } from "./notifier-hooks.ts";
 import { extensionPath, findStageDir, yokSkillsDir } from "./stage.ts";
 import { compileWorkflow, readWorkflowFile } from "./workflow/compile.ts";
@@ -190,11 +190,10 @@ const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<S
   const { name } = options;
   const dir = runDirOf(run.cwd, name);
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
-  const version = String(corePackage.version);
   await createState({
     runId: run.id,
     runDir: dir,
-    version,
+    version: VERSION,
     eventHandlers,
     hooks,
     config,

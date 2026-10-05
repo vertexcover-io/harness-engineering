@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -101,7 +102,7 @@ const savedRun = (cwd: string, workflowPath: string): WorkflowRun => ({
   name: null,
   terminal: null,
   config: null,
-  tier: null,
+  tiers: null,
   createdAt: new Date().toISOString(),
 });
 
@@ -168,10 +169,10 @@ export const record = ({ run }) => {
 };
 `;
 
-// An initialized run named feat-x whose stage comes only from the plugin folder.
-const startRun = (
-  options: Readonly<{ nodes: string; outModule?: string; files?: Record<string, string> }>,
-) => {
+type RunOptions = Readonly<{ nodes: string; outModule?: string; files?: Record<string, string> }>;
+
+// A registered run named feat-x whose stage comes only from the plugin folder.
+const registerRun = (options: RunOptions) => {
   const repo = tempRepo({ "alone.yaml": workflow(options.nodes), ...options.files });
   const home = temp("yok-home-");
   writeRegistry(home, [savedRun(repo, join(repo, "alone.yaml"))]);
@@ -185,9 +186,14 @@ const startRun = (
       cwd: repo,
       env,
     });
-  const init = step(["init", "feat-x", "--run-id", "r-1"]);
-  if (init.code !== 0) throw new Error(`init failed: ${init.stderr}`);
   return { repo, home, env, step };
+};
+
+const startRun = (options: RunOptions) => {
+  const run = registerRun(options);
+  const init = run.step(["init", "feat-x", "--run-id", "r-1"]);
+  if (init.code !== 0) throw new Error(`init failed: ${init.stderr}`);
+  return run;
 };
 
 const stateOf = (repo: string) =>
@@ -333,16 +339,16 @@ describe("the compiled yok binary", () => {
   }, 60_000);
 
   test("SC93: refuses a module importing @yok/sdk/internal", () => {
-    const { step } = startRun({
+    const { step } = registerRun({
       nodes: AGENT_NODE(""),
       outModule: `import { VERSION } from "@yok/sdk/internal";\nexport const schemas = { "alone.output.v1": VERSION };\n`,
     });
 
-    const next = step(["next"]);
+    const init = step(["init", "feat-x", "--run-id", "r-1"]);
 
-    expect(next.code).toBe(1);
-    expect(next.stderr).toContain("scripts/out.ts");
-    expect(next.stderr).toContain("failed to load");
+    expect(init.code).toBe(1);
+    expect(init.stderr).toContain("scripts/out.ts");
+    expect(init.stderr).toContain("failed to load");
   }, 60_000);
 
   test("SC94: yok view serves the run page and its script", async () => {
@@ -383,5 +389,38 @@ export const main = (argv) => {
       code: 0,
       stdout: "hi\n",
     });
+  }, 60_000);
+
+  test("SC145: yok run stops before launching when Claude has yok 0.0.0-other turned on", () => {
+    const bin = temp("yok-fake-claude-");
+    const log = join(bin, "calls.log");
+    const claude = join(bin, "claude");
+    writeFileSync(
+      claude,
+      `#!/bin/sh
+case "$1" in
+  plugin) echo '[{"id":"yok@yok","version":"0.0.0-other","scope":"user","enabled":true}]' ;;
+  --version) echo "2.1.288 (Claude Code)" ;;
+  *) echo "$*" >> "${log}" ;;
+esac
+`,
+    );
+    chmodSync(claude, 0o755);
+    const cwd = tempRepo({
+      "orchestrate.config.json": '{ "version": 2 }\n',
+      "ok.yaml":
+        'name: ok\nnodes:\n  - id: a\n    type: exec\n    runtime: sh\n    script: "true"\n    input: null\n',
+    });
+
+    const run = runBinary(["run", "ok.yaml", "--prompt", "hi", "--no-open"], {
+      cwd,
+      env: { YOK_CLAUDE_BIN: claude },
+    });
+
+    expect(run.code).not.toBe(0);
+    expect(run.stderr).toContain("BLOCKED");
+    expect(run.stderr).toContain("claude-plugin: claude has yok 0.0.0-other");
+    expect(run.stderr).toContain("yok plugin install --agent claude");
+    expect(existsSync(log)).toBe(false);
   }, 60_000);
 });

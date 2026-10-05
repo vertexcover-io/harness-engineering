@@ -6,6 +6,7 @@ import { agentCommand } from "./agent.ts";
 import { attachCommand } from "./attach.ts";
 import { fail } from "./client.ts";
 import { doctorCommand } from "./doctor.ts";
+import { pluginCommand, updateCommand } from "./plugin.ts";
 import { runCommand } from "./run.ts";
 import { serveModules } from "./serve.ts";
 import { serverCommand } from "./server.ts";
@@ -31,9 +32,11 @@ await new Command()
   .addCommand(agentCommand("codex"))
   .addCommand(doctorCommand())
   .addCommand(orchestrateCommand())
+  .addCommand(pluginCommand())
   .addCommand(runCommand())
   .addCommand(serverCommand())
   .addCommand(typesCommand())
+  .addCommand(updateCommand())
   .addCommand(verifyCommand())
   .addCommand(viewCommand())
   .parseAsync(process.argv)

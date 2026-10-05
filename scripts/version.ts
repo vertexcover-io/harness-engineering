@@ -1,20 +1,38 @@
 import { execFileSync } from "node:child_process"
-import { readFileSync, realpathSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 /**
- * An install reports plugin.json's version and the doctor compares it against
- * release tags, so it and package.json must never drift.
+ * An install reports plugin.json's version, the doctor compares it with the binary's, and each
+ * package reads its own package.json, so every one of these carries the tag's version.
  */
-const MANIFESTS = ["package.json", ".claude-plugin/plugin.json"]
+const packageManifests = (root: string): readonly string[] =>
+  readdirSync(join(root, "packages"))
+    .map((name) => `packages/${name}/package.json`)
+    .filter((manifest) => existsSync(join(root, manifest)))
+    .sort()
+
+const manifests = (root: string): readonly string[] => [
+  "package.json",
+  ".claude-plugin/plugin.json",
+  ".codex-plugin/plugin.json",
+  ...packageManifests(root),
+]
 
 /**
- * Users install the tag these marketplaces pin. Stable moves only on a stable release; pre-release
- * moves on every release, so a shipped version replaces its candidates there too.
+ * `yok plugin install` adds a marketplace at the binary's own tag, so at tag vX both must pin vX,
+ * pre-releases included.
  */
-const STABLE_MARKETPLACE = ".claude-plugin/marketplace.json"
-const PRE_RELEASE_MARKETPLACE = ".claude-plugin/pre-release/marketplace.json"
+const MARKETPLACES = [".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"]
+
+/**
+ * bun.lock repeats each workspace package's version. `bun install --frozen-lockfile` tolerates a
+ * stale one, but the next plain `bun install` rewrites the lock and dirties the tree.
+ */
+const LOCKFILE = "bun.lock"
+export const setLockVersions = (lock: string, version: string): string =>
+  lock.replace(/("packages\/[^"]+": \{\n\s+"name": "[^"]+",\n\s+"version": )"[^"]*"/g, `$1"${version}"`)
 
 const EXPLICIT = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const SEGMENTS = /^(\d+)\.(\d+)\.(\d+)/
@@ -101,7 +119,7 @@ export const agreedVersion = (sources: readonly string[]): string => {
 }
 
 const currentVersion = (): string =>
-  agreedVersion(MANIFESTS.map((manifest) => readFileSync(join(repoRoot, manifest), "utf8")))
+  agreedVersion(manifests(repoRoot).map((manifest) => readFileSync(join(repoRoot, manifest), "utf8")))
 
 const main = (): void => {
   const args = process.argv.slice(2)
@@ -120,13 +138,14 @@ const main = (): void => {
     const path = join(repoRoot, file)
     writeFileSync(path, update(readFileSync(path, "utf8")))
   }
-  const pinned = version.includes("-") ? [PRE_RELEASE_MARKETPLACE] : [STABLE_MARKETPLACE, PRE_RELEASE_MARKETPLACE]
-  MANIFESTS.forEach((manifest) => rewrite(manifest, (source) => setVersion(source, version)))
-  pinned.forEach((marketplace) => rewrite(marketplace, (source) => setRef(source, `v${version}`)))
-  console.log(`version ${version} written to ${MANIFESTS.length} manifests and pinned in ${pinned.join(", ")}`)
+  const files = manifests(repoRoot)
+  files.forEach((manifest) => rewrite(manifest, (source) => setVersion(source, version)))
+  MARKETPLACES.forEach((marketplace) => rewrite(marketplace, (source) => setRef(source, `v${version}`)))
+  rewrite(LOCKFILE, (source) => setLockVersions(source, version))
+  console.log(`version ${version} written to ${files.length} manifests and pinned in ${MARKETPLACES.join(", ")}`)
   if (!commit) return
 
-  git("add", ...MANIFESTS, ...pinned)
+  git("add", ...files, ...MARKETPLACES, LOCKFILE)
   git("commit", "-m", `chore(release): v${version}`)
   git("tag", "-a", `v${version}`, "-m", `v${version}`)
   console.log(
