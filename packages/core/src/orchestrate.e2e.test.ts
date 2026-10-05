@@ -426,6 +426,28 @@ describe("orchestrate skill", () => {
     expect(run.stdout).toBe(readFileSync(shipped, "utf8"));
   });
 
+  test("skill ref --list SKILL prints the skill's references and the project's added ones as JSON", () => {
+    const skillsDir = tempDir();
+    mkdirSync(join(skillsDir, "demo"));
+    writeFileSync(join(skillsDir, "demo/SKILL.md"), DEMO_SKILL);
+    writeFileSync(join(skillsDir, "demo/notes.md"), "base text\n");
+    const root = configuredRepo({
+      extensions: {
+        demo: { references: { jira: { add: "jira.md", description: "Jira issues." } } },
+      },
+    });
+
+    const run = orchestrate(root, tempDir(), ["skill", "ref", "--list", "demo"], {
+      HARNESS_SKILLS_DIR: skillsDir,
+    });
+
+    expect(run.code).toBe(0);
+    expect(JSON.parse(run.stdout)).toEqual([
+      { name: "notes", description: "Notes." },
+      { name: "jira", description: "Jira issues." },
+    ]);
+  });
+
   test("skill ref without a dot between skill and reference exits 1 showing the form", () => {
     const run = orchestrate(configuredRepo({}), tempDir(), ["skill", "ref", "baseline"]);
 
@@ -2094,7 +2116,7 @@ describe("the task workflow's ticket-fetcher stage", () => {
     expect(fetcher).toMatchObject({
       nodeId: "ticket-fetcher",
       input: expect.anything(),
-      variables: { provider: "linear" },
+      variables: { provider: "auto" },
     });
     const done = step([
       "done",

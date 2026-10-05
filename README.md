@@ -140,6 +140,11 @@ ticket-fetcher → create-workspace → baseline → design → planning → imp
   → code-review → qa (loops back to implement until it passes) → git-commit → visual-pr
 ```
 
+`ticket-fetcher` picks its provider from the ticket URL or key in the request: Linear
+(`LINEAR_API_KEY`) or Asana (`ASANA_API_KEY`). A workflow can force one with
+`variables: { provider: NAME }` on its ticket-fetcher node. `task.yaml`'s `doctor` checks
+`LINEAR_API_KEY`; change it to `ASANA_API_KEY` for an Asana-only project.
+
 The project's settings live in `orchestrate.config.yaml` (`version: 2`) at the repository root.
 Run artifacts land in `.harness/`.
 

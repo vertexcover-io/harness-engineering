@@ -22,11 +22,20 @@ scopes: []
 references:
   linear:
     path: references/linear.md
-    description: How to fetch a Linear ticket and its files into the ticket bundle.
+    description: >-
+      Linear tickets: linear.app/.../issue/KEY URLs and issue keys like ENG-123. How to fetch one
+      and its files into the ticket bundle.
+  asana:
+    path: references/asana.md
+    description: >-
+      Asana tasks: app.asana.com task URLs and numeric task ids. How to fetch one and its files
+      into the ticket bundle.
 variables:
   provider:
-    description: Ticket provider; names the reference to read
-    default: linear
+    description: >-
+      Ticket provider: the name of the reference to read (linear, asana, or one the project
+      adds), or auto to choose it from the request.
+    default: auto
 ---
 
 # Ticket Fetcher
@@ -47,25 +56,32 @@ this skill and the provider's reference list.
 
 ## Steps
 
-1. Decide what the request is. It is a ticket request when it holds a tracker URL, an issue key
-   like `ENG-123`, or asks to work on a ticket. Otherwise it is a plain task: reply
-   `{ "task": REQUEST }` with no artifact, and stop.
-2. Read the provider's reference with `bun run orchestrate skill ref ticket-fetcher.PROVIDER`,
-   where PROVIDER is the `provider` variable. If it fails, stop and report its message. A project
-   adds a provider with a reference file registered as
-   `extensions.ticket-fetcher.references.NAME: { add: PATH }` in `orchestrate.config.yaml`, and
-   `variables: { provider: NAME }` on the workflow's ticket-fetcher node.
-3. Follow the reference. Give it:
+1. Decide what the request is. It is a ticket request when it holds a tracker URL (such as
+   `linear.app/...` or `app.asana.com/...`), an issue key like `ENG-123`, or asks to work on a
+   ticket. Otherwise it is a plain task: reply `{ "task": REQUEST }` with no artifact, and stop.
+2. Choose PROVIDER. When the `provider` variable is anything but `auto`, it is PROVIDER. When it
+   is `auto`, run `bun run orchestrate skill ref --list ticket-fetcher`: it prints every
+   reference as `{ name, description }`, the project's added ones included, and each description
+   names the URLs and keys that provider handles. PROVIDER is the one reference whose description
+   matches the request's URL or key. When none matches, or more than one does, stop and finish
+   the stage with an error that names the request's URL or key and the listed providers.
+3. Read the provider's reference with `bun run orchestrate skill ref ticket-fetcher.PROVIDER`.
+   If it fails, stop and report its message. `linear` and `asana` ship with this skill. A
+   project adds another with a reference file registered in `orchestrate.config.yaml` as
+   `extensions.ticket-fetcher.references.NAME: { add: PATH, description: TEXT }`, where TEXT
+   names the URLs and keys it handles so `auto` can find it; a workflow can also force it with
+   `variables: { provider: NAME }` on its ticket-fetcher node.
+4. Follow the reference. Give it:
    - the ticket hint: the URL, key or wording from the request;
    - the output folder `.harness/RUN/artifacts/ticket/`, where RUN is the run's spec name;
    - the `ticket.json` format: `TicketSchema` in `scripts/ticket.ts`. Each downloaded asset's
      `path` is one flat filename in that folder.
-4. When the ticket is clear but has no ID and the provider's search returns several candidates,
+5. When the ticket is clear but has no ID and the provider's search returns several candidates,
    ask the user to choose with `AskUserQuestion`. Do not pick one yourself.
-5. Run `bun run ticket validate .harness/RUN/artifacts/ticket`. On issues, fix `ticket.json` or
+6. Run `bun run ticket validate .harness/RUN/artifacts/ticket`. On issues, fix `ticket.json` or
    the files and run it again. A partial bundle is fine: set `complete` to `false` and list each
    file that could not be fetched as an `unavailable` asset with its reason.
-6. Register the bundle and reply with the `ticket-fetcher.output.v1` JSON:
+7. Register the bundle and reply with the `ticket-fetcher.output.v1` JSON:
 
    ```json
    {
