@@ -22,7 +22,6 @@ import {
   registryPath,
   requireRun,
   runDirOf,
-  runScriptFile,
   spawnInteractive,
   stopRunningOnSignal,
   tierLaunch,
@@ -37,6 +36,7 @@ import {
   foldModelSwitch,
   jsonlEventStore,
   runMode,
+  runScriptFile,
   type StepOutcome,
 } from "@yok/sdk/internal";
 import { agentAdapters, agentProvider, findSessionAgent, HOOK_AGENTS } from "./agents/index.ts";
