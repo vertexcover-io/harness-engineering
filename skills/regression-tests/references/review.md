@@ -13,7 +13,7 @@ List every scenario ID in the plan. For each one, find the test that covers it. 
 For each scenario, read its Given, When and Then next to the test:
 
 - **Given:** the test sets up the same user, permissions, settings and data.
-- **When:** the test does the same action, through the kind of test the scenario is tagged with (`[unit]` or `[service]`).
+- **When:** the test does the same action, at the level the scenario is tagged with (`[unit]`, `[integration]` or `[e2e]`).
 - **Then:** the test checks every outcome listed, including what was saved and what must not happen. A missing check counts as a mismatch.
 
 When they don't match, read the product code to decide which side is wrong, and label the finding:
@@ -44,7 +44,11 @@ Find two or three existing tests for the same area and compare:
 
 Report each difference that has no clear reason, naming the existing test it should follow.
 
-## 5. Report
+## 5. Tests are no more complex than needed
+
+Flag unnecessary complexity in the new tests: redundant or derivable state, deep nesting, dead code left behind. Name the simpler form that does the same job. Leave repetition that lets a test be read on its own.
+
+## 6. Report
 
 Return one result:
 
@@ -54,7 +58,7 @@ Return one result:
 
 List each finding with:
 
-- Scenario ID and check number (1–4).
+- Scenario ID and check number (1–5).
 - File and line.
 - What's wrong, with the evidence: the plan text, the test code, or the command output.
 - Suggested fix.

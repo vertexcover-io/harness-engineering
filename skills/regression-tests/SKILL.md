@@ -23,7 +23,13 @@ Write one distinct observable behavior per scenario. Include successful journeys
 
 Write for QA and Product readers using complete sentences and familiar product language. Give each scenario enough context to understand the user journey independently. Each field can take one or two complete sentences, or more when needed for clarity.
 
-During planning, tag each scenario `[unit]` or `[service]`. Use `[unit]` when an isolated decision can prove the expected behavior with controlled collaborators. Use `[service]` when the outcome depends on routing, authentication pipelines, persistence, or interactions across real components. When both are needed, tag the scenario `[service]` and let implementation add supporting unit tests.
+Tag each scenario `[unit]`, `[integration]` or `[e2e]`. Pick the smallest test that would still fail if the behavior broke:
+
+- `[unit]`: one piece of logic decides the outcome.
+- `[integration]`: the outcome depends on the code working with a real dependency.
+- `[e2e]`: the outcome is a full user journey through the running app, from the flow's start to its end.
+
+When two tags fit, use the higher one. Keep `[e2e]` for the main journey and for failures that only show up across the whole system. Use `[e2e]` only if the repo already has an e2e suite. Otherwise tag the scenario `[integration]` and say so in Scope.
 
 Give each scenario a numbered heading with a stable unique ID, its tag, and a concise title. Follow it with these bold labels in order, leaving a blank line between fields:
 
@@ -35,7 +41,7 @@ Give each scenario a numbered heading with a stable unique ID, its tag, and a co
 Use this format, adapting the content to established behavior:
 
 ```markdown
-### 1. CRS-001 [service]: Create an invoice for the selected business
+### 1. CRS-001 [integration]: Create an invoice for the selected business
 
 **What are you testing:** Check that a signed-in user creating an invoice for business A saves it under A, even when they also belong to a newer business B.
 
@@ -102,13 +108,13 @@ Start a test-writing subagent. Give it the absolute path to the approved `.harne
 
 Read the approved plan first. Write tests only for approved scenarios, and put each scenario ID in the test name or in a mapping kept in the repo. Follow the repo's existing test style and reuse its fixtures and helpers. Add to existing tests where they fit, and write new ones only for behavior nothing covers yet.
 
-Use the `[unit]` or `[service]` tag each scenario was approved with. You can add unit tests under a service scenario when they help. If a scenario needs a different kind of test to prove its outcome, tell the parent why so the plan can be revised and approved again.
+Write each scenario's test at the level it was tagged with. You can add lower-level tests under a scenario when they help. If a scenario needs a different level to prove its outcome, tell the parent why so the plan can be revised and approved again.
 
 For each scenario:
 
 1. Understand the starting state, the action, and the expected outcome.
 2. Set up the Given state with data each test creates for itself, and control any external services.
-3. Run the When action through the kind of test the scenario is tagged with.
+3. Run the When action at the level the scenario is tagged with.
 4. Check the specific Then outcomes, including what was saved and what happens on failure. Check what a user or caller can see, not which internal functions were called, unless those calls are the point.
 5. Write assertions and failure messages that still make sense if the internal code is reorganized.
 
@@ -140,17 +146,17 @@ The first subagent follows [review.md](references/review.md). Give it:
 
 Handle its results like this:
 
-- **PASS:** move on once the simplify findings are handled.
+- **PASS:** move on once the test quality findings are handled.
 - **FINDINGS:** verify each finding against the code. Fix `test` findings. For `plan` findings, update `plan.md` and the matching tests yourself, without reopening Plannotator. Take `product` findings to the user. Rerun the tests, then run the plan review again.
 - **BLOCKED:** tell the user the reason and what's needed to unblock it.
 
 If the plan review still returns FINDINGS after three rounds, stop and take the remaining findings to the user.
 
-### Simplify
+### Test quality
 
-The second subagent runs the native `simplify` skill on the new and changed test files, once. Tell it to report findings without applying them.
+The second subagent follows `skills/code-review/references/persona-testing.md`, once. Give it the absolute path to that file, the final diff and the files it touches. Tell it to report findings without editing files.
 
-Apply a finding only if the test still covers its scenario's Given, When and every Then. Then rerun the tests and the plan review.
+Apply a finding only if the test still covers its scenario's Given, When and every Then. If a finding changes a scenario's tag, revise the plan and get it approved again. Then rerun the tests and the plan review.
 
 ### Both reviews
 
@@ -158,6 +164,6 @@ If you check a finding and it's wrong, note it and why in your report, and don't
 
 ## 7. Commit and open the PR
 
-After the plan review returns PASS and every simplify finding is applied or rejected, use `harness:git-commit` to commit only the reviewed tests, then push the feature branch. Use `harness:git-pr` to open a draft PR, passing the approved plan, scenario IDs, test results and review outcome.
+After the plan review returns PASS and every test quality finding is applied or rejected, use `harness:git-commit` to commit only the reviewed tests, then push the feature branch. Use `harness:git-pr` to open a draft PR, passing the approved plan, scenario IDs, test results and review outcome.
 
 Finish by giving the user the PR link and the commands to run the tests.
