@@ -983,6 +983,16 @@ describe("the shipped task workflow", () => {
     });
   });
 
+  test("takes an optional environment input that defaults to the config's default entry", async () => {
+    const plan = await compileWorkflow(TASK_WORKFLOW);
+
+    expect(plan.inputs.environment).toEqual({
+      type: "string",
+      required: false,
+      default: "default",
+    });
+  });
+
   test("runs the design stage after the baseline, fed the ticket-fetcher's task", async () => {
     const plan = await compileWorkflow(TASK_WORKFLOW);
 
@@ -1030,6 +1040,7 @@ describe("the shipped task workflow", () => {
       input: {
         workspace: "{{ nodes.create-workspace.output }}",
         task: "{{ nodes.ticket-fetcher.output.task }}",
+        environment: "{{ inputs.environment }}",
       },
       nodes: [
         {
@@ -1043,6 +1054,7 @@ describe("the shipped task workflow", () => {
           id: "qa",
           stage: { ref: "qa", output: { name: "qa.output.v1" } },
           dependsOn: [],
+          variables: { environment: "{{ inputs.environment }}" },
           input: {
             workspace: "{{ inputs.workspace }}",
             task: "{{ inputs.task }}",

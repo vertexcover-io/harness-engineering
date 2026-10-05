@@ -27,8 +27,9 @@ Same behavioral principles as unit tests, plus an analysis phase for real infras
 - **Use fakes:** in-memory implementations that preserve behavior (e.g., a fake repository that stores in a dict/map)
 - **Use stubs at the network level:** MSW, WireMock, or similar HTTP-level interception (not module-level mocking)
 
-**Where `orchestrate.config.json` declares `environments`, that choice is already made**: the run's
-`ENVIRONMENT` names which stack these tests run against, and its keys are how you reach it. For a
+**Where the orchestrate config declares `environments`, that choice is already made**: its default
+entry is the stack these tests run against, reached as the qa skill's `stack-up` reference says
+(`bun run orchestrate skill ref qa.stack-up`). For a
 boundary no environment covers — a third-party API, a payment processor — follow whatever the codebase
 already does for that service; where it does nothing, stub at the network level.
 

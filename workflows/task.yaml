@@ -3,6 +3,11 @@ inputs:
   prompt:
     type: string
     required: true
+  # Which entry of the config's environments block qa verifies against: `default` is the entry the
+  # block names as its default. Pick another with `harness run … --input environment=NAME`.
+  environment:
+    type: string
+    default: default
 doctor:
   - check: env
     key: LINEAR_API_KEY
@@ -70,6 +75,7 @@ nodes:
     input:
       workspace: "{{ nodes.create-workspace.output }}"
       task: "{{ nodes.ticket-fetcher.output.task }}"
+      environment: "{{ inputs.environment }}"
     nodes:
       - id: fix
         type: agent
@@ -82,6 +88,8 @@ nodes:
       - id: qa
         type: agent
         stage: qa
+        variables:
+          environment: "{{ inputs.environment }}"
         input:
           workspace: "{{ inputs.workspace }}"
           task: "{{ inputs.task }}"
