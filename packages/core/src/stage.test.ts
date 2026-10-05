@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type ConfigInput, ConfigSchema } from "@yok/sdk";
+import { devPluginDir, VERSION } from "@yok/sdk/internal";
 import * as z from "zod";
 import {
   CreateWorkspaceInputSchema,
@@ -13,6 +14,7 @@ import { schemas as qaSchemas } from "../../../skills/qa/scripts/qa.ts";
 import { schemas as ticketSchemas } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import { claudeSettings } from "./agents/claude-hooks.ts";
 import {
+  findPluginSkills,
   findWorkflowPath,
   listReferences,
   loadStage,
@@ -21,6 +23,7 @@ import {
   resolveReference,
   resolveReferencePath,
   StageSchema,
+  yokSkillsDir,
 } from "./stage.ts";
 import { compileWorkflow } from "./workflow/compile.ts";
 
@@ -53,6 +56,62 @@ describe("orchestrateArgv", () => {
     } finally {
       process.env.YOK_SELF = saved;
     }
+  });
+});
+
+describe("the skills folder", () => {
+  const pluginSkills = async (root: string, version: string): Promise<string> => {
+    const dir = join(root, "plugins", "cache", "yok", "yok", version, "skills");
+    await mkdir(dir, { recursive: true });
+    return dir;
+  };
+  const emptyDir = (): Promise<string> => mkdtemp(join(tmpdir(), "skills-home-"));
+
+  test("SC80: a compiled binary finds the stages in Claude's plugin folder for its own version", async () => {
+    const claude = await emptyDir();
+    const skills = await pluginSkills(claude, "0.0.1");
+    const env = { CLAUDE_CONFIG_DIR: claude, CODEX_HOME: await emptyDir() };
+
+    expect(findPluginSkills(env, "0.0.1")).toEqual({ ok: true, value: skills });
+  });
+
+  test("SC81: with only Codex's plugin installed, its folder is used", async () => {
+    const codex = await emptyDir();
+    const skills = await pluginSkills(codex, "0.0.1");
+    const env = { CLAUDE_CONFIG_DIR: await emptyDir(), CODEX_HOME: codex };
+
+    expect(findPluginSkills(env, "0.0.1")).toEqual({ ok: true, value: skills });
+  });
+
+  test("SC82: a plugin folder for another version is never used, and the error names the version and the fix", async () => {
+    const claude = await emptyDir();
+    await pluginSkills(claude, "0.0.2");
+    const env = { CLAUDE_CONFIG_DIR: claude, CODEX_HOME: await emptyDir() };
+
+    const result = findPluginSkills(env, "0.0.1", await emptyDir());
+
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toContain("0.0.1");
+    expect(result.error).toContain("yok plugin install --agent claude");
+  });
+
+  test("SC83: from source, the repo's skills folder is used even when a plugin folder exists", async () => {
+    const claude = await emptyDir();
+    await pluginSkills(claude, VERSION);
+    const repo = devPluginDir();
+    if (repo === undefined) throw new Error("expected a source run");
+
+    expect(yokSkillsDir({ CLAUDE_CONFIG_DIR: claude })).toBe(join(repo, "skills"));
+    expect(existsSync(join(repo, "skills", "planning", "SKILL.md"))).toBe(true);
+  });
+
+  test("SC84: YOK_SKILLS_DIR wins over every other source", async () => {
+    const claude = await emptyDir();
+    await pluginSkills(claude, VERSION);
+
+    expect(yokSkillsDir({ YOK_SKILLS_DIR: "/demo/skills", CLAUDE_CONFIG_DIR: claude })).toBe(
+      "/demo/skills",
+    );
   });
 });
 

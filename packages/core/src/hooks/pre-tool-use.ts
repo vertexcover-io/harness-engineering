@@ -1,5 +1,5 @@
+/// <reference path="./vendor-sh.d.ts" />
 import { homedir } from "node:os";
-import { join } from "node:path";
 import {
   type EmitInput,
   type HookDeps,
@@ -12,6 +12,7 @@ import {
   yokHome,
 } from "@yok/sdk";
 import { appendRunEvent } from "@yok/sdk/internal";
+import BASH_ANTIPATTERNS from "../../vendor/bash-antipatterns.sh" with { type: "text" };
 import { findSessionRun, recordSessionEvent } from "./common.ts";
 import { expandPath, type PathBase, shellWriteTargets } from "./write-targets.ts";
 
@@ -21,7 +22,6 @@ export type ProtectedRecord =
 
 const ALLOW: ToolVerdict = { kind: "allow" };
 const RUN_RECORD = /[\\/]\.yok[\\/]([^\\/]+)[\\/](state\.json|event\.jsonl)$/;
-const BASH_ANTIPATTERNS = join(import.meta.dir, "..", "..", "vendor", "bash-antipatterns.sh");
 const BASH_ANTIPATTERNS_TIMEOUT_MS = 10_000;
 
 export const protectedRecordOf = (path: string, base: PathBase): ProtectedRecord | undefined => {
@@ -78,7 +78,7 @@ export const bashAntipatterns: PreToolUseHandler = {
   run: async ({ cwd, call }, { log }) => {
     if (call.kind !== "shell") return ALLOW;
     const input = JSON.stringify({ tool_name: "Bash", tool_input: { command: call.command } });
-    const result = await spawn("bash", [BASH_ANTIPATTERNS], {
+    const result = await spawn("bash", ["-c", BASH_ANTIPATTERNS], {
       cwd,
       input,
       timeoutMs: BASH_ANTIPATTERNS_TIMEOUT_MS,

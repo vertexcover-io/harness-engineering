@@ -1,8 +1,11 @@
-import { resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, rename, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { type JsonValue, type ProcessRecord, spawn } from "@yok/sdk";
 import {
   loadFunction as loadSdkFunction,
   importModule as sdkImportModule,
+  selfArgv,
 } from "@yok/sdk/internal";
 import { z } from "zod";
 import { type NodeContext, NodeFailure, WorkflowError, type WorkflowFunction } from "./types.ts";
@@ -12,15 +15,36 @@ export type ScriptRequest = Readonly<{
   script: string;
   input: JsonValue;
   cwd: string;
+  // Where a bun script is written before `yok orchestrate script` runs it: the run's scripts/ folder.
+  scriptDir: string;
   timeoutMs: number | undefined;
 }>;
 
 export const MAX_OUTPUT_BYTES = 1_048_576;
 
+// Named by its text, so two scripts never share a file. Another exec may be loading the same
+// file right now, so it is replaced whole by a rename and never seen half-written.
+const writeScript = async (dir: string, script: string): Promise<string> => {
+  const name = createHash("sha256").update(script).digest("hex").slice(0, 16);
+  const file = join(dir, `${name}.ts`);
+  const temp = join(dir, `${name}.${randomUUID()}.tmp`);
+  await mkdir(dir, { recursive: true });
+  await writeFile(temp, script);
+  await rename(temp, file);
+  return file;
+};
+
 export const runScript = async (request: ScriptRequest): Promise<ProcessRecord> => {
-  const [command, args] =
-    request.runtime === "sh" ? ["sh", ["-c", request.script]] : ["bun", ["-e", request.script]];
-  const result = await spawn(command, args, {
+  const argv: readonly [string, ...string[]] =
+    request.runtime === "sh"
+      ? ["sh", "-c", request.script]
+      : [
+          ...selfArgv(),
+          "orchestrate",
+          "script",
+          await writeScript(request.scriptDir, request.script),
+        ];
+  const result = await spawn(argv[0], argv.slice(1), {
     cwd: request.cwd,
     input: JSON.stringify(request.input),
     maxOutputBytes: MAX_OUTPUT_BYTES,

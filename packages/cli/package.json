@@ -11,13 +11,15 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "bun build ./src/index.ts --compile --no-compile-autoload-dotenv --outfile dist/yok"
+    "build": "bun build ./src/index.ts --compile --bytecode --format=esm --no-compile-autoload-dotenv --no-compile-autoload-bunfig --outfile dist/yok",
+    "build:all": "for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do bun build ./src/index.ts --compile --bytecode --format=esm --no-compile-autoload-dotenv --no-compile-autoload-bunfig --target=bun-$t --outfile dist/yok-$t || exit 1; done"
   },
   "dependencies": {
     "@commander-js/extra-typings": "^15.0.0",
     "@yok/core": "workspace:*",
     "@yok/sdk": "workspace:*",
     "@yok/server": "workspace:*",
-    "commander": "^15.0.0"
+    "commander": "^15.0.0",
+    "zod": "^4"
   }
 }

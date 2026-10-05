@@ -39,9 +39,11 @@ export {
   type LogBase,
   resolveLevel,
 } from "./logging.ts";
+export * as notifierHooks from "./notifier.ts";
 export { orchestrateCommand } from "./orchestrate.ts";
 export { getNodeFacts, loadStartEnv } from "./runs.ts";
 export {
+  findPluginSkills,
   findWorkflowPath,
   type LoadedStage,
   loadStage,

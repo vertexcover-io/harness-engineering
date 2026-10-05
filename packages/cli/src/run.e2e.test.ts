@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DoctorJsonSchema } from "@yok/core";
+import { VERSION } from "@yok/sdk/internal";
 
 const TIMEOUT_MS = 40_000;
 // Bun would load the repo's .env into the CLI, and from there the server and tmux, by itself.
@@ -355,6 +356,26 @@ describe("yok run", () => {
       expect(result.stderr).toContain("orchestrate-config: ");
       expect(result.stderr).toContain('Unrecognized key: "tiers"');
       expect(readLines(fakeOut).some(isLaunch)).toBe(false);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "SC106: a run in a repo whose .yok/types is from yok 0.0.0-0 starts and leaves the CLI's types there",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+      const types = join(repo, ".yok", "types");
+      mkdirSync(types, { recursive: true });
+      writeFileSync(join(types, "VERSION"), "0.0.0-0\n");
+
+      expect(yok(repo, env, "run", "ok.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
+      waitFor(() => readLines(fakeOut).some(isLaunch));
+
+      expect(readFileSync(join(types, "VERSION"), "utf8").trim()).toBe(VERSION);
+      expect(existsSync(join(types, "index.d.ts"))).toBe(true);
+
+      stopServer(repo, env);
     },
     TIMEOUT_MS,
   );

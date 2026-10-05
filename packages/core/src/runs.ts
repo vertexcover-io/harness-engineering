@@ -639,7 +639,8 @@ const runExecStep = async (run: RunRef, nodeRunId: string): Promise<Result<StepR
     };
   }
   const input = step.value.nodeRun.input ?? null;
-  const record = await runStepLeaf(node, input, { cwd: run.cwd, path: nodeRunId });
+  const scriptDir = join(runDirOf(run.cwd, run.name), "scripts");
+  const record = await runStepLeaf(node, input, { cwd: run.cwd, path: nodeRunId, scriptDir });
   const stored = await appendRunEvent(run, buildStepEndEvent(step.value, record));
   return stored.ok ? { ok: true, value: buildReport(step.value, record) } : stored;
 };

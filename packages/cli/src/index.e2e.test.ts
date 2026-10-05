@@ -90,6 +90,21 @@ export const leak = () => process.env.YOK_LEAK ?? "unset";
 export const self = () => process.env.YOK_SELF;
 `;
 
+// The notifier's name reaches import() only as a runtime value, as it does from state.json.
+const SERVED_HOOK = `
+import { NonEmptyStringSchema } from "@yok/sdk";
+import { z } from "zod";
+export const probe = async () => {
+  const name = ["yok", "notifier"].join(":");
+  const { slack } = await import(name);
+  return {
+    parsed: NonEmptyStringSchema.parse("hi"),
+    slack: typeof slack,
+    sameZod: NonEmptyStringSchema instanceof z.ZodType && z.string() instanceof NonEmptyStringSchema.constructor,
+  };
+};
+`;
+
 describe("yok as one program", () => {
   let repo = "";
   let hooks = "";
@@ -165,6 +180,26 @@ describe("yok as one program", () => {
     ]);
     expect(version.stdout.trim()).toBe(VERSION);
   }, 30_000);
+
+  test("SC89: from source, a hook outside the repo gets the CLI's @yok/sdk, zod and yok:notifier", async () => {
+    const outside = await realpath(await mkdtemp(join(tmpdir(), "yok-served-")));
+    const file = join(outside, "served.ts");
+    await writeFile(file, SERVED_HOOK);
+    const [program, ...args] = [process.execPath, "--no-env-file", CLI];
+
+    const result = await spawnProcess(program, [...args, "orchestrate", "run-hook", "call"], {
+      cwd: outside,
+      input: JSON.stringify(callRequest(file, "probe")),
+      timeoutMs: 20_000,
+    });
+
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toEqual({
+      parsed: "hi",
+      slack: "function",
+      sameZod: true,
+    });
+  }, 20_000);
 
   test("SC33: a process the CLI starts from source sees YOK_SELF naming the CLI, not the stale value its parent set", async () => {
     const result = await callHookAt([process.execPath, "--no-env-file", CLI], "self", {

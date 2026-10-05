@@ -7,7 +7,9 @@ import { attachCommand } from "./attach.ts";
 import { fail } from "./client.ts";
 import { doctorCommand } from "./doctor.ts";
 import { runCommand } from "./run.ts";
+import { serveModules } from "./serve.ts";
 import { serverCommand } from "./server.ts";
+import { typesCommand } from "./types.ts";
 import { verifyCommand } from "./verify.ts";
 import { viewCommand } from "./view.ts";
 
@@ -15,6 +17,9 @@ import { viewCommand } from "./view.ts";
 process.env.YOK_SELF = JSON.stringify(
   isCompiled ? [process.execPath] : [process.execPath, "--no-env-file", import.meta.path],
 );
+
+// Before any command runs, so every module it loads gets the served imports.
+serveModules();
 
 await new Command()
   .name("yok")
@@ -28,6 +33,7 @@ await new Command()
   .addCommand(orchestrateCommand())
   .addCommand(runCommand())
   .addCommand(serverCommand())
+  .addCommand(typesCommand())
   .addCommand(verifyCommand())
   .addCommand(viewCommand())
   .parseAsync(process.argv)

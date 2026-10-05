@@ -736,6 +736,64 @@ describe("SC26: orchestrate next and exec", () => {
     });
   });
 
+  const execAll = (repo: string, home: string, count: number) =>
+    Array.from({ length: count }, () => {
+      const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+      const exec = orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
+      expect(exec.stderr).toBe("");
+      expect(exec.code).toBe(0);
+      return reply.nodeId;
+    });
+
+  test("SC87: a runtime: bun exec node runs through yok orchestrate script from a file in the run's scripts folder, reused for the same text", () => {
+    const node = (id: string, extra = "") => `  - id: ${id}
+    type: exec
+    runtime: bun
+    output: { zodSchema: Json }
+    input: { id: ${id} }${extra}
+    script: |
+      import { appendFileSync } from "node:fs";
+      const input = await Bun.stdin.json();
+      appendFileSync(process.cwd() + "/argv.txt", process.argv[1] + "\\n");
+      process.stdout.write(JSON.stringify({ n: 1, seen: Object.keys(input).length }));
+`;
+    const { repo, home } = startedRun(
+      `name: steps\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n${node("a")}${node("b", "\n    dependsOn: [a]")}`,
+    );
+
+    expect(execAll(repo, home, 2)).toEqual(["a", "b"]);
+
+    const state = stateOf(repo);
+    expect(state.nodeRuns.a.output).toEqual({ n: 1, seen: 1 });
+    const [first, second] = readFileSync(join(repo, "argv.txt"), "utf8").trim().split("\n");
+    expect(first).toStartWith(`${join(runDirOf(repo, "feat-x"), "scripts")}/`);
+    expect(first).toEndWith(".ts");
+    expect(second).toBe(first);
+  });
+
+  test("SC96: an inline bun script outside the checkout imports @yok/sdk and zod with no node_modules", () => {
+    const { repo, home } = startedRun(`name: steps
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: a
+    type: exec
+    runtime: bun
+    input: {}
+    script: |
+      import { NonEmptyStringSchema } from "@yok/sdk";
+      import { z } from "zod";
+      NonEmptyStringSchema.parse("x");
+      z.string().parse("y");
+      process.stdout.write("ok");
+`);
+    expect(existsSync(join(repo, "node_modules"))).toBe(false);
+
+    expect(execAll(repo, home, 1)).toEqual(["a"]);
+
+    expect(stateOf(repo).nodeRuns.a).toMatchObject({ status: "completed", output: "ok" });
+  });
+
   test("IW11 — a script that keeps failing is retried as configured, exec exits 1, and the run ends failed", async () => {
     const { repo, home } = startedRun(`name: steps
 inputs:

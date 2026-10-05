@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import type { Result } from "./contracts.ts";
+import { BuiltinModuleSchema, type Result } from "./contracts.ts";
 
 const LOCK_RETRY_MS = 10;
 
@@ -127,11 +127,12 @@ type AnyFunction = (...args: never[]) => unknown;
 export const importModule = async (
   file: string,
 ): Promise<Result<Record<string, unknown>, ModuleError>> => {
-  if (!existsSync(file)) {
+  const builtin = BuiltinModuleSchema.safeParse(file).success;
+  if (!builtin && !existsSync(file)) {
     return { ok: false, error: { kind: "missing-module", message: `module not found: ${file}` } };
   }
   try {
-    return { ok: true, value: await import(pathToFileURL(file).href) };
+    return { ok: true, value: await import(builtin ? file : pathToFileURL(file).href) };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return {

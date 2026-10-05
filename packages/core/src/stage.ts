@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { access } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
   type Config,
@@ -12,7 +14,7 @@ import {
   SlugSchema,
   spawnDetached,
 } from "@yok/sdk";
-import { selfArgv } from "@yok/sdk/internal";
+import { devPluginDir, selfArgv, VERSION } from "@yok/sdk/internal";
 import * as z from "zod";
 
 const UniqueSlugsSchema = z
@@ -112,10 +114,36 @@ type ResolveOptions = Readonly<{
 export const own = <T>(record: Readonly<Record<string, T>>, key: string): T | undefined =>
   Object.hasOwn(record, key) ? record[key] : undefined;
 
-// Yok's own skills ship beside this code, so their text always matches this version;
-// YOK_SKILLS_DIR points tests at a demo set instead.
-export const yokSkillsDir = (): string =>
-  process.env.YOK_SKILLS_DIR || join(import.meta.dir, "..", "..", "..", "skills");
+// Skills ship only in the agent plugin, which `yok plugin install` pins to this program's
+// version, so a compiled binary reads that version's folder in the agent's plugin cache.
+export const findPluginSkills = (
+  env: NodeJS.ProcessEnv,
+  version: string,
+  home: string = homedir(),
+): Result<string> => {
+  const roots = [
+    env.CLAUDE_CONFIG_DIR || join(home, ".claude"),
+    env.CODEX_HOME || join(home, ".codex"),
+  ];
+  const found = roots
+    .map((root) => join(root, "plugins", "cache", "yok", "yok", version, "skills"))
+    .find((dir) => existsSync(dir));
+  if (found !== undefined) return { ok: true, value: found };
+  return {
+    ok: false,
+    error: `the yok plugin ${version} is not installed; run: yok plugin install --agent claude`,
+  };
+};
+
+// From source the repo's skills/ is the plugin. YOK_SKILLS_DIR points tests at a demo set.
+export const yokSkillsDir = (env: NodeJS.ProcessEnv = process.env): string => {
+  if (env.YOK_SKILLS_DIR) return env.YOK_SKILLS_DIR;
+  const repo = devPluginDir();
+  if (repo !== undefined) return join(repo, "skills");
+  const found = findPluginSkills(env, VERSION);
+  if (!found.ok) throw new Error(found.error);
+  return found.value;
+};
 
 // Agent hooks, the status line and the detached helpers start this same program again, so a
 // release run calls the release binary and a dev run calls the source it started from.

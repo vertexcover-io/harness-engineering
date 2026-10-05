@@ -23,6 +23,7 @@ type ExecRun = Readonly<{
   input: JsonValue;
   path: string;
   cwd: string;
+  scriptDir: string;
   fn: WorkflowFunction | undefined;
   schema: OutputSchema | undefined;
 }>;
@@ -94,6 +95,7 @@ const runScriptNode = async (
     script: node.script,
     input: run.input,
     cwd: context.cwd,
+    scriptDir: run.scriptDir,
     timeoutMs: node.timeoutMs,
   });
   try {
@@ -132,9 +134,9 @@ const runExec = async (run: ExecRun, number = 1): Promise<NodeRecord> => {
 export const runStepLeaf = async (
   node: PlanExecNode | WaitNode,
   input: JsonValue,
-  options: Readonly<{ cwd: string; path: string }>,
+  options: Readonly<{ cwd: string; path: string; scriptDir: string }>,
 ): Promise<NodeRecord> => {
-  const { cwd, path } = options;
+  const { cwd, path, scriptDir } = options;
   if (node.type === "wait") {
     await Bun.sleep(node.durationMs);
     return { path, type: node.type, status: "completed", output: input, attempts: 1 };
@@ -148,7 +150,7 @@ export const runStepLeaf = async (
       node.outputSchema === undefined
         ? undefined
         : { name: node.output?.zodSchema ?? "Json", schema: node.outputSchema };
-    return await runExec({ node, input, path, cwd: resolve(cwd), fn, schema });
+    return await runExec({ node, input, path, cwd: resolve(cwd), scriptDir, fn, schema });
   } catch (error) {
     return buildFailedRecord(node, path, toFailure(error));
   }

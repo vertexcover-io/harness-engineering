@@ -10,7 +10,7 @@ import {
   workflowChecks,
 } from "@yok/core";
 import { createGit, type JsonObject, loadNamedConfig, spawnInteractive } from "@yok/sdk";
-import { isCompiled } from "@yok/sdk/internal";
+import { isCompiled, VERSION } from "@yok/sdk/internal";
 import { runtimeChecks } from "@yok/server";
 import {
   apiErrorText,
@@ -22,6 +22,7 @@ import {
   openForPerson,
   yokClient,
 } from "./client.ts";
+import { writeProjectTypes } from "./types.ts";
 
 const collectInput = (pair: string, acc: Record<string, string>): Record<string, string> => {
   const index = pair.indexOf("=");
@@ -80,6 +81,9 @@ export const runCommand = () =>
 
       const repoRoot = await createGit().repoRoot(cwd);
       if (repoRoot === null) return fail("not inside a git repository");
+      await writeProjectTypes(repoRoot, VERSION).catch((error: unknown) =>
+        log.warn({ err: error }, "could not write the SDK types to .yok/types"),
+      );
       if (!env.ok) return fail(env.error);
 
       await ensureServer();
