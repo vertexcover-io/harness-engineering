@@ -16,15 +16,7 @@ import {
 } from "./report-media.ts";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "../../../packages/cli/src/index.ts");
-const REPORT_MEDIA = [
-  "--no-env-file",
-  CLI,
-  "orchestrate",
-  "script",
-  "--skill",
-  "qa",
-  "scripts/report-media.ts",
-];
+const REPORT_MEDIA = ["--no-env-file", CLI, "orchestrate", "skill", "run", "qa.report-media"];
 
 const ffmpegMissing = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status !== 0;
 const needsFfmpeg = ffmpegMissing ? "ffmpeg is not on PATH" : false;
@@ -116,10 +108,7 @@ test("SC51, SC5: a directory with no screenshots folder at all exits 0 the same 
 
 test("SC51, SC6: a missing or extra argument, or an absent directory, exits 2", () => {
   assert.equal(run().status, 2);
-  assert.match(
-    run().stderr,
-    /usage: yok orchestrate script --skill qa scripts\/report-media\.ts \[--inline\] VERIFICATION_DIR/,
-  );
+  assert.match(run().stderr, /usage: report-media\.ts \[--inline\] VERIFICATION_DIR/);
   assert.equal(run("a", "b").status, 2);
   assert.equal(run(join(sandbox("gone"), "nope")).status, 2);
 });

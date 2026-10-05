@@ -29,7 +29,7 @@ export const WorkflowRunSchema = z.strictObject({
   workflowPath: NonEmptyStringSchema,
   inputs: JsonObjectSchema,
   cwd: NonEmptyStringSchema,
-  // agent sessions of this run, first = the one start run launched
+  // The first is the session `yok run` launched.
   sessions: z.array(SessionRefSchema),
   // Set by init; the run's folder is CWD/.yok/NAME.
   name: SlugSchema.nullable(),

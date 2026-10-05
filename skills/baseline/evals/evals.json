@@ -8,7 +8,7 @@
       "expected_output": "Runs the baseline script for run feat-x, replies with the JSON it printed, and finishes the stage with the baseline artifact.",
       "files": [],
       "expectations": [
-        "Resolves the script with `orchestrate skill ref --path baseline.script` and runs it with `--run feat-x` and no --packages flag",
+        "Runs the script with `orchestrate skill run baseline.script --run feat-x` and no --packages flag",
         "Waits for the command to finish rather than stopping it early",
         "The stage output is exactly the printed { path, workspace, packages } JSON",
         "Finishes the stage with `--artifact baseline=artifacts/baseline.json`"

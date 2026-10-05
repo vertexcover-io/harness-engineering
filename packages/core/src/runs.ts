@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { access, copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -53,8 +52,8 @@ import {
 } from "@yok/sdk/internal";
 import * as z from "zod";
 import { buildNotifierHooks, pickNotifier } from "./notifier-hooks.ts";
-import { extensionPath, findStageDir, yokSkillsDir } from "./stage.ts";
-import { compileWorkflow, readWorkflowFile } from "./workflow/compile.ts";
+import { extensionPath } from "./stage.ts";
+import { compileRunWorkflow, compileWorkflow, readWorkflowFile } from "./workflow/compile.ts";
 import {
   type CompletionIssue,
   CompletionIssueSchema,
@@ -78,7 +77,6 @@ import {
   type PlanAgentNode,
   type PlanContextNode,
   type PlanNode,
-  type PlanStage,
   WorkflowError,
   type WorkflowPlan,
 } from "./workflow/types.ts";
@@ -144,7 +142,7 @@ const resolveHooks = (hooks: Hooks, base: string): HookRefs =>
     ]),
   );
 
-// A name both give one event type would never be recorded twice: its call id would already exist.
+// A hook named twice for one event would run once: its call id would already exist.
 const mergeHooks = (first: HookRefs, second: HookRefs): Result<HookRefs> => {
   const types = [...new Set([...Object.keys(first), ...Object.keys(second)])];
   const merged = Object.fromEntries(
@@ -158,8 +156,8 @@ const mergeHooks = (first: HookRefs, second: HookRefs): Result<HookRefs> => {
   };
 };
 
-// Config hooks first, then the workflow's, then the notifier, whose workflow block replaces the
-// config's whole. Relative paths resolve against the file declaring them.
+// The workflow's notifier block replaces the config's whole. Relative paths resolve against the
+// file that declares them.
 export const freezeHooks = async (
   run: WorkflowRun,
   config: Config,
@@ -244,9 +242,10 @@ const pickSwitchTiers = (
 // init, not mid-run.
 const checkNodeTiers = async (
   run: WorkflowRun,
+  config: CheckoutConfig,
   modelSwitchAgents: ReadonlySet<AgentType>,
 ): Promise<Result<void>> => {
-  const plan = await compileWorkflow(run.workflowPath, { cwd: run.cwd });
+  const plan = await compileWorkflow(run.workflowPath, { cwd: run.cwd, config });
   const tiers = pickSwitchTiers(plan.agent, run.tiers, modelSwitchAgents);
   if (tiers === null) return { ok: true, value: undefined };
   const unmapped = new Set(
@@ -286,7 +285,7 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
   const { config, path, root } = loaded.value;
   const hooks = await freezeHooks(run, config, root);
   if (!hooks.ok) return hooks;
-  const staged = await checkNodeTiers(run, options.modelSwitchAgents);
+  const staged = await checkNodeTiers(run, loaded.value, options.modelSwitchAgents);
   if (!staged.ok) return staged;
   return {
     ok: true,
@@ -364,7 +363,7 @@ export type StepReply =
 
 type Call = Readonly<{ command: "next" | "exec" | "done"; input: JsonValue }>;
 
-// A reply is plain data the CLI prints as JSON; parsing it gives it the type an event payload takes.
+// Parsing gives the reply the type an event payload needs.
 const replyOf = (outcome: Result<unknown, string | DoneError> | Error): JsonValue => {
   if (outcome instanceof Error) return eventError("error", outcome.message, stackOf(outcome));
   if (!outcome.ok) {
@@ -375,7 +374,6 @@ const replyOf = (outcome: Result<unknown, string | DoneError> | Error): JsonValu
   return z.json().parse(outcome.value);
 };
 
-// What a done call did to its node, logged beside its reply.
 const doneStatusOf = (outcome: Result<StepReport, DoneError> | Error): DoneStatus => {
   if (outcome instanceof Error) return "error";
   if (outcome.ok) return outcome.value.status;
@@ -383,8 +381,7 @@ const doneStatusOf = (outcome: Result<StepReport, DoneError> | Error): DoneStatu
   return outcome.error.kind === "verify-exhausted" ? "failed" : "error";
 };
 
-// Logs the call to event.jsonl with what it was given and what it replied, even when it threw,
-// so the log shows every step the skill took. The call's own result or error is passed on.
+// Logged even when the call threw, so the log shows every step the skill took.
 const logCall = async <T, E extends string | DoneError = string>(
   run: RunRef,
   call: Call,
@@ -451,48 +448,12 @@ const readRunState = async (runDir: string): Promise<State> => {
 
 type RunDirRef = Pick<RunRef, "cwd" | "name">;
 
-const compileWorkflowPlan = (run: RunDirRef): Promise<WorkflowPlan> =>
-  compileWorkflow(join(runDirOf(run.cwd, run.name), "workflow.yaml"), { cwd: run.cwd });
-
-// Every stage a compiled workflow runs, with includes, loops and switches searched.
-const planStages = (nodes: readonly PlanNode[]): readonly PlanStage[] =>
-  nodes.flatMap((node): readonly PlanStage[] => {
-    if (node.type === "agent") return node.stage === undefined ? [] : [node.stage];
-    if (node.type === "include") return planStages(node.plan.nodes);
-    if (node.type === "loop") return planStages(node.nodes);
-    if (node.type === "switch") {
-      return [...node.cases.flatMap((c) => planStages(c.nodes)), ...planStages(node.default ?? [])];
-    }
-    return [];
-  });
-
-const notFound = (name: string, tried: readonly string[]): Result<string> => ({
-  ok: false,
-  error: `no skill ${name}; tried: ${tried.join(", ")}`,
-});
-
-// The folder `yok orchestrate script --skill NAME` reads FILE from: a project folder when NAME
-// has a "/", else the run's workflow stage named NAME, else the skills folder.
-export const resolveSkillDir = async (
-  name: string,
-  options: Readonly<{ root: string; run?: RunDirRef | undefined }>,
-): Promise<Result<string>> => {
-  if (name.includes("/")) {
-    const dir = findStageDir(name, options.root);
-    return existsSync(dir) ? { ok: true, value: dir } : notFound(name, [dir]);
-  }
-  const { run } = options;
-  const stages = run === undefined ? [] : planStages((await compileWorkflowPlan(run)).nodes);
-  const stage = stages.find((candidate) => candidate.name === name);
-  if (stage !== undefined) return { ok: true, value: dirname(stage.skill) };
-  const dir = join(yokSkillsDir(), name);
-  if (existsSync(dir)) return { ok: true, value: dir };
-  const inRun = run === undefined ? [] : [`a stage named ${name} in run ${run.name}'s workflow`];
-  return notFound(name, [...inRun, dir]);
+const loadRunPlan = async (run: RunDirRef, state: State): Promise<Result<WorkflowPlan>> => {
+  const config = await loadRecordedConfig(state.config, run.cwd);
+  return config.ok ? { ok: true, value: await compileRunWorkflow(run, config.value) } : config;
 };
 
-// The env the first session of a run started from cwd gets. yok run builds it once, for its
-// doctor and for the server; agent is the one the session launches.
+// yok run builds this once, so its doctor and the server see the same values.
 export const loadStartEnv = async (
   config: string | null,
   cwd: string,
@@ -508,8 +469,10 @@ export const loadSessionEnv = async (
   run: RunRef,
   agent: AgentType,
 ): Promise<Result<Record<string, string>>> => {
-  const [config, plan] = await Promise.all([loadRunConfig(run), compileWorkflowPlan(run)]);
-  return config.ok ? loadEnv(config.value, { ...plan, agent }, run.cwd) : config;
+  const config = await loadRunConfig(run);
+  if (!config.ok) return config;
+  const plan = await compileRunWorkflow(run, config.value);
+  return loadEnv(config.value, { ...plan, agent }, run.cwd);
 };
 
 const buildLeafReply = (
@@ -550,19 +513,15 @@ const buildLeafReply = (
   };
 };
 
-// Walks the run to its next step, saving each engine event to event.jsonl as it is recorded.
 const walkToNextStep = async (
   run: RunRef,
   modelSwitchAgents: ReadonlySet<AgentType>,
 ): Promise<Result<StepReply>> => {
   const runDir = runDirOf(run.cwd, run.name);
-  const [plan, state, events] = await Promise.all([
-    compileWorkflowPlan(run),
-    readRunState(runDir),
-    jsonlEventStore(runDir).read(),
-  ]);
+  const [state, events] = await Promise.all([readRunState(runDir), jsonlEventStore(runDir).read()]);
   const config = await loadRecordedConfig(state.config, run.cwd);
   if (!config.ok) return config;
+  const plan = await compileRunWorkflow(run, config.value);
   const emit: Emit = async (_state, event) => {
     const appended = await appendRunEvent(run, event);
     if (!appended.ok) throw new Error(`${event.type} was not stored: ${appended.error}`);
@@ -582,18 +541,17 @@ export const nextStep = (
 ): Promise<Result<StepReply>> =>
   logCall(run, { command: "next", input: {} }, walkToNextStep(run, modelSwitchAgents));
 
-// The step the run is at, when `nodeRunId` is its run, read from its workflow and state.json.
 const loadRunningLeaf = async (run: RunRef, nodeRunId: string): Promise<Result<RunningLeaf>> => {
-  const runDir = runDirOf(run.cwd, run.name);
-  const [plan, state] = await Promise.all([compileWorkflowPlan(run), readRunState(runDir)]);
-  const step = findRunningLeaf(plan.nodes, state.nodeRuns, nodeRunId);
+  const state = await readRunState(runDirOf(run.cwd, run.name));
+  const plan = await loadRunPlan(run, state);
+  if (!plan.ok) return plan;
+  const step = findRunningLeaf(plan.value.nodes, state.nodeRuns, nodeRunId);
   if (step === undefined) {
     return { ok: false, error: `${nodeRunId} is not the step this run is running` };
   }
   return { ok: true, value: step };
 };
 
-// The event that records how a step ended.
 const buildStepEndEvent = (
   step: RunningLeaf,
   record: NodeRecord,
@@ -658,7 +616,6 @@ const loadContextLeaf = async (run: RunRef, nodeRunId: string): Promise<Result<C
   return { ok: true, value: { node, nodeRun } };
 };
 
-// The open context node `nodeRunId` names: what it asks for (action, and prompt for a compact).
 export const findContextPlanNode = async (
   run: RunRef,
   nodeRunId: string,
@@ -667,9 +624,8 @@ export const findContextPlanNode = async (
   return leaf.ok ? { ok: true, value: leaf.value.node } : leaf;
 };
 
-// A context node always completes: a new session or a compact that did not happen leaves the
-// agent with the context it had, which is no reason to skip the steps after it. Its output says
-// whether the action was applied.
+// A context node always completes: if the new session or compact didn't happen, the agent just
+// keeps its context, which is no reason to skip later steps. The output says whether it applied.
 export const completeContextStep = async (
   run: RunRef,
   nodeRunId: string,
@@ -695,7 +651,6 @@ const isRunningNodeRun = (runs: Readonly<Record<string, NodeRun>>, nodeRunId: st
       (nodeRun.nodeRunId === nodeRunId || isRunningNodeRun(nodeRun.nodes ?? {}, nodeRunId)),
   );
 
-// Finishes an agent or stage node that next handed out, with the output or error the agent reports.
 const recordStepEnd = async (
   run: RunRef,
   nodeRunId: string,
@@ -811,8 +766,7 @@ const storeStepEnd = async (
     : { ok: false, error: { kind: "storage", retryable: false, message: stored.error } };
 };
 
-// What rejects this done, and how many earlier dones were rejected. The log is only read when this
-// done could be rejected.
+// The log is read only when this done could be rejected.
 const checkCompletion = async (
   run: RunRef,
   node: PlanAgentNode,
@@ -842,7 +796,6 @@ const checkCompletion = async (
   return { output, issues: issuesOf(runs), rejected };
 };
 
-// One orchestrate.verifier event per verifier, in the order the stage lists them.
 const logVerifierRuns = async (
   run: RunRef,
   node: PlanAgentNode,
@@ -872,7 +825,6 @@ const RejectedDoneEventSchema = z.object({
   }),
 });
 
-// Earlier rejected done calls for this node run, counted from the calls logCall keeps.
 const countRejectedDones = async (run: RunDirRef, nodeRunId: string): Promise<number> => {
   const events = await jsonlEventStore(runDirOf(run.cwd, run.name)).read();
   return events.filter((event) => {
@@ -923,19 +875,19 @@ export const finishStep = (
     doneStatusOf,
   );
 
-// Helpers for verifiers. A run is found by its name and the folder it was started in, which a
-// function verifier gets as context.cwd and a script verifier as its working directory.
+// A verifier finds its run by name and by the folder it started in: context.cwd for a function,
+// the working directory for a script.
 
-// Everything a verifier can ask about a node run, reading the workflow, state.json and the log once.
 export const getNodeFacts = async (run: string, nodeRunId: string, cwd: string) => {
   const ref = { cwd, name: run };
   const runDir = runDirOf(cwd, run);
-  const [plan, state, rejected] = await Promise.all([
-    compileWorkflowPlan(ref),
+  const [state, rejected] = await Promise.all([
     readRunState(runDir),
     countRejectedDones(ref, nodeRunId),
   ]);
-  const step = findRunningLeaf(plan.nodes, state.nodeRuns, nodeRunId);
+  const plan = await loadRunPlan(ref, state);
+  if (!plan.ok) throw new Error(plan.error);
+  const step = findRunningLeaf(plan.value.nodes, state.nodeRuns, nodeRunId);
   if (step === undefined) throw new Error(`${nodeRunId} is not the step this run is running`);
   const { node, nodeRun } = step;
   const stage = node.type === "agent" ? node.stage : undefined;
@@ -952,7 +904,7 @@ export const getNodeFacts = async (run: string, nodeRunId: string, cwd: string) 
   };
 };
 
-// The command an agent runs to act on a run; step replies and hook messages both name it this way.
+// Step replies and hook messages both build the command this way, so they always match.
 export const orchestrateLine = ({
   verb,
   run,

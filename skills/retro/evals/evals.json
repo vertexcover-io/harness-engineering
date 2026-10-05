@@ -11,7 +11,7 @@
         "skills/retro/evals/files/eval1_event.jsonl"
       ],
       "expectations": [
-        "Runs `yok orchestrate script --skill retro scripts/retro.ts extract` on the fixture transcript before reading it",
+        "Runs the `retro` script's `extract` on the fixture transcript before reading it",
         "Writes retro.md, opening with the facts table",
         "Every command the retro runs is read-only apart from writes to the extraction folder and retro.md",
         "Any text taken from the PR comment appears in retro.md as a quotation with a main-1.jsonl line citation"

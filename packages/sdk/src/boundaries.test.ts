@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Glob } from "bun";
 
 const filesContaining = (
@@ -187,23 +188,21 @@ describe("source boundaries", () => {
     expect(sources).toEqual([]);
   });
 
-  test("SC44: no skill text runs a script through bun run or node, and every yok orchestrate script --skill it names exists and exports main", () => {
+  test("SC44: no skill text runs a script through bun run, node or orchestrate script --skill, and every script a skill declares as a reference exports main", () => {
     // Built from parts so this file's own needle text can't match itself.
     const oldRunners = new RegExp(
       [
-        ...["workspace", "ticket", "linear", "baseline"].map((name) => `bun run ${name}`),
+        ...["workspace", "ticket", "linear", "baseline", "retro"].map((name) => `bun run ${name}`),
         ["node", "--experimental-strip-types"].join(" "),
+        ["orchestrate script", "--skill"].join(" "),
       ].join("|"),
     );
     expect(filesContaining("skills/**/*.md", oldRunners)).toEqual([]);
-    const named = [...new Glob("skills/**/*.md").scanSync(".")].flatMap((file) =>
-      [
-        ...readFileSync(file, "utf8").matchAll(
-          /yok orchestrate script --skill ([\w-]+) (\S+\.[cm]?[jt]s)\b/g,
-        ),
-      ].map(([, skill, script]) => `skills/${skill}/${script}`),
+    const scripts = [...new Glob("skills/*/SKILL.md").scanSync(".")].flatMap((file) =>
+      [...readFileSync(file, "utf8").matchAll(/^ +path: (scripts\/\S+\.[cm]?[jt]s)$/gm)].map(
+        ([, script]) => join(dirname(file), script ?? ""),
+      ),
     );
-    const scripts = [...new Set(named)].sort();
     expect(scripts.length).toBeGreaterThan(0);
     const broken = scripts.filter(
       (path) =>
@@ -211,6 +210,12 @@ describe("source boundaries", () => {
         !/export (const|(async )?function) main\b/.test(readFileSync(path, "utf8")),
     );
     expect(broken).toEqual([]);
+  });
+
+  test("core's stage.ts never imports the workflow compiler, which imports it", () => {
+    expect(
+      filesContaining("packages/core/src/stage.ts", /from "\.\/workflow\/compile\.ts"/),
+    ).toEqual([]);
   });
 
   test("sdk never imports core, so it installs as a library on its own", () => {

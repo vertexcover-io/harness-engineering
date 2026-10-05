@@ -7,6 +7,7 @@ export type DemoStage = Readonly<{
   verifiers?: string;
   variables?: string;
   tier?: string;
+  references?: string;
 }>;
 
 // Functions the demo stages name as verifiers; `args.file` makes `record` write what it was given.
@@ -26,7 +27,7 @@ export const record = (input, context) => {
 `;
 
 // Writes DIR/NAME/SKILL.md for each demo stage, declaring the artifacts it consumes and produces
-// and the variables it takes.
+// and the variables and references it takes.
 export const writeStages = (dir: string, stages: Readonly<Record<string, DemoStage>>): void => {
   mkdirSync(dir, { recursive: true });
   const zodUrl = import.meta.resolve("zod");
@@ -35,7 +36,8 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
     `import { z } from ${JSON.stringify(zodUrl)};\nexport const schemas = { "demo.output.v1": z.record(z.string(), z.json()) };\n`,
   );
   writeFileSync(join(dir, "verifiers.ts"), VERIFIERS_MODULE);
-  for (const [name, { consumes, produces, verifiers, variables, tier }] of Object.entries(stages)) {
+  for (const [name, stage] of Object.entries(stages)) {
+    const { consumes, produces, verifiers, variables, references, tier } = stage;
     mkdirSync(join(dir, name), { recursive: true });
     const lines = [
       "---",
@@ -50,6 +52,7 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
       ...(produces === undefined ? [] : [`produces: ${produces}`]),
       ...(verifiers === undefined ? [] : [`verifiers: ${verifiers}`]),
       ...(variables === undefined ? [] : [`variables: ${variables}`]),
+      ...(references === undefined ? [] : [`references: ${references}`]),
       "protocols: []",
       "scopes: []",
       "---",

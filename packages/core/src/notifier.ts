@@ -22,7 +22,7 @@ import { isInsideDir } from "./workflow/done.ts";
 export type Notice = Readonly<{
   title: string;
   body: string;
-  // address it to the person: the moments they must act on
+  // Mention the person; set for moments they must act on.
   mention: boolean;
   // artifact files, relative to the run folder, to upload into the thread
   files: readonly string[];

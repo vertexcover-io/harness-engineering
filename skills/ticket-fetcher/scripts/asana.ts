@@ -123,8 +123,8 @@ export const downloadAsset = async (api: Api, gid: string, target: Target): Prom
 };
 
 const USAGE = `usage:
-  yok orchestrate script --skill ticket-fetcher scripts/asana.ts task GID_OR_URL
-  yok orchestrate script --skill ticket-fetcher scripts/asana.ts asset ATTACHMENT_GID --dir DIR --name NAME`;
+  asana.ts task GID_OR_URL
+  asana.ts asset ATTACHMENT_GID --dir DIR --name NAME`;
 
 const runCommand = async (cwd: string, argv: readonly string[]): Promise<unknown> => {
   const { positionals, values } = parseArgs({

@@ -282,7 +282,7 @@ export const runProviderCli = async (
   }
 };
 
-const USAGE = "usage: yok orchestrate script --skill ticket-fetcher scripts/ticket.ts validate DIR";
+const USAGE = "usage: ticket.ts validate DIR";
 
 export const main = async (argv: readonly string[]): Promise<void> => {
   const [command, dir] = argv;

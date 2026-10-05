@@ -1,6 +1,6 @@
 # Transcript schema and hand-written queries
 
-`yok orchestrate script --skill retro scripts/retro.ts extract` covers the bulk extraction. This file covers what it cannot: the record
+The `retro` script's `extract` covers the bulk extraction. This file covers what it cannot: the record
 shape, and the per-run queries you write yourself during Step 1 and Step 2 of `audit-method.md`.
 
 ## Contents
@@ -108,7 +108,7 @@ and a path containing `review`. Print `input['content']`.
 
 **D11 — Claim versus catch.** For each coder agent in `06-subagents.txt`, take its `FINAL` line:
 what it said it finished, and for which files. Open the whole message with
-`yok orchestrate script --skill retro scripts/retro.ts cite AGENT.jsonl LINE --full`, using the line number after `FINAL :`. Then search
+the `retro` script's `cite AGENT.jsonl LINE --full`, using the line number after `FINAL :`. Then search
 the D10 review text for the same file names. A review finding against a file the coder reported
 as done and passing is a hit. Cite both: the coder's final message and the reviewer's `Write`.
 
@@ -160,8 +160,9 @@ grep -nE "TODO|\{\{|<[a-z-]+>" OUT/03-tool-calls.txt | grep -i write
 
 ```bash
 grep -n 'distinctive phrase' MAIN.jsonl | cut -c1-200
-yok orchestrate script --skill retro scripts/retro.ts cite MAIN.jsonl LINE --context 5
 ```
+
+Then run the `retro` script with `cite MAIN.jsonl LINE --context 5` for each line it finds.
 
 ## Discipline
 

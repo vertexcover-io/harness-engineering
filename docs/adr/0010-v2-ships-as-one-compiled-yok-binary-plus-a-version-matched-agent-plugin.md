@@ -13,7 +13,7 @@ A user's project has no bun, no node and no checkout of this repo, yet v2 ran as
 
 ## Considered Options
 
-- One `bun build --compile` binary per platform carrying the CLI, orchestrate and the SDK, plus the Claude/Codex plugin (the skills and their scripts, run through `yok orchestrate script`) installed at the binary's own tag; one `install.sh` installs both
+- One `bun build --compile` binary per platform carrying the CLI, orchestrate and the SDK, plus the Claude/Codex plugin (the skills and their scripts, run through `yok orchestrate skill run`) installed at the binary's own tag; one `install.sh` installs both
 - Publish `@yok/*` packages to npm and have users install them with a package manager
 - Keep running bun scripts from a checkout of this repo
 

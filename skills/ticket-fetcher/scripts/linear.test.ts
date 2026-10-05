@@ -61,15 +61,7 @@ const base = `http://${server.hostname}:${server.port}`;
 const api: Api = { url: `${base}/graphql`, key: "secret-key" };
 const dir = mkdtempSync(join(tmpdir(), "linear-"));
 const CLI = join(import.meta.dir, "../../../packages/cli/src/index.ts");
-const LINEAR = [
-  "--no-env-file",
-  CLI,
-  "orchestrate",
-  "script",
-  "--skill",
-  "ticket-fetcher",
-  "scripts/linear.ts",
-];
+const LINEAR = ["--no-env-file", CLI, "orchestrate", "skill", "run", "ticket-fetcher.linear-api"];
 
 // Async spawn: a sync one would block this process's fake server from answering.
 const runCli = async (args: readonly string[], cwd: string) => {
@@ -349,7 +341,7 @@ const withKey = () => {
   return root;
 };
 
-describe("SC50: the linear CLI through yok orchestrate script", () => {
+describe("SC50: the linear CLI through yok orchestrate skill run", () => {
   test("search prints the candidates as JSON", async () => {
     const { code, stdout } = await runCli(["search", "export", "--limit", "5"], withKey());
     expect(code).toBe(0);
@@ -399,7 +391,7 @@ describe("SC50: the linear CLI through yok orchestrate script", () => {
   );
 });
 
-describe("SC50: linear CLI downloads through yok orchestrate script", () => {
+describe("SC50: linear CLI downloads through yok orchestrate skill run", () => {
   test("asset URL --dir DIR --name NAME writes the file and prints its info", async () => {
     const root = withKey();
     const { code, stdout } = await runCli(

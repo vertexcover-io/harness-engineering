@@ -1,14 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -29,10 +21,11 @@ type Ran = Readonly<{ code: number | null; stdout: string; stderr: string }>;
 
 const script = (
   args: readonly string[],
-  options: Readonly<{ cwd: string; skills?: string }>,
+  options: Readonly<{ cwd: string; skills?: string; command?: readonly string[] }>,
 ): Ran => {
   const { YOK_RUN_ID: _runId, ...env } = process.env;
-  const run = spawnSync("bun", ["--no-env-file", CLI, "orchestrate", "script", ...args], {
+  const command = options.command ?? ["script"];
+  const run = spawnSync("bun", ["--no-env-file", CLI, "orchestrate", ...command, ...args], {
     cwd: options.cwd,
     encoding: "utf8",
     env: { ...env, YOK_HOME: tempDir(), YOK_SKILLS_DIR: options.skills ?? tempDir() },
@@ -75,44 +68,17 @@ describe("yok orchestrate script FILE", () => {
     expect(boom.stderr).toMatch(/at .*boom\.ts/);
   });
 
-  test("SC56: a missing file exits 1 naming the path it looked for, and an unknown skill lists every place tried", () => {
+  test("SC56: a missing file exits 1 naming the path it looked for", () => {
     const cwd = tempDir();
-    const skills = writeFiles(tempDir(), { "ticket-fetcher/SKILL.md": "# ticket\n" });
-    const inSkill = script(["--skill", "ticket-fetcher", "scripts/nope.ts"], { cwd, skills });
-    expect(inSkill.code).toBe(1);
-    expect(inSkill.stderr).toContain(join(skills, "ticket-fetcher", "scripts", "nope.ts"));
     const plain = script(["missing.ts"], { cwd });
     expect(plain.code).toBe(1);
     expect(plain.stderr).toContain(join(cwd, "missing.ts"));
-    const noSkill = script(["--skill", "nope", "x.ts"], { cwd, skills });
-    expect(noSkill.code).toBe(1);
-    expect(noSkill.stderr).toContain(join(skills, "nope"));
-  });
-
-  test("SC59: --skill demo refuses ../other/x.ts and a symlink to it, never running it, and runs scripts/ok.ts", () => {
-    const cwd = tempDir();
-    const marker = join(tempDir(), "ran");
-    const skills = writeFiles(tempDir(), {
-      "demo/scripts/ok.ts": 'console.log("ok");\n',
-      "other/x.ts": `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "x");\n`,
-    });
-    symlinkSync(join(skills, "other", "x.ts"), join(skills, "demo", "scripts", "link.ts"));
-    for (const file of ["../other/x.ts", "scripts/link.ts"]) {
-      const ran = script(["--skill", "demo", file], { cwd, skills });
-      expect(ran.code).toBe(1);
-      expect(ran.stderr).toContain("outside the skill folder");
-    }
-    expect(existsSync(marker)).toBe(false);
-    expect(script(["--skill", "demo", "scripts/ok.ts"], { cwd, skills })).toMatchObject({
-      code: 0,
-      stdout: "ok\n",
-    });
   });
 });
 
 const DEMO_SKILL = `---
 name: demo
-description: A skill with one script reference.
+description: A skill with a script reference and a text one.
 mode: inline
 allowed-tools: [Bash]
 tier: fast
@@ -122,54 +88,73 @@ references:
   tool:
     path: scripts/tool.ts
     description: The script the skill runs.
+  notes:
+    path: notes.md
+    description: Notes to read.
 ---
 `;
 
 // A git checkout whose config extends the demo skill's tool reference, and the skills folder.
-const extendedTool = (tool: unknown): Readonly<{ cwd: string; skills: string }> => {
+const extendedTool = (tool?: unknown): Readonly<{ cwd: string; skills: string }> => {
+  const extensions = tool === undefined ? {} : { demo: { references: { tool } } };
   const cwd = writeFiles(tempDir(), {
-    "orchestrate.config.json": JSON.stringify({
-      version: 2,
-      extensions: { demo: { references: { tool } } },
-    }),
+    "orchestrate.config.json": JSON.stringify({ version: 2, extensions }),
     "tools/mine.ts":
       'export const main = (argv) => { console.log("mine", argv.join(",")); return 3; };\n',
+    "x.md": "more\n",
   });
   execFileSync("git", ["init", "-q"], { cwd });
   const skills = writeFiles(tempDir(), {
     "demo/SKILL.md": DEMO_SKILL,
-    "demo/scripts/tool.ts": 'console.log("skill tool");\n',
-    "demo/scripts/other.ts": 'console.log("other");\n',
+    "demo/notes.md": "notes\n",
+    "demo/scripts/tool.ts":
+      'export const main = (argv) => { console.log("skill tool", argv.join(",")); };\n',
   });
   return { cwd, skills };
 };
 
-describe("yok orchestrate script --skill with the project's extension", () => {
-  test("a replaced reference runs the project's file with the same arguments and exit code, and a file that is no reference runs as it is", () => {
+const skillRun = (args: readonly string[], options: Readonly<{ cwd: string; skills: string }>) =>
+  script(args, { ...options, command: ["skill", "run"] });
+
+describe("yok orchestrate skill run STAGE.REF", () => {
+  test("a shipped script reference runs with its arguments, options included", () => {
+    expect(skillRun(["demo.tool", "a", "--b"], extendedTool())).toMatchObject({
+      code: 0,
+      stdout: "skill tool a,--b\n",
+    });
+  });
+
+  test("a replaced reference runs the project's file with the same arguments and exit code", () => {
     const options = extendedTool({ replace: "tools/mine.ts" });
-    expect(script(["--skill", "demo", "scripts/tool.ts", "a", "--b"], options)).toMatchObject({
+    expect(skillRun(["demo.tool", "a", "--b"], options)).toMatchObject({
       code: 3,
       stdout: "mine a,--b\n",
-    });
-    expect(script(["--skill", "demo", "scripts/other.ts"], options)).toMatchObject({
-      code: 0,
-      stdout: "other\n",
     });
   });
 
   test('a command reference runs through sh with "a b" kept as one word', () => {
     const options = extendedTool({ command: "printf '%s|'" });
-    expect(script(["--skill", "demo", "scripts/tool.ts", "a b", "--c"], options)).toMatchObject({
+    expect(skillRun(["demo.tool", "a b", "--c"], options)).toMatchObject({
       code: 0,
       stdout: "a b|--c|",
     });
   });
 
-  test("an extended reference is refused, naming its key, and runs nothing", () => {
-    const ran = script(["--skill", "demo", "scripts/tool.ts"], extendedTool({ extend: "x.md" }));
+  test.each([
+    ["a text reference", undefined, "demo.notes"],
+    ["an extended script, which reads as text", { extend: "x.md" }, "demo.tool"],
+  ])("%s is refused, pointing at skill ref, and runs nothing", (_label, tool, target) => {
+    const ran = skillRun([target], extendedTool(tool));
     expect(ran.code).toBe(1);
     expect(ran.stdout).toBe("");
-    expect(ran.stderr).toContain("extensions.demo.references.tool");
+    expect(ran.stderr).toContain(`${target} is text; read it with skill ref`);
+  });
+
+  test("an unknown skill exits 1 listing every place tried", () => {
+    const options = extendedTool();
+    const ran = skillRun(["nope.tool"], options);
+    expect(ran.code).toBe(1);
+    expect(ran.stderr).toContain(join(options.skills, "nope"));
   });
 });
 
@@ -196,22 +181,20 @@ export const main = () => {
   });
 });
 
-describe("yok orchestrate script --help", () => {
-  test("SC47: --help after a skill script reaches its own usage, and yok orchestrate script --help is the command's own", () => {
+describe("--help after a skill's script", () => {
+  test("SC47: reaches the script's own usage, and yok orchestrate script --help is the command's own", () => {
     const cwd = tempDir();
     const skills = join(REPO_ROOT, "skills");
-    for (const [skill, file] of [
-      ["create-workspace", "scripts/workspace.ts"],
-      ["baseline", "scripts/baseline.ts"],
+    for (const [target, file] of [
+      ["create-workspace.workspace", "workspace.ts"],
+      ["baseline.script", "baseline.ts"],
     ] as const) {
-      const ran = script(["--skill", skill, file, "--help"], { cwd, skills });
+      const ran = skillRun([target, "--help"], { cwd, skills });
       expect(ran.code).toBe(0);
-      expect(ran.stdout.startsWith(`usage: yok orchestrate script --skill ${skill} ${file}`)).toBe(
-        true,
-      );
+      expect(ran.stdout.startsWith(`usage: ${file}`)).toBe(true);
     }
     const own = script(["--help"], { cwd, skills });
     expect(own.code).toBe(0);
-    expect(own.stdout).toContain("--skill");
+    expect(own.stdout).toContain("Run a script file");
   });
 });

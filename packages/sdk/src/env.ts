@@ -7,8 +7,8 @@ import { readIfExists, readText } from "./files.ts";
 import { prependPath } from "./process.ts";
 import { type CheckoutConfig, findConfigRoot, findRoot } from "./runs.ts";
 
-// The checkout's .env when it has one, else the main checkout's: the whole file, never merged.
-// The checkout's folder is its config folder, so a multi-layout sub-repo reads the meta folder's.
+// The checkout's own .env if it has one, else the main checkout's; the two are never merged.
+// A repo inside a meta repo looks in the folder findConfigRoot picks.
 const readEnvFile = async (cwd: string): Promise<string | null> => {
   const folder = await findConfigRoot(cwd);
   const own = await readIfExists(join(folder.ok ? folder.value : cwd, ".env"));

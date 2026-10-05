@@ -60,13 +60,16 @@ project's own `node_modules`.
 ### Running scripts
 
 `yok orchestrate script FILE [args...]` runs a `.ts`, `.js` or `.mjs` file with the same
-`@yok/sdk` and `zod` the binary serves to extensions. `yok orchestrate script --skill NAME FILE`
-reads FILE from that skill's folder: a project folder when NAME has a `/`, else the current run's
-workflow stage of that name, else the installed plugin's skill. If the file exports `main(argv)`,
-yok calls it and a number it returns is the exit code; otherwise the import runs the file's
-top-level code, which finds its arguments in `process.argv.slice(2)`. Inside
-`yok orchestrate script`, `import.meta.main` is `false`, so export `main` or leave the top-level
-code unguarded. Other packages still need the project's own `node_modules`.
+`@yok/sdk` and `zod` the binary serves to extensions. If the file exports `main(argv)`, yok
+calls it and a number it returns is the exit code; otherwise the import runs the file's top-level
+code, which finds its arguments in `process.argv.slice(2)`. Inside `yok orchestrate script`,
+`import.meta.main` is `false`, so export `main` or leave the top-level code unguarded. Other
+packages still need the project's own `node_modules`.
+
+A skill names no command for its scripts. It declares each one as a reference in its frontmatter
+and says in plain words when to run it; the launcher runs it with
+`yok orchestrate skill run STAGE.REF [args...]`, which applies the project's `replace` or
+`command` for that reference when the config sets one.
 
 ### Codex settings
 

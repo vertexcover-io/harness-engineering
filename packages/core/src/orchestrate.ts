@@ -1,5 +1,5 @@
-import { appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
 import {
   type AgentAdapter,
@@ -7,18 +7,18 @@ import {
   AgentTypeSchema,
   type ArtifactRef,
   ArtifactRefSchema,
-  type CheckoutConfig,
   createGit,
   emitRunEvent,
   type HookDeps,
   type ILogger,
   type JsonValue,
-  loadPickedConfig,
+  loadRunConfig,
   type PickRunInput,
   pickRun,
   type Result,
   type RunRef,
   readState,
+  readText,
   registryPath,
   requireRun,
   runDirOf,
@@ -61,15 +61,18 @@ import {
   linkRunSession,
   nextStep,
 } from "./runs.ts";
-import { scriptToRun } from "./script.ts";
 import {
-  listReferences,
+  findReference,
+  loadProjectConfig,
+  loadSkill,
   orchestrateArgv,
-  resolveExtension,
-  resolveReference,
-  resolveReferencePath,
+  type Ref,
+  type Skill,
+  type SkillRef,
+  type SkillScope,
 } from "./stage.ts";
 import { renderStatusline } from "./statusline.ts";
+import { runStageDirs } from "./workflow/compile.ts";
 import { WorkflowCompileErrorSchema, WorkflowError } from "./workflow/types.ts";
 
 const RUN_HELP = "spec name of the run, as given to init (default: $YOK_RUN_ID)";
@@ -263,8 +266,8 @@ const parseArtifacts = (pairs: readonly string[]): Result<ArtifactRef[]> => {
   return { ok: true, value: refs };
 };
 
-// "-" reads the value from stdin, so an agent can pass it in a quoted heredoc (<<'EOF'): the
-// shell never parses that text, so quotes, backticks and $(…) in it stay plain text.
+// "-" reads stdin, so an agent can pass text in a quoted heredoc and the shell never touches its
+// quotes, backticks or $(…).
 const readValue = async (value: string): Promise<string> =>
   value === "-" ? (await Bun.stdin.text()).trimEnd() : value;
 
@@ -350,89 +353,152 @@ const nodeCommand = () => {
   return node;
 };
 
-const configFor = async (flags: RunFlags): Promise<Result<CheckoutConfig>> => {
+const skillScope = async (flags: RunFlags): Promise<Result<SkillScope>> => {
   const run = await pickRun(runInputFromFlags(flags));
-  return run.ok ? loadPickedConfig(run.value, process.cwd()) : run;
+  if (!run.ok) return run;
+  if (run.value === undefined) {
+    const config = await loadProjectConfig(null, process.cwd());
+    return config.ok
+      ? { ok: true, value: { root: config.value.root, config: config.value } }
+      : config;
+  }
+  const config = await loadRunConfig(run.value);
+  if (!config.ok) return config;
+  const stages = await runStageDirs(run.value, config.value);
+  return {
+    ok: true,
+    value: { root: run.value.cwd, config: config.value, run: { name: run.value.name, stages } },
+  };
 };
 
-const printResolved = async (
-  skill: string,
-  flags: RunFlags,
-  resolveText: typeof resolveExtension,
-): Promise<void> => {
-  const loaded = await configFor(flags);
-  if (!loaded.ok) return fail(loaded.error);
-  const { root, config } = loaded.value;
-  const options = { root, config, skill };
-  const text = await resolveText(options);
-  if (!text.ok) return fail(text.error);
-  process.stdout.write(text.value);
+const loadScopedSkill = async (name: string, flags: RunFlags): Promise<Result<Skill>> => {
+  const scope = await skillScope(flags);
+  return scope.ok ? loadSkill(name, scope.value) : scope;
 };
+
+const loadTarget = async (target: string, flags: RunFlags): Promise<Result<SkillRef>> => {
+  const dot = target.lastIndexOf(".");
+  if (dot <= 0 || dot === target.length - 1) {
+    return { ok: false, error: `expected STAGE.REF, such as baseline.script; got "${target}"` };
+  }
+  const skill = await loadScopedSkill(target.slice(0, dot), flags);
+  return skill.ok ? findReference(skill.value, target.slice(dot + 1)) : skill;
+};
+
+const runInstead = (target: string): Result<never> => ({
+  ok: false,
+  error: `${target} is a command; run it with skill run`,
+});
+
+const readRef = async (target: string, ref: SkillRef): Promise<Result<string>> => {
+  if (ref.kind === "command") return runInstead(target);
+  const base = await readText(ref.path);
+  if (!base.ok || ref.extraPath === undefined) return base;
+  const extra = await readText(ref.extraPath);
+  return extra.ok ? { ok: true, value: `${base.value.trimEnd()}\n\n${extra.value}` } : extra;
+};
+
+const refPath = (target: string, ref: SkillRef): Result<string> => {
+  if (ref.kind === "command") return runInstead(target);
+  if (ref.extraPath === undefined) return { ok: true, value: ref.path };
+  return { ok: false, error: `${target} is extended by the project, so it has no single file` };
+};
+
+const printText = (text: Result<string>): void =>
+  text.ok ? void process.stdout.write(text.value) : fail(text.error);
+
+const printReferences = async (name: string, flags: RunFlags): Promise<void> => {
+  const skill = await loadScopedSkill(name, flags);
+  if (!skill.ok) return fail(skill.error);
+  const listed = Object.entries(skill.value.references).map(([key, ref]) => ({
+    name: key,
+    description: ref.description,
+  }));
+  process.stdout.write(`${JSON.stringify(listed)}\n`);
+};
+
+const printExtension = async (name: string, flags: RunFlags): Promise<void> => {
+  const skill = await loadScopedSkill(name, flags);
+  if (!skill.ok) return fail(skill.error);
+  const doc = skill.value.extensionDoc;
+  printText(doc === undefined ? { ok: true, value: "" } : await readText(doc));
+};
+
+// "$@" keeps each argument one word, even one with spaces.
+const runTarget = async (ref: Ref, args: readonly string[]): Promise<void> => {
+  if (ref.kind === "command") {
+    const shell = ["-c", `${ref.command} "$@"`, "sh", ...args];
+    process.exitCode = await spawnInteractive("sh", shell, { cwd: process.cwd() });
+    return;
+  }
+  try {
+    const ran = await runScriptFile(ref.path, args);
+    if (!ran.ok) return fail(ran.error.message);
+    if (ran.value !== undefined) process.exitCode = ran.value;
+  } catch (error) {
+    console.error(error);
+    process.exitCode = 1;
+  }
+};
+
+const isRunnable = (ref: Ref): boolean =>
+  ref.kind === "command" || (ref.extraPath === undefined && /\.(ts|js|mjs)$/.test(ref.path));
 
 const skillCommand = () => {
-  const skill = new Command("skill").description(
-    "Print a skill's references and extension docs with the project's extensions applied",
-  );
+  const skill = new Command("skill")
+    .description("Read or run a skill's references with the project's extensions applied")
+    .enablePositionalOptions();
   skill
     .command("ref")
-    .argument("<SKILL.REF>", "skill name, a dot, and a reference from its frontmatter")
-    .option("--path", "print where the reference's file is instead of its text, to run it")
+    .argument("<STAGE.REF>", "skill name, a dot, and a reference from its frontmatter")
+    .option("--path", "print where the reference's file is instead of its text")
     .option("--list", "take a skill name and print its references, the project's added ones too")
     .option("--run <name>", RUN_HELP)
     .option("--run-id <id>", RUN_ID_HELP)
-    .action((target: string, flags) => {
-      if (flags.list) {
-        return printResolved(target, flags, async (options) => {
-          const listed = await listReferences(options);
-          return listed.ok ? { ok: true, value: `${JSON.stringify(listed.value)}\n` } : listed;
-        });
-      }
-      const dot = target.lastIndexOf(".");
-      if (dot <= 0 || dot === target.length - 1) {
-        return fail(`expected SKILL.REF, such as baseline.script; got "${target}"`);
-      }
-      const ref = target.slice(dot + 1);
-      return printResolved(target.slice(0, dot), flags, (options) =>
-        flags.path
-          ? resolveReferencePath({ ...options, ref })
-          : resolveReference({ ...options, ref }),
-      );
-    });
+    .action((target: string, flags) =>
+      runWorkflowCommand(async () => {
+        if (flags.list) return printReferences(target, flags);
+        const ref = await loadTarget(target, flags);
+        if (!ref.ok) return fail(ref.error);
+        printText(flags.path ? refPath(target, ref.value) : await readRef(target, ref.value));
+      }),
+    );
   skill
     .command("extension")
     .argument("<skill>", "skill name")
     .option("--run <name>", RUN_HELP)
     .option("--run-id <id>", RUN_ID_HELP)
-    .action((name, flags) => printResolved(name, flags, resolveExtension));
+    .action((name, flags) => runWorkflowCommand(() => printExtension(name, flags)));
+  // Options after STAGE.REF are the script's own, so passThroughOptions leaves them in args.
+  skill
+    .command("run")
+    .description("Run a skill's script reference, or the project's replacement for it")
+    .argument("<STAGE.REF>", "skill name, a dot, and a script reference from its frontmatter")
+    .argument("[args...]", "passed to the script unchanged")
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
+    .passThroughOptions()
+    .action((target, args, flags) =>
+      runWorkflowCommand(async () => {
+        const ref = await loadTarget(target, flags);
+        if (!ref.ok) return fail(ref.error);
+        if (!isRunnable(ref.value)) return fail(`${target} is text; read it with skill ref`);
+        await runTarget(ref.value, args);
+      }),
+    );
   return skill;
 };
 
-// Options after FILE are the script's own, so passThroughOptions leaves them in args.
 const scriptCommand = () =>
   new Command("script")
-    .description("Run a script file; with --skill, a file inside that skill's folder")
-    .option("--skill <name>", "read FILE from this skill's folder")
-    .option("--run <name>", "the run whose workflow --skill searches for a stage")
-    .option("--run-id <id>", "the run, by id")
+    .description("Run a script file with its arguments")
     .argument("<file>", "the .ts, .js or .mjs file to run")
     .argument("[args...]", "passed to the script unchanged")
     .passThroughOptions()
-    .action(async (file, args, flags) => {
-      const target = await scriptToRun(file, flags);
-      if (!target.ok) return fail(target.error);
-      if ("command" in target.value) {
-        const shell = ["-c", `${target.value.command} "$@"`, "sh", ...args];
-        process.exitCode = await spawnInteractive("sh", shell, { cwd: process.cwd() });
-        return;
-      }
-      try {
-        const ran = await runScriptFile(target.value.file, args);
-        if (!ran.ok) return fail(ran.error.message);
-        if (ran.value !== undefined) process.exitCode = ran.value;
-      } catch (error) {
-        console.error(error);
-        process.exitCode = 1;
-      }
+    .action(async (file, args) => {
+      const path = resolve(process.cwd(), file);
+      if (!existsSync(path)) return fail(`no script at ${path}`);
+      await runTarget({ kind: "file", path }, args);
     });
 
 type HookSpec<H> = Readonly<{
@@ -444,8 +510,7 @@ type HookSpec<H> = Readonly<{
   ) => ((stdin: string, deps: HookDeps, handler: H) => Promise<string>) | undefined;
 }>;
 
-// Always exits 0 and prints only the agent's reply: an error here must never trap a session. An
-// agent without this hook, or a handler yok does not know, prints nothing.
+// Always exits 0: an error here must never trap a session.
 const addHookCommand = <H>(hook: Command, spec: HookSpec<H>): void => {
   hook
     .command(spec.name)
@@ -650,7 +715,7 @@ const limitWaitCommand = () =>
         sessionId: opts.sessionId,
         limitEventId,
         agents: provider === undefined ? {} : { [provider.type]: provider },
-        // the hook that started this helper ran inside the agent's terminal, and left it in env
+        // the hook that started this helper ran in the agent's terminal and left it in env
         terminal: currentTerminal(process.env, log),
         log,
       }).catch((error: unknown) => log.error({ err: error }, "limit wait threw"));
@@ -736,7 +801,7 @@ const runHookCommand = () => {
 export const orchestrateCommand = () =>
   new Command("orchestrate")
     .description("Actions a skill takes on a yok run; each one calls core directly")
-    // script's passThroughOptions throws unless every parent command parses options positionally.
+    // passThroughOptions on a subcommand throws unless every parent parses options positionally.
     .enablePositionalOptions()
     .hook("preAction", () => stopRunningOnSignal())
     .addCommand(initCommand())

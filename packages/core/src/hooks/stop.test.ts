@@ -205,7 +205,8 @@ const setUp = async (nodeRuns: State["nodeRuns"], agent: "claude" | "codex" = "c
   });
   const runDir = runDirOf(cwd, "feat-x");
   await mkdir(runDir, { recursive: true });
-  await writeFile(join(runDir, "state.json"), JSON.stringify({ ...seed, nodeRuns }));
+  const config = { path: null, root: cwd };
+  await writeFile(join(runDir, "state.json"), JSON.stringify({ ...seed, nodeRuns, config }));
   return { runDir, cwd, deps: { registry, env: { YOK_RUN_ID: "r-1" }, log: noopLogger } };
 };
 

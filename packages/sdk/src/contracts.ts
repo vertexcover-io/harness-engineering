@@ -256,8 +256,8 @@ export const StateSchema = z.strictObject({
   custom: JsonObjectSchema.optional(),
   eventHandlers: EventHandlerRefsSchema.default({}),
   hooks: HookRefsSchema.default({}),
-  // Settled by init: the config file the run reads (null = the default config) and the folder its
-  // relative paths resolve against. A run initialized before this field searched its checkout.
+  // Set by init: the config file (null = the default config) and the folder its paths resolve
+  // against. Optional because older runs lack it; they search their checkout instead.
   config: z
     .strictObject({ path: AbsolutePathSchema.nullable(), root: AbsolutePathSchema })
     .optional(),

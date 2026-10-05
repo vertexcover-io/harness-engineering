@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import type { JsonValue } from "@yok/sdk";
+import { dirname, join, resolve } from "node:path";
+import { type CheckoutConfig, type JsonValue, runDirOf } from "@yok/sdk";
 import { parseDocument } from "yaml";
 import { z } from "zod";
-import { findStageDir, loadSkill, own } from "../stage.ts";
+import { loadSkill, noProjectConfig, own } from "../stage.ts";
 import { expressionPaths, expressionsIn, isWholeExpression } from "./evaluate.ts";
 import { importModule } from "./executors.ts";
 import {
@@ -232,6 +232,14 @@ export const readWorkflowFile = async (path: string): Promise<Workflow> =>
 const MAX_INCLUDE_DEPTH = 8;
 const MAX_EXPANDED_NODES = 1000;
 
+// chain is the include path so far, used to stop cycles and deep nesting.
+type Compiling = Readonly<{
+  chain: readonly string[];
+  cwd: string;
+  parents: readonly string[];
+  config: CheckoutConfig;
+}>;
+
 const resolveOutputSchema = async (
   ref: Readonly<{ module?: string | undefined; zodSchema: string }>,
   cwd: string,
@@ -252,11 +260,11 @@ const resolveOutputSchema = async (
   );
 };
 
-const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
-  const dir = findStageDir(ref, cwd);
-  const stage = await loadSkill(dir);
-  if (!stage.ok) throw new WorkflowError("missing-stage", `stage ${ref}: ${stage.error}`, ref);
-  const { outputs } = stage.value;
+const loadPlanStage = async (ref: string, at: Compiling): Promise<PlanStage> => {
+  const skill = await loadSkill(ref, { root: at.cwd, config: at.config });
+  if (!skill.ok) throw new WorkflowError("missing-stage", `stage ${ref}: ${skill.error}`, ref);
+  const { dir, frontmatter } = skill.value;
+  const { outputs } = frontmatter;
   if (outputs !== undefined && outputs.module === undefined) {
     throw new WorkflowError("missing-schema", `stage ${ref}: outputs.module is required`, ref);
   }
@@ -273,14 +281,14 @@ const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
         };
   return {
     ref,
-    name: stage.value.name,
+    name: skill.value.name,
     skill: join(dir, "SKILL.md"),
-    tier: stage.value.tier,
-    consumes: stage.value.consumes ?? [],
-    produces: stage.value.produces ?? [],
-    variables: stage.value.variables,
+    tier: frontmatter.tier,
+    consumes: frontmatter.consumes ?? [],
+    produces: frontmatter.produces ?? [],
+    variables: frontmatter.variables,
     ...(output === undefined ? {} : { output }),
-    verifiers: await loadVerifiers(stage.value.verifiers, dir),
+    verifiers: await loadVerifiers(frontmatter.verifiers, dir),
   };
 };
 
@@ -308,10 +316,6 @@ const checkVariables = (node: AgentNode, stage: PlanStage): void => {
   }
 };
 
-// Where compile is: the chain of workflow files that led here, for include cycles and depth, and
-// the ids of the containers around the nodes being compiled.
-type Compiling = Readonly<{ chain: readonly string[]; cwd: string; parents: readonly string[] }>;
-
 const compileInclude = async (node: IncludeNode, at: Compiling): Promise<WorkflowPlan> => {
   if (at.chain.length > MAX_INCLUDE_DEPTH) {
     const chain = at.chain.join(" -> ");
@@ -332,7 +336,6 @@ const compileInclude = async (node: IncludeNode, at: Compiling): Promise<Workflo
 const compileNodes = (nodes: readonly WorkflowNode[], at: Compiling): Promise<PlanNode[]> =>
   Promise.all(nodes.map((node) => compileNode(node, at)));
 
-// Turns a checked node into the node the engine runs: stages and includes are loaded into it.
 async function compileNode(node: WorkflowNode, at: Compiling): Promise<PlanNode> {
   const { parents } = at;
   const inside: Compiling = { ...at, parents: [...parents, node.id] };
@@ -356,7 +359,7 @@ async function compileNode(node: WorkflowNode, at: Compiling): Promise<PlanNode>
         node.id,
       );
     }
-    const loaded = await loadStage(stage, at.cwd);
+    const loaded = await loadPlanStage(stage, at);
     checkVariables(node, loaded);
     return { ...rest, parents, stage: loaded };
   }
@@ -376,8 +379,7 @@ async function compileNode(node: WorkflowNode, at: Compiling): Promise<PlanNode>
   return { ...rest, parents, cases: compiled, default: await compileNodes(fallback, inside) };
 }
 
-// The lists of nodes a compiled node holds. Every case of a switch counts: compile cannot know
-// which one runs.
+// Every case of a switch counts, since compile can't know which one runs.
 const listChildren = (node: PlanNode): readonly (readonly PlanNode[])[] => {
   if (node.type === "loop") return [node.nodes];
   if (node.type === "include") return [node.plan.nodes];
@@ -385,7 +387,6 @@ const listChildren = (node: PlanNode): readonly (readonly PlanNode[])[] => {
   return [...node.cases.map((c) => c.nodes), ...(node.default === undefined ? [] : [node.default])];
 };
 
-// The nodes a workflow runs, counting those of the workflows it includes.
 const countNodes = (nodes: readonly PlanNode[]): number =>
   nodes.reduce(
     (total, node) =>
@@ -449,8 +450,7 @@ const guaranteedInScope = (
   return [...artifacts];
 };
 
-// Artifacts guaranteed when a node completes, even if it contains conditional children. A node
-// that allows failure guarantees none.
+// A node that allows failure guarantees no artifact.
 function listProducedArtifacts(node: PlanNode, guaranteedOnly = false): readonly string[] {
   if (guaranteedOnly && node.allowFailure) return [];
   if (node.type === "agent") {
@@ -494,10 +494,9 @@ const describeMissing = (
   return `${needs}, which may never be written before it starts: ${why}, so it can start after its producers failed or never ran; mark the consume optional`;
 };
 
-// A stage may start only once every artifact it needs is written, so each one must come from a
-// node it depends on, directly or through a chain, or from a node its container depends on. An
-// `always` node can start after those producers failed or never ran, so it and everything inside
-// it count none of them.
+// Every artifact a stage needs must come from a node it depends on, directly or through its
+// container, so it is written before the stage starts. An `always` node can start after those
+// producers failed or never ran, so it and everything inside it count none of them.
 const checkArtifacts = (
   nodes: readonly PlanNode[],
   written: ReadonlySet<string>,
@@ -526,8 +525,8 @@ const checkArtifacts = (
   }
 };
 
-// cwd is the project root: relative workflow paths and stage paths resolve against it.
-export type CompileOptions = Readonly<{ cwd?: string }>;
+// Workflow and stage paths resolve against cwd. Without a config, no project extension applies.
+export type CompileOptions = Readonly<{ cwd?: string; config?: CheckoutConfig }>;
 
 export const compileWorkflow = async (
   path: string,
@@ -535,7 +534,32 @@ export const compileWorkflow = async (
 ): Promise<WorkflowPlan> => {
   const cwd = resolve(options.cwd ?? process.cwd());
   const absolute = resolve(cwd, path);
-  const plan = await compileFile(absolute, { chain: [absolute], cwd, parents: [] });
+  const config = options.config ?? noProjectConfig(cwd);
+  const plan = await compileFile(absolute, { chain: [absolute], cwd, parents: [], config });
   checkArtifacts(plan.nodes, new Set(), "");
   return plan;
+};
+
+// The workflow `orchestrate init` copied into the run's folder, compiled with the run's config.
+export const compileRunWorkflow = (
+  run: Readonly<{ cwd: string; name: string }>,
+  config: CheckoutConfig,
+): Promise<WorkflowPlan> =>
+  compileWorkflow(join(runDirOf(run.cwd, run.name), "workflow.yaml"), { cwd: run.cwd, config });
+
+const planStages = (nodes: readonly PlanNode[]): readonly PlanStage[] =>
+  nodes.flatMap((node): readonly PlanStage[] => {
+    if (node.type !== "agent") return listChildren(node).flatMap(planStages);
+    return node.stage === undefined ? [] : [node.stage];
+  });
+
+// Each stage of the run's workflow by name, for findSkill's run scope.
+export const runStageDirs = async (
+  run: Readonly<{ cwd: string; name: string }>,
+  config: CheckoutConfig,
+): Promise<Readonly<Record<string, string>>> => {
+  const plan = await compileRunWorkflow(run, config);
+  return Object.fromEntries(
+    planStages(plan.nodes).map((stage) => [stage.name, dirname(stage.skill)]),
+  );
 };

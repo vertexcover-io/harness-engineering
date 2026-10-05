@@ -104,10 +104,8 @@ const git = (...args: string[]): string =>
   execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim()
 
 /**
- * Bumping from whichever manifest happened to be read first would renumber a
- * drifted tree down to the lower version and tag it — the failure this script
- * exists to prevent. A manifest with no version field yet is not drift; it gets
- * filled in from the ones that agree.
+ * Refuses drift: bumping from whichever manifest was read first could tag a drifted tree at the
+ * lower version. A manifest with no version yet is not drift; it is filled in from the others.
  */
 export const agreedVersion = (sources: readonly string[]): string => {
   const found = sources.map(readVersion).filter((version) => version !== null)
@@ -128,7 +126,7 @@ const main = (): void => {
   const version = nextVersion(currentVersion(), bump, { preRelease })
 
   const commit = !args.includes("--no-git")
-  /** -uno: untracked files are none of a release's business, only MANIFESTS get committed. */
+  /** -uno: untracked files don't matter, since only the manifests get committed. */
   const dirty = commit ? git("status", "--porcelain", "-uno") : ""
   if (dirty !== "") {
     throw new Error(`working tree is dirty: commit or stash before cutting a release\n${dirty}`)
@@ -154,10 +152,8 @@ const main = (): void => {
 }
 
 /**
- * `import.meta.main` would be shorter, but Node only grew it in 24.2 — on an
- * older Node it reads undefined and the release silently does nothing at all.
- * Comparing real paths says the same thing on every runtime, and the test file
- * imports this module without tripping it.
+ * Not `import.meta.main`: before Node 24.2 it is undefined and the release would silently do
+ * nothing. Comparing real paths works everywhere and lets the test import this file safely.
  */
 const isEntrypoint = (): boolean => {
   const invoked = process.argv[1]

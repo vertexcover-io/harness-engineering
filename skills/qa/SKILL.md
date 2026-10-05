@@ -42,6 +42,9 @@ references:
   report-template:
     path: references/proof-report-template.html
     description: The proof report page whose JSON island the report fills.
+  report-media:
+    path: scripts/report-media.ts
+    description: The script that builds the scenario videos and inlines the media into the report.
   stack-up:
     path: references/stack-up.md
     description: How to bring up, wait for, reach and tear down the stack an environment entry declares, its command placeholders filled.
@@ -487,12 +490,9 @@ the promoted frames stay in `screenshots/` for the round that will build from th
 scenario in one pass, the carried-over ones included: the videos are assembled from the promoted frames, not
 captured, and the `writing-the-report` reference owns what the settings do and what a hand-run rebuild has to keep.
 
-1. **Run the bundled script over the verification directory.** It globs every `NN_SLUG` prefix under
-   `screenshots/` and writes one `NN_SLUG.mp4` beside the report:
-
-   ```bash
-   yok orchestrate script --skill qa scripts/report-media.ts /abs/path/to/.yok/RUN/artifacts/verification
-   ```
+1. **Run the `report-media` script over the verification directory**, passing it
+   `/abs/path/to/.yok/RUN/artifacts/verification`. It globs every `NN_SLUG` prefix under
+   `screenshots/` and writes one `NN_SLUG.mp4` beside the report.
 
 2. **Read every line it prints.** Each scenario gets `ok NN_SLUG.mp4 crop=…` or `FAILED NN_SLUG — REASON`, and
    the exit is non-zero if any failed. A scenario with no `ok` line has no video: its `video` stays unset, and its
@@ -531,11 +531,8 @@ the round's whole output. Every other attempt writes the report, a terminal `FAI
 2. `bugs[]` carries only what is still broken as you write — a bug an earlier round found and a fix has since closed
    gets no entry and no note anywhere in the report.
 3. Walk the reference's completion checklist; the report is done when every bullet holds.
-4. **Inline the media, last** — after this the report is too large to edit, so it runs once every other checklist bullet holds:
-
-   ```bash
-   yok orchestrate script --skill qa scripts/report-media.ts --inline /abs/path/to/.yok/RUN/artifacts/verification
-   ```
+4. **Inline the media, last** — after this the report is too large to edit, so it runs once every other checklist bullet holds.
+   Run the `report-media` script with `--inline /abs/path/to/.yok/RUN/artifacts/verification`.
 
    It writes every video, frame, baseline and artifact the report names into the report itself, so the one file
    shows them wherever it is moved. **The report loads nothing from disk**: until this runs every frame shows as

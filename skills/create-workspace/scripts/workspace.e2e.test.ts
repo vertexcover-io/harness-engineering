@@ -11,10 +11,9 @@ const WORKSPACE = [
   "--no-env-file",
   CLI,
   "orchestrate",
-  "script",
-  "--skill",
-  "create-workspace",
-  "scripts/workspace.ts",
+  "skill",
+  "run",
+  "create-workspace.workspace",
 ];
 
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "workspace-")));
@@ -89,7 +88,7 @@ const workspace = (
   return { code: run.status, stdout: run.stdout, stderr: run.stderr };
 };
 
-describe("SC49: yok orchestrate script --skill create-workspace scripts/workspace.ts, as workspace.ts did", () => {
+describe("SC49: yok orchestrate skill run create-workspace.workspace, as workspace.ts did", () => {
   test("WS1 — create then remove in a mono repo both exit 0, the worktree comes and goes, and the run records both", async () => {
     const root = tempRepo();
     const home = tempDir();
