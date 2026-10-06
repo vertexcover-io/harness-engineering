@@ -231,9 +231,10 @@ export const claudeProvider = ({
     sessionId: string,
     options: LaunchOptions,
   ): Promise<Result<void>> => {
+    const session = options.resume === true ? ["--resume", sessionId] : ["--session-id", sessionId];
     const spec = {
       cwd: options.cwd,
-      argv: [binary, "--session-id", sessionId, ...claudeArgs(options)],
+      argv: [binary, ...session, ...claudeArgs(options)],
       env: options.env ?? {},
     };
     return respawnAgent("claude", terminal, spec, log.child({ sessionId }));

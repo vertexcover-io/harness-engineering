@@ -88,7 +88,7 @@ export const runCommand = () =>
         cwd: repoRoot,
         agent: plan.agent,
         env: env.value,
-        ...(plan.tier === undefined ? {} : { tier: plan.tier }),
+        tiers: plan.tiers,
         ...(opts.name === undefined ? {} : { name: opts.name }),
         ...(config === undefined ? {} : { config }),
       });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { EventSchema, StateSchema } from "./contracts.ts";
+import { EventSchema, ResolvedTiersSchema, StateSchema, tierLaunch } from "./contracts.ts";
 
 const agentRun = {
   nodeRunId: "plan-1",
@@ -33,6 +33,7 @@ const validState = {
     },
   },
   nodeRuns: { plan: agentRun },
+  tiers: null,
 };
 
 describe("StateSchema", () => {
@@ -203,5 +204,32 @@ describe("EventSchema", () => {
     ["a function payload", { ...baseEvent, payload: () => null }],
   ])("rejects %s", (_label, event) => {
     expect(EventSchema.safeParse(event).success).toBe(false);
+  });
+});
+
+describe("tierLaunch", () => {
+  test("a tier model gives the model and effort a session launches with; none gives neither", () => {
+    expect(tierLaunch({ model: "opus", effort: "high" })).toEqual({
+      model: "opus",
+      effort: "high",
+    });
+    expect(tierLaunch({ model: "haiku" })).toEqual({ model: "haiku" });
+    expect(tierLaunch(null)).toEqual({});
+  });
+});
+
+describe("ResolvedTiersSchema", () => {
+  const OPUS = { model: "opus" };
+
+  test.each([
+    ["a camelCase default and tier", { default: "deepThink", models: { deepThink: OPUS } }, true],
+    ["a kebab-case default", { default: "deep-think", models: { deep: OPUS } }, false],
+    [
+      "a kebab-case tier name",
+      { default: "deep", models: { deep: OPUS, "deep-think": OPUS } },
+      false,
+    ],
+  ])("%s parses: %p", (_label, tiers, parses) => {
+    expect(ResolvedTiersSchema.safeParse(tiers).success).toBe(parses);
   });
 });

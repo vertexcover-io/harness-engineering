@@ -135,7 +135,7 @@ const claudeStop = async (stdin: string, deps: HookDeps, handler: StopHandler): 
     {
       agent: "claude",
       sessionId,
-      contextSteps: true,
+      contextSteps: claudeAdapter.contextSteps,
       readTranscript: () => readClaudeTranscript(transcriptPath),
     },
     handler,
@@ -336,6 +336,7 @@ const claudePostToolUse = (
 
 // What Claude answers; every event is supported.
 export const claudeAdapter: AgentAdapter = {
+  contextSteps: true,
   stop: claudeStop,
   preToolUse: claudePreToolUse,
   postToolUse: claudePostToolUse,

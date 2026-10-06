@@ -53,10 +53,23 @@ describe("compile", () => {
     expect((await rejection(`agent: pi\n${workflow(script("a"))}`)).code).toBe("schema");
   });
 
-  test("a top-level tier reaches the plan, a missing key leaves it out, and a non-camelCase tier is a schema error", async () => {
-    expect((await compile(`tier: deep\n${workflow(script("a"))}`)).tier).toBe("deep");
-    expect((await compile(workflow(script("a")))).tier).toBeUndefined();
-    expect((await rejection(`tier: deep-think\n${workflow(script("a"))}`)).code).toBe("schema");
+  test("SC19: a top-level tiers: set reaches the plan, a missing key compiles to {}, and a bad entry or a top-level tier is a schema error", async () => {
+    const tiers = "tiers:\n  default: deep\n  models:\n    deep: { model: opus-x, effort: high }\n";
+    expect((await compile(`${tiers}${workflow(script("a"))}`)).tiers).toEqual({
+      default: "deep",
+      models: { deep: { model: "opus-x", effort: "high" } },
+    });
+    expect((await compile(workflow(script("a")))).tiers).toEqual({});
+    const bad = [
+      "tiers:\n  models:\n    deep: { effort: high }\n",
+      "tiers:\n  models:\n    deep: { model: opus-x, effort: extreme }\n",
+      "tiers:\n  models:\n    deep-think: { model: opus-x }\n",
+      "tiers:\n  deep: { model: opus-x }\n",
+      "tier: deep\n",
+    ];
+    for (const entry of bad) {
+      expect((await rejection(`${entry}${workflow(script("a"))}`)).code).toBe("schema");
+    }
   });
 
   test("a top-level env and envFile reach the plan, a missing env is empty, and a lowercase env name is a schema error", async () => {
@@ -638,6 +651,37 @@ const stagesRejection = async (source: string): Promise<WorkflowError> => {
 };
 
 describe("compile with stages", () => {
+  test("SC8: a stage whose SKILL.md says tier: fast compiles with PlanStage.tier fast", async () => {
+    const { plan } = await compileWithStages(workflow(stageNode("make", "stages/quick")));
+    const make = plan.nodes.find((node) => node.id === "make");
+    if (make?.type !== "agent" || make.stage === undefined) throw new Error("expected a stage");
+    expect(make.stage.tier).toBe("fast");
+  });
+
+  test("an agent node's tier: deep reaches the plan beside its stage's tier: fast, and a prompt agent node's tier: fast too", async () => {
+    const { plan } = await compileWithStages(
+      workflow(
+        `${stageNode("make", "stages/quick", ", tier: deep")}\n  - { id: ask, type: agent, prompt: hi, input: {}, tier: fast }`,
+      ),
+    );
+    expect(plan.nodes).toMatchObject([
+      { id: "make", tier: "deep", stage: { tier: "fast" } },
+      { id: "ask", tier: "fast" },
+    ]);
+  });
+
+  test.each([
+    ["an exec node", script("a", "\n    tier: deep")],
+    ["a context node", "\n  - { id: a, type: context, action: new, tier: deep }"],
+    [
+      "a loop node",
+      `\n  - id: fix\n    type: loop\n    tier: deep\n    maxIterations: 1\n    until: "{{ true }}"\n    input: null\n    nodes:${script("step").replaceAll("\n  ", "\n      ")}`,
+    ],
+    ["an agent node, when not camelCase", stageNode("make", "stages/quick", ", tier: deep-think")],
+  ])("a tier on %s is a schema error", async (_label, nodes) => {
+    expect((await stagesRejection(workflow(nodes))).code).toBe("schema");
+  });
+
   test("a stage with no outputs compiles with no output schema, so its output is plain text", async () => {
     const project = mkdtempSync(join(tmpdir(), "wf-stage-no-outputs-"));
     writeStages(join(project, "stages"), DEMO_STAGES);

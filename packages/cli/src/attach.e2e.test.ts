@@ -28,7 +28,7 @@ const run = (id: string, name: string, cwd: string, terminal: string | null): Wo
   name,
   terminal,
   config: null,
-  tier: null,
+  tiers: null,
   createdAt: new Date().toISOString(),
 });
 

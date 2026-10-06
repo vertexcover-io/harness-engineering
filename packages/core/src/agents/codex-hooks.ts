@@ -78,8 +78,7 @@ const codexStop = async (stdin: string, deps: HookDeps, handler: StopHandler): P
     {
       agent: "codex",
       sessionId,
-      // Codex's pane is not driven for /compact or a restart yet.
-      contextSteps: false,
+      contextSteps: codexAdapter.contextSteps,
       readTranscript: () => readCodexTranscript(transcriptPath ?? undefined),
     },
     handler,
@@ -230,6 +229,8 @@ export const readCodexTranscript = async (
 
 // What Codex answers; it has no StopFailure hook.
 export const codexAdapter: AgentAdapter = {
+  // Codex's pane is not driven for /compact or a restart yet.
+  contextSteps: false,
   stop: codexStop,
   preToolUse: codexPreToolUse,
   sessionStart: codexSessionStart,

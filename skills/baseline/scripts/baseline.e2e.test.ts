@@ -37,7 +37,7 @@ const baselineRun = (baseline: string | undefined): Readonly<{ repo: string; hom
     name: "feat-x",
     terminal: null,
     config: null,
-    tier: null,
+    tiers: null,
     createdAt: new Date().toISOString(),
   };
   const home = tempDir();

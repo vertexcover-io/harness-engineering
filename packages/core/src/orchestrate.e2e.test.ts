@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { type JsonValue, runDirOf, type WorkflowRun } from "@harness/sdk";
-import { jsonlEventStore, RegistryFileSchema } from "@harness/sdk/internal";
+import { appendRunEvent, jsonlEventStore, RegistryFileSchema } from "@harness/sdk/internal";
 import { validateTicketDir } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
@@ -51,7 +51,7 @@ const savedRun = (cwd: string, overrides: Partial<WorkflowRun> = {}): WorkflowRu
     name: null,
     terminal: null,
     config: null,
-    tier: null,
+    tiers: null,
     createdAt: new Date().toISOString(),
     ...overrides,
   };
@@ -474,17 +474,24 @@ describe("orchestrate skill", () => {
 });
 
 // A run named feat-x in a fresh repo, started from SOURCE the way `harness run` + init leave it.
+// init compiles the workflow, so env must name the skills folder its stages come from and files
+// holds what else it reads (schema modules, included workflows), by path in the repo.
 const startedRun = (
   source: string,
   config?: object,
   overrides: Partial<WorkflowRun> = {},
+  {
+    env = { HARNESS_SKILLS_DIR: STAGE_SKILLS },
+    files = {},
+  }: Readonly<{ env?: Env; files?: Readonly<Record<string, string>> }> = {},
 ): Readonly<{ repo: string; home: string }> => {
   const repo = config === undefined ? tempRepo() : configuredRepo(config);
   const home = tempDir();
   const workflowPath = join(repo, "steps.yaml");
   writeFileSync(workflowPath, source);
+  for (const [path, text] of Object.entries(files)) writeFileSync(join(repo, path), text);
   writeRegistry(home, [savedRun(repo, { workflowPath, ...overrides })]);
-  const init = orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"]);
+  const init = orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"], env);
   if (init.code !== 0) throw new Error(init.stderr);
   return { repo, home };
 };
@@ -797,6 +804,8 @@ const stageSkills = (produces = DEMO_STAGES.producer.produces): string => {
   writeStages(dir, { ...DEMO_STAGES, producer: { produces } });
   return dir;
 };
+
+const STAGE_SKILLS = stageSkills();
 
 const STAGES_WORKFLOW = `name: stages
 inputs:
@@ -1176,22 +1185,25 @@ nodes:
     });
   });
 
-  test("next returns a typed compile error before starting a node with a broken output schema", async () => {
-    const run = startedRun(
+  test("init returns a typed compile error for a workflow with a broken output schema and makes no run folder", () => {
+    const repo = tempRepo();
+    const home = tempDir();
+    const workflowPath = join(repo, "broken.yaml");
+    writeFileSync(
+      workflowPath,
       `name: broken\nnodes:\n  - id: ask\n    type: agent\n    prompt: Ask\n    input: null\n    output: { module: ./missing-schema.ts, zodSchema: answer }\n`,
     );
-    const next = orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]);
-    expect(next.code).toBe(1);
-    expect(JSON.parse(next.stderr)).toMatchObject({
+    writeRegistry(home, [savedRun(repo, { workflowPath })]);
+
+    const init = orchestrate(repo, home, ["init", "feat-x", "--run-id", "r-1"]);
+
+    expect(init.code).toBe(1);
+    expect(JSON.parse(init.stderr)).toMatchObject({
       kind: "compile",
       retryable: false,
       code: "missing-module",
     });
-    expect(stateOf(run.repo).nodeRuns).toEqual({});
-    expect((await eventsOf(run.repo)).map((event) => event.type)).toEqual([
-      "workflow.started",
-      "orchestrate.next",
-    ]);
+    expect(existsSync(runDirOf(repo, "feat-x"))).toBe(false);
   });
 
   test("IW18 — done records a stage's output and artifacts, and refuses an artifact file that does not exist", async () => {
@@ -1451,7 +1463,8 @@ nodes:
 
   test("a node with an output schema rejects output that is not JSON", () => {
     const zodUrl = import.meta.resolve("zod");
-    const run = startedRun(`name: checked
+    const run = startedRun(
+      `name: checked
 inputs:
   prompt: { type: string, required: true }
 nodes:
@@ -1460,10 +1473,14 @@ nodes:
     prompt: check it
     output: { module: ./schemas.ts, zodSchema: result }
     input: {}
-`);
-    writeFileSync(
-      join(run.repo, "schemas.ts"),
-      `import { z } from "${zodUrl}";\nexport const schemas = { result: z.object({ ok: z.boolean() }) };\n`,
+`,
+      undefined,
+      {},
+      {
+        files: {
+          "schemas.ts": `import { z } from "${zodUrl}";\nexport const schemas = { result: z.object({ ok: z.boolean() }) };\n`,
+        },
+      },
     );
     const reply = JSON.parse(orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]).stdout);
     const done = orchestrate(run.repo, run.home, [
@@ -1480,7 +1497,8 @@ nodes:
 
   test("IW19 — a plain agent can repair output that fails its workflow.yaml schema", () => {
     const zodUrl = import.meta.resolve("zod");
-    const run = startedRun(`name: checked
+    const run = startedRun(
+      `name: checked
 inputs:
   prompt: { type: string, required: true }
 nodes:
@@ -1489,10 +1507,14 @@ nodes:
     prompt: check it
     output: { module: ./schemas.ts, zodSchema: result }
     input: {}
-`);
-    writeFileSync(
-      join(run.repo, "schemas.ts"),
-      `import { z } from "${zodUrl}";\nexport const schemas = { result: z.object({ ok: z.boolean() }) };\n`,
+`,
+      undefined,
+      {},
+      {
+        files: {
+          "schemas.ts": `import { z } from "${zodUrl}";\nexport const schemas = { result: z.object({ ok: z.boolean() }) };\n`,
+        },
+      },
     );
     const next = orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]);
     expect(next.code).toBe(0);
@@ -1661,8 +1683,7 @@ nodes:
 
 describe("orchestrate next and exec with containers", () => {
   test("IW28 — next and exec run a workflow mixing a loop, a switch and an include to finished", () => {
-    const { repo, home } = startedRun(MIXED);
-    writeFileSync(join(repo, "child.yaml"), CHILD);
+    const { repo, home } = startedRun(MIXED, undefined, {}, { files: { "child.yaml": CHILD } });
     const handedOut = ["test", "test", "test", "greet", "say", "last"].map((nodeId) => {
       const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
       expect(reply).toMatchObject({ kind: "exec", nodeId });
@@ -2123,8 +2144,9 @@ describe("the task workflow's ticket-fetcher stage", () => {
     fetchedAt: "2026-09-30T12:00:00Z",
   };
 
+  // Registered with no tiers, so its stages need no model switch; they are the harness's own skills.
   const taskRun = (prompt: string) => {
-    const run = startedRun(TASK);
+    const run = startedRun(TASK, {}, {}, { env: { HARNESS_SKILLS_DIR: undefined } });
     const registry = readRegistry(run.home);
     writeRegistry(run.home, [
       ...Object.values(registry.runs).map((r) => ({ ...r, inputs: { prompt } })),
@@ -2280,14 +2302,16 @@ nodes:
 const FAKE_AGENT = join(import.meta.dir, "agents", "fixtures", "fake-agent.ts");
 const RESUME = "/orchestrate --resume feat-x";
 
-// A run whose agent is the fake agent in a private tmux pane, driven to its context node.
-const runToContextNode = async (
-  node: string,
+// A run whose agent is the fake agent in a private tmux pane, on session A; ENV goes to every call.
+const runInPane = async (
+  source: string,
   socket: string,
   overrides: Partial<WorkflowRun> = {},
-  header = "",
+  env: Env = {},
 ) => {
-  const run = startedRun(header + withContext(node), undefined, overrides);
+  const run = startedRun(source, undefined, overrides, {
+    env: { HARNESS_SKILLS_DIR: STAGE_SKILLS, ...env },
+  });
   const out = join(tempDir(), "agent.jsonl");
   const tmux = (...args: string[]) =>
     execFileSync("tmux", ["-L", socket, "-f", "/dev/null", ...args], { encoding: "utf8" });
@@ -2302,8 +2326,8 @@ const runToContextNode = async (
     TMUX_PANE: pane,
     HARNESS_CLAUDE_BIN: FAKE_AGENT,
   };
-  const step = (args: readonly string[], env: Env = {}, input = "") =>
-    orchestrate(run.repo, run.home, args, { HARNESS_RUN_ID: "r-1", ...env }, input);
+  const step = (args: readonly string[], extra: Env = {}, input = "") =>
+    orchestrate(run.repo, run.home, args, { HARNESS_RUN_ID: "r-1", ...env, ...extra }, input);
   const next = () => JSON.parse(step(["next", "--run", "feat-x"]).stdout);
   const records = (): Array<Record<string, unknown>> =>
     existsSync(out)
@@ -2323,9 +2347,6 @@ const runToContextNode = async (
   ).toBe(0);
   await waitFor(() => launches().length === 1);
   await Bun.sleep(300);
-  const first = next();
-  expect(step(["done", first.nodeRunId, "--run", "feat-x", "--output", "{}"]).code).toBe(0);
-  const context = next();
   const stop = () =>
     step(
       ["hook", "stop", "--agent", "claude", "--handler", "continue-workflow"],
@@ -2339,7 +2360,20 @@ const runToContextNode = async (
       inPane,
       JSON.stringify({ session_id: sessionId, source }),
     );
-  return { run, step, next, stop, sessionStart, typed, launches, context };
+  return { run, step, next, stop, sessionStart, typed, launches };
+};
+
+// A run in a tmux pane (runInPane), driven to its context node.
+const runToContextNode = async (
+  node: string,
+  socket: string,
+  overrides: Partial<WorkflowRun> = {},
+  header = "",
+) => {
+  const flow = await runInPane(header + withContext(node), socket, overrides);
+  const first = flow.next();
+  expect(flow.step(["done", first.nodeRunId, "--run", "feat-x", "--output", "{}"]).code).toBe(0);
+  return { ...flow, context: flow.next() };
 };
 
 const contextOutput = async (repo: string) =>
@@ -2398,11 +2432,12 @@ describe("context node through a real tmux pane", () => {
     }
   }, 30_000);
 
-  test("new: the restarted session keeps the model and effort of the run's tier", async () => {
+  test("new: with no switch made, the restarted session launches on the default tier's model and effort", async () => {
     const socket = `harness-e2e-${crypto.randomUUID()}`;
     try {
-      const tier = { name: "deep", model: "opus", effort: "high" } as const;
-      const flow = await runToContextNode("action: new", socket, { tier });
+      const flow = await runToContextNode("action: new", socket, {
+        tiers: { default: "deep", models: { deep: { model: "opus", effort: "high" } } },
+      });
 
       expect(flow.stop()).toMatchObject({ code: 0, stdout: "" });
       await waitFor(() => flow.launches().length === 2);
@@ -2410,6 +2445,79 @@ describe("context node through a real tmux pane", () => {
       const argv = flow.launches()[1]?.argv as string[];
       expect(argv[argv.indexOf("--model") + 1]).toBe("opus");
       expect(argv[argv.indexOf("--effort") + 1]).toBe("high");
+    } finally {
+      spawnSync("tmux", ["-L", socket, "kill-server"]);
+    }
+  }, 30_000);
+
+  test("SC18: new: after a switch from the default fast tier's sonnet-x to opus-x is applied, the restarted session launches with --model opus-x", async () => {
+    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    try {
+      const tiers = { default: "fast", models: { fast: { model: "sonnet-x" } } };
+      const flow = await runToContextNode("action: new", socket, { tiers });
+      // emit refuses engine-owned events, so the switch is stored the way next and the helper do
+      const run = { id: "r-1", cwd: flow.run.repo, name: "feat-x" };
+      const record = (type: string, payload: JsonValue) =>
+        appendRunEvent(run, { type, source: "orchestrate", payload });
+      const request = { node: "second", model: "opus-x" };
+      const requested = await record("workflow.model.requested", request);
+      if (!requested.ok) throw new Error(requested.error);
+      const requestSeq = requested.value.event.seq;
+      expect(
+        await record("workflow.model.applied", { ...request, requestSeq, applied: true }),
+      ).toMatchObject({ ok: true });
+
+      expect(flow.stop()).toMatchObject({ code: 0, stdout: "" });
+      await waitFor(() => flow.launches().length === 2);
+
+      const argv = flow.launches()[1]?.argv as string[];
+      expect(argv[argv.indexOf("--model") + 1]).toBe("opus-x");
+      expect(argv).not.toContain("sonnet-x");
+    } finally {
+      spawnSync("tmux", ["-L", socket, "kill-server"]);
+    }
+  }, 30_000);
+
+  test("model: before a deep stage on a run launched on fast, next asks for opus-x; the stop's helper resumes session A on it, and its SessionStart records the switch", async () => {
+    const socket = `harness-e2e-${crypto.randomUUID()}`;
+    try {
+      const flow = await runInPane(
+        `name: tiered
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - { id: think, type: agent, stage: thinker, input: {} }
+`,
+        socket,
+        {
+          tiers: {
+            default: "fast",
+            models: { fast: { model: "sonnet-x" }, deep: { model: "opus-x" } },
+          },
+        },
+        { HARNESS_SKILLS_DIR: stageSkills() },
+      );
+      expect(flow.next()).toEqual({ kind: "model", nodeId: "think", model: "opus-x" });
+
+      expect(flow.stop()).toMatchObject({ code: 0, stdout: "" });
+      await waitFor(() => flow.launches().length === 2);
+
+      const argv = flow.launches()[1]?.argv as string[];
+      expect(argv.slice(0, 4)).toEqual(["--resume", "A", "--model", "opus-x"]);
+      expect(argv.at(-1)).toBe(RESUME);
+      expect(flow.sessionStart("A", "resume")).toMatchObject({ code: 0, stdout: "" });
+      const modelEvents = async () =>
+        (await eventsOf(flow.run.repo)).filter((event) => event.type.startsWith("workflow.model."));
+      const deadline = Date.now() + 10_000;
+      while ((await modelEvents()).length < 2 && Date.now() < deadline) await Bun.sleep(50);
+      const [requested, applied] = await modelEvents();
+      expect(applied?.payload).toEqual({
+        requestSeq: requested?.seq ?? 0,
+        node: "think",
+        model: "opus-x",
+        applied: true,
+      });
+      expect(flow.next()).toMatchObject({ kind: "stage", nodeId: "think" });
     } finally {
       spawnSync("tmux", ["-L", socket, "kill-server"]);
     }

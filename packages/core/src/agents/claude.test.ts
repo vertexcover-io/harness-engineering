@@ -222,6 +222,29 @@ describe("claudeProvider.relaunch", () => {
     expect(spec?.argv).toContain("--settings");
     expect(spec?.argv.at(-1)).toBe("/orchestrate --resume feat-x");
   });
+
+  test("SC28: with resume it respawns claude --resume s-1 --model opus-x, without it claude --session-id s-1", async () => {
+    const argvOf = async (resume?: boolean) => {
+      const host = fakeHost();
+      const provider = claudeProvider({ host, binary: "claude", newId: () => "unused" });
+      await provider.relaunch(host.find("%3"), "s-1", {
+        cwd: "/repo",
+        model: "opus-x",
+        ...(resume === undefined ? {} : { resume }),
+      });
+      const [call] = host.calls;
+      return call?.method === "respawn" ? call.spec.argv : [];
+    };
+
+    expect((await argvOf(true)).slice(0, 5)).toEqual([
+      "claude",
+      "--resume",
+      "s-1",
+      "--model",
+      "opus-x",
+    ]);
+    expect((await argvOf()).slice(0, 3)).toEqual(["claude", "--session-id", "s-1"]);
+  });
 });
 
 describe("claudeProvider.launch logging", () => {

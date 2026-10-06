@@ -51,7 +51,7 @@ const initializedRun = (home: string, cwd: string): void => {
     name: "feat-x",
     terminal: null,
     config: null,
-    tier: null,
+    tiers: null,
     createdAt: new Date().toISOString(),
   };
   mkdirSync(home, { recursive: true });

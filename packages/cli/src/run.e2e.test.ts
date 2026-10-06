@@ -213,22 +213,51 @@ describe("harness run", () => {
   );
 
   test(
-    "a workflow tier launches the session on the model the checkout's config maps it to",
+    "a run launches the session on the model of the default tier the checkout's config sets",
+    () => {
+      const repo = makeRepo();
+      const { env, fakeOut } = makeEnv();
+      const tiers = { default: "fast", models: { fast: { model: "haiku-x" } } };
+      writeFileSync(
+        join(repo, "orchestrate.config.json"),
+        JSON.stringify({ version: 2, agents: { claude: { tiers } } }),
+      );
+
+      expect(harness(repo, env, "run", "ok.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
+      waitFor(() => readLines(fakeOut).some(isLaunch));
+      const argv = readLines(fakeOut).find(isLaunch)?.argv;
+      const args = Array.isArray(argv) ? argv.map(String) : [];
+
+      expect(args[args.indexOf("--model") + 1]).toBe("haiku-x");
+
+      stopServer(repo, env);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "SC24: harness run sends the workflow's tiers, so the default deep tier launches on the workflow's opus-y over the config's opus-x",
     () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
       writeFileSync(
         join(repo, "orchestrate.config.json"),
-        JSON.stringify({ version: 2, agents: { claude: { tiers: { deep: { model: "opus" } } } } }),
+        JSON.stringify({
+          version: 2,
+          agents: { claude: { tiers: { models: { deep: { model: "opus-x" } } } } },
+        }),
       );
-      writeFileSync(join(repo, "deep.yaml"), `tier: deep\n${OK_WORKFLOW}`);
+      writeFileSync(
+        join(repo, "deep.yaml"),
+        `tiers:\n  models:\n    deep: { model: opus-y }\n${OK_WORKFLOW}`,
+      );
 
       expect(harness(repo, env, "run", "deep.yaml", "--prompt", "hi", "--no-open").code).toBe(0);
       waitFor(() => readLines(fakeOut).some(isLaunch));
       const argv = readLines(fakeOut).find(isLaunch)?.argv;
       const args = Array.isArray(argv) ? argv.map(String) : [];
 
-      expect(args[args.indexOf("--model") + 1]).toBe("opus");
+      expect(args[args.indexOf("--model") + 1]).toBe("opus-y");
 
       stopServer(repo, env);
     },
@@ -292,16 +321,16 @@ describe("harness run", () => {
   );
 
   test(
-    "a workflow tier the config does not map for the agent fails the run before any session starts",
+    "a workflow whose default tier no layer maps fails the run before any session starts",
     () => {
       const repo = makeRepo();
       const { env, fakeOut } = makeEnv();
-      writeFileSync(join(repo, "deep.yaml"), `tier: deep\n${OK_WORKFLOW}`);
+      writeFileSync(join(repo, "turbo.yaml"), `tiers: { default: turbo }\n${OK_WORKFLOW}`);
 
-      const result = harness(repo, env, "run", "deep.yaml", "--prompt", "hi", "--no-open");
+      const result = harness(repo, env, "run", "turbo.yaml", "--prompt", "hi", "--no-open");
 
       expect(result.code).not.toBe(0);
-      expect(result.stderr).toContain("agents.claude.tiers.deep");
+      expect(result.stderr).toContain('default tier "turbo"');
       expect(readLines(fakeOut).some(isLaunch)).toBe(false);
 
       stopServer(repo, env);

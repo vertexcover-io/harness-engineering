@@ -10,6 +10,8 @@ import {
   NotifierSchema,
   type ProcessRecord,
   ProcessRecordSchema,
+  type TiersConfig,
+  TiersConfigSchema,
 } from "@harness/sdk";
 import { z } from "zod";
 import type { ArtifactDeclaration, Stage } from "../stage.ts";
@@ -142,6 +144,8 @@ export const AgentNodeSchema = z
     prompt: NonEmptyStringSchema.optional(),
     output: OutputSchemaRefSchema.optional(),
     variables: z.record(z.string(), z.string()).optional(),
+    // over the stage's SKILL.md tier; with neither, the node runs on the run's default tier
+    tier: NameSchema.optional(),
   })
   .superRefine((node, ctx) => {
     if (node.stage === undefined && node.prompt === undefined) {
@@ -211,8 +215,9 @@ export const WorkflowSchema = z.strictObject({
   name: NonEmptyStringSchema,
   version: z.union([z.string(), z.number()]).optional(),
   agent: WorkflowAgentSchema.default("claude"),
-  // looked up under agents.AGENT.tiers in the config to pick the model the session launches with
-  tier: NameSchema.optional(),
+  // over the harness's and the config's agents.AGENT.tiers, for this workflow's agent. Only the
+  // top workflow's apply; an included one's are ignored.
+  tiers: TiersConfigSchema.default({}),
   // set in every agent session of the run, over the config's; envFile is relative to the folder
   // the run starts in (the repo root). Only the top workflow's apply; an included one's are ignored.
   ...EnvLayerSchema.shape,
@@ -302,6 +307,8 @@ export type PlanStage = Readonly<{
   ref: string;
   name: string;
   skill: string;
+  // the SKILL.md tier, which the node's own tier overrides; see pickNodeTier
+  tier?: string | undefined;
   consumes: readonly ArtifactDeclaration[];
   produces: readonly ArtifactDeclaration[];
   variables: Stage["variables"];
@@ -350,7 +357,7 @@ export type PlanNode =
 export type WorkflowPlan = Readonly<{
   name: string;
   agent: WorkflowAgent;
-  tier?: string | undefined;
+  tiers: TiersConfig;
   env: Readonly<Record<string, string>>;
   envFile?: string | undefined;
   inputs: InputDeclarations;

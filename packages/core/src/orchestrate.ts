@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Command, Option } from "@commander-js/extra-typings";
 import {
   type AgentAdapter,
+  type AgentType,
   AgentTypeSchema,
   type ArtifactRef,
   ArtifactRefSchema,
@@ -19,6 +20,7 @@ import {
   pickRun,
   type Result,
   type RunRef,
+  readState,
   registryPath,
   requireRun,
   runDirOf,
@@ -26,11 +28,17 @@ import {
   tierLaunch,
   type WorkflowRun,
 } from "@harness/sdk";
-import { AgentStatusSchema, createRegistry, type StepOutcome } from "@harness/sdk/internal";
+import {
+  AgentStatusSchema,
+  createRegistry,
+  foldModelSwitch,
+  jsonlEventStore,
+  type StepOutcome,
+} from "@harness/sdk/internal";
 import { agentAdapters, agentProvider, findSessionAgent, HOOK_AGENTS } from "./agents/index.ts";
 import { currentTerminal, harnessTerminalHost } from "./agents/tmux.ts";
 import { commentRepliedEvent, isOpen, readComments, replyToComment } from "./comments.ts";
-import { runContextStep } from "./context-step.ts";
+import { runContextStep, runModelStep } from "./context-step.ts";
 import { findEnvRun } from "./hooks/common.ts";
 import { postToolUseHandlers } from "./hooks/post-tool-use.ts";
 import { preToolUseHandlers } from "./hooks/pre-tool-use.ts";
@@ -111,6 +119,11 @@ const printResult = (result: Result<unknown>): void =>
 
 const registry = () => createRegistry(registryPath(), log);
 
+// The agents the harness can restart in their pane, which is how a session switches models.
+const MODEL_SWITCH_AGENTS: ReadonlySet<AgentType> = new Set(
+  HOOK_AGENTS.filter((agent) => agentAdapters[agent].contextSteps),
+);
+
 const parseJsonFlag = (text: string, flag: string): Result<JsonValue> => {
   try {
     return { ok: true, value: JSON.parse(text) };
@@ -127,15 +140,18 @@ const initCommand = () =>
     .action(async (name, opts) => {
       const runId = opts.runId ?? process.env.HARNESS_RUN_ID;
       if (!runId) return fail("no run: pass --run-id or run inside a harness session");
-      const result = await initializeRun({
-        registry: registry(),
-        runId,
-        name,
-        git: createGit(),
-        log,
-        terminal: currentTerminal(),
+      await runWorkflowCommand(async () => {
+        const result = await initializeRun({
+          registry: registry(),
+          runId,
+          name,
+          git: createGit(),
+          log,
+          terminal: currentTerminal(),
+          modelSwitchAgents: MODEL_SWITCH_AGENTS,
+        });
+        printResult(result.ok ? { ok: true, value: { runId, dir: result.value.dir } } : result);
       });
-      printResult(result.ok ? { ok: true, value: { runId, dir: result.value.dir } } : result);
     });
 
 type RunFlags = Readonly<{ run?: string | undefined; runId?: string | undefined }>;
@@ -197,7 +213,7 @@ const nextCommand = () =>
       runWorkflowCommand(async () => {
         const run = await requireRun(runInputFromFlags(opts));
         if (!run.ok) return fail(run.error);
-        printResult(await nextStep(run.value));
+        printResult(await nextStep(run.value, MODEL_SWITCH_AGENTS));
       }),
     );
 
@@ -486,6 +502,29 @@ const sessionProvider = (
   return agentProvider({ agent, host, env: process.env, log: helperLog });
 };
 
+// What a helper the Stop hook starts works with: its run, a log file in the run's folder and the
+// provider of the session whose turn ended. Undefined when there is none.
+const loadHelperRun = async (
+  flags: RunFlags & Readonly<{ sessionId: string }>,
+  service: string,
+  file: string,
+) => {
+  const picked = await requireRun(runInputFromFlags(flags));
+  if (!picked.ok) {
+    fail(picked.error);
+    return undefined;
+  }
+  const run = picked.value;
+  const log = helperLogger(run, service, file);
+  const linked = await registry().findRun(run.id);
+  const provider = sessionProvider(linked, flags.sessionId, log);
+  if (provider === undefined) {
+    log.error({ sessionId: flags.sessionId }, "no provider for the session's agent");
+    return undefined;
+  }
+  return { run, log, provider };
+};
+
 const contextCommand = () =>
   new Command("context")
     .description(
@@ -496,32 +535,55 @@ const contextCommand = () =>
     .option("--run-id <id>", RUN_ID_HELP)
     .requiredOption("--session-id <id>", "the agent session whose turn just ended")
     .action(async (nodeRunId, opts) => {
-      const picked = await requireRun(runInputFromFlags(opts));
-      if (!picked.ok) return fail(picked.error);
-      const run = picked.value;
-      const helperLog = helperLogger(run, "harness-context", "context.log");
-      const linked = await registry().findRun(run.id);
-      const provider = sessionProvider(linked, opts.sessionId, helperLog);
-      if (provider === undefined) {
-        return helperLog.error(
-          { sessionId: opts.sessionId },
-          "no provider for the session's agent",
-        );
-      }
+      const helper = await loadHelperRun(opts, "harness-context", "context.log");
+      if (helper === undefined) return;
+      const { run, log, provider } = helper;
+      const runDir = runDirOf(run.cwd, run.name);
+      const [state, events] = await Promise.all([
+        readState(runDir),
+        jsonlEventStore(runDir).read(),
+      ]);
+      const { current } = foldModelSwitch(events, state?.tiers ?? null);
       await runContextStep({
         run,
         nodeRunId,
         oldSessionId: opts.sessionId,
-        terminal: currentTerminal(process.env, helperLog),
+        terminal: currentTerminal(process.env, log),
         registry: registry(),
         provider,
         launch: {
           cwd: run.cwd,
           orchestrateArgv: orchestrateArgv(),
-          ...tierLaunch(linked?.tier ?? null),
+          // a switched model outlives the session it was switched in
+          ...tierLaunch(current),
         },
         home: harnessHome(),
-        log: helperLog,
+        log,
+      });
+    });
+
+const modelCommand = () =>
+  new Command("model")
+    .description(
+      "Switch the agent's model before a stage whose tier maps to another (started by the Stop hook)",
+    )
+    .argument("<seq>", "seq of the workflow.model.requested event")
+    .option("--run <name>", RUN_HELP)
+    .option("--run-id <id>", RUN_ID_HELP)
+    .requiredOption("--session-id <id>", "the agent session whose turn just ended")
+    .action(async (seq, opts) => {
+      const helper = await loadHelperRun(opts, "harness-model", "model.log");
+      if (helper === undefined) return;
+      const { run, log, provider } = helper;
+      await runModelStep({
+        run,
+        seq: Number(seq),
+        sessionId: opts.sessionId,
+        terminal: currentTerminal(process.env, log),
+        provider,
+        launch: { cwd: run.cwd, orchestrateArgv: orchestrateArgv() },
+        home: harnessHome(),
+        log,
       });
     });
 
@@ -624,6 +686,7 @@ await new Command()
   .addCommand(hookCommand())
   .addCommand(statuslineCommand())
   .addCommand(contextCommand())
+  .addCommand(modelCommand())
   .addCommand(limitWaitCommand())
   .addCommand(commentsCommand())
   .parseAsync(process.argv)

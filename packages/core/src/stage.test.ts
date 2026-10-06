@@ -154,6 +154,13 @@ describe("loadStage", () => {
     expect(result.error).toContain("references/rubric.md");
   });
 
+  test("a SKILL.md with no tier loads with no tier, so its stage runs on the node's or the run's", async () => {
+    const frontmatter = validFrontmatter.replace("tier: balanced\n", "");
+    const result = await loadStage(await writeSkill("planning", frontmatter), registry);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.stage.tier).toBeUndefined();
+  });
+
   test("WS28 — scopes: [] loads", async () => {
     const frontmatter = validFrontmatter.replace("scopes: [feature]", "scopes: []");
     const result = await loadStage(await writeSkill("planning", frontmatter), registry);
@@ -197,6 +204,11 @@ describe("loadStage", () => {
       "a model, since a stage asks for a model only through its tier",
       validFrontmatter.replace("tier: balanced", "tier: balanced\nmodel: opus"),
       /model/,
+    ],
+    [
+      "a tier that is not camelCase",
+      validFrontmatter.replace("tier: balanced", "tier: deep-think"),
+      /camelCase/,
     ],
     ["malformed YAML", "name: [unclosed\n", /YAML/i],
   ])("rejects %s", async (_label, frontmatter, message) => {

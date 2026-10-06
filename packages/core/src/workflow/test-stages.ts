@@ -6,6 +6,7 @@ export type DemoStage = Readonly<{
   produces?: string;
   verifiers?: string;
   variables?: string;
+  tier?: string;
 }>;
 
 const CORE_INDEX = join(import.meta.dir, "..", "index.ts");
@@ -42,7 +43,7 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
     `import { z } from ${JSON.stringify(zodUrl)};\nexport const schemas = { "demo.output.v1": z.record(z.string(), z.json()) };\n`,
   );
   writeFileSync(join(dir, "verifiers.ts"), VERIFIERS_MODULE);
-  for (const [name, { consumes, produces, verifiers, variables }] of Object.entries(stages)) {
+  for (const [name, { consumes, produces, verifiers, variables, tier }] of Object.entries(stages)) {
     mkdirSync(join(dir, name), { recursive: true });
     const lines = [
       "---",
@@ -50,7 +51,7 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
       `description: demo stage ${name}`,
       "mode: inline",
       "allowed-tools: [Bash]",
-      "tier: fast",
+      ...(tier === undefined ? [] : [`tier: ${tier}`]),
       "inputs: { description: in, schema: demo.input.v1 }",
       "outputs: { description: out, schema: demo.output.v1, module: ../schemas.ts }",
       ...(consumes === undefined ? [] : [`consumes: ${consumes}`]),
@@ -70,6 +71,9 @@ export const DEMO_STAGES = {
   producer: { produces: "[{ artifact: plan }]" },
   consumer: { consumes: "[{ artifact: plan }]" },
   reader: { consumes: "[{ artifact: plan, optional: true }]" },
+  thinker: { tier: "deep" },
+  quick: { tier: "fast" },
+  plain: {},
   tuned: {
     variables:
       "{ tone: { description: How to write, default: plain }, audience: { description: Who reads it } }",

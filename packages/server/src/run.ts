@@ -2,15 +2,15 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { orchestrateArgv, type WorkflowAgent } from "@harness/core";
 import {
-  findTierModel,
   type IAgentProvider,
   loadStartConfig,
+  type ResolvedTiers,
   type Result,
   sessionEnv,
   tierLaunch,
   type WorkflowRun,
 } from "@harness/sdk";
-import type { Registry } from "@harness/sdk/internal";
+import { type Registry, resolveTiers } from "@harness/sdk/internal";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { errorResponse, jsonBody, type Vars } from "./api.ts";
@@ -25,13 +25,11 @@ export type RunDeps = Readonly<{
 
 const viewUrl = (deps: RunDeps, runId: string): string => `${deps.viewerOrigin}/runs/${runId}`;
 
-const resolveTier = async (body: StartRunBody): Promise<Result<WorkflowRun["tier"]>> => {
-  const { tier, agent, config, cwd } = body;
-  if (tier === undefined) return { ok: true, value: null };
-  const loaded = await loadStartConfig(config ?? null, cwd);
+// The run's tier set, merged once here; init copies it into the run's state.
+const resolveRunTiers = async (body: StartRunBody): Promise<Result<ResolvedTiers | null>> => {
+  const loaded = await loadStartConfig(body.config ?? null, body.cwd);
   if (!loaded.ok) return loaded;
-  const found = findTierModel(loaded.value.config, agent, tier);
-  return found.ok ? { ok: true, value: { name: tier, ...found.value } } : found;
+  return resolveTiers(loaded.value.config, body.agent, body.tiers);
 };
 
 const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: StartRunBody) => {
@@ -42,14 +40,15 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     return errorResponse(c, 400, "bad-request", "workflowPath and cwd must exist");
   }
 
-  const tier = await resolveTier(body);
-  if (!tier.ok) {
+  const resolved = await resolveRunTiers(body);
+  if (!resolved.ok) {
     log.error(
-      { err: tier.error, workflow, agent },
-      "run not started: the workflow tier has no model",
+      { err: resolved.error, workflow, agent },
+      "run not started: its tiers do not resolve",
     );
-    return errorResponse(c, 400, "bad-request", tier.error);
+    return errorResponse(c, 400, "bad-request", resolved.error);
   }
+  const tiers = resolved.value;
 
   const provider = deps.providerFor(agent);
 
@@ -66,7 +65,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
     name: null,
     terminal: null,
     config: config ?? null,
-    tier: tier.value,
+    tiers,
     createdAt: new Date().toISOString(),
   };
   await deps.registry.addRun(pending);
@@ -79,7 +78,7 @@ const startRun = async (c: Context<{ Variables: Vars }>, deps: RunDeps, body: St
       prompt: `${provider.skillPrefix}orchestrate --workflow ${workflowPath} --inputs ${JSON.stringify(inputs)}${nameArg}`,
       env: sessionEnv(body.env, id, deps.home),
       orchestrateArgv: orchestrateArgv(),
-      ...tierLaunch(tier.value),
+      ...tierLaunch(tiers === null ? null : (tiers.models[tiers.default] ?? null)),
     })
     .catch(async (error: unknown) => {
       await deps.registry.removeRun(id);

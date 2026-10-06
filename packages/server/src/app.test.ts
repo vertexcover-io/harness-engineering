@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,8 +12,10 @@ import { createApp } from "./app.ts";
 import { createHarnessClient } from "./client.ts";
 import { socketPath } from "./protocol.ts";
 
+// A git checkout, as harness run sends: the server reads its config to pick the launch model.
 const tempWorkspace = (): { workflowPath: string; cwd: string } => {
   const cwd = mkdtempSync(join(tmpdir(), "harness-app-"));
+  execFileSync("git", ["init", "-q"], { cwd });
   const workflowPath = join(cwd, "ok.yaml");
   writeFileSync(workflowPath, "name: ok\nnodes: []\n");
   return { workflowPath, cwd };
@@ -138,7 +141,6 @@ describe("POST /runs", () => {
       `/orchestrate --workflow ${workflowPath} --inputs ${JSON.stringify({ a: 1 })}`,
     );
     expect(launchOptions?.env?.HARNESS_RUN_ID).toBe(json.run.id);
-    expect(launchOptions?.model).toBeUndefined();
 
     expect((await deps.registry.findRun(json.run.id))?.terminal).toBe("session-xyz");
   });
@@ -271,6 +273,7 @@ describe("POST /runs", () => {
     );
     const app = createApp(deps);
     const config = join(cwd, "custom.json");
+    writeFileSync(config, '{"version": 2}');
     const start = (extra: object) =>
       app.request("/runs", {
         method: "POST",
@@ -288,19 +291,17 @@ describe("POST /runs", () => {
     expect(without.config).toBeNull();
   });
 
-  test("a workflow tier launches the session with the model and effort the config maps it to", async () => {
+  // Starts a run of AGENT with the config file CONFIG holds and the request's TIERS; gives back the
+  // reply and the launch options the provider saw.
+  const startTiered = async (agent: string, config: string, tiers?: object) => {
     const { workflowPath, cwd } = tempWorkspace();
-    const config = join(cwd, "tiers.yaml");
-    writeFileSync(
-      config,
-      "version: 2\nagents:\n  codex:\n    tiers:\n      deep: { model: gpt-5-codex, effort: high }\n",
-    );
+    const configPath = join(cwd, "tiers.yaml");
+    writeFileSync(configPath, config);
     const seen: LaunchOptions[] = [];
     const deps = await buildDeps((options) => {
       seen.push(options);
       return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
     });
-
     const res = await createApp(deps).request("/runs", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -310,22 +311,64 @@ describe("POST /runs", () => {
         workflowPath,
         inputs: {},
         cwd,
-        agent: "codex",
-        tier: "deep",
-        config,
+        agent,
+        config: configPath,
+        ...(tiers === undefined ? {} : { tiers }),
       }),
+    });
+    const launched = seen.map(({ model, effort }) => ({ model, effort }));
+    return { res, launched, deps };
+  };
+
+  test("a claude run with no tiers anywhere launches on the built-in deep tier: claude-opus-5-5 at high effort", async () => {
+    const { res, launched } = await startTiered("claude", "version: 2\n");
+
+    expect(res.status).toBe(201);
+    expect(launched).toEqual([{ model: "claude-opus-5-5", effort: "high" }]);
+  });
+
+  test("a codex run with no tiers anywhere launches on the built-in deep tier: gpt-6-sol at high effort", async () => {
+    const { res, launched } = await startTiered("codex", "version: 2\n");
+
+    expect(res.status).toBe(201);
+    expect(launched).toEqual([{ model: "gpt-6-sol", effort: "high" }]);
+  });
+
+  test("a codex run launches on the model and effort of its config's default tier", async () => {
+    const config =
+      "version: 2\nagents:\n  codex:\n    tiers:\n      default: deep\n      models:\n        deep: { model: gpt-5-codex, effort: high }\n";
+    const { res, launched } = await startTiered("codex", config);
+
+    expect(res.status).toBe(201);
+    expect(launched).toEqual([{ model: "gpt-5-codex", effort: "high" }]);
+  });
+
+  test("SC23: a request whose tiers map deep to opus-y launches on opus-y over the config's opus-x", async () => {
+    const config =
+      "version: 2\nagents:\n  claude:\n    tiers:\n      models:\n        deep: { model: opus-x }\n";
+    const { res, launched } = await startTiered("claude", config, {
+      models: { deep: { model: "opus-y" } },
     });
 
     expect(res.status).toBe(201);
-    expect(seen.map(({ model, effort }) => ({ model, effort }))).toEqual([
-      { model: "gpt-5-codex", effort: "high" },
-    ]);
-    const { run } = z.object({ run: WorkflowRunSchema }).parse(await res.json());
-    expect((await deps.registry.findRun(run.id))?.tier).toEqual({
-      name: "deep",
-      model: "gpt-5-codex",
-      effort: "high",
+    expect(launched).toEqual([{ model: "opus-y", effort: undefined }]);
+  });
+
+  test("the run saved at start holds the built-in, config and request tiers merged, and launches on its default fast tier's haiku-x", async () => {
+    const config =
+      "version: 2\nagents:\n  claude:\n    tiers:\n      default: fast\n      models:\n        fast: { model: haiku-x }\n";
+    const { res, launched, deps } = await startTiered("claude", config, {
+      models: { deep: { model: "opus-y" } },
     });
+
+    expect(res.status).toBe(201);
+    const { run } = z.object({ run: WorkflowRunSchema }).parse(await res.json());
+    const tiers = {
+      default: "fast",
+      models: { fast: { model: "haiku-x" }, deep: { model: "opus-y" } },
+    };
+    expect((await deps.registry.findRun(run.id))?.tiers).toEqual(tiers);
+    expect(launched).toEqual([{ model: "haiku-x", effort: undefined }]);
   });
 
   test("the session starts with the env the request carries, under the harness's own variables", async () => {
@@ -375,35 +418,16 @@ describe("POST /runs", () => {
     expect(launched).toBe(false);
   });
 
-  test("a workflow tier the config does not map for the agent is 400 and launches nothing", async () => {
-    const { workflowPath, cwd } = tempWorkspace();
-    const config = join(cwd, "tiers.yaml");
-    writeFileSync(config, "version: 2\nagents:\n  codex:\n    tiers:\n      deep: { model: o3 }\n");
-    let launched = false;
-    const deps = await buildDeps(() => {
-      launched = true;
-      return Promise.resolve({ ok: true, value: { terminalName: "s1", terminal: fakePane("s1") } });
-    });
-
-    const res = await createApp(deps).request("/runs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        workflow: "ok",
-        env: {},
-        workflowPath,
-        inputs: {},
-        cwd,
-        tier: "deep",
-        config,
-      }),
+  test("a request whose tiers default names a tier no layer maps is 400 and launches nothing", async () => {
+    const { res, launched, deps } = await startTiered("claude", "version: 2\n", {
+      default: "turbo",
     });
 
     expect(res.status).toBe(400);
     const { error } = (await res.json()) as { error: { code: string; message: string } };
     expect(error.code).toBe("bad-request");
-    expect(error.message).toContain("agents.claude.tiers.deep");
-    expect(launched).toBe(false);
+    expect(error.message).toContain('default tier "turbo"');
+    expect(launched).toEqual([]);
     expect(await deps.registry.listRuns()).toEqual([]);
   });
 

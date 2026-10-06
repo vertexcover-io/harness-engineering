@@ -275,6 +275,7 @@ const loadStage = async (ref: string, cwd: string): Promise<PlanStage> => {
     ref,
     name: stage.value.name,
     skill: join(dir, "SKILL.md"),
+    tier: stage.value.tier,
     consumes: stage.value.consumes ?? [],
     produces: stage.value.produces ?? [],
     variables: stage.value.variables,
@@ -420,7 +421,7 @@ async function compileFile(path: string, at: Compiling): Promise<WorkflowPlan> {
   return Object.freeze({
     name: workflow.name,
     agent: workflow.agent,
-    tier: workflow.tier,
+    tiers: workflow.tiers,
     env: workflow.env,
     envFile: workflow.envFile,
     inputs: workflow.inputs,

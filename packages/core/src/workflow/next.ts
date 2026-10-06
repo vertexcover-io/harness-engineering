@@ -4,11 +4,14 @@ import {
   eventError,
   type JsonValue,
   type NodeRun,
+  type ResolvedTiers,
   type SkipOutput,
   type State,
   stackOf,
+  type TierModel,
+  tierLaunch,
 } from "@harness/sdk";
-import { findNodeRuns } from "@harness/sdk/internal";
+import { findNodeRuns, type ModelSwitch, nodePath } from "@harness/sdk/internal";
 import { z } from "zod";
 import { own } from "../stage.ts";
 import { findConsumedArtifacts } from "./done.ts";
@@ -46,6 +49,7 @@ export type Decision =
       input: JsonValue;
       variables: Readonly<Record<string, string>>;
     }>
+  | (Readonly<{ kind: "model"; nodeId: string }> & TierModel)
   | Readonly<{ kind: "waiting"; nodeRunId: string }>
   | Readonly<{ kind: "blocked"; nodeId: string; stage: string; missing: readonly string[] }>
   | Readonly<{ kind: "finished"; status: Exclude<State["status"], "running"> }>;
@@ -53,18 +57,32 @@ export type Decision =
 // Saves one event and gives back the state with it applied.
 export type Emit = (state: State, event: EmitInput) => Promise<State>;
 
-// What walking a node or a list of nodes decided: stop with a Decision, or go on to the next node.
-type Step = Decision | Readonly<{ kind: "continue" }>;
+// What walking a node or a list of nodes decided: stop with a Decision, go on to the next node,
+// or walk again from the top once a failed model switch has failed its stage.
+type Step = Decision | Readonly<{ kind: "continue" }> | Readonly<{ kind: "rewalk" }>;
 type Walked = Readonly<{ state: State; step: Step }>;
 
 const CONTINUE: Step = { kind: "continue" };
 
-// Where the walk is: the inputs its expressions read and, inside a loop, the current pass.
-type Walk = Readonly<{
-  emit: Emit;
-  inputs: JsonValue;
-  loop: Readonly<{ index: number; max: number; previous: JsonValue }> | undefined;
+// The run's tiers and where its model switches stand. tiers is null when the run's agent cannot
+// switch models, so every node runs on the model it has.
+export type ModelInputs = Readonly<{
+  tiers: ResolvedTiers | null;
+  switching: ModelSwitch;
 }>;
+
+const NO_MODELS: ModelInputs = {
+  tiers: null,
+  switching: { current: null, pending: null, failed: null },
+};
+
+// Where the walk is: the inputs its expressions read and, inside a loop, the current pass.
+type Walk = ModelInputs &
+  Readonly<{
+    emit: Emit;
+    inputs: JsonValue;
+    loop: Readonly<{ index: number; max: number; previous: JsonValue }> | undefined;
+  }>;
 
 // Top-level nodes carry no `parents`; state.json puts them at the root of its tree.
 export const buildParentsField = (parents: readonly string[]) =>
@@ -311,6 +329,64 @@ const endContainer = async (
   return { state: await emitNodeEvent(walk, state, node, event), step: CONTINUE };
 };
 
+const isSameModel = (target: TierModel, current: TierModel | null): boolean =>
+  current !== null &&
+  target.model === current.model &&
+  (target.effort === undefined || target.effort === current.effort);
+
+// The tier an agent node runs on, first one set: its own, its stage's, the run's default. setBy
+// names where it came from, for an error about it.
+export const pickNodeTier = (
+  node: PlanAgentNode,
+  runDefault: string,
+): Readonly<{ tier: string; setBy: string }> => {
+  if (node.tier !== undefined) return { tier: node.tier, setBy: node.id };
+  if (node.stage?.tier !== undefined) return { tier: node.stage.tier, setBy: node.stage.ref };
+  return { tier: runDefault, setBy: "the run's default" };
+};
+
+// The model an agent node's tier asks for when the session is on another one; undefined when the
+// node can start on the model it has, or a failure when the run has no such tier.
+const findModelSwitch = (node: Leaf, walk: Walk): TierModel | NodeFailure | undefined => {
+  if (walk.tiers === null || node.type !== "agent") return undefined;
+  const { tier } = pickNodeTier(node, walk.tiers.default);
+  const target = own(walk.tiers.models, tier);
+  if (target === undefined) {
+    const names = Object.keys(walk.tiers.models).join(", ");
+    const message = `${node.id}: tier "${tier}" is not one of the run's tiers: ${names}`;
+    return new NodeFailure("validation", message);
+  }
+  return isSameModel(target, walk.switching.current) ? undefined : target;
+};
+
+const requestModel = async (
+  node: Leaf,
+  target: TierModel,
+  walk: Walk,
+  state: State,
+): Promise<Walked> => {
+  const path = nodePath(node.parents, node.id);
+  const { pending, failed } = walk.switching;
+  const step: Step = { kind: "model", nodeId: node.id, ...target };
+  if (pending?.node === path) return { state, step };
+  if (failed?.node === path) {
+    const message = `${node.id}: switching to ${target.model} failed: ${failed.reason}`;
+    const recorded = await recordSkipOrFail(
+      node,
+      new NodeFailure("exception", message),
+      walk,
+      state,
+    );
+    return { state: recorded.state, step: { kind: "rewalk" } };
+  }
+  const requested = await walk.emit(state, {
+    type: "workflow.model.requested",
+    source: "workflow",
+    payload: { node: path, ...tierLaunch(target) },
+  });
+  return { state: requested, step };
+};
+
 // A leaf node (exec, wait, agent or context): handed to the skill once it can start, then waited on.
 const executeLeaf = async (
   node: Leaf,
@@ -338,6 +414,9 @@ const executeLeaf = async (
       return { state: recorded, step: { kind: "blocked", ...blocked } };
     }
   }
+  const target = findModelSwitch(node, walk);
+  if (target instanceof NodeFailure) return recordSkipOrFail(node, target, walk, state);
+  if (target !== undefined) return requestModel(node, target, walk, state);
   const { input, variables } = start;
   const started = await recordStart(node, { input }, walk, state);
   const { nodeRunId } = started.nodeRun;
@@ -476,12 +555,22 @@ export const decideNext = async (
   plan: WorkflowPlan,
   state: State,
   emit: Emit,
+  models: ModelInputs = NO_MODELS,
 ): Promise<Readonly<{ state: State; decision: Decision }>> => {
   if (state.status !== "running") {
     return { state, decision: { kind: "finished", status: state.status } };
   }
   const inputs = resolveWorkflowInputs(plan.inputs, state.input);
-  const walked = await executeNodes(plan.nodes, { emit, inputs, loop: undefined }, state);
+  const walked = await executeNodes(
+    plan.nodes,
+    { emit, inputs, loop: undefined, ...models },
+    state,
+  );
+  if (walked.step.kind === "rewalk") {
+    // the failed switch is spent: its stage has failed, so a later loop pass asks again
+    const switching = { ...models.switching, failed: null };
+    return decideNext(plan, walked.state, emit, { ...models, switching });
+  }
   if (walked.step.kind !== "continue") return { state: walked.state, decision: walked.step };
   const status =
     findBlockingFailure(plan.nodes, walked.state.nodeRuns) === undefined ? "completed" : "failed";

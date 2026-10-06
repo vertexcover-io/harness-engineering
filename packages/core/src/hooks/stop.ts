@@ -1,5 +1,6 @@
 import {
   type EmitInput,
+  type Event,
   type HookDeps,
   type HookReply,
   type NodeRun,
@@ -12,8 +13,13 @@ import {
   type StopReason,
   type TranscriptEntry,
 } from "@harness/sdk";
-import { appendRunEvent, jsonlEventStore } from "@harness/sdk/internal";
-import { startContextStep } from "../context-step.ts";
+import {
+  appendRunEvent,
+  foldModelSwitch,
+  jsonlEventStore,
+  type ModelSwitch,
+} from "@harness/sdk/internal";
+import { startContextStep, startModelStep } from "../context-step.ts";
 import { completeContextStep, findContextPlanNode, orchestrateCommand } from "../runs.ts";
 import { findSessionRun } from "./common.ts";
 
@@ -34,6 +40,8 @@ export type StopCheck = Readonly<{
   // whether anything but a hook's own log happened since the last Stop check
   progressSinceCheck: boolean;
   maxBlocks: number;
+  // the model switch next asked for that no helper has answered yet
+  pendingSwitch: ModelSwitch["pending"];
 }>;
 
 // `blockStreak` is the blocks in a row at this spot, counting this call when it blocks. A decision
@@ -44,6 +52,7 @@ export type StopDecision =
       blockStreak: number;
     }>
   | Readonly<{ reason: "context-node"; blockStreak: number; nodeRunId: string }>
+  | Readonly<{ reason: "model-switch"; blockStreak: number; seq: number }>
   | Readonly<{ reason: "next-not-run"; blockStreak: number; message: string }>
   | Readonly<{ reason: "node-not-done"; blockStreak: number; message: string; nodeRunId: string }>;
 
@@ -90,13 +99,11 @@ const priorBlocks = (state: State, progressSinceCheck: boolean): number =>
 
 // Progress is any event after the last check except the hooks' own logs, which only observe the
 // run, and agent.stuck, which this hook records as it gives up.
-const progressSince = async (runDir: string, seq: number | undefined): Promise<boolean> => {
-  if (seq === undefined) return false;
-  const events = await jsonlEventStore(runDir).read();
-  return events.some(
+const progressSince = (events: readonly Event[], seq: number | undefined): boolean =>
+  seq !== undefined &&
+  events.some(
     (event) => event.seq > seq && !event.type.startsWith("hooks.") && event.type !== "agent.stuck",
   );
-};
 
 const nextMessage = (run: RunRef): string =>
   `Harness run ${run.name} is not finished. Run \`${orchestrateCommand({ verb: "next", run })}\` ` +
@@ -133,6 +140,7 @@ export const decideStop = ({
   touchedRun,
   progressSinceCheck,
   maxBlocks,
+  pendingSwitch,
 }: StopCheck): StopDecision => {
   const prior = priorBlocks(state, progressSinceCheck);
   const position = positionOf(state);
@@ -140,6 +148,10 @@ export const decideStop = ({
   // A context node's work starts once the turn is over, so the stop is the cue, not a lapse.
   if (position.kind === "open-node" && position.leaf.nodeType === "context") {
     return { reason: "context-node", blockStreak: prior, nodeRunId: position.leaf.nodeRunId };
+  }
+  // A model step's switch also starts once the turn is over.
+  if (position.kind === "between-nodes" && pendingSwitch !== null) {
+    return { reason: "model-switch", blockStreak: prior, seq: pendingSwitch.seq };
   }
   if (position.kind === "between-nodes" && touchedRun === false)
     return { reason: "user-chat", blockStreak: prior };
@@ -224,11 +236,18 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
     const runDir = runDirOf(run.cwd, run.name);
     const state = await readState(runDir);
     if (state === null) return ALLOW;
-    const [touchedRun, progressSinceCheck] = await Promise.all([
+    const [touchedRun, events] = await Promise.all([
       readTouchedRun(input, state),
-      progressSince(runDir, state.stopHook?.seq),
+      jsonlEventStore(runDir).read(),
     ]);
-    const check = { run, state, touchedRun, progressSinceCheck, maxBlocks: maxBlocksOf(deps.env) };
+    const check = {
+      run,
+      state,
+      touchedRun,
+      progressSinceCheck: progressSince(events, state.stopHook?.seq),
+      maxBlocks: maxBlocksOf(deps.env),
+      pendingSwitch: foldModelSwitch(events, state.tiers).pending,
+    };
     const decision = await decideForAgent(input, check);
     const stored = await appendRunEvent(run, stopCalledEvent(input, check, decision));
     if (!stored.ok) {
@@ -238,6 +257,9 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
     }
     if (decision.reason === "context-node") {
       await startContextStep(run, input.sessionId, decision.nodeRunId);
+    }
+    if (decision.reason === "model-switch") {
+      await startModelStep(run, input.sessionId, decision.seq);
     }
     if (decision.reason === "max-blocks-reached") await recordStuck(run, input, deps);
     return replyOf(decision);

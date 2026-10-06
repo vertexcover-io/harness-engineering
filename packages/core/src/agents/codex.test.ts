@@ -305,6 +305,16 @@ describe("codexProvider pane control", () => {
     ]);
   });
 
+  test("SC29: a relaunch with resume is refused and respawns nothing", async () => {
+    const provider = codexProvider({ host: fakeHost({}), binary: "codex-x" });
+    const { pane, calls } = screenPane("");
+
+    const result = await provider.relaunch(pane, "s-1", { cwd: "/repo", resume: true });
+
+    expect(result.ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
   test("an aborted run is an error", async () => {
     const fake = fakeCodex({ stdout: jsonl(started, message("done")) });
     const controller = new AbortController();

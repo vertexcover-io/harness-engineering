@@ -29,7 +29,7 @@ const setup = async () => {
     name: "fix-login",
     terminal: null,
     config: null,
-    tier: null,
+    tiers: null,
     createdAt: new Date().toISOString(),
   };
   await createRegistry(registryPath(home)).addRun(record);

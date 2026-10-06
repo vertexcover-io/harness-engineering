@@ -24,6 +24,7 @@ import {
   loadRunConfig,
   loadStartConfig,
   type NodeRun,
+  type ResolvedTiers,
   type Result,
   type RunRef,
   runDirOf,
@@ -40,6 +41,7 @@ import {
   appendRunEventIf,
   createState,
   type DoneStatus,
+  foldModelSwitch,
   jsonlEventStore,
   type Registry,
   type StepOutcome,
@@ -66,6 +68,7 @@ import {
   decideNext,
   type Emit,
   findRunningLeaf,
+  pickNodeTier,
   type RunningLeaf,
 } from "./workflow/next.ts";
 import {
@@ -73,6 +76,7 @@ import {
   type NodeRecord,
   type PlanAgentNode,
   type PlanContextNode,
+  type PlanNode,
   WorkflowError,
   type WorkflowPlan,
 } from "./workflow/types.ts";
@@ -86,6 +90,8 @@ export type InitOptions = Readonly<{
   log: ILogger;
   // the agent's terminal, when init runs inside one
   terminal?: ITerminal | undefined;
+  // the agents whose session the harness can switch to another model between stages
+  modelSwitchAgents: ReadonlySet<AgentType>;
 }>;
 
 export const terminalName = (agent: string, runName: string, runId: string): string =>
@@ -183,7 +189,15 @@ const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<S
   const dir = runDirOf(run.cwd, name);
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
   const version = String(corePackage.version);
-  await createState({ runId: run.id, runDir: dir, version, eventHandlers, hooks, config });
+  await createState({
+    runId: run.id,
+    runDir: dir,
+    version,
+    eventHandlers,
+    hooks,
+    config,
+    tiers: run.tiers,
+  });
   const appended = await appendRunEvent(
     { id: run.id, cwd: run.cwd, name },
     {
@@ -198,6 +212,51 @@ const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<S
   if (state === null) throw new Error(`${dir}/state.json disappeared during init`);
   options.log.debug({ dir, lastEventSeq: state.lastEventSeq }, "run folder written");
   return state;
+};
+
+// Every agent node the plan can run, inside loops, switch cases and included workflows too.
+const collectAgentNodes = (nodes: readonly PlanNode[]): readonly PlanAgentNode[] =>
+  nodes.flatMap((node) => {
+    switch (node.type) {
+      case "agent":
+        return [node];
+      case "loop":
+        return collectAgentNodes(node.nodes);
+      case "include":
+        return collectAgentNodes(node.plan.nodes);
+      case "switch":
+        return collectAgentNodes([...node.cases.flatMap((c) => c.nodes), ...(node.default ?? [])]);
+      default:
+        return [];
+    }
+  });
+
+// The tiers a run switches its session between before each agent node; null when it never
+// switches, because its agent cannot or because it was registered with no tiers.
+const pickSwitchTiers = (
+  agent: AgentType,
+  tiers: ResolvedTiers | null,
+  modelSwitchAgents: ReadonlySet<AgentType>,
+): ResolvedTiers | null => (tiers !== null && modelSwitchAgents.has(agent) ? tiers : null);
+
+// A run that switches models needs one for every agent node's tier, so a tier with none fails at
+// init, not mid-run.
+const checkNodeTiers = async (
+  run: WorkflowRun,
+  modelSwitchAgents: ReadonlySet<AgentType>,
+): Promise<Result<void>> => {
+  const plan = await compileWorkflow(run.workflowPath, { cwd: run.cwd });
+  const tiers = pickSwitchTiers(plan.agent, run.tiers, modelSwitchAgents);
+  if (tiers === null) return { ok: true, value: undefined };
+  const unmapped = new Set(
+    collectAgentNodes(plan.nodes)
+      .map((node) => pickNodeTier(node, tiers.default))
+      .filter(({ tier }) => !Object.hasOwn(tiers.models, tier))
+      .map(({ tier, setBy }) => `${setBy} has tier "${tier}"`),
+  );
+  if (unmapped.size === 0) return { ok: true, value: undefined };
+  const names = Object.keys(tiers.models).join(", ") || "none";
+  return { ok: false, error: `${[...unmapped].join(", ")}; the ${plan.agent} tiers are ${names}` };
 };
 
 const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => {
@@ -226,6 +285,8 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
   const { config, path, root } = loaded.value;
   const hooks = await freezeHooks(run, config, root);
   if (!hooks.ok) return hooks;
+  const staged = await checkNodeTiers(run, options.modelSwitchAgents);
+  if (!staged.ok) return staged;
   return {
     ok: true,
     value: {
@@ -452,9 +513,16 @@ const buildLeafReply = (
 };
 
 // Walks the run to its next step, saving each engine event to event.jsonl as it is recorded.
-const walkToNextStep = async (run: RunRef): Promise<Result<StepReply>> => {
+const walkToNextStep = async (
+  run: RunRef,
+  modelSwitchAgents: ReadonlySet<AgentType>,
+): Promise<Result<StepReply>> => {
   const runDir = runDirOf(run.cwd, run.name);
-  const [plan, state] = await Promise.all([compileWorkflowPlan(run), readRunState(runDir)]);
+  const [plan, state, events] = await Promise.all([
+    compileWorkflowPlan(run),
+    readRunState(runDir),
+    jsonlEventStore(runDir).read(),
+  ]);
   const config = await loadRecordedConfig(state.config, run.cwd);
   if (!config.ok) return config;
   const emit: Emit = async (_state, event) => {
@@ -463,13 +531,18 @@ const walkToNextStep = async (run: RunRef): Promise<Result<StepReply>> => {
     if (appended.value.state === null) throw new Error(`${runDir}/state.json is missing`);
     return appended.value.state;
   };
-  const { decision } = await decideNext(plan, state, emit);
+  const tiers = pickSwitchTiers(plan.agent, state.tiers, modelSwitchAgents);
+  const switching = foldModelSwitch(events, state.tiers);
+  const { decision } = await decideNext(plan, state, emit, { tiers, switching });
   const reply = decision.kind === "leaf" ? buildLeafReply(decision, run, config.value) : decision;
   return { ok: true, value: reply };
 };
 
-export const nextStep = (run: RunRef): Promise<Result<StepReply>> =>
-  logCall(run, { command: "next", input: {} }, walkToNextStep(run));
+export const nextStep = (
+  run: RunRef,
+  modelSwitchAgents: ReadonlySet<AgentType>,
+): Promise<Result<StepReply>> =>
+  logCall(run, { command: "next", input: {} }, walkToNextStep(run, modelSwitchAgents));
 
 // The step the run is at, when `nodeRunId` is its run, read from its workflow and state.json.
 const loadRunningLeaf = async (run: RunRef, nodeRunId: string): Promise<Result<RunningLeaf>> => {

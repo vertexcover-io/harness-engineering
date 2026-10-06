@@ -4,14 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import * as z from "zod";
-import type { AgentType } from "./agent.ts";
 import {
   type Config,
   ConfigSchema,
-  findTierModel,
   loadConfig,
   loadConfigAt,
   type Notifier,
+  resolveTiers,
 } from "./config.ts";
 
 const exampleYaml = `version: 2
@@ -20,9 +19,11 @@ doctor: bun bin/doctor.ts
 agents:
   claude:
     tiers:
-      deep: { model: opus, effort: high }
-      standard: { model: sonnet }
-      fast: { model: haiku }
+      default: standard
+      models:
+        deep: { model: opus, effort: high }
+        standard: { model: sonnet }
+        fast: { model: haiku }
 
 packages:
   root:
@@ -79,26 +80,78 @@ const errorOf = (value: unknown): string => {
   return z.prettifyError(parsed.error);
 };
 
-describe("findTierModel", () => {
-  const config = ConfigSchema.parse({
-    version: 2,
-    agents: { claude: { tiers: { deep: { model: "opus", effort: "high" } } } },
-  });
-
-  test("gives the model and effort the agent maps the tier to", () => {
-    expect(findTierModel(config, "claude", "deep")).toEqual({
-      ok: true,
-      value: { model: "opus", effort: "high" },
+describe("resolveTiers", () => {
+  const configWith = (tiers?: object): Config =>
+    ConfigSchema.parse({
+      version: 2,
+      ...(tiers === undefined ? {} : { agents: { claude: { tiers } } }),
     });
+  const BUILT_IN = {
+    default: "deep",
+    models: {
+      fast: { model: "claude-sonnet-5-5" },
+      deep: { model: "claude-opus-5-5", effort: "high" },
+    },
+  } as const;
+
+  test("claude with no config and no workflow tiers gets the built-in set: default deep, fast on sonnet, deep on opus at high effort", () => {
+    expect(resolveTiers(configWith(), "claude", {})).toEqual({ ok: true, value: BUILT_IN });
   });
 
   test.each([
-    ["a tier the agent does not map", "claude", "fast"],
-    ["an agent the config does not list", "codex", "deep"],
-  ])("fails for %s, naming the missing key", (_label, agent, tier) => {
-    const found = findTierModel(config, agent as AgentType, tier);
-    if (found.ok) throw new Error("expected a failure");
-    expect(found.error).toContain(`agents.${agent}.tiers.${tier}`);
+    [
+      "a config model for fast replaces the built-in fast and keeps deep",
+      { models: { fast: { model: "haiku-x" } } },
+      {},
+      { ...BUILT_IN, models: { ...BUILT_IN.models, fast: { model: "haiku-x" } } },
+    ],
+    [
+      "a config tier the built-in lacks is added beside fast and deep",
+      { models: { standard: { model: "sonnet-x" } } },
+      {},
+      { ...BUILT_IN, models: { ...BUILT_IN.models, standard: { model: "sonnet-x" } } },
+    ],
+    [
+      "a workflow that sets only default: fast keeps every model and launches on fast",
+      {},
+      { default: "fast" },
+      { ...BUILT_IN, default: "fast" },
+    ],
+    [
+      "a workflow deep with no effort replaces the config's whole deep entry, effort included",
+      { default: "fast", models: { deep: { model: "opus-x", effort: "max" } } } as const,
+      { models: { deep: { model: "opus-y" } } },
+      { default: "fast", models: { ...BUILT_IN.models, deep: { model: "opus-y" } } },
+    ],
+  ])("%s", (_label, config, workflow, expected) => {
+    expect(resolveTiers(configWith(config), "claude", workflow)).toEqual({
+      ok: true,
+      value: expected,
+    });
+  });
+
+  test("a default naming a tier no layer maps fails, naming the tier and the tiers there are", () => {
+    const resolved = resolveTiers(configWith(), "claude", { default: "balanced" });
+    if (resolved.ok) throw new Error("expected a failure");
+    expect(resolved.error).toContain('"balanced"');
+    expect(resolved.error).toContain("fast, deep");
+  });
+
+  test("codex with no config and no workflow tiers gets its built-in set: default deep, fast on gpt-6-luna, deep on gpt-6-sol at high effort", () => {
+    expect(resolveTiers(configWith(), "codex", {})).toEqual({
+      ok: true,
+      value: {
+        default: "deep",
+        models: {
+          fast: { model: "gpt-6-luna" },
+          deep: { model: "gpt-6-sol", effort: "high" },
+        },
+      },
+    });
+  });
+
+  test("pi has no built-in set: with no tiers anywhere it resolves to null", () => {
+    expect(resolveTiers(configWith(), "pi", {})).toEqual({ ok: true, value: null });
   });
 });
 
@@ -148,7 +201,10 @@ describe("ConfigSchema", () => {
 
   test("SC2 — a full example loads with defaults filled", async () => {
     const config = await load("orchestrate.config.yaml", exampleYaml);
-    expect(config.agents.claude?.tiers.deep).toEqual({ model: "opus", effort: "high" });
+    expect(config.agents.claude?.tiers).toMatchObject({
+      default: "standard",
+      models: { deep: { model: "opus", effort: "high" } },
+    });
     expect(config.packages.root).toEqual({
       path: ".",
       timeoutSeconds: 300,
@@ -174,7 +230,11 @@ describe("ConfigSchema", () => {
   test.each([
     ["command", { packages: { root: { path: ".", commands: { test_all: "x" } } } }, "test_all"],
     ["package", { packages: { "my-api": { path: "api" } } }, "my-api"],
-    ["tier", { agents: { claude: { tiers: { "deep-think": { model: "opus" } } } } }, "deep-think"],
+    [
+      "tier",
+      { agents: { claude: { tiers: { models: { "deep-think": { model: "opus" } } } } } },
+      "deep-think",
+    ],
     [
       "environment",
       { environments: { default: "my-local", entries: { "my-local": {} } } },
@@ -253,7 +313,10 @@ describe("ConfigSchema", () => {
     ],
     [
       "tier",
-      { version: 2, agents: { claude: { tiers: { deep: { model: "opus", efort: "high" } } } } },
+      {
+        version: 2,
+        agents: { claude: { tiers: { models: { deep: { model: "opus", efort: "high" } } } } },
+      },
       "efort",
     ],
     ["agent", { version: 2, agents: { gemini: { tiers: {} } } }, "gemini"],
@@ -264,13 +327,13 @@ describe("ConfigSchema", () => {
   test("SC9 — a tier's effort must be one of the agent effort levels", () => {
     const valid = ConfigSchema.parse({
       version: 2,
-      agents: { claude: { tiers: { deep: { model: "opus", effort: "max" } } } },
+      agents: { claude: { tiers: { models: { deep: { model: "opus", effort: "max" } } } } },
     });
-    expect(valid.agents.claude?.tiers.deep?.effort).toBe("max");
+    expect(valid.agents.claude?.tiers.models?.deep?.effort).toBe("max");
     expect(
       errorOf({
         version: 2,
-        agents: { claude: { tiers: { deep: { model: "opus", effort: "extreme" } } } },
+        agents: { claude: { tiers: { models: { deep: { model: "opus", effort: "extreme" } } } } },
       }),
     ).toContain("effort");
   });
@@ -532,7 +595,7 @@ describe("loadConfig", () => {
     [
       "a schema violation",
       "orchestrate.config.json",
-      '{"version": 2, "agents": {"claude": {"tiers": {"deep": {}}}}}',
+      '{"version": 2, "agents": {"claude": {"tiers": {"models": {"deep": {}}}}}}',
       "model",
     ],
     ["a file that is not an object", "orchestrate.config.yaml", "- version\n", "version: 2"],

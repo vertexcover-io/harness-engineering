@@ -3,6 +3,7 @@ import { basename, join, resolve } from "node:path";
 import {
   type Config,
   isNormalizedRelativePath,
+  NameSchema,
   NonEmptyStringSchema,
   parseFrontmatter,
   type Result,
@@ -71,7 +72,7 @@ export const StageSchema = z.strictObject({
   mode: z.enum(["inline", "subagent"]),
   tags: UniqueSlugsSchema.optional(),
   "allowed-tools": z.array(NonEmptyStringSchema),
-  tier: NonEmptyStringSchema,
+  tier: NameSchema.optional(),
   inputs: StagePortSchema.optional(),
   outputs: StagePortSchema.extend({ module: NonEmptyStringSchema.optional() }).optional(),
   consumes: z.array(ArtifactDeclarationSchema).optional(),
