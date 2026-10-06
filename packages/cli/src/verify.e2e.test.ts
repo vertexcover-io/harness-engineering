@@ -73,6 +73,18 @@ describe("harness verify", () => {
     expect(stderr).toContain("yaml:");
   });
 
+  test("a bare name compiles the shipped workflow of that name", () => {
+    const { code, stdout } = verify("task", null);
+    expect(code).toBe(0);
+    expect(stdout).toContain("ok: workflow task compiles");
+  });
+
+  test("an unknown bare name is reported as a missing workflow", () => {
+    const { code, stderr } = verify("nope", null);
+    expect(code).toBe(1);
+    expect(stderr).toContain("missing-workflow:");
+  });
+
   test("a missing file is reported and exits 1", () => {
     const { code, stderr } = verify("nope.yaml", null);
     expect(code).toBe(1);

@@ -1,10 +1,10 @@
-import { resolve } from "node:path";
 import { Command } from "@commander-js/extra-typings";
 import {
   buildNotifierCheck,
   type DoctorJson,
   type DoctorReport,
   type DoctorRow,
+  findWorkflowPath,
   loadStartEnv,
   runDoctor,
   verdict,
@@ -77,14 +77,13 @@ export const renderJson = (report: DoctorReport): string => {
 export const exitCodeFor = (report: DoctorReport): number => (report.failed.length > 0 ? 1 : 0);
 
 // Without a workflow, the env a run would get from the .env and the config alone.
-const declaredChecks = async (workflowPath: string | undefined) => {
+const declaredChecks = async (workflow: string | undefined) => {
   const cwd = process.cwd();
-  if (workflowPath === undefined) {
+  if (workflow === undefined) {
     const env = await loadStartEnv(null, cwd, { env: {}, agent: "claude" });
     return [buildNotifierCheck(undefined, env)];
   }
-  const absolutePath = resolve(cwd, workflowPath);
-  const plan = await compileOrFail(absolutePath, cwd);
+  const plan = await compileOrFail(findWorkflowPath(workflow, cwd), cwd);
   if (plan === null) return null;
   const env = await loadStartEnv(null, cwd, plan);
   return [...workflowChecks(plan.doctor, env), buildNotifierCheck(plan.notifier, env)];
@@ -94,7 +93,7 @@ export const doctorCommand = () =>
   new Command("doctor")
     .description("Check the tools, repository and config a harness run needs")
     .option("--json", "print the report as JSON")
-    .option("--workflow <path>", "also run the checks this workflow declares")
+    .option("--workflow <name|path>", "also run the checks this workflow declares")
     .action(async ({ json, workflow }) => {
       stopRunningOnSignal();
       const declared = await declaredChecks(workflow);

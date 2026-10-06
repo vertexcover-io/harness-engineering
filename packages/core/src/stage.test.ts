@@ -12,6 +12,7 @@ import {
 import { schemas as qaSchemas } from "../../../skills/qa/scripts/qa.ts";
 import { schemas as ticketSchemas } from "../../../skills/ticket-fetcher/scripts/ticket.ts";
 import {
+  findWorkflowPath,
   listReferences,
   loadStage,
   resolveExtension,
@@ -403,6 +404,22 @@ describe("a stage path", () => {
       ok: true,
       value: "project text\n\nextension text\n",
     });
+  });
+});
+
+describe("findWorkflowPath", () => {
+  test.each([
+    ["task", "/shipped/task.yaml"],
+    ["task.yaml", "/project/task.yaml"],
+    ["flows/task.yml", "/project/flows/task.yml"],
+    ["./task", "/project/task"],
+    ["/abs/task.yaml", "/abs/task.yaml"],
+  ])("%s resolves to %s", (workflow, expected) => {
+    expect(findWorkflowPath(workflow, "/project", "/shipped")).toBe(expected);
+  });
+
+  test("the default workflows directory ships task.yaml", () => {
+    expect(existsSync(findWorkflowPath("task", "/project"))).toBe(true);
   });
 });
 

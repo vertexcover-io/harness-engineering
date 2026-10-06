@@ -3,6 +3,7 @@ import { Command } from "@commander-js/extra-typings";
 import {
   buildNotifierCheck,
   type DoctorReport,
+  findWorkflowPath,
   loadStartEnv,
   runDoctor,
   verdict,
@@ -38,7 +39,7 @@ const blockedText = (report: DoctorReport): string =>
 
 export const runCommand = () =>
   new Command("run")
-    .argument("<workflow>", "workflow file to compile and run")
+    .argument("<workflow>", "shipped workflow name (e.g. task), or workflow file to run")
     .requiredOption("--prompt <text>", "first message sent to the agent")
     .option("--name <name>", "run name (default: derived from the prompt)")
     .option("--input <key=value>", "extra input, repeatable", collectInput, {})
@@ -48,7 +49,7 @@ export const runCommand = () =>
     .action(async (workflowArg, opts) => {
       const log = commandLog("run");
       const cwd = process.cwd();
-      const workflowPath = resolve(cwd, workflowArg);
+      const workflowPath = findWorkflowPath(workflowArg, cwd);
 
       const plan = await compileOrFail(workflowPath, cwd);
       if (plan === null) return;

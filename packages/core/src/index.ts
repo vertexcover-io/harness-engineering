@@ -41,6 +41,7 @@ export {
 } from "./logging.ts";
 export { getConsumed, getNodeFacts, getNodeRun, loadStartEnv } from "./runs.ts";
 export {
+  findWorkflowPath,
   type LoadedStage,
   loadStage,
   orchestrateArgv,
