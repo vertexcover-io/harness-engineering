@@ -138,6 +138,21 @@ export const findStageDir = (
   skillsDir = harnessSkillsDir(),
 ): string => (stage.includes("/") ? resolve(root, stage) : join(skillsDir, stage));
 
+// The harness's default workflows ship beside this code, like its skills.
+export const harnessWorkflowsDir = (): string =>
+  join(import.meta.dir, "..", "..", "..", "workflows");
+
+// A bare name is one of the harness's own workflows; a name with a "/" or a .yaml/.yml extension
+// is a file in the project at `cwd`.
+export const findWorkflowPath = (
+  workflow: string,
+  cwd: string,
+  workflowsDir = harnessWorkflowsDir(),
+): string =>
+  workflow.includes("/") || /\.ya?ml$/.test(workflow)
+    ? resolve(cwd, workflow)
+    : join(workflowsDir, `${workflow}.yaml`);
+
 export const loadSkill = async (skillDir: string): Promise<Result<Stage>> => {
   const path = join(skillDir, "SKILL.md");
   const text = await readText(path);

@@ -122,8 +122,12 @@ The `harness` CLI runs a workflow from start to finish. From this checkout:
 
 ```bash
 bun install
-bun run cli run workflows/task.yaml --prompt "Add rate limiting to the API"
+bun run cli run task --prompt "Add rate limiting to the API"
 ```
+
+`task` is a workflow the harness ships in `workflows/`. A bare name runs the shipped workflow of
+that name; a path, or a name ending in `.yaml` or `.yml`, runs that file from your project
+(`harness run ./my-flow.yaml …`). `harness verify` and `harness doctor --workflow` take the same.
 
 `harness run` starts the harness server, opens an agent session, and sends it the `orchestrate`
 skill. The session then walks the workflow one stage at a time. `harness doctor` checks the tools,
