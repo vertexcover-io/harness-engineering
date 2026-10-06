@@ -107,6 +107,7 @@ export const createState = async ({
   eventHandlers,
   hooks,
   config,
+  tiers = null,
 }: Readonly<{
   runId: string;
   runDir: string;
@@ -114,6 +115,7 @@ export const createState = async ({
   eventHandlers: EventHandlerRefs;
   hooks?: HookRefs;
   config?: State["config"];
+  tiers?: State["tiers"];
 }>): Promise<State> => {
   const cwd = dirname(dirname(runDir));
   const state: State = {
@@ -136,6 +138,7 @@ export const createState = async ({
     },
     nodeRuns: {},
     activeSessions: [],
+    tiers,
     eventHandlers,
     hooks: hooks ?? {},
     ...(config === undefined ? {} : { config }),

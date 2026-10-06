@@ -8,7 +8,14 @@ import {
   spyOn,
   test,
 } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -26,6 +33,7 @@ import {
   completeContextOnSessionStart,
   findOpenContextRun,
   runContextStep,
+  runModelStep,
 } from "./context-step.ts";
 
 const RESUME = "/orchestrate --resume feat-x";
@@ -65,6 +73,7 @@ const seed = (runDir: string): State => ({
     },
   },
   activeSessions: [{ agent: "claude", sessionId: "A" }],
+  tiers: null,
   eventHandlers: {},
   hooks: {},
 });
@@ -91,7 +100,7 @@ const setUp = async (node: string, header = "") => {
     name: "feat-x",
     terminal: "claude-feat-x-r-1",
     config: null,
-    tier: null,
+    tiers: null,
     createdAt: new Date().toISOString(),
   });
   return { run, runDir, registry };
@@ -454,6 +463,210 @@ describe("runContextStep: guards", () => {
       output: { action: "compact", applied: false, reason: "tmux timed out after 10s" },
     });
     expect(typesOf(fake.typed)).toEqual(["C-u", RESUME, "Enter"]);
+  });
+});
+
+// A run with an open model switch to opus-x (and EFFORT); gives back the request's seq.
+const setUpSwitch = async (effort?: "high") => {
+  const context = await setUp("type: context, action: new");
+  const requested = await appendRunEvent(context.run, {
+    type: "workflow.model.requested",
+    source: "workflow",
+    payload: { node: "think", model: "opus-x", ...(effort === undefined ? {} : { effort }) },
+  });
+  if (!requested.ok) throw new Error(requested.error);
+  return { ...context, seq: requested.value.event.seq };
+};
+
+const modelHelper = (
+  context: Context & Readonly<{ seq: number }>,
+  terminal: ITerminal | undefined,
+  provider: IAgentProvider = fakeProvider().provider,
+  seq = context.seq,
+) =>
+  runModelStep({
+    run: context.run,
+    seq,
+    sessionId: "s-1",
+    terminal,
+    provider,
+    launch: LAUNCH,
+    home: HOME,
+    log: noopLogger,
+  });
+
+const sessionStarted = (run: RunRef, sessionId: string, source: string) =>
+  appendRunEvent(run, {
+    type: "hooks.session-start.called",
+    source: "hooks",
+    payload: { agent: "claude", sessionId, source },
+  });
+
+// A provider whose relaunch plays the resumed Claude: its SessionStart hook fires with source resume.
+const resumingProvider = (context: Context) => {
+  const fake = fakeProvider();
+  const provider: IAgentProvider = {
+    ...fake.provider,
+    relaunch: async (terminal, sessionId, options) => {
+      const relaunched = await fake.provider.relaunch(terminal, sessionId, options);
+      await sessionStarted(context.run, sessionId, "resume");
+      return relaunched;
+    },
+  };
+  return { provider, relaunches: fake.relaunches };
+};
+
+const appliedEvents = async (runDir: string) =>
+  (await eventsOf(runDir))
+    .filter((event) => event.type === "workflow.model.applied")
+    .map((event) => event.payload);
+
+describe("runModelStep", () => {
+  test("SC25: resumes session s-1 on opus-x at high effort with the resume prompt, records the switch, and types nothing", async () => {
+    const context = await setUpSwitch("high");
+    const pane = fakeTerminal(() => IDLE);
+    const { provider, relaunches } = resumingProvider(context);
+
+    await modelHelper(context, pane.terminal, provider);
+
+    expect(relaunches).toHaveLength(1);
+    expect(relaunches[0]?.sessionId).toBe("s-1");
+    expect(relaunches[0]?.options).toMatchObject({
+      resume: true,
+      model: "opus-x",
+      effort: "high",
+      prompt: RESUME,
+    });
+    expect(await appliedEvents(context.runDir)).toEqual([
+      { requestSeq: context.seq, node: "think", model: "opus-x", effort: "high", applied: true },
+    ]);
+    expect(pane.typed).toEqual([]);
+  });
+
+  test("SC26: a request for opus-x with no effort relaunches with no effort key", async () => {
+    const context = await setUpSwitch();
+    const { provider, relaunches } = resumingProvider(context);
+
+    await modelHelper(context, fakeTerminal(() => IDLE).terminal, provider);
+
+    expect(relaunches[0]?.options.model).toBe("opus-x");
+    expect(relaunches[0]?.options).not.toHaveProperty("effort");
+  });
+
+  test("SC27: a relaunch that fails with respawn failed is recorded as failed, the input emptied, and the resume prompt typed", async () => {
+    const context = await setUpSwitch("high");
+    const pane = fakeTerminal(() => IDLE);
+    const provider: IAgentProvider = {
+      ...fakeProvider().provider,
+      relaunch: async () => ({ ok: false, error: "respawn failed" }),
+    };
+
+    await modelHelper(context, pane.terminal, provider);
+
+    expect(await appliedEvents(context.runDir)).toEqual([
+      {
+        requestSeq: context.seq,
+        node: "think",
+        model: "opus-x",
+        effort: "high",
+        applied: false,
+        reason: "respawn failed",
+      },
+    ]);
+    expect(typesOf(pane.typed)).toEqual(["C-u", RESUME, "Enter"]);
+  });
+
+  test("a resumed session with no SessionStart within 60 seconds, counting none from before the relaunch, is recorded as failed and the run resumed", async () => {
+    const context = await setUpSwitch();
+    await sessionStarted(context.run, "s-1", "resume");
+    const pane = fakeTerminal(() => IDLE);
+
+    await modelHelper(context, pane.terminal);
+
+    expect(await appliedEvents(context.runDir)).toEqual([
+      {
+        requestSeq: context.seq,
+        node: "think",
+        model: "opus-x",
+        applied: false,
+        reason: "no SessionStart within 60 seconds after resuming on opus-x",
+      },
+    ]);
+    expect(typesOf(pane.typed)).toEqual(["C-u", RESUME, "Enter"]);
+  });
+
+  test("SC15: of two helpers started for the same switch, only one relaunches and stores the result", async () => {
+    const context = await setUpSwitch();
+    // a real 50ms pause on each screen check: Bun.sleep is faked in these tests
+    const slowPane = () => {
+      const pane = fakeTerminal(() => IDLE);
+      const capture = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return pane.terminal.capture();
+      };
+      return { ...pane.terminal, capture };
+    };
+    const { provider, relaunches } = fakeProvider();
+
+    await Promise.all([
+      modelHelper(context, slowPane(), provider),
+      modelHelper(context, slowPane(), provider),
+    ]);
+
+    expect(relaunches).toHaveLength(1);
+    expect(await appliedEvents(context.runDir)).toHaveLength(1);
+  });
+
+  test("a helper for a seq that is not the pending request, or for one already answered, relaunches nothing and stores nothing", async () => {
+    const context = await setUpSwitch();
+    const pane = fakeTerminal(() => IDLE);
+    const { provider, relaunches } = fakeProvider();
+
+    await modelHelper(context, pane.terminal, provider, context.seq + 1);
+    const answer = { requestSeq: context.seq, node: "think", model: "opus-x", applied: true };
+    await appendRunEvent(context.run, {
+      type: "workflow.model.applied",
+      source: "t",
+      payload: answer,
+    });
+    await modelHelper(context, pane.terminal, provider);
+
+    expect(relaunches).toEqual([]);
+    expect(pane.typed).toEqual([]);
+    expect(await appliedEvents(context.runDir)).toEqual([answer]);
+  });
+
+  test("a result that cannot be stored releases the switch's lock, so the next stop's helper relaunches again", async () => {
+    const context = await setUpSwitch();
+    const module = join(context.run.cwd, "refuse.ts");
+    writeFileSync(module, 'export const refuse = () => { throw new Error("disk full"); };\n');
+    const statePath = join(context.runDir, "state.json");
+    const state = JSON.parse(readFileSync(statePath, "utf8"));
+    const eventHandlers = { "workflow.model.applied": [{ module, handler: "refuse" }] };
+    writeFileSync(statePath, JSON.stringify({ ...state, eventHandlers }));
+    const { provider, relaunches } = fakeProvider();
+
+    await modelHelper(context, fakeTerminal(() => IDLE).terminal, provider);
+    await modelHelper(context, fakeTerminal(() => IDLE).terminal, provider);
+
+    expect(relaunches).toHaveLength(2);
+    expect(await appliedEvents(context.runDir)).toEqual([]);
+  });
+
+  test("outside tmux the switch is recorded as failed: not inside tmux", async () => {
+    const context = await setUpSwitch();
+
+    await modelHelper(context, undefined);
+
+    expect(await appliedEvents(context.runDir)).toEqual([
+      {
+        requestSeq: context.seq,
+        node: "think",
+        model: "opus-x",
+        applied: false,
+        reason: "not inside tmux",
+      },
+    ]);
   });
 });
 

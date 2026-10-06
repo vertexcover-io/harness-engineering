@@ -1,15 +1,19 @@
 import { join } from "node:path";
 import * as z from "zod";
-import { type AgentType, AgentTypeSchema, EffortSchema } from "./agent.ts";
+import { type AgentType, AgentTypeSchema } from "./agent.ts";
 import {
   EventHandlerRefSchema,
   EventTypeSchema,
   isNormalizedRelativePath,
   LayoutSchema,
+  NameSchema,
   NonEmptyStringSchema,
+  type ResolvedTiers,
   type Result,
   SkillNameSchema,
   SlugSchema,
+  type TierModel,
+  TierModelSchema,
 } from "./contracts.ts";
 import { parseYaml, readIfExists } from "./files.ts";
 
@@ -19,7 +23,6 @@ const CONFIG_FILES = [
   "orchestrate.config.json",
 ] as const;
 
-export const NameSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/, "Expected a camelCase name");
 const EnvNameSchema = z.string().regex(/^[A-Z_][A-Z0-9_]*$/, "Expected an UPPER_SNAKE name");
 
 // "." is the repository root itself, the path of a single-package repository.
@@ -55,14 +58,33 @@ const CommandSchema = z
 // null means the project has no such command (NOT_APPLICABLE); callers never fall back to another key.
 const CommandsSchema = recordOf(NameSchema, CommandSchema.nullable());
 
-export const TierModelSchema = z.strictObject({
-  model: NonEmptyStringSchema,
-  effort: EffortSchema.optional(),
+// One layer of tiers, the config's per agent or a workflow's: the tier a run launches on and the
+// model each tier runs on.
+export const TiersConfigSchema = z.strictObject({
+  default: NameSchema.optional(),
+  models: recordOf(NameSchema, TierModelSchema).optional(),
 });
-export type TierModel = z.infer<typeof TierModelSchema>;
+export type TiersConfig = z.infer<typeof TiersConfigSchema>;
+
+const BUILT_IN_TIERS: Readonly<Partial<Record<AgentType, TiersConfig>>> = {
+  claude: {
+    default: "deep",
+    models: {
+      fast: { model: "claude-sonnet-5-5" },
+      deep: { model: "claude-opus-5-5", effort: "high" },
+    },
+  },
+  codex: {
+    default: "deep",
+    models: {
+      fast: { model: "gpt-6-luna" },
+      deep: { model: "gpt-6-sol", effort: "high" },
+    },
+  },
+};
 
 const AgentConfigSchema = z.strictObject({
-  tiers: recordOf(NameSchema, TierModelSchema).default({}),
+  tiers: TiersConfigSchema.default({}),
 });
 
 const PackageSchema = z.strictObject({
@@ -198,18 +220,30 @@ export const ConfigSchema = z.strictObject({
 export type ConfigInput = z.input<typeof ConfigSchema>;
 export type Config = z.output<typeof ConfigSchema>;
 
-export const findTierModel = (
+// The harness's built-in tiers, then the config's, then the workflow's: a later layer's model
+// replaces an earlier one's of the same name, and the last layer that sets default wins.
+export const resolveTiers = (
   config: Config,
   agent: AgentType,
-  tier: string,
-): Result<TierModel> => {
-  const tiers = config.agents[agent]?.tiers ?? {};
-  const found = Object.hasOwn(tiers, tier) ? tiers[tier] : undefined;
-  if (found !== undefined) return { ok: true, value: found };
-  return {
-    ok: false,
-    error: `tier "${tier}" has no model for ${agent}: add agents.${agent}.tiers.${tier} to the config`,
-  };
+  workflow: TiersConfig,
+): Result<ResolvedTiers | null> => {
+  const layers = [BUILT_IN_TIERS[agent] ?? {}, config.agents[agent]?.tiers ?? {}, workflow];
+  const models: Record<string, TierModel> = Object.fromEntries(
+    layers.flatMap((layer) => Object.entries(layer.models ?? {})),
+  );
+  const names = Object.keys(models).join(", ");
+  const launch = layers.findLast((layer) => layer.default !== undefined)?.default;
+  if (launch !== undefined && !Object.hasOwn(models, launch)) {
+    return {
+      ok: false,
+      error: `default tier "${launch}" is not one of the ${agent} tiers: ${names}`,
+    };
+  }
+  if (names === "") return { ok: true, value: null };
+  if (launch === undefined) {
+    return { ok: false, error: `the ${agent} tiers set no default: name one of ${names}` };
+  }
+  return { ok: true, value: { default: launch, models } };
 };
 
 export const unknownPackage = (config: Config, names: readonly string[]): string | undefined =>

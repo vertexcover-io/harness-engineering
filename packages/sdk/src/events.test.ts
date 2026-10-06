@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Event, type JsonValue, type State, StateSchema } from "./contracts.ts";
 import { jsonlEventStore, memoryEventStore } from "./event-store.ts";
-import { builtInHandlers, emitEvent, runDirOf, WorkspaceCreatedEvent } from "./events.ts";
+import {
+  builtInHandlers,
+  emitEvent,
+  foldModelSwitch,
+  runDirOf,
+  WorkspaceCreatedEvent,
+} from "./events.ts";
 import { emitRunEvent, projectEvents } from "./state.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -299,6 +305,7 @@ const seed: State = {
       app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
     },
   },
+  tiers: null,
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},
@@ -856,4 +863,91 @@ describe("usage-limit events", () => {
       expect(await store.read()).toEqual([]);
     },
   );
+});
+
+describe("foldModelSwitch", () => {
+  const LAUNCH = { model: "opus-x", effort: "high" } as const;
+  const event = (seq: number, type: string, payload: JsonValue, ids = {}): Event => ({
+    schemaVersion: 1,
+    seq,
+    id: `evt-${seq}`,
+    ts: "2026-09-26T10:00:00Z",
+    type,
+    source: "test",
+    runId: "r-1",
+    ...ids,
+    payload,
+  });
+  const requested = (seq: number, node = "loop.think") =>
+    event(seq, "workflow.model.requested", { node, model: "sonnet-x" });
+  const applied = (seq: number, requestSeq: number, result: object) =>
+    event(seq, "workflow.model.applied", {
+      requestSeq,
+      node: "loop.think",
+      model: "sonnet-x",
+      ...result,
+    });
+  const thinkFailed = (seq: number, parents: readonly string[]) =>
+    event(
+      seq,
+      "workflow.node.failed",
+      {
+        nodeType: "agent",
+        parents: [...parents],
+        attempts: 0,
+        error: { kind: "exception", message: "x" },
+      },
+      { nodeId: "think", nodeRunId: `nr-${seq}` },
+    );
+  const NONE = { current: LAUNCH, pending: null, failed: null };
+
+  test.each([
+    ["no model events leave the session on the default tier's model", [], NONE],
+    [
+      "a request opens a pending switch with its seq",
+      [requested(3)],
+      { ...NONE, pending: { seq: 3, node: "loop.think", model: "sonnet-x" } },
+    ],
+    [
+      "an applied: true answering seq 3 moves the session to sonnet-x and closes the request",
+      [requested(3), applied(4, 3, { applied: true })],
+      { ...NONE, current: { model: "sonnet-x" } },
+    ],
+    [
+      "an applied: false answering seq 3 records the failure for loop.think and closes the request",
+      [requested(3), applied(4, 3, { applied: false, reason: "respawn failed" })],
+      { ...NONE, failed: { node: "loop.think", reason: "respawn failed" } },
+    ],
+    [
+      "an applied answering an older request seq 2 is ignored and seq 3 stays pending",
+      [requested(3), applied(4, 2, { applied: true })],
+      { ...NONE, pending: { seq: 3, node: "loop.think", model: "sonnet-x" } },
+    ],
+    [
+      "a failure of loop.think clears the failed switch",
+      [
+        requested(3),
+        applied(4, 3, { applied: false, reason: "respawn failed" }),
+        thinkFailed(5, ["loop"]),
+      ],
+      NONE,
+    ],
+    [
+      "a failure of a think node at another path keeps the failed switch",
+      [
+        requested(3),
+        applied(4, 3, { applied: false, reason: "respawn failed" }),
+        thinkFailed(5, []),
+      ],
+      { ...NONE, failed: { node: "loop.think", reason: "respawn failed" } },
+    ],
+  ])("%s", (_label, events, expected) => {
+    expect(foldModelSwitch(events, { default: "deep", models: { deep: LAUNCH } })).toEqual(
+      expected,
+    );
+  });
+
+  test("a run with no tiers starts on no model", () => {
+    expect(foldModelSwitch([], null)).toEqual({ current: null, pending: null, failed: null });
+  });
 });

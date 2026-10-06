@@ -12,20 +12,28 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type AgentType,
   createGit,
   emitRunEvent,
   findRoot,
   type ITerminal,
   noopLogger,
+  type ResolvedTiers,
   resolveRun,
   StateSchema,
   type WorkflowRun,
 } from "@harness/sdk";
-import { createRegistry, jsonlEventStore, type Registry } from "@harness/sdk/internal";
+import {
+  appendRunEvent,
+  createRegistry,
+  jsonlEventStore,
+  type Registry,
+} from "@harness/sdk/internal";
 import corePackage from "../package.json";
 import { currentTerminal } from "./agents/tmux.ts";
 import { NOTIFIER_EVENTS, NOTIFIER_MODULE } from "./notifier.ts";
-import { type InitOptions, initializeRun, linkRunSession, terminalName } from "./runs.ts";
+import { type InitOptions, initializeRun, linkRunSession, nextStep, terminalName } from "./runs.ts";
+import { DEMO_STAGES, writeStages } from "./workflow/test-stages.ts";
 
 const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   id: "r-1",
@@ -37,7 +45,7 @@ const makeRun = (overrides: Partial<WorkflowRun> = {}): WorkflowRun => ({
   name: null,
   terminal: null,
   config: null,
-  tier: null,
+  tiers: null,
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -64,6 +72,8 @@ const makeRepo = (): string => {
   return dir;
 };
 
+const SWITCHING: ReadonlySet<AgentType> = new Set(["claude"]);
+
 const WORKFLOW =
   'name: ok\nnodes:\n  - { id: a, type: exec, input: null, runtime: sh, script: "true" }\n';
 
@@ -76,7 +86,15 @@ const savedRun = async (overrides: Partial<WorkflowRun> = {}) => {
   const run = makeRun({ cwd, workflowPath, ...overrides });
   await registry.addRun(run);
   const init = (name: string, runId = run.id, extra: Partial<InitOptions> = {}) =>
-    initializeRun({ registry, runId, name, git: createGit(), log: noopLogger, ...extra });
+    initializeRun({
+      registry,
+      runId,
+      name,
+      git: createGit(),
+      log: noopLogger,
+      modelSwitchAgents: SWITCHING,
+      ...extra,
+    });
   return { cwd, workflowPath, registry, run, init };
 };
 
@@ -621,5 +639,182 @@ describe("terminal naming", () => {
     expect(result.ok).toBe(true);
     expect(existsSync(result.ok ? result.value.dir : "")).toBe(true);
     expect((await registry.findRun(run.id))?.terminal).toBe("old");
+  });
+});
+
+const CLAUDE_TIERS: ResolvedTiers = {
+  default: "deep",
+  models: {
+    fast: { model: "claude-sonnet-5-5" },
+    deep: { model: "claude-opus-5-5", effort: "high" },
+  },
+};
+
+type StagedRunOptions = Partial<{ tiers: ResolvedTiers | null; config: object; header: string }>;
+
+// An initialized run of NODES registered with TIERS, with the demo stages under stages/, the
+// config CONFIG and HEADER at the top of its workflow.
+const stagedRun = async (nodes: string, options: StagedRunOptions = {}) => {
+  const { tiers = CLAUDE_TIERS, config = {}, header = "" } = options;
+  const { cwd, workflowPath, init, run } = await savedRun({ tiers });
+  writeStages(join(cwd, "stages"), {
+    ...DEMO_STAGES,
+    odd: { tier: "balanced" },
+    other: { tier: "turbo" },
+  });
+  writeFileSync(workflowPath, `name: ok\n${header}nodes:\n${nodes}`);
+  writeFileSync(join(cwd, "orchestrate.config.json"), JSON.stringify({ version: 2, ...config }));
+  const result = await init("tiered");
+  const ref = { id: run.id, cwd, name: "tiered" };
+  return { cwd, result, ref };
+};
+
+const stageNode = (id: string, stage: string) =>
+  `  - { id: ${id}, type: agent, stage: stages/${stage}, input: {} }\n`;
+
+describe("initializeRun with tiers", () => {
+  test("writes the registry run's tiers to state.json as they are, though the config on disk now maps fast to haiku-x and defaults to it", async () => {
+    const config = {
+      agents: { claude: { tiers: { default: "fast", models: { fast: { model: "haiku-x" } } } } },
+    };
+    const { result } = await stagedRun(stageNode("make", "producer"), { config });
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.state.tiers).toEqual(CLAUDE_TIERS);
+    const stored = JSON.parse(readFileSync(join(result.value.dir, "state.json"), "utf8"));
+    expect(stored.tiers).toEqual(CLAUDE_TIERS);
+  });
+
+  test("a claude run whose stages declare tiers balanced and, inside a loop, turbo fails against its registered tiers, though the config maps both, and leaves no run folder", async () => {
+    const nodes = `${stageNode("a", "odd")}  - id: fix
+    type: loop
+    until: "{{ true }}"
+    maxIterations: 2
+    input: {}
+    nodes:
+  ${stageNode("b", "other")}`;
+    const models = { balanced: { model: "b-x" }, turbo: { model: "t-x" } };
+    const { cwd, result } = await stagedRun(nodes, {
+      config: { agents: { claude: { tiers: { models } } } },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error:
+        'stages/odd has tier "balanced", stages/other has tier "turbo"; the claude tiers are fast, deep',
+    });
+    expect(existsSync(join(cwd, ".harness", "tiered"))).toBe(false);
+  });
+
+  test("a claude run whose prompt agent node in a switch case declares tier: turbo fails naming the node, and leaves no run folder", async () => {
+    const nodes = `  - id: pick
+    type: switch
+    expression: "{{ true }}"
+    input: {}
+    cases:
+      - id: yes
+        value: true
+        nodes:
+          - { id: ask, type: agent, prompt: hi, input: {}, tier: turbo }
+`;
+    const { cwd, result } = await stagedRun(nodes);
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'ask has tier "turbo"; the claude tiers are fast, deep',
+    });
+    expect(existsSync(join(cwd, ".harness", "tiered"))).toBe(false);
+  });
+
+  test("a node tier: deep over a stage tier balanced nothing maps inits, since the node's tier wins", async () => {
+    const { result } = await stagedRun(
+      "  - { id: a, type: agent, stage: stages/odd, input: {}, tier: deep }\n",
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("a claude run registered with no tiers inits with a stage tier nothing maps, and state.json holds no tiers", async () => {
+    const { result } = await stagedRun(stageNode("a", "odd"), { tiers: null });
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.state.tiers).toBeNull();
+  });
+
+  test("a codex run, which never switches models, inits with a stage tier it has no model for", async () => {
+    const { result } = await stagedRun(stageNode("a", "odd"), { header: "agent: codex\n" });
+
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("nextStep with stage tiers", () => {
+  test("SC16: next on a Claude run before a fast stage replies with a model step for the built-in fast model, and logs it as orchestrate.next", async () => {
+    const { ref, cwd } = await stagedRun(stageNode("make", "quick"));
+
+    const reply = await nextStep(ref, SWITCHING);
+
+    const step = { kind: "model", nodeId: "make", model: "claude-sonnet-5-5" } as const;
+    expect(reply).toEqual({ ok: true, value: step });
+    const events = await jsonlEventStore(join(cwd, ".harness", "tiered")).read();
+    expect(events.at(-1)).toMatchObject({ type: "orchestrate.next", payload: { output: step } });
+  });
+
+  test("SC17: next on a Codex run with a fast model mapped for codex hands out the stage, never a model step", async () => {
+    const tiers = {
+      default: "deep",
+      models: { deep: { model: "gpt-x" }, fast: { model: "gpt-mini" } },
+    };
+    const { ref } = await stagedRun(stageNode("make", "quick"), {
+      tiers,
+      header: "agent: codex\n",
+    });
+
+    const reply = await nextStep(ref, SWITCHING);
+
+    expect(reply).toMatchObject({ ok: true, value: { kind: "stage", nodeId: "make" } });
+  });
+
+  test("a Claude run launched on its default deep tier hands out its first deep stage with no model step", async () => {
+    const { ref } = await stagedRun(stageNode("think", "thinker"));
+
+    const reply = await nextStep(ref, SWITCHING);
+
+    expect(reply).toMatchObject({ ok: true, value: { kind: "stage", nodeId: "think" } });
+  });
+
+  test("a Claude run registered with no tiers hands out its fast stage with no model step", async () => {
+    const { ref } = await stagedRun(stageNode("make", "quick"), { tiers: null });
+
+    const reply = await nextStep(ref, SWITCHING);
+
+    expect(reply).toMatchObject({ ok: true, value: { kind: "stage", nodeId: "make" } });
+  });
+
+  test("SC22: a fast stage on a run whose tiers map fast to sonnet-y gets a model step for sonnet-y, and once applied the stage", async () => {
+    const tiers = {
+      ...CLAUDE_TIERS,
+      models: { ...CLAUDE_TIERS.models, fast: { model: "sonnet-y" } },
+    };
+    const { ref } = await stagedRun(stageNode("make", "quick"), { tiers });
+
+    const first = await nextStep(ref, SWITCHING);
+    expect(first).toEqual({
+      ok: true,
+      value: { kind: "model", nodeId: "make", model: "sonnet-y" },
+    });
+    const events = await jsonlEventStore(join(ref.cwd, ".harness", "tiered")).read();
+    const requestSeq = events.find((event) => event.type === "workflow.model.requested")?.seq;
+    const applied = await appendRunEvent(ref, {
+      type: "workflow.model.applied",
+      source: "orchestrate",
+      payload: { requestSeq: requestSeq ?? 0, node: "make", model: "sonnet-y", applied: true },
+    });
+    expect(applied.ok).toBe(true);
+
+    expect(await nextStep(ref, SWITCHING)).toMatchObject({
+      ok: true,
+      value: { kind: "stage", nodeId: "make" },
+    });
   });
 });

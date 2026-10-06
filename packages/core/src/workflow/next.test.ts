@@ -2,8 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EmitInput, Event, JsonObject, JsonValue, NodeRun, State } from "@harness/sdk";
-import { builtInHandlers, projectEvents } from "@harness/sdk/internal";
+import type {
+  EmitInput,
+  Event,
+  JsonObject,
+  JsonValue,
+  NodeRun,
+  ResolvedTiers,
+  State,
+  TierModel,
+} from "@harness/sdk";
+import { builtInHandlers, foldModelSwitch, projectEvents } from "@harness/sdk/internal";
 import { compileWorkflow } from "./compile.ts";
 import { type Decision, decideNext } from "./next.ts";
 import { DEMO_STAGES, writeStages } from "./test-stages.ts";
@@ -47,14 +56,15 @@ const start = (input: JsonObject = {}): State => ({
   },
   nodeRuns: {},
   activeSessions: [],
+  tiers: null,
   eventHandlers: {},
   hooks: {},
 });
 
-// Stores one event the way emitRunEvent would: next seq, then the core reducers.
-const apply = (state: State, draft: EmitInput): State => {
+// The event emitRunEvent would store for DRAFT: the next seq after the state's.
+const toEvent = (state: State, draft: EmitInput): Event => {
   const seq = state.lastEventSeq + 1;
-  const event: Event = {
+  return {
     ...draft,
     schemaVersion: 1,
     seq,
@@ -62,8 +72,11 @@ const apply = (state: State, draft: EmitInput): State => {
     ts: new Date(Date.UTC(2026, 8, 28, 9, 0, seq)).toISOString(),
     runId: "r-1",
   };
-  return projectEvents({ state, events: [event], handlers: builtInHandlers });
 };
+
+// Stores one event the way emitRunEvent would: next seq, then the core reducers.
+const apply = (state: State, draft: EmitInput): State =>
+  projectEvents({ state, events: [toEvent(state, draft)], handlers: builtInHandlers });
 
 type Advanced = Readonly<{ state: State; stop: Stop; events: readonly EmitInput[] }>;
 
@@ -456,6 +469,250 @@ nodes:
 `);
     const ask = expectLeaf((await advance(plan, start())).stop);
     expect(ask).toMatchObject({ node: { id: "ask", prompt: "summarise" }, input: { text: "x" } });
+  });
+});
+
+// A run's state with every event stored so far, which the model switch is folded from.
+type Logged = Readonly<{ state: State; log: readonly Event[] }>;
+
+const record = (run: Logged, draft: EmitInput): Logged => {
+  const event = toEvent(run.state, draft);
+  const state = projectEvents({ state: run.state, events: [event], handlers: builtInHandlers });
+  return { state, log: [...run.log, event] };
+};
+
+type TieredAdvance = Readonly<{ run: Logged; stop: Stop; events: readonly EmitInput[] }>;
+
+// One `orchestrate next` on a run with TIERS whose session was launched on LAUNCH.
+const advanceTiered = async (
+  plan: WorkflowPlan,
+  run: Logged,
+  tiers: ResolvedTiers | null,
+  launch: TierModel | null = null,
+): Promise<TieredAdvance> => {
+  const events: EmitInput[] = [];
+  let current = run;
+  const emit = async (_state: State, draft: EmitInput): Promise<State> => {
+    events.push(draft);
+    current = record(current, draft);
+    return current.state;
+  };
+  const launched = launch === null ? null : { default: "launch", models: { launch } };
+  const switching = foldModelSwitch(run.log, launched);
+  const { decision } = await decideNext(plan, run.state, emit, { tiers, switching });
+  return { run: current, stop: decision, events };
+};
+
+const fresh = (): Logged => ({ state: start(), log: [] });
+const lastSeq = (run: Logged): number => run.log.at(-1)?.seq ?? 0;
+const answer = (run: Logged, result: Readonly<Record<string, JsonValue>>): Logged =>
+  record(run, {
+    type: "workflow.model.applied",
+    source: "orchestrate",
+    payload: { requestSeq: lastSeq(run), node: "think", model: "opus-x", ...result },
+  });
+
+const OPUS_HIGH: TierModel = { model: "opus-x", effort: "high" };
+const HAIKU: TierModel = { model: "haiku-x" };
+const DEEP: ResolvedTiers = { default: "deep", models: { deep: OPUS_HIGH } };
+const FAST_AND_DEEP: ResolvedTiers = { default: "deep", models: { fast: HAIKU, deep: OPUS_HIGH } };
+const SWITCH_FAILED = {
+  applied: false,
+  reason: "no SessionStart within 60 seconds after resuming on opus-x",
+};
+const THINKER_FLOW = `name: t
+nodes:${stage("think", "thinker", "\n    input: {}")}
+`;
+
+describe("decideNext with stage tiers", () => {
+  test("SC1: a tier: deep stage on a session not on opus-x gets a model step, stores one model request, and does not start", async () => {
+    const plan = await compilePlan(THINKER_FLOW);
+    const { stop, events, run } = await advanceTiered(plan, fresh(), DEEP);
+    expect(stop).toEqual({ kind: "model", nodeId: "think", model: "opus-x", effort: "high" });
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "workflow.model.requested",
+        payload: { node: "think", model: "opus-x", effort: "high" },
+      }),
+    ]);
+    expect(run.state.nodeRuns.think).toBeUndefined();
+  });
+
+  test("SC2: once the switch to opus-x/high is applied, the next call hands out the stage", async () => {
+    const plan = await compilePlan(THINKER_FLOW);
+    const first = await advanceTiered(plan, fresh(), DEEP);
+    const switched = answer(first.run, { applied: true, effort: "high" });
+    const second = await advanceTiered(plan, switched, DEEP);
+    expect(expectLeaf(second.stop).node.id).toBe("think");
+    expect(second.events.filter((event) => event.type.startsWith("workflow.model."))).toEqual([]);
+  });
+
+  test("a tier: fast stage on a run whose models lack fast fails, naming the tier and the tiers there are", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${stage("make", "quick", "\n    input: {}")}
+`);
+    const { stop, run } = await advanceTiered(plan, fresh(), DEEP);
+    expect(run.state.nodeRuns.make).toMatchObject({
+      status: "failed",
+      output: {
+        message: expect.stringContaining('tier "fast" is not one of the run\'s tiers: deep'),
+      },
+    });
+    expect(stop).toEqual({ kind: "finished", status: "failed" });
+  });
+
+  test("a run whose agent cannot switch models hands out a deep stage with no model event", async () => {
+    const plan = await compilePlan(THINKER_FLOW);
+    const { stop, events } = await advanceTiered(plan, fresh(), null);
+    expect(expectLeaf(stop).node.id).toBe("think");
+    expect(events.filter((event) => event.type.startsWith("workflow.model."))).toEqual([]);
+  });
+
+  const SWITCHES: readonly (readonly [string, TierModel | null, TierModel, "model" | "leaf"])[] = [
+    ["no launch model to opus-x/high switches", null, OPUS_HIGH, "model"],
+    [
+      "sonnet-x/high to opus-x/high switches",
+      { model: "sonnet-x", effort: "high" },
+      OPUS_HIGH,
+      "model",
+    ],
+    ["opus-x/low to opus-x/high switches", { model: "opus-x", effort: "low" }, OPUS_HIGH, "model"],
+    [
+      "SC4: opus-x/high to opus-x with no effort starts the stage",
+      OPUS_HIGH,
+      { model: "opus-x" },
+      "leaf",
+    ],
+    ["opus-x/high to opus-x/high starts the stage", OPUS_HIGH, OPUS_HIGH, "leaf"],
+  ];
+  test.each(SWITCHES)("a deep stage, session on %s", async (_label, launch, target, kind) => {
+    const plan = await compilePlan(THINKER_FLOW);
+    const tiers = { default: "deep", models: { deep: target } };
+    const { stop } = await advanceTiered(plan, fresh(), tiers, launch);
+    expect(stop.kind).toBe(kind);
+  });
+
+  test("SC6: a second next while the switch for the stage is pending returns the same model step and stores nothing", async () => {
+    const plan = await compilePlan(THINKER_FLOW);
+    const first = await advanceTiered(plan, fresh(), DEEP);
+    const again = await advanceTiered(plan, first.run, DEEP);
+    expect(again.stop).toEqual(first.stop);
+    expect(again.events).toEqual([]);
+  });
+
+  test("SC5: a failed switch fails the stage with its reason, and the run ends failed", async () => {
+    const plan = await compilePlan(THINKER_FLOW);
+    const first = await advanceTiered(plan, fresh(), DEEP);
+    const { stop, run } = await advanceTiered(plan, answer(first.run, SWITCH_FAILED), DEEP);
+    expect(run.state.nodeRuns.think).toMatchObject({
+      status: "failed",
+      output: {
+        message: expect.stringContaining(
+          "no SessionStart within 60 seconds after resuming on opus-x",
+        ),
+      },
+    });
+    expect(stop).toEqual({ kind: "finished", status: "failed" });
+  });
+
+  test("in a loop, a stage that allows failure and whose switch failed on pass 1 asks for the switch again on pass 2", async () => {
+    const plan = await compilePlan(`name: t
+nodes:
+  - id: fix
+    type: loop
+    until: "{{ iteration.index >= 2 }}"
+    maxIterations: 3
+    input: {}
+    nodes:
+      - { id: think, type: agent, stage: stages/thinker, allowFailure: true, input: {} }
+`);
+    const first = await advanceTiered(plan, fresh(), DEEP);
+    const failed = record(first.run, {
+      type: "workflow.model.applied",
+      source: "orchestrate",
+      payload: {
+        requestSeq: lastSeq(first.run),
+        node: "fix.think",
+        model: "opus-x",
+        ...SWITCH_FAILED,
+      },
+    });
+    const second = await advanceTiered(plan, failed, DEEP);
+    expect(second.stop).toEqual({
+      kind: "model",
+      nodeId: "think",
+      model: "opus-x",
+      effort: "high",
+    });
+    expect(second.events.map((event) => event.type)).toContain("workflow.model.requested");
+  });
+
+  test("SC7: exec and context nodes are handed out as leaves with no model step, though the session is on no model", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${exec("a", "\n    input: {}")}
+  - { id: fresh, type: context, action: new, dependsOn: [a] }
+`);
+    const walk = async (state: State, handed: readonly string[]): Promise<readonly string[]> => {
+      const { stop, events, run } = await advanceTiered(plan, { state, log: [] }, FAST_AND_DEEP);
+      expect(events.filter((event) => event.type.startsWith("workflow.model."))).toEqual([]);
+      if (stop.kind === "finished") return handed;
+      const leaf = expectLeaf(stop);
+      return walk(end(run.state, leaf.nodeRunId, "completed", { output: {} }), [
+        ...handed,
+        leaf.node.id,
+      ]);
+    };
+    expect(await walk(start(), [])).toEqual(["a", "fresh"]);
+  });
+
+  test("a node tier: deep on a tier: fast stage beats the stage's, so a session on haiku-x gets a model step for opus-x", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${stage("make", "quick", "\n    tier: deep\n    input: {}")}
+`);
+    const { stop } = await advanceTiered(plan, fresh(), FAST_AND_DEEP, HAIKU);
+    expect(stop).toEqual({ kind: "model", nodeId: "make", model: "opus-x", effort: "high" });
+  });
+
+  test("a prompt agent node with tier: fast on a session on opus-x gets a model step for haiku-x", async () => {
+    const plan = await compilePlan(`name: t
+nodes:
+  - { id: ask, type: agent, prompt: summarise, input: {}, tier: fast }
+`);
+    const { stop } = await advanceTiered(plan, fresh(), FAST_AND_DEEP, OPUS_HIGH);
+    expect(stop).toEqual({ kind: "model", nodeId: "ask", model: "haiku-x" });
+  });
+
+  test("a prompt agent node with no tier, on a session on no model, gets a model step for the default deep tier's opus-x", async () => {
+    const plan = await compilePlan(`name: t
+nodes:
+  - { id: ask, type: agent, prompt: summarise, input: {} }
+`);
+    const { stop } = await advanceTiered(plan, fresh(), FAST_AND_DEEP);
+    expect(stop).toEqual({ kind: "model", nodeId: "ask", model: "opus-x", effort: "high" });
+  });
+
+  test("a stage with no tier after a fast stage switches the session back from haiku-x to the default deep tier's opus-x", async () => {
+    const plan = await compilePlan(`name: t
+nodes:${stage("make", "quick", "\n    input: {}")}${stage("tidy", "plain", "\n    input: {}\n    dependsOn: [make]")}
+`);
+    const toFast = await advanceTiered(plan, fresh(), FAST_AND_DEEP, OPUS_HIGH);
+    expect(toFast.stop).toMatchObject({ kind: "model", nodeId: "make", model: "haiku-x" });
+    const onFast = record(toFast.run, {
+      type: "workflow.model.applied",
+      source: "orchestrate",
+      payload: { requestSeq: lastSeq(toFast.run), node: "make", model: "haiku-x", applied: true },
+    });
+    const make = await advanceTiered(plan, onFast, FAST_AND_DEEP, OPUS_HIGH);
+    const ended = end(make.run.state, expectLeaf(make.stop).nodeRunId, "completed", {
+      output: {},
+    });
+    const { stop } = await advanceTiered(
+      plan,
+      { state: ended, log: make.run.log },
+      FAST_AND_DEEP,
+      OPUS_HIGH,
+    );
+    expect(stop).toEqual({ kind: "model", nodeId: "tidy", model: "opus-x", effort: "high" });
   });
 });
 

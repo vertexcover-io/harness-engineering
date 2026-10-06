@@ -31,6 +31,7 @@ const state: State = {
       app: { path: "/work", git: { branch: "b", baseBranch: "main", startSha: "a" } },
     },
   },
+  tiers: null,
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},

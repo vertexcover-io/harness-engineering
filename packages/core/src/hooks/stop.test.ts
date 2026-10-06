@@ -24,10 +24,10 @@ import {
   type StopInput,
   type TranscriptEntry,
 } from "@harness/sdk";
-import { createRegistry, jsonlEventStore } from "@harness/sdk/internal";
+import { appendRunEvent, createRegistry, jsonlEventStore } from "@harness/sdk/internal";
 import { ORCHESTRATE_SCRIPT } from "../stage.ts";
 import { recordGuard, runPreToolUse } from "./pre-tool-use.ts";
-import { decideStop, runStopHook } from "./stop.ts";
+import { decideStop, runStopHook, type StopCheck } from "./stop.ts";
 
 const seed: State = {
   schemaVersion: 1,
@@ -51,6 +51,7 @@ const seed: State = {
   },
   nodeRuns: {},
   activeSessions: [],
+  tiers: null,
   eventHandlers: {},
   hooks: {},
 };
@@ -78,6 +79,7 @@ const decide = (
   overrides: Partial<State>,
   touchedRun: boolean | undefined = true,
   progressSinceCheck = false,
+  pendingSwitch: StopCheck["pendingSwitch"] = null,
 ) =>
   decideStop({
     run: RUN,
@@ -85,6 +87,7 @@ const decide = (
     touchedRun,
     progressSinceCheck,
     maxBlocks: 1,
+    pendingSwitch,
   });
 
 describe("decideStop", () => {
@@ -164,6 +167,22 @@ describe("decideStop", () => {
     const decision = decide({ stopHook: { blockStreak: 1, seq: 12 }, lastEventSeq: 12 }, false);
     expect(decision).toMatchObject({ reason: "user-chat", blockStreak: 1 });
   });
+
+  test("SC9: a stop between nodes with switch seq 42 pending lets the turn end as model-switch, even on a chat turn", () => {
+    const pending = { seq: 42, node: "think", model: "opus-x" };
+    expect(decide({}, false, false, pending)).toEqual({
+      reason: "model-switch",
+      blockStreak: 0,
+      seq: 42,
+    });
+  });
+
+  test("SC10: a stop between nodes with no switch pending, as after a failed one, sends the agent to next", () => {
+    expect(decide({})).toMatchObject({
+      reason: "next-not-run",
+      message: expect.stringContaining("bun run orchestrate next --run feat-x"),
+    });
+  });
 });
 
 const setUp = async (nodeRuns: State["nodeRuns"], agent: "claude" | "codex" = "claude") => {
@@ -180,7 +199,7 @@ const setUp = async (nodeRuns: State["nodeRuns"], agent: "claude" | "codex" = "c
     name: "feat-x",
     terminal: null,
     config: null,
-    tier: null,
+    tiers: null,
     createdAt: "2026-09-26T10:00:00Z",
   });
   const runDir = runDirOf(cwd, "feat-x");
@@ -396,6 +415,26 @@ describe("an open context node", () => {
       kind: "continue",
     });
     expect(spawn).not.toHaveBeenCalled();
+  });
+
+  test("a stop whose event log holds an answered switch request and an unanswered one at seq 3 lets the turn end and starts the model helper for seq 3", async () => {
+    const { deps, cwd } = await setUp({});
+    const run = { id: "r-1", cwd, name: "feat-x" };
+    const request = { node: "think", model: "opus-x" };
+    const answer = { ...request, requestSeq: 1, applied: false, reason: "respawn failed" };
+    await appendRunEvent(run, { type: "workflow.model.requested", source: "t", payload: request });
+    await appendRunEvent(run, { type: "workflow.model.applied", source: "t", payload: answer });
+    await appendRunEvent(run, { type: "workflow.model.requested", source: "t", payload: request });
+
+    expect(await runStopHook(input(orchestrateAfterPrompt), deps)).toEqual({ kind: "allow" });
+
+    expect(spawn.mock.calls).toEqual([
+      [
+        process.execPath,
+        [ORCHESTRATE_SCRIPT, "model", "3", "--run-id", "r-1", "--session-id", "s1"],
+        { cwd, output: "ignore" },
+      ],
+    ]);
   });
 
   test("a helper that cannot start still lets the stop through", async () => {

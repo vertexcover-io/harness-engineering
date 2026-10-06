@@ -13,6 +13,8 @@ export type HookDeps = Readonly<{
 // What one agent answers: each takes the agent's raw hook input and the handler it was registered
 // with, and returns the text to print. A hook the agent lacks prints nothing.
 export type AgentAdapter = Readonly<{
+  // whether the harness can restart or compact the agent in its pane: context nodes, model switches
+  contextSteps: boolean;
   stop?: (stdin: string, deps: HookDeps, handler: StopHandler) => Promise<string>;
   sessionStart?: (stdin: string, deps: HookDeps, handler: SessionStartHandler) => Promise<string>;
   preToolUse?: (stdin: string, deps: HookDeps, handler: PreToolUseHandler) => Promise<string>;

@@ -1,8 +1,30 @@
 import { isAbsolute } from "node:path";
 import * as z from "zod";
-import { AgentTypeSchema } from "./agent.ts";
+import { AgentTypeSchema, EffortSchema } from "./agent.ts";
 
 export const NonEmptyStringSchema = z.string().min(1);
+export const NameSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/, "Expected a camelCase name");
+
+export const TierModelSchema = z.strictObject({
+  model: NonEmptyStringSchema,
+  effort: EffortSchema.optional(),
+});
+export type TierModel = z.infer<typeof TierModelSchema>;
+// The model and effort out of a wider object (a request, an applied event). The inferred return
+// has no `effort: undefined`, which launch options and event payloads reject.
+export const pickTierModel = ({ model, effort }: TierModel) => ({
+  model,
+  ...(effort === undefined ? {} : { effort }),
+});
+// The model and effort a session launches with; none leaves the agent's defaults.
+export const tierLaunch = (tier: TierModel | null) => (tier === null ? {} : pickTierModel(tier));
+// A run's merged tiers, resolved by the server at launch: the model each tier runs on and the
+// tier it launches on.
+export const ResolvedTiersSchema = z.strictObject({
+  default: NameSchema,
+  models: z.record(NameSchema, TierModelSchema),
+});
+export type ResolvedTiers = z.infer<typeof ResolvedTiersSchema>;
 export const SessionRefSchema = z.strictObject({
   agent: AgentTypeSchema,
   sessionId: NonEmptyStringSchema,
@@ -221,6 +243,8 @@ export const StateSchema = z.strictObject({
     .optional(),
   // agent sessions working on the run now; a context node's new session replaces the old one
   activeSessions: z.array(SessionRefSchema).default([]),
+  // Written once by init; null when the run's agent has no tiers.
+  tiers: ResolvedTiersSchema.nullable(),
   custom: JsonObjectSchema.optional(),
   eventHandlers: EventHandlerRefsSchema.default({}),
   hooks: HookRefsSchema.default({}),

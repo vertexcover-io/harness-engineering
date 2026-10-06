@@ -29,6 +29,7 @@ const state: State = {
   completedAt: null,
   status: "running",
   workspace: { type: "mono", path: "/work", repositories: {} },
+  tiers: null,
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},

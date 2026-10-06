@@ -15,11 +15,15 @@ import {
   type NodeRun,
   NodeTypeSchema,
   NonEmptyStringSchema,
+  pickTierModel,
+  type ResolvedTiers,
   type Result,
   SessionRefSchema,
   SkipOutputSchema,
   SlugSchema,
   type State,
+  type TierModel,
+  TierModelSchema,
 } from "./contracts.ts";
 import type { IEventStore } from "./event-store.ts";
 import type { EventHandler, EventHandlers } from "./state.ts";
@@ -100,8 +104,8 @@ export const WorkflowStartedEvent = z.object({
 
 export const WorkflowEndedEvent = z.object({ payload: z.strictObject({}) });
 
-// Why the Stop hook answered as it did. The first three let the turn end; the last two send the
-// agent back to work.
+// Why the Stop hook answered as it did. node-not-done and next-not-run send the agent back to
+// work; the rest let the turn end.
 export const StopReasonSchema = z.enum([
   "run-finished",
   "user-chat",
@@ -109,6 +113,7 @@ export const StopReasonSchema = z.enum([
   "node-not-done",
   "next-not-run",
   "context-node",
+  "model-switch",
 ]);
 export type StopReason = z.infer<typeof StopReasonSchema>;
 
@@ -169,6 +174,19 @@ export const SessionReplacedEvent = z.object({
     previousSessionId: NonEmptyStringSchema,
     sessionId: NonEmptyStringSchema,
   }),
+});
+
+// next asks for the model a stage's tier maps to; node is the stage's path (nodePath).
+const ModelRequestSchema = TierModelSchema.extend({ node: NonEmptyStringSchema });
+export const ModelRequestedEvent = z.object({ payload: ModelRequestSchema });
+
+// The helper switched the session to the model of request requestSeq, or says why it could not.
+const ModelAnswerSchema = ModelRequestSchema.extend({ requestSeq: z.int().positive() });
+export const ModelAppliedEvent = z.object({
+  payload: z.discriminatedUnion("applied", [
+    ModelAnswerSchema.extend({ applied: z.literal(true) }),
+    ModelAnswerSchema.extend({ applied: z.literal(false), reason: NonEmptyStringSchema }),
+  ]),
 });
 
 // The agent hit its plan's usage limit; message is its error text, which may name the reset time.
@@ -453,6 +471,8 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "workflow.session.replaced": SessionReplacedEvent,
   "workflow.context.started": ContextStartedEvent,
   "workflow.blocked": WorkflowBlockedEvent,
+  "workflow.model.requested": ModelRequestedEvent,
+  "workflow.model.applied": ModelAppliedEvent,
   "workspace.created": WorkspaceCreatedEvent,
   "workspace.create-failed": WorkspaceCreateFailedEvent,
   "workspace.repository.added": WorkspaceRepositoryAddedEvent,
@@ -533,6 +553,58 @@ export const runDirOf = (cwd: string, name: string): string => join(cwd, ".harne
 export type RunRef = Readonly<{ id: string; cwd: string; name: string }>;
 
 type Nodes = Readonly<Record<string, NodeRun>>;
+
+// A node's path in the workflow: the containers above it, then its own id.
+export const nodePath = (parents: readonly string[], id: string): string =>
+  [...parents, id].join(".");
+
+// Where the run's model switches stand, folded from its events in order.
+export type ModelSwitch = Readonly<{
+  // the model the session is on: its launch model until a switch is applied
+  current: TierModel | null;
+  // the request no helper has answered yet; seq is its event's
+  pending: (z.infer<typeof ModelRequestSchema> & Readonly<{ seq: number }>) | null;
+  // a switch that failed; it stands until next fails the stage at that node
+  failed: Readonly<{ node: string; reason: string }> | null;
+}>;
+
+const stepModelSwitch = (progress: ModelSwitch, event: Event): ModelSwitch => {
+  switch (event.type) {
+    case "workflow.model.requested": {
+      const parsed = ModelRequestedEvent.safeParse(event);
+      if (!parsed.success) return progress;
+      return { ...progress, pending: { ...parsed.data.payload, seq: event.seq } };
+    }
+    case "workflow.model.applied": {
+      const parsed = ModelAppliedEvent.safeParse(event);
+      // an answer to an earlier request than the open one is stale
+      if (!parsed.success || parsed.data.payload.requestSeq !== progress.pending?.seq) {
+        return progress;
+      }
+      const { payload } = parsed.data;
+      if (payload.applied) return { ...progress, current: pickTierModel(payload), pending: null };
+      return { ...progress, pending: null, failed: { node: payload.node, reason: payload.reason } };
+    }
+    case "workflow.node.failed": {
+      const parsed = nodeEndedEvents.failed.safeParse(event);
+      if (!parsed.success) return progress;
+      const { nodeId, payload } = parsed.data;
+      const path = nodePath(payload.parents ?? [], nodeId);
+      return path === progress.failed?.node ? { ...progress, failed: null } : progress;
+    }
+    default:
+      return progress;
+  }
+};
+
+// The session starts on the default tier's model.
+export const foldModelSwitch = (
+  events: readonly Event[],
+  tiers: ResolvedTiers | null,
+): ModelSwitch => {
+  const current = tiers === null ? null : (tiers.models[tiers.default] ?? null);
+  return events.reduce(stepModelSwitch, { current, pending: null, failed: null });
+};
 
 // The node runs inside the containers named by `parents`: the read side of updateNode.
 export const findNodeRuns = (nodeRuns: Nodes, parents: readonly string[]): Nodes =>

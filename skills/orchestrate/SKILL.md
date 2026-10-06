@@ -94,6 +94,11 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      and for `compact` it compacts this session. Either way the session then receives
      the skill's `--resume NAME` message and carries on. Codex has no context steps: the Stop
      hook completes the node as not applied and sends you back to `next`.
+   - `model`: tell the user `⇄ NODE_ID: MODEL` (the reply's `nodeId` and `model`), then end the
+     turn at once, without running any other command. Once the turn is over, the harness
+     restarts this same session on `model` (and `effort`, when set), keeping the conversation,
+     and sends it the skill's `--resume NAME` message. The `next` that follows hands out the
+     node, or reports it as failed if the switch failed. Codex runs never get a `model` reply.
    - `blocked`: the stage `stage` needs artifacts in `missing` that no finished node wrote.
      Tell the user which, and stop.
    - `waiting`: a step is still running, and only one step runs at a time. Wait for your

@@ -207,6 +207,9 @@ export const codexProvider = ({
     sessionId: string,
     options: LaunchOptions,
   ): Promise<Result<void>> => {
+    if (options.resume === true) {
+      return { ok: false, error: "codex cannot resume a session in its pane" };
+    }
     const spec = {
       cwd: options.cwd,
       argv: [binary, ...codexArgs(options)],

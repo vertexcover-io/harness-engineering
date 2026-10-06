@@ -1,6 +1,7 @@
 // The engine's side of the sdk: core, server and cli import these. Extension code uses
 // @harness/sdk; a skill script never imports this file.
-export { uniqueNames } from "./config.ts";
+export { resolveTiers, uniqueNames } from "./config.ts";
+export { pickTierModel } from "./contracts.ts";
 export {
   type EventDraft,
   type IEventStore,
@@ -20,7 +21,10 @@ export {
   DoneStatusSchema,
   emitEvent,
   findNodeRuns,
+  foldModelSwitch,
   type IEventEmitter,
+  type ModelSwitch,
+  nodePath,
   type StepOutcome,
   type StepReport,
 } from "./events.ts";

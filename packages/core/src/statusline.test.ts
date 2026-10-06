@@ -69,6 +69,7 @@ const makeRun = ({
     },
     nodeRuns,
     activeSessions: [],
+    tiers: null,
     eventHandlers: {},
   };
   writeFileSync(join(dir, "state.json"), state ?? JSON.stringify(body));

@@ -68,6 +68,9 @@ export type LaunchOptions = Readonly<{
   permissionMode?: PermissionMode;
   model?: string;
   effort?: Effort;
+  // relaunch only: continue the session's conversation (claude --resume) instead of starting
+  // a new session on that id
+  resume?: boolean;
   // argv that runs the orchestrate script; the provider registers the agent's hooks and status
   // line as its subcommands
   orchestrateArgv?: readonly string[];

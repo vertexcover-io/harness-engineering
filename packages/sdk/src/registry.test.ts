@@ -7,7 +7,6 @@ import {
   createRegistry,
   createRegistryReader,
   RegistryFileSchema,
-  tierLaunch,
   type WorkflowRun,
 } from "./registry.ts";
 
@@ -21,7 +20,7 @@ const run = (id: string, overrides: Partial<WorkflowRun> = {}): WorkflowRun => (
   name: null,
   terminal: null,
   config: null,
-  tier: null,
+  tiers: null,
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -138,25 +137,5 @@ describe("createRegistryReader", () => {
     expect((await reader.findRunsByName("spec")).map((found) => found.id)).toEqual(["r-10"]);
     expect((await reader.listRuns()).map((found) => found.id)).toEqual(["r-10"]);
     expect(Object.keys(reader).sort()).toEqual(["findRun", "findRunsByName", "listRuns"]);
-  });
-});
-
-describe("WorkflowRunSchema", () => {
-  test("a run saved before runs carried a tier loads with tier null", () => {
-    const { tier: _, ...saved } = run("r-old");
-    expect(
-      RegistryFileSchema.parse({ version: 1, runs: { "r-old": saved } }).runs["r-old"]?.tier,
-    ).toBeNull();
-  });
-});
-
-describe("tierLaunch", () => {
-  test("a run's tier gives the model and effort its sessions launch with; no tier gives neither", () => {
-    expect(tierLaunch({ name: "deep", model: "opus", effort: "high" })).toEqual({
-      model: "opus",
-      effort: "high",
-    });
-    expect(tierLaunch({ name: "fast", model: "haiku" })).toEqual({ model: "haiku" });
-    expect(tierLaunch(null)).toEqual({});
   });
 });
