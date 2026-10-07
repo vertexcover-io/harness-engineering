@@ -1,6 +1,5 @@
 import type { AgentType } from "./agent.ts";
-import type { Event, State } from "./contracts.ts";
-import type { AnsweredQuestion, AskedQuestion, RunRef } from "./events.ts";
+import type { AnsweredQuestion, AskedQuestion } from "./events.ts";
 import type { ILogger } from "./logger.ts";
 import type { RegistryReader } from "./registry.ts";
 
@@ -120,10 +119,3 @@ export type PostToolUseHandler = Readonly<{
   name: string;
   run: (input: PostToolUseInput, deps: HookDeps) => Promise<void>;
 }>;
-
-// What a run hook receives: the event it listens to, the run's state once the event is applied,
-// and the run itself, to store events of its own (custom.state.updated keeps values between calls).
-export type HookInput = Readonly<{ event: Event; state: State; run: RunRef }>;
-
-// A run hook module's export. What it returns, as JSON, is recorded as the call's output.
-export type RunHook = (input: HookInput) => unknown;

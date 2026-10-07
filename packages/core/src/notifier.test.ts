@@ -33,7 +33,7 @@ const state: State = {
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},
-  hooks: {},
+  subscribers: {},
 };
 
 const failedBuild: State = {
@@ -153,15 +153,20 @@ describe("describeEvent", () => {
       { title: "Run blocked · planning needs design", mention: true, body: "", files: [] },
     ],
     [
-      "hooks.hook.called",
-      event("hooks.hook.called", {
-        hook: "asana",
+      "subscriber.called",
+      event("subscriber.called", {
+        subscriber: "asana",
         eventType: "workflow.started",
         status: "failed",
         error: { kind: "threw", message: "401" },
       }),
       state,
-      { title: "Hook asana failed on workflow.started", mention: false, body: "401", files: [] },
+      {
+        title: "Subscriber asana failed on workflow.started",
+        mention: false,
+        body: "401",
+        files: [],
+      },
     ],
   ])("SC203: %s maps to its title, mention and body", (_type, stored, at, expected) => {
     expect(describeEvent(stored, at)).toEqual(expected);
@@ -235,13 +240,17 @@ describe("describeEvent", () => {
       event("hooks.stop.called", { reason: "max-blocks-reached" }),
     ],
     [
-      "hooks.hook.called with status ok",
-      event("hooks.hook.called", { hook: "asana", eventType: "workflow.started", status: "ok" }),
+      "subscriber.called with status ok",
+      event("subscriber.called", {
+        subscriber: "asana",
+        eventType: "workflow.started",
+        status: "ok",
+      }),
     ],
     [
-      "hooks.hook.called failed for the notifier itself",
-      event("hooks.hook.called", {
-        hook: "notifier",
+      "subscriber.called failed for the notifier itself",
+      event("subscriber.called", {
+        subscriber: "notifier",
         eventType: "workflow.started",
         status: "failed",
         error: { kind: "threw", message: "no token" },

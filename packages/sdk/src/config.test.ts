@@ -166,7 +166,7 @@ describe("ConfigSchema", () => {
       env: {},
       workspace: { layout: "mono" },
       eventHandlers: {},
-      hooks: {},
+      subscribers: {},
     });
   });
 
@@ -397,23 +397,23 @@ describe("ConfigSchema", () => {
   });
 });
 
-describe("hooks", () => {
-  test("SC101: a module hook and a command hook load in order, keeping their fields", async () => {
+describe("subscribers", () => {
+  test("SC101: a module subscriber and a command subscriber load in order, keeping their fields", async () => {
     const config = await load(
       "orchestrate.config.yaml",
       `version: 2
-hooks:
+subscribers:
   workflow.node.completed:
     - { name: asana, module: yok/asana.ts, handler: onDone }
-    - { name: log-it, command: "cat >> hooks.txt", blocking: false, timeoutSeconds: 5 }
+    - { name: log-it, command: "cat >> subscribers.txt", blocking: false, timeoutSeconds: 5 }
 `,
     );
 
-    const [asana, logIt] = config.hooks["workflow.node.completed"] ?? [];
+    const [asana, logIt] = config.subscribers["workflow.node.completed"] ?? [];
     expect(asana).toEqual({ name: "asana", module: "yok/asana.ts", handler: "onDone" });
     expect(logIt).toEqual({
       name: "log-it",
-      command: "cat >> hooks.txt",
+      command: "cat >> subscribers.txt",
       blocking: false,
       timeoutSeconds: 5,
     });
@@ -438,12 +438,12 @@ hooks:
         { name: "a", command: "true" },
         { name: "a", command: "false" },
       ]),
-      "hook names must be unique for one event type",
+      "subscriber names must be unique for one event type",
     ],
     [
-      "hooks.hook.called as an event type",
-      { "hooks.hook.called": [{ name: "a", command: "true" }] },
-      "no hook may listen to hooks.hook.called",
+      "subscriber.called as an event type",
+      { "subscriber.called": [{ name: "a", command: "true" }] },
+      "no subscriber may listen to subscriber.called",
     ],
     [
       "a module path leaving the repository",
@@ -456,35 +456,37 @@ hooks:
       "blocking: boolean",
     ],
     [
-      "a blocking hook given 26 seconds",
+      "a blocking subscriber given 26 seconds",
       started([{ name: "a", command: "true", blocking: true, timeoutSeconds: 26 }]),
       "the agent's 30-second hook limit",
     ],
     [
-      "a hook with blocking left out, so blocking, given 30 seconds",
+      "a subscriber with blocking left out, so blocking, given 30 seconds",
       started([{ name: "a", module: "a.ts", handler: "run", timeoutSeconds: 30 }]),
       "the agent's 30-second hook limit",
     ],
-  ])("SC102: %s is refused with the reason", async (_label, hooks, reason) => {
-    await writeConfig("orchestrate.config.json", JSON.stringify({ version: 2, hooks }));
+  ])("SC102: %s is refused with the reason", async (_label, subscribers, reason) => {
+    await writeConfig("orchestrate.config.json", JSON.stringify({ version: 2, subscribers }));
 
     const result = await loadConfig(root);
 
     expect(result.ok ? "" : result.error.message).toContain(reason);
   });
 
-  test("a non-blocking hook may run for 120 seconds", () => {
+  test("a non-blocking subscriber may run for 120 seconds", () => {
     const entry = { name: "a", command: "true", blocking: false, timeoutSeconds: 120 };
 
-    const { hooks } = ConfigSchema.parse({ version: 2, hooks: started([entry]) });
+    const { subscribers } = ConfigSchema.parse({ version: 2, subscribers: started([entry]) });
 
-    expect(hooks).toEqual({ "workflow.started": [entry] });
+    expect(subscribers).toEqual({ "workflow.started": [entry] });
   });
 
-  test("SC202: a project hook named notifier is refused as the built-in notifier's name", () => {
-    const hooks = started([{ name: "notifier", command: "true" }]);
+  test("SC202: a project subscriber named notifier is refused as the built-in notifier's name", () => {
+    const subscribers = started([{ name: "notifier", command: "true" }]);
 
-    expect(errorOf({ version: 2, hooks })).toContain('"notifier" is the built-in notifier\'s name');
+    expect(errorOf({ version: 2, subscribers })).toContain(
+      '"notifier" is the built-in notifier\'s name',
+    );
   });
 });
 

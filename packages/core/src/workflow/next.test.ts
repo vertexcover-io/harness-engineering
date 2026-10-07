@@ -58,7 +58,7 @@ const start = (input: JsonObject = {}): State => ({
   activeSessions: [],
   tiers: null,
   eventHandlers: {},
-  hooks: {},
+  subscribers: {},
 });
 
 // The event emitRunEvent would store for DRAFT: the next seq after the state's.

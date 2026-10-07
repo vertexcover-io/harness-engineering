@@ -963,11 +963,11 @@ nodes:
     input: {}
 `;
 
-describe("SC26: run hooks", () => {
-  test("SC116: a config hook on workflow.node.completed fires when done completes a node", async () => {
+describe("SC26: subscribers", () => {
+  test("SC116: a config subscriber on workflow.node.completed fires when done completes a node", async () => {
     const skills = stageSkills();
     const { repo, home } = startedRun(STAGES_WORKFLOW, {
-      hooks: { "workflow.node.completed": [{ name: "touch", command: "cat > fired.json" }] },
+      subscribers: { "workflow.node.completed": [{ name: "touch", command: "cat > fired.json" }] },
     });
     const step = (args: readonly string[]) =>
       orchestrate(repo, home, args, { YOK_SKILLS_DIR: skills });
@@ -983,9 +983,9 @@ describe("SC26: run hooks", () => {
     const fired = JSON.parse(readFileSync(join(repo, "fired.json"), "utf8"));
     expect(fired.event).toMatchObject({ type: "workflow.node.completed", nodeId: "make" });
     expect(fired.state).toMatchObject({ runName: "feat-x", lastEventSeq: fired.event.seq });
-    const calls = (await eventsOf(repo)).filter((event) => event.type === "hooks.hook.called");
+    const calls = (await eventsOf(repo)).filter((event) => event.type === "subscriber.called");
     expect(calls.map((call) => call.payload)).toMatchObject([
-      { hook: "touch", eventId: fired.event.id, status: "ok" },
+      { subscriber: "touch", eventId: fired.event.id, status: "ok" },
     ]);
   });
 });

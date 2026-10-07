@@ -777,25 +777,29 @@ const exitWith = (work: Promise<number>): Promise<never> =>
     },
   );
 
-// The sdk starts these to call one run hook in a process of its own; skills never run them.
-const runHookCommand = () => {
-  const runHook = new Command("run-hook").description("Call one run hook (started by the sdk)");
-  runHook
+// The sdk starts these to call one subscriber in a process of its own; skills never run them.
+const runSubscriberCommand = () => {
+  const runSubscriber = new Command("run-subscriber").description(
+    "Call one subscriber (started by the sdk)",
+  );
+  runSubscriber
     .command("call")
-    .description("Call the module hook given as { hook, input } on stdin; print its output")
+    .description(
+      "Call the module subscriber given as { subscriber, input } on stdin; print its output",
+    )
     .action(() => exitWith(callMode()));
-  runHook
+  runSubscriber
     .command("run")
-    .description("Run one non-blocking hook for one stored event, and record the call")
+    .description("Run one non-blocking subscriber for one stored event, and record the call")
     .argument("<cwd>")
     .argument("<name>")
     .argument("<runId>")
     .argument("<eventId>")
-    .argument("<hook>")
-    .action((cwd, name, runId, eventId, hook) =>
-      exitWith(runMode({ cwd, name, id: runId, eventId, hook })),
+    .argument("<subscriber>")
+    .action((cwd, name, runId, eventId, subscriber) =>
+      exitWith(runMode({ cwd, name, id: runId, eventId, subscriber })),
     );
-  return runHook;
+  return runSubscriber;
 };
 
 export const orchestrateCommand = () =>
@@ -819,4 +823,4 @@ export const orchestrateCommand = () =>
     .addCommand(modelCommand())
     .addCommand(limitWaitCommand())
     .addCommand(commentsCommand())
-    .addCommand(runHookCommand(), { hidden: true });
+    .addCommand(runSubscriberCommand(), { hidden: true });

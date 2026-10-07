@@ -2,14 +2,14 @@
 status: active
 date: 2026-10-03
 source: .harness/yok-distribution/design.md, docs/plans/2026-10-02-yok-distribution-plan.md
-tags: [harness-cli, sdk, run-hooks]
+tags: [harness-cli, sdk, subscribers]
 ---
 
 # The binary serves `@yok/sdk`, `zod` and `yok:notifier` to extension files itself; extensions need no node_modules
 
 ## Context and Problem Statement
 
-Extension files (verifiers, schemas, hooks, skill `module:` files) import `@yok/sdk` and `zod`, but a user's project and the plugin's skill folder have no `node_modules`, and a compiled binary has no on-disk path for core's notifier to freeze into `state.json`.
+Extension files (verifiers, schemas, subscribers, skill `module:` files) import `@yok/sdk` and `zod`, but a user's project and the plugin's skill folder have no `node_modules`, and a compiled binary has no on-disk path for core's notifier to freeze into `state.json`.
 
 ## Considered Options
 
@@ -25,4 +25,4 @@ Chosen: the binary serves the three modules, because the extension's folder then
 
 Any package other than these three still needs the project's own `node_modules`; `importModule` must not look on disk for a `yok:` specifier.
 
-This amends ADR 0006's "core's hooks reach the SDK only as frozen module paths": the built-in notifier is frozen as the reserved specifier `yok:notifier`, which the binary serves. Project hooks stay file paths.
+This amends ADR 0006's "core's subscribers reach the SDK only as frozen module paths": the built-in notifier is frozen as the reserved specifier `yok:notifier`, which the binary serves. Project subscribers stay file paths.

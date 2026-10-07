@@ -189,7 +189,7 @@ export const EventTypeSchema = z
   .string()
   .refine(
     (value) =>
-      /^(workflow|artifact|hooks|workspace|forge|learning|agent|orchestrate|notification)(\.[a-z][a-z0-9_-]*)+$/.test(
+      /^(workflow|artifact|hooks|workspace|forge|learning|agent|orchestrate|notification|subscriber)(\.[a-z][a-z0-9_-]*)+$/.test(
         value,
       ) ||
       /^stage\.[a-z][a-z0-9-]*\.[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*$/.test(value) ||
@@ -204,7 +204,7 @@ export const EventHandlerRefSchema = z.strictObject({
 });
 export const EventHandlerRefsSchema = z.record(EventTypeSchema, z.array(EventHandlerRefSchema));
 
-const hookFields = {
+const subscriberFields = {
   name: SlugSchema,
   // awaited before the append returns; false runs it in a detached runner
   blocking: z.boolean(),
@@ -215,17 +215,17 @@ const hookFields = {
 // disk, so it is a name, never a path.
 export const BuiltinModuleSchema = z.string().regex(/^yok:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
 
-// One hook as init froze it: a module's export, or a shell command that reads the hook input as
-// JSON on stdin. Paths are absolute by then; a built-in module keeps its yok: name.
-export const HookRefSchema = z.union([
+// One subscriber as init froze it: a module's export, or a shell command that reads the subscriber
+// input as JSON on stdin. Paths are absolute by then; a built-in module keeps its yok: name.
+export const SubscriberRefSchema = z.union([
   z.strictObject({
-    ...hookFields,
+    ...subscriberFields,
     module: z.union([AbsolutePathSchema, BuiltinModuleSchema]),
     handler: NonEmptyStringSchema,
   }),
-  z.strictObject({ ...hookFields, command: NonEmptyStringSchema, cwd: AbsolutePathSchema }),
+  z.strictObject({ ...subscriberFields, command: NonEmptyStringSchema, cwd: AbsolutePathSchema }),
 ]);
-export const HookRefsSchema = z.record(EventTypeSchema, z.array(HookRefSchema));
+export const SubscriberRefsSchema = z.record(EventTypeSchema, z.array(SubscriberRefSchema));
 
 export const StateSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -255,7 +255,7 @@ export const StateSchema = z.strictObject({
   tiers: ResolvedTiersSchema.nullable(),
   custom: JsonObjectSchema.optional(),
   eventHandlers: EventHandlerRefsSchema.default({}),
-  hooks: HookRefsSchema.default({}),
+  subscribers: SubscriberRefsSchema.default({}),
   // Set by init: the config file (null = the default config) and the folder its paths resolve
   // against. Optional because older runs lack it; they search their checkout instead.
   config: z
@@ -315,8 +315,8 @@ export type Notification = z.infer<typeof NotificationSchema>;
 export type WorkflowRef = z.infer<typeof WorkflowRefSchema>;
 export type EventHandlerRef = z.infer<typeof EventHandlerRefSchema>;
 export type EventHandlerRefs = z.infer<typeof EventHandlerRefsSchema>;
-export type HookRef = z.infer<typeof HookRefSchema>;
-export type HookRefs = z.infer<typeof HookRefsSchema>;
+export type SubscriberRef = z.infer<typeof SubscriberRefSchema>;
+export type SubscriberRefs = z.infer<typeof SubscriberRefsSchema>;
 export type State = z.infer<typeof StateSchema>;
 export type Event = z.infer<typeof EventSchema>;
 
