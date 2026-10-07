@@ -1961,7 +1961,10 @@ describe("orchestrate hook stop", () => {
           blockStreak: 1,
         },
       ],
-      ["agent.stuck", { agent: "claude", sessionId: "s1" }],
+      [
+        "agent.stuck",
+        { agent: "claude", sessionId: "s1", message: expect.stringContaining("is still open") },
+      ],
     ]);
   });
 

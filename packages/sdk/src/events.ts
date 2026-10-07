@@ -109,6 +109,7 @@ export const WorkflowEndedEvent = z.object({ payload: z.strictObject({}) });
 export const StopReasonSchema = z.enum([
   "run-finished",
   "user-chat",
+  "background-running",
   "max-blocks-reached",
   "node-not-done",
   "next-not-run",

@@ -55,8 +55,22 @@ const ClaudeLineSchema = z.looseObject({
   isMeta: z.boolean().optional(),
   origin: z.looseObject({ kind: z.string() }).optional(),
   message: z.looseObject({ content: z.unknown() }).optional(),
+  toolUseResult: z.unknown().optional(),
+  // a notice that reached the session mid-turn, queued as the next prompt
+  attachment: z.looseObject({ type: z.string(), prompt: z.unknown() }).optional(),
 });
 type ClaudeLine = z.infer<typeof ClaudeLineSchema>;
+
+// A tool result that started a task Claude reports back on: a background command, an async helper
+// agent, or a helper resumed with SendMessage.
+const TaskStartSchema = z.union([
+  z.looseObject({ backgroundTaskId: NonEmptyStringSchema }).transform((r) => r.backgroundTaskId),
+  z
+    .looseObject({ status: z.literal("async_launched"), agentId: NonEmptyStringSchema })
+    .transform((r) => r.agentId),
+  z.looseObject({ resumedAgentId: NonEmptyStringSchema }).transform((r) => r.resumedAgentId),
+]);
+const TASK_NOTICE_ID = /<task-notification>[\s\S]*?<task-id>([^<]+)<\/task-id>/g;
 
 const BlockSchema = z.looseObject({ type: z.string() });
 const TextBlockSchema = z.looseObject({ type: z.literal("text"), text: z.string() });
@@ -81,12 +95,25 @@ const textOf = (content: unknown): string =>
         })
         .join("\n");
 
+const startedTask = (toolUseResult: unknown): TranscriptEntry[] => {
+  const id = TaskStartSchema.safeParse(toolUseResult).data;
+  return id === undefined ? [] : [{ kind: "task-started", id }];
+};
+
+// One line can hold several notices, as when tasks finish while the agent is mid-turn.
+const endedTask = (text: string): TranscriptEntry[] =>
+  [...text.matchAll(TASK_NOTICE_ID)].flatMap(([, id]) =>
+    id === undefined ? [] : [{ kind: "task-ended" as const, id }],
+  );
+
 const userEntries = (line: ClaudeLine): TranscriptEntry[] => {
   const content = line.message?.content;
   if (line.isMeta === true) return [];
   // A finished background task is written as a user line, but nobody typed it.
-  if (line.origin?.kind === "task-notification") return [];
-  if (blocksOf(content).some((block) => block.type === "tool_result")) return [];
+  if (line.origin?.kind === "task-notification") return endedTask(textOf(content));
+  if (blocksOf(content).some((block) => block.type === "tool_result")) {
+    return startedTask(line.toolUseResult);
+  }
   const text = textOf(content).trim();
   if (text === "" || text.startsWith(HOOK_FEEDBACK)) return [];
   return [{ kind: "prompt", text }];
@@ -98,9 +125,15 @@ const commandEntries = (line: ClaudeLine): TranscriptEntry[] =>
     return call.success ? [{ kind: "command" as const, command: call.data.input.command }] : [];
   });
 
+const queuedEntries = (line: ClaudeLine): TranscriptEntry[] => {
+  const { type, prompt } = line.attachment ?? {};
+  return type === "queued_command" && typeof prompt === "string" ? endedTask(prompt) : [];
+};
+
 const toEntries = (line: ClaudeLine): TranscriptEntry[] => {
   if (line.type === "user") return userEntries(line);
   if (line.type === "assistant") return commandEntries(line);
+  if (line.type === "attachment") return queuedEntries(line);
   return [];
 };
 

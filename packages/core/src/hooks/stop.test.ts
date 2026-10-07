@@ -80,6 +80,7 @@ const decide = (
   touchedRun: boolean | undefined = true,
   progressSinceCheck = false,
   pendingSwitch: StopCheck["pendingSwitch"] = null,
+  backgroundTasks = 0,
 ) =>
   decideStop({
     run: RUN,
@@ -88,6 +89,7 @@ const decide = (
     progressSinceCheck,
     maxBlocks: 1,
     pendingSwitch,
+    backgroundTasks,
   });
 
 describe("decideStop", () => {
@@ -174,6 +176,18 @@ describe("decideStop", () => {
       reason: "model-switch",
       blockStreak: 0,
       seq: 42,
+    });
+  });
+
+  test("a stop while a background task runs lets the turn end and restarts the count, with a node open or between nodes", () => {
+    const stalled = { stopHook: { blockStreak: 1, seq: 12 }, lastEventSeq: 12 };
+    expect(decide({ ...stalled, nodeRuns: planOpen }, true, false, null, 1)).toEqual({
+      reason: "background-running",
+      blockStreak: 0,
+    });
+    expect(decide(stalled, true, false, null, 2)).toEqual({
+      reason: "background-running",
+      blockStreak: 0,
     });
   });
 
@@ -285,7 +299,7 @@ describe("runStopHook", () => {
     }
   });
 
-  test("the transcript is read only when no node is open, and every call is logged", async () => {
+  test("the transcript is read on every call, and every call is logged", async () => {
     const { deps, runDir } = await setUp(planOpen);
     let reads = 0;
     const counted: StopInput = {
@@ -297,7 +311,7 @@ describe("runStopHook", () => {
     };
     await runStopHook(counted, deps);
     await runStopHook(counted, deps);
-    expect(reads).toBe(0);
+    expect(reads).toBe(2);
     const events = await jsonlEventStore(runDir).read();
     expect(events.map((event) => event.payload)).toEqual([
       expect.objectContaining({
@@ -307,12 +321,12 @@ describe("runStopHook", () => {
         touchedRun: null,
       }),
       expect.objectContaining({ decision: "allow", reason: "max-blocks-reached", blockStreak: 1 }),
-      { agent: "claude", sessionId: "s1" },
+      { agent: "claude", sessionId: "s1", message: expect.stringContaining("node plan") },
     ]);
     expect((await readState(runDir))?.stopHook).toEqual({ blockStreak: 1, seq: 2 });
   });
 
-  test("a stop that gives up records agent.stuck for the session, which is not progress, so the next stop also lets the turn end", async () => {
+  test("a stop that gives up records agent.stuck once, naming the open node, and later stops at the same spot record nothing more", async () => {
     const { deps, runDir } = await setUp(planOpen);
 
     const kinds = [];
@@ -321,9 +335,40 @@ describe("runStopHook", () => {
     expect(kinds).toEqual(["continue", "allow", "allow"]);
     const stuck = (await jsonlEventStore(runDir).read()).filter((e) => e.type === "agent.stuck");
     expect(stuck.map((event) => [event.source, event.payload])).toEqual([
-      ["hooks", { agent: "claude", sessionId: "s1" }],
-      ["hooks", { agent: "claude", sessionId: "s1" }],
+      [
+        "hooks",
+        {
+          agent: "claude",
+          sessionId: "s1",
+          message: "node plan is still open, and the agent stopped again after being sent back",
+        },
+      ],
     ]);
+  });
+
+  test("stops while a background task runs are never stuck, and once it ends the agent is sent back before it counts as stuck", async () => {
+    const { deps, runDir } = await setUp(planOpen);
+    const running: TranscriptEntry[] = [{ kind: "task-started", id: "b1" }];
+    const ended: TranscriptEntry[] = [...running, { kind: "task-ended", id: "b1" }];
+
+    const kinds = [];
+    for (const entries of [running, running, running, ended, ended]) {
+      kinds.push((await runStopHook(input(entries), deps)).kind);
+    }
+
+    expect(kinds).toEqual(["allow", "allow", "allow", "continue", "allow"]);
+    const events = await jsonlEventStore(runDir).read();
+    expect(events.filter((e) => e.type === "agent.stuck")).toHaveLength(1);
+  });
+
+  test("a resumed task runs again after its first notification", async () => {
+    const { deps } = await setUp(planOpen);
+    const resumed: TranscriptEntry[] = [
+      { kind: "task-started", id: "a1" },
+      { kind: "task-ended", id: "a1" },
+      { kind: "task-started", id: "a1" },
+    ];
+    expect(await runStopHook(input(resumed), deps)).toEqual({ kind: "allow" });
   });
 
   test("a tool call between two stops is not progress, and any other event is", async () => {

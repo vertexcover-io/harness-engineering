@@ -72,6 +72,35 @@ describe("readClaudeTranscript", () => {
     ]);
   });
 
+  test("a background command, an async or resumed agent start a task, and its notification ends it", async () => {
+    const path = join(await mkdtemp(join(tmpdir(), "claude-transcript-")), "s1.jsonl");
+    const result = (toolUseResult: unknown) =>
+      user([{ type: "tool_result", tool_use_id: "t", content: "ok" }], { toolUseResult });
+    const notice = (id: string) =>
+      `<task-notification>\n<task-id>${id}</task-id>\n<status>completed</status>\n</task-notification>`;
+    const lines = [
+      result({ stdout: "", backgroundTaskId: "b1" }),
+      result({ isAsync: true, status: "async_launched", agentId: "a1" }),
+      result({ status: "completed", agentId: "a0" }),
+      result({ success: true, resumedAgentId: "a2" }),
+      user(notice("b1"), { origin: { kind: "task-notification" } }),
+      line({
+        type: "attachment",
+        attachment: { type: "queued_command", prompt: `${notice("a1")}\n${notice("a2")}` },
+      }),
+    ];
+    await writeFile(path, lines.join("\n"));
+
+    expect(await readClaudeTranscript(path)).toEqual([
+      { kind: "task-started", id: "b1" },
+      { kind: "task-started", id: "a1" },
+      { kind: "task-started", id: "a2" },
+      { kind: "task-ended", id: "b1" },
+      { kind: "task-ended", id: "a1" },
+      { kind: "task-ended", id: "a2" },
+    ]);
+  });
+
   test("SC15 — no path, or a path that does not exist, is unknown", async () => {
     expect(await readClaudeTranscript(undefined)).toBeUndefined();
     expect(await readClaudeTranscript(join(tmpdir(), "no-such-transcript.jsonl"))).toBeUndefined();

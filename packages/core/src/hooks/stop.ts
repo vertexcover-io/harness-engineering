@@ -8,6 +8,7 @@ import {
   readState,
   runDirOf,
   type State,
+  StopCalledEvent,
   type StopHandler,
   type StopInput,
   type StopReason,
@@ -42,13 +43,18 @@ export type StopCheck = Readonly<{
   maxBlocks: number;
   // the model switch next asked for that no helper has answered yet
   pendingSwitch: ModelSwitch["pending"];
+  // background commands and helper agents the session started that have not reported back
+  backgroundTasks: number;
 }>;
 
 // `blockStreak` is the blocks in a row at this spot, counting this call when it blocks. A decision
 // with a message sends the agent back to work; one without lets the turn end.
 export type StopDecision =
   | Readonly<{
-      reason: Extract<StopReason, "run-finished" | "user-chat" | "max-blocks-reached">;
+      reason: Extract<
+        StopReason,
+        "run-finished" | "user-chat" | "background-running" | "max-blocks-reached"
+      >;
       blockStreak: number;
     }>
   | Readonly<{ reason: "context-node"; blockStreak: number; nodeRunId: string }>
@@ -87,6 +93,18 @@ const touchedRunSinceLastPrompt = (
   return entries
     .slice(last + 1)
     .some((entry) => entry.kind === "command" && ORCHESTRATE.test(entry.command));
+};
+
+// A resumed helper starts again under its old id, so a task runs when its last entry is a start.
+const runningTasks = (entries: readonly TranscriptEntry[]): number => {
+  const lastKind = new Map(
+    entries.flatMap((entry) =>
+      entry.kind === "task-started" || entry.kind === "task-ended"
+        ? [[entry.id, entry.kind] as const]
+        : [],
+    ),
+  );
+  return [...lastKind.values()].filter((kind) => kind === "task-started").length;
 };
 
 const maxBlocksOf = (env: HookDeps["env"]): number => {
@@ -141,6 +159,7 @@ export const decideStop = ({
   progressSinceCheck,
   maxBlocks,
   pendingSwitch,
+  backgroundTasks,
 }: StopCheck): StopDecision => {
   const prior = priorBlocks(state, progressSinceCheck);
   const position = positionOf(state);
@@ -153,6 +172,9 @@ export const decideStop = ({
   if (position.kind === "between-nodes" && pendingSwitch !== null) {
     return { reason: "model-switch", blockStreak: prior, seq: pendingSwitch.seq };
   }
+  // Claude wakes the agent when a background task reports back, so waiting on one is not a lapse,
+  // and the turn after it starts a fresh count.
+  if (backgroundTasks > 0) return { reason: "background-running", blockStreak: 0 };
   if (position.kind === "between-nodes" && touchedRun === false)
     return { reason: "user-chat", blockStreak: prior };
   if (prior >= maxBlocks) return { reason: "max-blocks-reached", blockStreak: prior };
@@ -190,11 +212,33 @@ const stopCalledEvent = (
   },
 });
 
-// Only a turn between nodes reads touchedRun, so only then is the transcript worth reading.
-const readTouchedRun = async (input: StopInput, state: State): Promise<boolean | undefined> =>
-  positionOf(state).kind === "between-nodes"
-    ? touchedRunSinceLastPrompt(await input.readTranscript())
-    : undefined;
+// Only a turn between nodes reads touchedRun.
+const touchedRunAt = (
+  state: State,
+  entries: readonly TranscriptEntry[] | undefined,
+): boolean | undefined =>
+  positionOf(state).kind === "between-nodes" ? touchedRunSinceLastPrompt(entries) : undefined;
+
+const readTranscriptWhileRunning = (
+  input: StopInput,
+  state: State,
+): Promise<readonly TranscriptEntry[] | undefined> =>
+  state.status === "running" ? input.readTranscript() : Promise.resolve(undefined);
+
+// The give-up right after a block is the stall; later stops at the same spot repeat it.
+const sentBackLastStop = (events: readonly Event[], state: State): boolean =>
+  events.some(
+    (event) =>
+      event.seq === state.stopHook?.seq &&
+      StopCalledEvent.safeParse(event).data?.payload.decision === "continue",
+  );
+
+const stuckMessage = (state: State): string => {
+  const position = positionOf(state);
+  return position.kind === "open-node"
+    ? `node ${position.leaf.nodeId} is still open, and the agent stopped again after being sent back`
+    : "the agent stopped again without running next after being sent back";
+};
 
 // An agent without context steps: the node ends as not applied and the session goes on to `next`.
 const decideForAgent = async (input: StopInput, check: StopCheck): Promise<StopDecision> => {
@@ -215,11 +259,16 @@ const decideForAgent = async (input: StopInput, check: StopCheck): Promise<StopD
   };
 };
 
-const recordStuck = async (run: RunRef, input: StopInput, deps: HookDeps): Promise<void> => {
+const recordStuck = async (
+  run: RunRef,
+  input: StopInput,
+  state: State,
+  deps: HookDeps,
+): Promise<void> => {
   const stored = await appendRunEvent(run, {
     type: "agent.stuck",
     source: "hooks",
-    payload: { agent: input.agent, sessionId: input.sessionId },
+    payload: { agent: input.agent, sessionId: input.sessionId, message: stuckMessage(state) },
   });
   if (!stored.ok) deps.log.warn({ error: stored.error }, "agent.stuck not recorded");
 };
@@ -236,17 +285,18 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
     const runDir = runDirOf(run.cwd, run.name);
     const state = await readState(runDir);
     if (state === null) return ALLOW;
-    const [touchedRun, events] = await Promise.all([
-      readTouchedRun(input, state),
+    const [entries, events] = await Promise.all([
+      readTranscriptWhileRunning(input, state),
       jsonlEventStore(runDir).read(),
     ]);
     const check = {
       run,
       state,
-      touchedRun,
+      touchedRun: touchedRunAt(state, entries),
       progressSinceCheck: progressSince(events, state.stopHook?.seq),
       maxBlocks: maxBlocksOf(deps.env),
       pendingSwitch: foldModelSwitch(events, state.tiers).pending,
+      backgroundTasks: runningTasks(entries ?? []),
     };
     const decision = await decideForAgent(input, check);
     const stored = await appendRunEvent(run, stopCalledEvent(input, check, decision));
@@ -261,7 +311,9 @@ export const runStopHook = async (input: StopInput, deps: HookDeps): Promise<Hoo
     if (decision.reason === "model-switch") {
       await startModelStep(run, input.sessionId, decision.seq);
     }
-    if (decision.reason === "max-blocks-reached") await recordStuck(run, input, deps);
+    if (decision.reason === "max-blocks-reached" && sentBackLastStop(events, state)) {
+      await recordStuck(run, input, state, deps);
+    }
     return replyOf(decision);
   } catch (error) {
     deps.log.error({ err: error }, "stop allowed: the stop hook failed");
