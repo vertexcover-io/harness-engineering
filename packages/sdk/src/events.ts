@@ -213,10 +213,10 @@ export const LimitResumedEvent = z.object({
   payload: z.strictObject({ sessionId: NonEmptyStringSchema, limitEventId: NonEmptyStringSchema }),
 });
 
-// One call of one hook for one stored event.
-export const HookCalledEvent = z.object({
+// One call of one subscriber for one stored event.
+export const SubscriberCalledEvent = z.object({
   payload: z.strictObject({
-    hook: SlugSchema,
+    subscriber: SlugSchema,
     eventId: NonEmptyStringSchema,
     eventSeq: z.int().positive(),
     eventType: EventTypeSchema,
@@ -285,12 +285,13 @@ export const NotificationThreadStartedEvent = z.object({
   payload: z.strictObject({ provider: NonEmptyStringSchema, threadId: NonEmptyStringSchema }),
 });
 
-// Values a hook or skill keeps between calls. Each top-level key replaces the one in state.custom,
+// Values a subscriber or skill keeps between calls. Each top-level key replaces the one in state.custom,
 // so a writer keeps its values under its own key.
 export const CustomStateUpdatedEvent = z.object({ payload: JsonObjectSchema });
 
-// One id per event and hook, so a call is recorded at most once.
-export const buildHookCallId = (eventId: string, hook: string): string => `hook:${eventId}:${hook}`;
+// One id per event and subscriber, so a call is recorded at most once.
+export const buildSubscriberCallId = (eventId: string, subscriber: string): string =>
+  `subscriber:${eventId}:${subscriber}`;
 
 const workspaceEvent = <P extends z.ZodType>(payload: P) => z.object({ payload });
 
@@ -495,7 +496,7 @@ const catalog: Readonly<Record<string, z.ZodType>> = {
   "agent.question.answered": QuestionAnsweredEvent,
   "agent.stopped": AgentStoppedEvent,
   "agent.stuck": AgentStuckEvent,
-  "hooks.hook.called": HookCalledEvent,
+  "subscriber.called": SubscriberCalledEvent,
   "notification.thread.started": NotificationThreadStartedEvent,
   "custom.state.updated": CustomStateUpdatedEvent,
   "artifact.comment.added": CommentAddedEvent,

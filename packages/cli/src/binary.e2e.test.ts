@@ -157,12 +157,12 @@ const AGENT_NODE = (dependsOn: string) => `  - id: write
 const workflow = (nodes: string): string =>
   `name: alone\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n${nodes}`;
 
-const HOOK_MODULE = `import { writeFileSync } from "node:fs";
+const SUBSCRIBER_MODULE = `import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { NonEmptyStringSchema } from "@yok/sdk";
 import { z } from "zod";
 export const record = ({ run }) => {
-  writeFileSync(join(run.cwd, "hook.json"), JSON.stringify({
+  writeFileSync(join(run.cwd, "subscriber.json"), JSON.stringify({
     self: process.env.YOK_SELF,
     parsed: z.string().parse(NonEmptyStringSchema.parse("x")),
   }));
@@ -295,34 +295,37 @@ describe("the compiled yok binary", () => {
     expect(JSON.parse(step(["next"]).stdout)).toEqual({ kind: "finished", status: "completed" });
   }, 60_000);
 
-  test("SC92: runs a module hook and loads yok:notifier", async () => {
+  test("SC92: runs a module subscriber and loads yok:notifier", async () => {
     const config = {
       version: 2,
-      hooks: {
+      subscribers: {
         "workflow.node.completed": [
-          { name: "probe", module: "hooks/probe.ts", handler: "record", blocking: true },
+          { name: "probe", module: "subscribers/probe.ts", handler: "record", blocking: true },
         ],
       },
       notifier: { enabled: true, type: "slack" },
     };
     const { repo, step } = startRun({
       nodes: AGENT_NODE(""),
-      files: { "hooks/probe.ts": HOOK_MODULE, "orchestrate.config.json": JSON.stringify(config) },
+      files: {
+        "subscribers/probe.ts": SUBSCRIBER_MODULE,
+        "orchestrate.config.json": JSON.stringify(config),
+      },
     });
     const agent = JSON.parse(step(["next"]).stdout);
 
     const done = step(["done", agent.nodeRunId, "--output", '{"title":"tea"}']);
 
     expect([done.code, done.stderr]).toEqual([0, ""]);
-    const hook = JSON.parse(readFileSync(join(repo, "hook.json"), "utf8"));
-    expect(hook.parsed).toBe("x");
-    expect(JSON.parse(hook.self)).toEqual([realpathSync(BIN)]);
+    const subscriber = JSON.parse(readFileSync(join(repo, "subscriber.json"), "utf8"));
+    expect(subscriber.parsed).toBe("x");
+    expect(JSON.parse(subscriber.self)).toEqual([realpathSync(BIN)]);
     const store = jsonlEventStore(runDirOf(repo, "feat-x"));
     const notifierCall = async () =>
       (await store.read()).find(
         (event) =>
-          event.type === "hooks.hook.called" &&
-          JSON.stringify(event.payload).includes('"hook":"notifier"'),
+          event.type === "subscriber.called" &&
+          JSON.stringify(event.payload).includes('"subscriber":"notifier"'),
       );
     const deadline = Date.now() + 5000;
     let call = await notifierCall();
@@ -331,7 +334,7 @@ describe("the compiled yok binary", () => {
       call = await notifierCall();
     }
     expect(call?.payload).toMatchObject({
-      hook: "notifier",
+      subscriber: "notifier",
       status: "failed",
       error: { message: expect.stringContaining("SLACK_BOT_TOKEN") },
     });

@@ -84,7 +84,7 @@ const seed: State = {
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},
-  hooks: {},
+  subscribers: {},
 };
 
 const event = (seq: number, type: string, payload: JsonValue = null): Event => ({
@@ -523,25 +523,29 @@ describe("state files written before activeSessions", () => {
   });
 });
 
-describe("what hooks keep in state.json", () => {
+describe("what subscribers keep in state.json", () => {
   test("SC211: notification.thread.started fills state.notification, custom.state.updated merges into state.custom by key, and a call record changes neither", async () => {
     const { run, stateJson } = await runWithHandlers({});
 
     for (const input of [
-      { type: "custom.state.updated", source: "hooks", payload: { asana: { taskId: "555" } } },
+      { type: "custom.state.updated", source: "subscriber", payload: { asana: { taskId: "555" } } },
       {
         type: "notification.thread.started",
         source: "notifier",
         payload: { provider: "slack", threadId: "171.1" },
       },
-      { type: "custom.state.updated", source: "hooks", payload: { linear: { issue: "VER-1" } } },
-      { type: "custom.state.updated", source: "hooks", payload: { asana: { taskId: "777" } } },
       {
-        id: "hook:evt-1:asana",
-        type: "hooks.hook.called",
-        source: "hooks",
+        type: "custom.state.updated",
+        source: "subscriber",
+        payload: { linear: { issue: "VER-1" } },
+      },
+      { type: "custom.state.updated", source: "subscriber", payload: { asana: { taskId: "777" } } },
+      {
+        id: "subscriber:evt-1:asana",
+        type: "subscriber.called",
+        source: "subscriber",
         payload: {
-          hook: "asana",
+          subscriber: "asana",
           eventId: "evt-1",
           eventSeq: 1,
           eventType: "workflow.node.started",

@@ -6,14 +6,14 @@ import {
   type AskedQuestion,
   type Event,
   emitRunEvent,
-  type HookInput,
-  NOTIFIER_HOOK,
+  NOTIFIER_SUBSCRIBER,
   type Notifier,
   QuestionAnsweredEvent,
   QuestionAskedEvent,
   type Result,
-  type RunHook,
   type State,
+  type Subscriber,
+  type SubscriberInput,
   WorkflowBlockedEvent,
 } from "@yok/sdk";
 import * as z from "zod";
@@ -53,7 +53,7 @@ const CompletedPayload = z.looseObject({
 const SkippedPayload = z.looseObject({ skip: z.looseObject({ reason: z.string() }) });
 const WaitingPayload = z.looseObject({ resumeAt: z.string() });
 const FailedCallPayload = z.looseObject({
-  hook: z.string(),
+  subscriber: z.string(),
   eventType: z.string(),
   status: z.literal("failed"),
   error: MessageSchema,
@@ -68,10 +68,12 @@ const listFailedNodes = (state: State): string =>
     .join("\n");
 
 // The notifier's own failures are not posted: posting them would fail the same way.
-const describeHookFailure = (event: Event): Notice | undefined => {
+const describeSubscriberFailure = (event: Event): Notice | undefined => {
   const call = parsePayload(event, FailedCallPayload);
-  if (call === undefined || call.hook === NOTIFIER_HOOK) return undefined;
-  return makeNotice(`Hook ${call.hook} failed on ${call.eventType}`, { body: call.error.message });
+  if (call === undefined || call.subscriber === NOTIFIER_SUBSCRIBER) return undefined;
+  return makeNotice(`Subscriber ${call.subscriber} failed on ${call.eventType}`, {
+    body: call.error.message,
+  });
 };
 
 const formatQuestion = (question: AskedQuestion): string =>
@@ -155,7 +157,7 @@ const NOTICE_BY_EVENT: Readonly<Record<string, BuildNotice>> = {
       mention: true,
     });
   },
-  "hooks.hook.called": describeHookFailure,
+  "subscriber.called": describeSubscriberFailure,
 };
 
 // The event types init freezes the notifier under.
@@ -253,7 +255,7 @@ type Env = Readonly<Record<string, string | undefined>>;
 export const findMissingNotifierKeys = (env: Env): readonly string[] =>
   SLACK_REQUIRED_KEYS.filter((key) => !env[key]);
 
-// Secrets come from the run's env, which its agent session starts with and every hook process
+// Secrets come from the run's env, which its agent session starts with and every subscriber process
 // inherits. That env is built from .env and the config's and workflow's env and envFile, so keep a
 // token in .env or an envFile, not inline in a committed file.
 export const openNotifier = (type: Notifier["type"], env: Env = process.env): Result<INotifier> => {
@@ -267,7 +269,7 @@ export const openNotifier = (type: Notifier["type"], env: Env = process.env): Re
 
 export type OpenNotifier = typeof openNotifier;
 
-// What init freezes as the notifier hook's module: the CLI serves this file under that name, so
+// What init freezes as the notifier subscriber's module: the CLI serves this file under that name, so
 // it loads in a compiled binary, where this file has no path on disk.
 export const NOTIFIER_MODULE = "yok:notifier";
 
@@ -288,7 +290,7 @@ const keepArtifactFiles = async (
 // so the SDK records a failed call.
 export const notify = async (
   type: Notifier["type"],
-  { event, state, run }: HookInput,
+  { event, state, run }: SubscriberInput,
   open: OpenNotifier,
   record: typeof emitRunEvent,
 ): Promise<{ threadId: string } | undefined> => {
@@ -313,5 +315,5 @@ export const notify = async (
   return { threadId };
 };
 
-// The hook init freezes for `notifier: { type: slack }`.
-export const slack: RunHook = (input) => notify("slack", input, openNotifier, emitRunEvent);
+// The subscriber init freezes for `notifier: { type: slack }`.
+export const slack: Subscriber = (input) => notify("slack", input, openNotifier, emitRunEvent);

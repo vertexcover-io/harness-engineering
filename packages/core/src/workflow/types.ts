@@ -1,7 +1,6 @@
 import {
   AgentTypeSchema,
   EnvLayerSchema,
-  HooksSchema,
   type JsonValue,
   NameSchema,
   NodeTypeSchema,
@@ -10,6 +9,7 @@ import {
   NotifierSchema,
   type ProcessRecord,
   ProcessRecordSchema,
+  SubscribersSchema,
   type TiersConfig,
   TiersConfigSchema,
 } from "@yok/sdk";
@@ -223,7 +223,7 @@ export const WorkflowSchema = z.strictObject({
   ...EnvLayerSchema.shape,
   doctor: z.array(DoctorDeclarationSchema).default([]),
   inputs: z.record(NodeIdSchema, InputDeclarationSchema).default({}),
-  hooks: HooksSchema,
+  subscribers: SubscribersSchema,
   notifier: NotifierSchema.optional(),
   nodes: z.array(NodeSchema).min(1),
 });

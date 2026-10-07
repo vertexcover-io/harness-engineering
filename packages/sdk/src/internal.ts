@@ -42,7 +42,6 @@ export {
   type RegistryFile,
   RegistryFileSchema,
 } from "./registry.ts";
-export { callMode, runMode } from "./run-hooks.ts";
 export {
   appendRunEvent,
   appendRunEventIf,
@@ -53,4 +52,5 @@ export {
   readGit,
   syncState,
 } from "./state.ts";
+export { callMode, runMode } from "./subscribers.ts";
 export { VERSION } from "./version.ts";

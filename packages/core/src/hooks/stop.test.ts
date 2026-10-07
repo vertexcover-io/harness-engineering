@@ -53,7 +53,7 @@ const seed: State = {
   activeSessions: [],
   tiers: null,
   eventHandlers: {},
-  hooks: {},
+  subscribers: {},
 };
 
 const RUN: RunRef = { id: "r-1", cwd: "/repo", name: "feat-x" };
@@ -251,10 +251,10 @@ describe("runStopHook", () => {
     });
   });
 
-  test("SC24 — yok orchestrate next after the prompt drives the run, and yok orchestrate run-hook call does not", async () => {
+  test("SC24 — yok orchestrate next after the prompt drives the run, and yok orchestrate run-subscriber call does not", async () => {
     const runHook: TranscriptEntry[] = [
       { kind: "prompt", text: "go" },
-      { kind: "command", command: "yok orchestrate run-hook call" },
+      { kind: "command", command: "yok orchestrate run-subscriber call" },
     ];
     expect(await runStopHook(input(orchestrateAfterPrompt), (await setUp({})).deps)).toMatchObject({
       kind: "continue",

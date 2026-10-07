@@ -10,11 +10,6 @@ import {
   type EnvLayer,
   type EventHandlerRefs,
   eventError,
-  HOOK_TIMEOUT_S,
-  type HookEntry,
-  type HookRef,
-  type HookRefs,
-  type Hooks,
   type IGit,
   type ILogger,
   type ITerminal,
@@ -32,6 +27,11 @@ import {
   SessionRefSchema,
   SlugSchema,
   type State,
+  SUBSCRIBER_TIMEOUT_S,
+  type SubscriberEntry,
+  type SubscriberRef,
+  type SubscriberRefs,
+  type Subscribers,
   stackOf,
   type VerifierRun,
   type WorkflowRun,
@@ -51,7 +51,7 @@ import {
   VERSION,
 } from "@yok/sdk/internal";
 import * as z from "zod";
-import { buildNotifierHooks, pickNotifier } from "./notifier-hooks.ts";
+import { buildNotifierSubscribers, pickNotifier } from "./notifier-subscriber.ts";
 import { extensionPath } from "./stage.ts";
 import { compileRunWorkflow, compileWorkflow, readWorkflowFile } from "./workflow/compile.ts";
 import {
@@ -117,16 +117,17 @@ const renameTerminal = async (run: WorkflowRun, options: InitOptions): Promise<v
 type CheckedInit = Readonly<{
   run: WorkflowRun;
   eventHandlers: EventHandlerRefs;
-  hooks: HookRefs;
+  subscribers: SubscriberRefs;
   config: NonNullable<State["config"]>;
 }>;
 
-const resolveHook = (entry: HookEntry, base: string): HookRef => {
+const resolveSubscriber = (entry: SubscriberEntry, base: string): SubscriberRef => {
   const blocking = entry.blocking ?? true;
   const fields = {
     name: entry.name,
     blocking,
-    timeoutSeconds: entry.timeoutSeconds ?? HOOK_TIMEOUT_S[blocking ? "blocking" : "detached"],
+    timeoutSeconds:
+      entry.timeoutSeconds ?? SUBSCRIBER_TIMEOUT_S[blocking ? "blocking" : "detached"],
   };
   if ("module" in entry) {
     return { ...fields, module: resolve(base, entry.module), handler: entry.handler };
@@ -134,16 +135,19 @@ const resolveHook = (entry: HookEntry, base: string): HookRef => {
   return { ...fields, command: entry.command, cwd: resolve(base, entry.cwd ?? ".") };
 };
 
-const resolveHooks = (hooks: Hooks, base: string): HookRefs =>
+const resolveSubscribers = (subscribers: Subscribers, base: string): SubscriberRefs =>
   Object.fromEntries(
-    Object.entries(hooks).map(([type, list]) => [
+    Object.entries(subscribers).map(([type, list]) => [
       type,
-      list.map((entry) => resolveHook(entry, base)),
+      list.map((entry) => resolveSubscriber(entry, base)),
     ]),
   );
 
-// A hook named twice for one event would run once: its call id would already exist.
-const mergeHooks = (first: HookRefs, second: HookRefs): Result<HookRefs> => {
+// A subscriber named twice for one event would run once: its call id would already exist.
+const mergeSubscribers = (
+  first: SubscriberRefs,
+  second: SubscriberRefs,
+): Result<SubscriberRefs> => {
   const types = [...new Set([...Object.keys(first), ...Object.keys(second)])];
   const merged = Object.fromEntries(
     types.map((type) => [type, [...(first[type] ?? []), ...(second[type] ?? [])]]),
@@ -152,26 +156,26 @@ const mergeHooks = (first: HookRefs, second: HookRefs): Result<HookRefs> => {
   if (clash === undefined) return { ok: true, value: merged };
   return {
     ok: false,
-    error: `hooks for ${clash[0]}: the config and the workflow name the same hook`,
+    error: `subscribers for ${clash[0]}: the config and the workflow name the same subscriber`,
   };
 };
 
 // The workflow's notifier block replaces the config's whole. Relative paths resolve against the
 // file that declares them.
-export const freezeHooks = async (
+export const freezeSubscribers = async (
   run: WorkflowRun,
   config: Config,
   root: string,
-): Promise<Result<HookRefs>> => {
+): Promise<Result<SubscriberRefs>> => {
   const workflow = await readWorkflowFile(run.workflowPath);
-  const project = mergeHooks(
-    resolveHooks(config.hooks, root),
-    resolveHooks(workflow.hooks, dirname(run.workflowPath)),
+  const project = mergeSubscribers(
+    resolveSubscribers(config.subscribers, root),
+    resolveSubscribers(workflow.subscribers, dirname(run.workflowPath)),
   );
   if (!project.ok) return project;
-  return mergeHooks(
+  return mergeSubscribers(
     project.value,
-    buildNotifierHooks(pickNotifier(workflow.notifier, config.notifier)),
+    buildNotifierSubscribers(pickNotifier(workflow.notifier, config.notifier)),
   );
 };
 
@@ -184,7 +188,7 @@ const frozenHandlers = (config: Config, root: string): EventHandlerRefs =>
   );
 
 const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<State> => {
-  const { run, eventHandlers, hooks, config } = checked;
+  const { run, eventHandlers, subscribers, config } = checked;
   const { name } = options;
   const dir = runDirOf(run.cwd, name);
   await copyFile(run.workflowPath, join(dir, "workflow.yaml"));
@@ -193,7 +197,7 @@ const fillRunDir = async (checked: CheckedInit, options: InitOptions): Promise<S
     runDir: dir,
     version: VERSION,
     eventHandlers,
-    hooks,
+    subscribers,
     config,
     tiers: run.tiers,
   });
@@ -283,8 +287,8 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
   const loaded = await loadStartConfig(run.config, run.cwd);
   if (!loaded.ok) return loaded;
   const { config, path, root } = loaded.value;
-  const hooks = await freezeHooks(run, config, root);
-  if (!hooks.ok) return hooks;
+  const subscribers = await freezeSubscribers(run, config, root);
+  if (!subscribers.ok) return subscribers;
   const staged = await checkNodeTiers(run, loaded.value, options.modelSwitchAgents);
   if (!staged.ok) return staged;
   return {
@@ -292,7 +296,7 @@ const checkInit = async (options: InitOptions): Promise<Result<CheckedInit>> => 
     value: {
       run,
       eventHandlers: frozenHandlers(config, root),
-      hooks: hooks.value,
+      subscribers: subscribers.value,
       config: { path, root },
     },
   };

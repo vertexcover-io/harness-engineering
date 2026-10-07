@@ -16,12 +16,12 @@ import {
   createGit,
   emitRunEvent,
   findRoot,
-  HookRefSchema,
   type ITerminal,
   noopLogger,
   type ResolvedTiers,
   resolveRun,
   StateSchema,
+  SubscriberRefSchema,
   type WorkflowRun,
 } from "@yok/sdk";
 import { appendRunEvent, createRegistry, jsonlEventStore, type Registry } from "@yok/sdk/internal";
@@ -278,24 +278,27 @@ describe("initializeRun", () => {
     expect(existsSync(join(cwd, ".yok", "fix-login"))).toBe(false);
   });
 
-  const hookConfig = (cwd: string, hooks: object): void =>
-    writeFileSync(join(cwd, "orchestrate.config.json"), JSON.stringify({ version: 2, hooks }));
+  const subscriberConfig = (cwd: string, subscribers: object): void =>
+    writeFileSync(
+      join(cwd, "orchestrate.config.json"),
+      JSON.stringify({ version: 2, subscribers }),
+    );
 
-  const flowWithHooks = (cwd: string, hooks: string): string => {
+  const flowWithSubscribers = (cwd: string, subscribers: string): string => {
     mkdirSync(join(cwd, "flows"));
     const path = join(cwd, "flows", "flow.yaml");
-    writeFileSync(path, `${WORKFLOW}hooks:\n${hooks}`);
+    writeFileSync(path, `${WORKFLOW}subscribers:\n${subscribers}`);
     return path;
   };
 
-  test("SC107: init freezes config hooks, then workflow hooks, with absolute paths and defaults", async () => {
+  test("SC107: init freezes config subscribers, then workflow subscribers, with absolute paths and defaults", async () => {
     const cwd = makeRepo();
-    mkdirSync(join(cwd, "hooks"));
-    writeFileSync(join(cwd, "hooks", "a.ts"), "export const run = () => null;\n");
-    hookConfig(cwd, {
-      "workflow.started": [{ name: "a", module: "hooks/a.ts", handler: "run" }],
+    mkdirSync(join(cwd, "subscribers"));
+    writeFileSync(join(cwd, "subscribers", "a.ts"), "export const run = () => null;\n");
+    subscriberConfig(cwd, {
+      "workflow.started": [{ name: "a", module: "subscribers/a.ts", handler: "run" }],
     });
-    const workflowPath = flowWithHooks(
+    const workflowPath = flowWithSubscribers(
       cwd,
       "  workflow.started:\n    - { name: b, command: ./b.sh, blocking: false }\n",
     );
@@ -305,13 +308,13 @@ describe("initializeRun", () => {
     const result = await init("fix-login");
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.value.state.hooks).toEqual({
+    expect(result.value.state.subscribers).toEqual({
       "workflow.started": [
         {
           name: "a",
           blocking: true,
           timeoutSeconds: 20,
-          module: join(cwd, "hooks", "a.ts"),
+          module: join(cwd, "subscribers", "a.ts"),
           handler: "run",
         },
         {
@@ -325,9 +328,9 @@ describe("initializeRun", () => {
     });
   });
 
-  test("SC108: a run with no hooks freezes none, and an appended event records no hook call", async () => {
+  test("SC108: a run with no subscribers freezes none, and an appended event records no subscriber call", async () => {
     const { cwd, init, run } = await savedRun();
-    hookConfig(cwd, {});
+    subscriberConfig(cwd, {});
 
     const result = await init("fix-login");
     if (!result.ok) throw new Error(result.error);
@@ -336,16 +339,16 @@ describe("initializeRun", () => {
       { type: "custom.review.note", source: "test", payload: "looks good" },
     );
 
-    expect(result.value.state.hooks).toEqual({});
+    expect(result.value.state.subscribers).toEqual({});
     expect(emitted.ok).toBe(true);
     const types = (await jsonlEventStore(result.value.dir).read()).map((event) => event.type);
     expect(types).toEqual(["workflow.started", "custom.review.note"]);
   });
 
-  test("SC109: init refuses a hook name the config and the workflow both give one event type", async () => {
+  test("SC109: init refuses a subscriber name the config and the workflow both give one event type", async () => {
     const cwd = makeRepo();
-    hookConfig(cwd, { "workflow.started": [{ name: "a", command: "true" }] });
-    const workflowPath = flowWithHooks(
+    subscriberConfig(cwd, { "workflow.started": [{ name: "a", command: "true" }] });
+    const workflowPath = flowWithSubscribers(
       cwd,
       "  workflow.started:\n    - { name: a, command: 'true' }\n",
     );
@@ -355,7 +358,8 @@ describe("initializeRun", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "hooks for workflow.started: the config and the workflow name the same hook",
+      error:
+        "subscribers for workflow.started: the config and the workflow name the same subscriber",
     });
     expect(existsSync(join(cwd, ".yok", "fix-login"))).toBe(false);
   });
@@ -410,7 +414,7 @@ describe("the notifier at init", () => {
     handler: "slack",
   };
   const notifierOnly = Object.fromEntries(NOTIFIER_EVENTS.map((type) => [type, [NOTIFIER_REF]]));
-  const hookA = { name: "a", command: "true" };
+  const subscriberA = { name: "a", command: "true" };
 
   const notifierRun = async (config: object, workflowNotifier: string) => {
     const cwd = makeRepo();
@@ -422,12 +426,15 @@ describe("the notifier at init", () => {
 
   test.each([
     [
-      "a config notifier lands after the config's own hook a on workflow.started",
-      { notifier: {}, hooks: { "workflow.started": [hookA] } },
+      "a config notifier lands after the config's own subscriber a on workflow.started",
+      { notifier: {}, subscribers: { "workflow.started": [subscriberA] } },
       "",
       (cwd: string) => ({
         ...notifierOnly,
-        "workflow.started": [{ ...hookA, blocking: true, timeoutSeconds: 20, cwd }, NOTIFIER_REF],
+        "workflow.started": [
+          { ...subscriberA, blocking: true, timeoutSeconds: 20, cwd },
+          NOTIFIER_REF,
+        ],
       }),
     ],
     [
@@ -443,24 +450,28 @@ describe("the notifier at init", () => {
     const result = await init("fix-login");
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.value.state.hooks).toEqual(expected(cwd));
+    expect(result.value.state.subscribers).toEqual(expected(cwd));
   });
 
-  test("SC85: a frozen notifier hook names yok:notifier and slack, and HookRefSchema takes only yok: names as built-ins", async () => {
+  test("SC85: a frozen notifier subscriber names yok:notifier and slack, and SubscriberRefSchema takes only yok: names as built-ins", async () => {
     const { init } = await notifierRun({ notifier: {} }, "");
 
     const result = await init("fix-login");
 
     if (!result.ok) throw new Error(result.error);
-    const refs = Object.values(result.value.state.hooks ?? {}).flat();
+    const refs = Object.values(result.value.state.subscribers ?? {}).flat();
     expect(refs.length).toBeGreaterThan(0);
     for (const ref of refs) {
       expect(ref).toMatchObject({ module: "yok:notifier", handler: "slack" });
-      expect(HookRefSchema.safeParse(ref).success).toBe(true);
+      expect(SubscriberRefSchema.safeParse(ref).success).toBe(true);
     }
-    const hook = { name: "x", blocking: true, timeoutSeconds: 5, handler: "slack" };
-    expect(HookRefSchema.safeParse({ ...hook, module: "notifier.ts" }).success).toBe(false);
-    expect(HookRefSchema.safeParse({ ...hook, module: "other:notifier" }).success).toBe(false);
+    const subscriber = { name: "x", blocking: true, timeoutSeconds: 5, handler: "slack" };
+    expect(SubscriberRefSchema.safeParse({ ...subscriber, module: "notifier.ts" }).success).toBe(
+      false,
+    );
+    expect(SubscriberRefSchema.safeParse({ ...subscriber, module: "other:notifier" }).success).toBe(
+      false,
+    );
   });
 
   test("SC213: a notifier with no Slack variables is a failed non-blocking call naming SLACK_BOT_TOKEN, and the run keeps running", async () => {
@@ -471,7 +482,7 @@ describe("the notifier at init", () => {
     if (!result.ok) throw new Error(result.error);
     const notifierCall = async () =>
       (await jsonlEventStore(result.value.dir).read()).find(
-        (event) => event.type === "hooks.hook.called",
+        (event) => event.type === "subscriber.called",
       );
     const deadline = Date.now() + 5000;
     let call = await notifierCall();
@@ -481,7 +492,7 @@ describe("the notifier at init", () => {
     }
 
     expect(call?.payload).toMatchObject({
-      hook: "notifier",
+      subscriber: "notifier",
       eventType: "workflow.started",
       blocking: false,
       status: "failed",

@@ -42,9 +42,9 @@ describe("yok doctor (installed bin)", () => {
   }, 40_000);
 });
 
-// A request `orchestrate run-hook call` accepts on stdin: one module hook and a minimal valid input.
+// A request `orchestrate run-subscriber call` accepts on stdin: one module subscriber and a minimal valid input.
 const callRequest = (module: string, handler: string) => ({
-  hook: { name: "probe", blocking: true, timeoutSeconds: 10, module, handler },
+  subscriber: { name: "probe", blocking: true, timeoutSeconds: 10, module, handler },
   input: {
     event: {
       schemaVersion: 1,
@@ -80,19 +80,19 @@ const callRequest = (module: string, handler: string) => ({
       nodeRuns: {},
       activeSessions: [],
       eventHandlers: {},
-      hooks: {},
+      subscribers: {},
     },
     run: { id: "r-1", cwd: "/work", name: "demo" },
   },
 });
 
-const HOOKS = `
+const SUBSCRIBERS = `
 export const leak = () => process.env.YOK_LEAK ?? "unset";
 export const self = () => process.env.YOK_SELF;
 `;
 
 // The notifier's name reaches import() only as a runtime value, as it does from state.json.
-const SERVED_HOOK = `
+const SERVED_SUBSCRIBER = `
 import { NonEmptyStringSchema } from "@yok/sdk";
 import { z } from "zod";
 export const probe = async () => {
@@ -108,22 +108,22 @@ export const probe = async () => {
 
 describe("yok as one program", () => {
   let repo = "";
-  let hooks = "";
+  let subscribers = "";
   beforeAll(async () => {
     repo = await realpath(await mkdtemp(join(tmpdir(), "yok-self-")));
-    hooks = join(repo, "hooks.ts");
-    await writeFile(hooks, HOOKS);
+    subscribers = join(repo, "subscribers.ts");
+    await writeFile(subscribers, SUBSCRIBERS);
     await writeFile(join(repo, ".env"), "YOK_LEAK=1\n");
   });
 
-  const callHookAt = async (
+  const callSubscriberAt = async (
     argv: readonly [string, ...string[]],
     handler: string,
     env: Readonly<Record<string, string>> = {},
   ) => {
     const [program, ...args] = argv;
-    const input = JSON.stringify(callRequest(hooks, handler));
-    return await spawnProcess(program, [...args, "orchestrate", "run-hook", "call"], {
+    const input = JSON.stringify(callRequest(subscribers, handler));
+    return await spawnProcess(program, [...args, "orchestrate", "run-subscriber", "call"], {
       cwd: repo,
       env,
       input,
@@ -139,7 +139,7 @@ describe("yok as one program", () => {
     expect(VERSION).toBe(sdkPackage.version);
   }, 20_000);
 
-  test("SC30: yok orchestrate --help lists the skill actions and hides run-hook, which still runs", async () => {
+  test("SC30: yok orchestrate --help lists the skill actions and hides run-subscriber, which still runs", async () => {
     const help = await spawnProcess(
       process.execPath,
       ["--no-env-file", CLI, "orchestrate", "--help"],
@@ -165,15 +165,15 @@ describe("yok as one program", () => {
         "comments",
       ]),
     );
-    expect(help.stdout).not.toContain("run-hook");
-    const called = await callHookAt([process.execPath, "--no-env-file", CLI], "leak");
+    expect(help.stdout).not.toContain("run-subscriber");
+    const called = await callSubscriberAt([process.execPath, "--no-env-file", CLI], "leak");
     expect([called.code, called.stdout]).toEqual([0, JSON.stringify("unset")]);
   }, 30_000);
 
   test("SC32: a self-call or the yok-dev shebang started in a repo with a .env does not load it", async () => {
     const self = JSON.parse(process.env.YOK_SELF ?? "[]");
-    const viaSelf = await callHookAt(self, "leak");
-    const viaShebang = await callHookAt([BIN], "leak");
+    const viaSelf = await callSubscriberAt(self, "leak");
+    const viaShebang = await callSubscriberAt([BIN], "leak");
     const version = await spawnProcess(BIN, ["--version"], { cwd: repo });
     expect([viaSelf.stdout, viaShebang.stdout]).toEqual([
       JSON.stringify("unset"),
@@ -182,13 +182,13 @@ describe("yok as one program", () => {
     expect(version.stdout.trim()).toBe(VERSION);
   }, 30_000);
 
-  test("SC89: from source, a hook outside the repo gets the CLI's @yok/sdk, zod and yok:notifier", async () => {
+  test("SC89: from source, a subscriber outside the repo gets the CLI's @yok/sdk, zod and yok:notifier", async () => {
     const outside = await realpath(await mkdtemp(join(tmpdir(), "yok-served-")));
     const file = join(outside, "served.ts");
-    await writeFile(file, SERVED_HOOK);
+    await writeFile(file, SERVED_SUBSCRIBER);
     const [program, ...args] = [process.execPath, "--no-env-file", CLI];
 
-    const result = await spawnProcess(program, [...args, "orchestrate", "run-hook", "call"], {
+    const result = await spawnProcess(program, [...args, "orchestrate", "run-subscriber", "call"], {
       cwd: outside,
       input: JSON.stringify(callRequest(file, "probe")),
       timeoutMs: 20_000,
@@ -203,7 +203,7 @@ describe("yok as one program", () => {
   }, 20_000);
 
   test("SC33: a process the CLI starts from source sees YOK_SELF naming the CLI, not the stale value its parent set", async () => {
-    const result = await callHookAt([process.execPath, "--no-env-file", CLI], "self", {
+    const result = await callSubscriberAt([process.execPath, "--no-env-file", CLI], "self", {
       YOK_SELF: JSON.stringify(["/stale"]),
     });
     expect(JSON.parse(JSON.parse(result.stdout))).toEqual([process.execPath, "--no-env-file", CLI]);

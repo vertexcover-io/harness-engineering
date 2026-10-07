@@ -262,7 +262,7 @@ yok/
 
 ## Writing extensions
 
-Verifiers, run hooks and schema modules are TypeScript files in your project that import the SDK:
+Verifiers, subscribers and schema modules are TypeScript files in your project that import the SDK:
 
 ```ts
 import { NonEmptyStringSchema } from "@yok/sdk";

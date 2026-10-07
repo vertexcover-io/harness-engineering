@@ -309,7 +309,7 @@ const seed: State = {
   nodeRuns: {},
   activeSessions: [],
   eventHandlers: {},
-  hooks: {},
+  subscribers: {},
 };
 
 const nodeEvent = (

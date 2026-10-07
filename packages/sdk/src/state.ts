@@ -7,17 +7,17 @@ import {
   type EventHandlerRefs,
   EventSchema,
   type GitState,
-  type HookRefs,
   type Result,
   SlugSchema,
   type State,
   StateSchema,
+  type SubscriberRefs,
 } from "./contracts.ts";
 import { type IEventStore, jsonlEventStore } from "./event-store.ts";
 import { builtInHandlers, type EmitInput, emitEvent, type RunRef, runDirOf } from "./events.ts";
 import { loadFunction, parseYaml, readIfExists, readText, runLockPath, withLock } from "./files.ts";
 import { createGit } from "./git.ts";
-import { triggerHooks } from "./run-hooks.ts";
+import { triggerSubscribers } from "./subscribers.ts";
 
 export type EventHandler = (state: State, event: Event) => State;
 export type EventHandlers = Readonly<Record<string, EventHandler>>;
@@ -105,7 +105,7 @@ export const createState = async ({
   runDir,
   version,
   eventHandlers,
-  hooks,
+  subscribers,
   config,
   tiers = null,
 }: Readonly<{
@@ -113,7 +113,7 @@ export const createState = async ({
   runDir: string;
   version: string;
   eventHandlers: EventHandlerRefs;
-  hooks?: HookRefs;
+  subscribers?: SubscriberRefs;
   config?: State["config"];
   tiers?: State["tiers"];
 }>): Promise<State> => {
@@ -140,7 +140,7 @@ export const createState = async ({
     activeSessions: [],
     tiers,
     eventHandlers,
-    hooks: hooks ?? {},
+    subscribers: subscribers ?? {},
     ...(config === undefined ? {} : { config }),
   };
   await withLock(lockOf(runDir), () => writeStateAtomically(runDir, state));
@@ -279,7 +279,7 @@ const appendUnderLock = (
 };
 
 // Stores an event in a run's own folder, CWD/.yok/NAME/event.jsonl, brings its state.json up
-// to date, then calls the hooks that listen to it, outside the lock. It hands back the state.json
+// to date, then calls the subscribers that listen to it, outside the lock. It hands back the state.json
 // it wrote (null when the folder has none yet), so a caller storing many events need not read
 // the log again after each one.
 export const appendRunEventIf = async (
@@ -290,7 +290,7 @@ export const appendRunEventIf = async (
   const appended = await appendUnderLock(run, input, allowed);
   if (!appended.ok) return appended;
   const { event, state, fresh } = appended.value;
-  if (fresh && state !== null) await triggerHooks(run, event, state);
+  if (fresh && state !== null) await triggerSubscribers(run, event, state);
   return { ok: true, value: { event, state } };
 };
 
@@ -306,7 +306,8 @@ export const appendRunEvent = (
 const ENGINE_OWNED: readonly (readonly [prefix: string, reason: string])[] = [
   ["workflow.", "is engine-owned; use next, exec, or done for workflow lifecycle"],
   ["orchestrate.", "is written only by the orchestrate script"],
-  ["hooks.", "is written only by the agent's hooks and the run's hooks"],
+  ["hooks.", "is written only by the agent's hooks"],
+  ["subscriber.", "is written only by the run's subscribers"],
 ];
 
 export const emitRunEvent = async (run: RunRef, input: EmitInput): Promise<Result<Event>> => {

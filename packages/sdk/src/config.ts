@@ -147,14 +147,15 @@ const entryFields = {
   timeoutSeconds: z.int().positive().optional(),
 };
 
-// A hook's timeout when it names none. A blocking hook may run inside an agent's hook, which the
+// A subscriber's timeout when it names none. A blocking subscriber may run inside an agent's hook, which the
 // agent kills at 30 seconds, so it gets less.
-export const HOOK_TIMEOUT_S = { blocking: 20, detached: 60 } as const;
+export const SUBSCRIBER_TIMEOUT_S = { blocking: 20, detached: 60 } as const;
 const BLOCKING_TIMEOUT_MAX_S = 25;
 
-// A hook runs a module's export, or a shell command that reads the hook input as JSON on stdin.
-// Relative paths resolve against the config's folder, or the workflow's for a workflow's hooks.
-export const HookEntrySchema = z
+// A subscriber runs a module's export, or a shell command that reads the subscriber input as JSON on
+// stdin. Relative paths resolve against the config's folder, or the workflow's for a workflow's
+// subscribers.
+export const SubscriberEntrySchema = z
   .union(
     [
       z.strictObject({ ...entryFields, module: RepoPathSchema, handler: NonEmptyStringSchema }),
@@ -166,36 +167,36 @@ export const HookEntrySchema = z
     ],
     {
       error:
-        "a hook is { name, module, handler } or { name, command, cwd? }, with optional blocking: boolean and timeoutSeconds: positive integer",
+        "a subscriber is { name, module, handler } or { name, command, cwd? }, with optional blocking: boolean and timeoutSeconds: positive integer",
     },
   )
   .refine(
     (entry) => entry.blocking === false || (entry.timeoutSeconds ?? 0) <= BLOCKING_TIMEOUT_MAX_S,
-    `a blocking hook's timeoutSeconds is at most ${BLOCKING_TIMEOUT_MAX_S}, under the agent's 30-second hook limit; set blocking: false for a longer one`,
+    `a blocking subscriber's timeoutSeconds is at most ${BLOCKING_TIMEOUT_MAX_S}, under the agent's 30-second hook limit; set blocking: false for a longer one`,
   );
-export type HookEntry = z.infer<typeof HookEntrySchema>;
+export type SubscriberEntry = z.infer<typeof SubscriberEntrySchema>;
 
-const HookTypeSchema = EventTypeSchema.refine(
-  (type) => type !== "hooks.hook.called",
-  "no hook may listen to hooks.hook.called, the record of hook calls",
+const SubscriberTypeSchema = EventTypeSchema.refine(
+  (type) => type !== "subscriber.called",
+  "no subscriber may listen to subscriber.called, the record of subscriber calls",
 );
-// The built-in notifier's hook name, which no project hook may take.
-export const NOTIFIER_HOOK = "notifier";
+// The built-in notifier's subscriber name, which no project subscriber may take.
+export const NOTIFIER_SUBSCRIBER = "notifier";
 
 export const uniqueNames = (entries: readonly Readonly<{ name: string }>[]): boolean =>
   new Set(entries.map((entry) => entry.name)).size === entries.length;
 
-export const HooksSchema = recordOf(
-  HookTypeSchema,
+export const SubscribersSchema = recordOf(
+  SubscriberTypeSchema,
   z
-    .array(HookEntrySchema)
-    .refine(uniqueNames, "hook names must be unique for one event type")
+    .array(SubscriberEntrySchema)
+    .refine(uniqueNames, "subscriber names must be unique for one event type")
     .refine(
-      (entries) => entries.every((entry) => entry.name !== NOTIFIER_HOOK),
-      `"${NOTIFIER_HOOK}" is the built-in notifier's name`,
+      (entries) => entries.every((entry) => entry.name !== NOTIFIER_SUBSCRIBER),
+      `"${NOTIFIER_SUBSCRIBER}" is the built-in notifier's name`,
     ),
 ).default({});
-export type Hooks = z.infer<typeof HooksSchema>;
+export type Subscribers = z.infer<typeof SubscribersSchema>;
 
 export const NotifierSchema = z.strictObject({
   enabled: z.boolean().default(true),
@@ -215,7 +216,7 @@ export const ConfigSchema = z.strictObject({
   ...EnvLayerSchema.shape,
   workspace: WorkspaceConfigSchema.prefault({}),
   eventHandlers: recordOf(EventTypeSchema, z.array(EventHandlerSchema)).default({}),
-  hooks: HooksSchema,
+  subscribers: SubscribersSchema,
   notifier: NotifierSchema.optional(),
 });
 

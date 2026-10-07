@@ -26,7 +26,7 @@ import {
 } from "@yok/sdk";
 import * as z from "zod";
 import { findMissingNotifierKeys } from "./notifier.ts";
-import { pickNotifier } from "./notifier-hooks.ts";
+import { pickNotifier } from "./notifier-subscriber.ts";
 import type { DoctorDeclaration } from "./workflow/types.ts";
 
 export const DoctorRowSchema = z.object({
