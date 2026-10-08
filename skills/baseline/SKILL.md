@@ -43,6 +43,6 @@ RUN below is the run's spec name.
    this stage: a suite that is already red is exactly what the baseline records. Name each script
    that exited non-zero when you report.
 4. Reply with that JSON as the stage's output. When `path` is not null, finish the
-   stage with `--artifact baseline=artifacts/baseline.json`. When it is null, no baseline script ran:
+   stage with `--artifact '{"type":"baseline","name":"baseline","path":"artifacts/baseline.json"}'`. When it is null, no baseline script ran:
    the chosen packages have no `baseline` command, or their worktrees are missing. Finish without
    an artifact.

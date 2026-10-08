@@ -1,6 +1,6 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
-import type { ArtifactRef, JsonValue, NodeRun, Result } from "@yok/sdk";
+import type { ArtifactRef, FileArtifact, JsonValue, NodeRun, Result } from "@yok/sdk";
 import * as z from "zod";
 import type { PlanAgentNode, PlanStage } from "./types.ts";
 import { VerifierIssueSchema } from "./verifiers.ts";
@@ -25,7 +25,13 @@ export const CompletionIssueSchema = z.discriminatedUnion("kind", [
     message: z.string(),
   }),
   z.strictObject({
+    kind: z.literal("summary"),
+    reason: z.enum(["missing", "multi-line", "too-long", "not-prose"]),
+    message: z.string(),
+  }),
+  z.strictObject({
     kind: z.literal("artifact-name"),
+    type: z.string(),
     name: z.string(),
     reason: z.literal("duplicate"),
   }),
@@ -33,13 +39,37 @@ export const CompletionIssueSchema = z.discriminatedUnion("kind", [
 ]);
 export type CompletionIssue = z.infer<typeof CompletionIssueSchema>;
 
-// Each name passed again after its first time.
+// Each type and name pair passed again after its first time.
 const duplicateIssues = (artifacts: readonly ArtifactRef[]): readonly CompletionIssue[] =>
   artifacts.flatMap((artifact, index): CompletionIssue[] =>
-    artifacts.slice(0, index).some((earlier) => earlier.name === artifact.name)
-      ? [{ kind: "artifact-name", name: artifact.name, reason: "duplicate" }]
+    artifacts
+      .slice(0, index)
+      .some((earlier) => earlier.type === artifact.type && earlier.name === artifact.name)
+      ? [{ kind: "artifact-name", type: artifact.type, name: artifact.name, reason: "duplicate" }]
       : [],
   );
+
+export const SUMMARY_LIMIT = 200;
+const SUMMARY_RULE =
+  "pass --summary with one plain sentence for a person who has not read the run: what the node did and what it means";
+
+const summaryIssue = (
+  reason: Extract<CompletionIssue, { kind: "summary" }>["reason"],
+  problem: string,
+): readonly CompletionIssue[] => [
+  { kind: "summary", reason, message: `summary ${problem}; ${SUMMARY_RULE}` },
+];
+
+// The thread shows the summary as it is, so it must read as one short plain sentence.
+export const summaryIssues = (summary: string | undefined): readonly CompletionIssue[] => {
+  if (summary === undefined) return summaryIssue("missing", "is missing");
+  if (summary.includes("\n")) return summaryIssue("multi-line", "has more than one line");
+  if (summary.length > SUMMARY_LIMIT) {
+    return summaryIssue("too-long", `is over ${SUMMARY_LIMIT} characters`);
+  }
+  if (/^[[{`<]/.test(summary.trim())) return summaryIssue("not-prose", "reads as JSON or code");
+  return [];
+};
 
 const requiredIssues = (
   stage: PlanStage | undefined,
@@ -47,7 +77,7 @@ const requiredIssues = (
 ): readonly CompletionIssue[] =>
   (stage?.produces ?? [])
     .filter((produced) => !produced.optional)
-    .filter((produced) => !artifacts.some((artifact) => artifact.name === produced.artifact))
+    .filter((produced) => !artifacts.some((artifact) => artifact.type === produced.artifact))
     .map((produced) => ({ kind: "required-artifact", name: produced.artifact }));
 
 // The run's artifacts/ folder, resolved, or undefined when it is not a real folder in the run.
@@ -69,7 +99,7 @@ export const isInsideDir = (parent: string, child: string): boolean => {
 const fileIssue = async (
   runDir: string,
   artifactsDir: string,
-  artifact: ArtifactRef,
+  artifact: FileArtifact,
 ): Promise<readonly CompletionIssue[]> => {
   const path = join(runDir, artifact.path);
   const { name } = artifact;
@@ -102,7 +132,9 @@ const verifyArtifacts = async (
     ];
   }
   const files = await Promise.all(
-    artifacts.map((artifact) => fileIssue(runDir, artifactsDir, artifact)),
+    artifacts.flatMap((artifact) =>
+      "path" in artifact ? [fileIssue(runDir, artifactsDir, artifact)] : [],
+    ),
   );
   return [...named, ...files.flat()];
 };
@@ -175,7 +207,7 @@ export const findConsumedArtifacts = (
   );
   const listed = newestFirst.flatMap((run) => run.artifacts);
   return stage.consumes.flatMap(({ artifact }) => {
-    const ref = listed.find((candidate) => candidate.name === artifact);
+    const ref = listed.find((candidate) => candidate.type === artifact);
     return ref === undefined ? [] : [ref];
   });
 };

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import {
+  type ArtifactRef,
   FindingSchema,
   runDirOf,
   VerifierErrorReasonSchema,
@@ -153,8 +154,14 @@ export const issuesOf = (runs: readonly VerifierRun[]): readonly VerifierIssue[]
     return [{ kind: "verifier-error", verifier: run.verifier, ...run.error }];
   });
 
+// Keyed by type, or TYPE:NAME when the name is not the type: a file's absolute path, a link's url.
 export const artifactPaths = (
   runDir: string,
-  refs: readonly Readonly<{ name: string; path: string }>[],
+  refs: readonly ArtifactRef[],
 ): Record<string, string> =>
-  Object.fromEntries(refs.map((ref) => [ref.name, join(runDir, ref.path)]));
+  Object.fromEntries(
+    refs.map((ref) => [
+      ref.name === ref.type ? ref.type : `${ref.type}:${ref.name}`,
+      "path" in ref ? join(runDir, ref.path) : ref.url,
+    ]),
+  );

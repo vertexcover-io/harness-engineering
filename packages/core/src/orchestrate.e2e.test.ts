@@ -21,6 +21,10 @@ import { DEMO_STAGES, type DemoStage, writeStages } from "./workflow/test-stages
 
 const CLI = join(import.meta.dir, "..", "..", "cli", "src", "index.ts");
 
+// One --artifact value for a file the node wrote, named after its type.
+const fileArtifact = (type: string, path: string): string =>
+  JSON.stringify({ type, name: type, path });
+
 const tempDir = (): string => realpathSync(mkdtempSync(join(tmpdir(), "orchestrate-")));
 
 const makeRepo = (dir: string, ignored: string): string => {
@@ -738,9 +742,14 @@ describe("SC26: picking the run", () => {
   test("done's refusal names the run id that picked a run it cannot find", () => {
     const { worktree, home } = worktreeRun();
 
-    const done = orchestrate(worktree, home, ["done", "nr-1", "--output", "x"], {
-      YOK_RUN_ID: "r-ghost",
-    });
+    const done = orchestrate(
+      worktree,
+      home,
+      ["done", "nr-1", "--summary", "Did the work.", "--output", "x"],
+      {
+        YOK_RUN_ID: "r-ghost",
+      },
+    );
 
     expect(done.code).toBe(1);
     expect(JSON.parse(done.stderr)).toMatchObject({
@@ -975,8 +984,17 @@ describe("SC26: subscribers", () => {
     writeFileSync(join(runDirOf(repo, "feat-x"), "artifacts", "plan.md"), "plan\n");
 
     const done = step([
-      ...["done", make.nodeRunId, "--run", "feat-x", "--output", "{}"],
-      ...["--artifact", "plan=artifacts/plan.md"],
+      ...[
+        "done",
+        make.nodeRunId,
+        "--run",
+        "feat-x",
+        "--summary",
+        "Did the work.",
+        "--output",
+        "{}",
+      ],
+      ...["--artifact", fileArtifact("plan", "artifacts/plan.md")],
     ]);
 
     expect(done.code).toBe(0);
@@ -1005,14 +1023,32 @@ describe("SC26: stage verifiers", () => {
       const make = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
       writeFileSync(join(artifactsDir, "plan.md"), "plan\n");
       const done = step([
-        ...["done", make.nodeRunId, "--run", "feat-x", "--output", "{}"],
-        ...["--artifact", "plan=artifacts/plan.md"],
+        ...[
+          "done",
+          make.nodeRunId,
+          "--run",
+          "feat-x",
+          "--summary",
+          "Did the work.",
+          "--output",
+          "{}",
+        ],
+        ...["--artifact", fileArtifact("plan", "artifacts/plan.md")],
       ]);
       expect(done.code).toBe(0);
       return JSON.parse(step(["next", "--run", "feat-x"]).stdout);
     };
     const finish = (nodeRunId: string) =>
-      step(["done", nodeRunId, "--run", "feat-x", "--output", '{"ok":true}']);
+      step([
+        "done",
+        nodeRunId,
+        "--run",
+        "feat-x",
+        "--summary",
+        "Did the work.",
+        "--output",
+        '{"ok":true}',
+      ]);
     return { ...run, step, finishProducer, finish, artifactsDir };
   };
 
@@ -1097,7 +1133,16 @@ describe("SC26: stage verifiers", () => {
       `[${script("s", `touch ${marker}; printf '{"pass":true}'`)}]`,
     );
     const use = finishProducer();
-    const refused = step(["done", use.nodeRunId, "--run", "feat-x", "--output", "[]"]);
+    const refused = step([
+      "done",
+      use.nodeRunId,
+      "--run",
+      "feat-x",
+      "--summary",
+      "Did the work.",
+      "--output",
+      "[]",
+    ]);
     expect(refusal(refused.stderr).issues).toMatchObject([{ kind: "output-schema" }]);
     expect(existsSync(marker)).toBe(false);
   });
@@ -1183,7 +1228,16 @@ describe("SC26: stage verifiers", () => {
     const use = finishProducer();
     const show = () =>
       JSON.parse(step(["node", "show", "--run", "feat-x", "--node-run", use.nodeRunId]).stdout);
-    const schemaRefusal = step(["done", use.nodeRunId, "--run", "feat-x", "--output", "[]"]);
+    const schemaRefusal = step([
+      "done",
+      use.nodeRunId,
+      "--run",
+      "feat-x",
+      "--summary",
+      "Did the work.",
+      "--output",
+      "[]",
+    ]);
     expect(refusal(schemaRefusal.stderr).retryable).toBe(true);
     expect(show().attempt).toBe(2);
 
@@ -1233,8 +1287,17 @@ describe("SC26: stage verifiers", () => {
       const node = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
       writeFileSync(join(artifactsDir, file), "plan\n");
       const done = step([
-        ...["done", node.nodeRunId, "--run", "feat-x", "--output", "{}"],
-        ...["--artifact", `plan=artifacts/${file}`],
+        ...[
+          "done",
+          node.nodeRunId,
+          "--run",
+          "feat-x",
+          "--summary",
+          "Did the work.",
+          "--output",
+          "{}",
+        ],
+        ...["--artifact", fileArtifact("plan", `artifacts/${file}`)],
       ]);
       expect(done.code).toBe(0);
     };
@@ -1301,6 +1364,81 @@ describe("SC26: orchestrate next and done with stages", () => {
     });
   });
 
+  test("next hands a stage its summary hint, and done records the summary in state", () => {
+    const run = startedRun(`name: hinted
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - { id: edit, type: agent, stage: summarized, input: {} }
+  - { id: check, type: agent, stage: plain, notify: false, dependsOn: [edit], input: {} }
+`);
+    const step = (args: readonly string[]) =>
+      orchestrate(run.repo, run.home, args, { YOK_SKILLS_DIR: STAGE_SKILLS });
+    const edit = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    expect(edit).toMatchObject({ nodeId: "edit", summaryHint: "Say how many files changed." });
+
+    const summary = ["--summary", "Changed three files."];
+    expect(
+      step(["done", edit.nodeRunId, "--run", "feat-x", ...summary, "--output", "{}"]).code,
+    ).toBe(0);
+    const check = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    expect(check).not.toHaveProperty("summaryHint");
+
+    const nodes = stateOf(run.repo).nodeRuns;
+    expect(nodes.edit).toMatchObject({ notify: true, summary: "Changed three files." });
+    expect(nodes.check).toMatchObject({ notify: false });
+  });
+
+  test.each([
+    ["no summary", [], "missing"],
+    ["a summary on two lines", ["--summary", "Did it.\nAnd more."], "multi-line"],
+    ["a summary over 200 characters", ["--summary", "x".repeat(201)], "too-long"],
+    ["a summary that is JSON", ["--summary", '{"ok":true}'], "not-prose"],
+  ])("done refuses %s and keeps the node open", (_label, summary, reason) => {
+    const run = startedRun(
+      `name: one\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n  - { id: say, type: agent, stage: plain, input: {} }\n`,
+    );
+    const step = (args: readonly string[]) =>
+      orchestrate(run.repo, run.home, args, { YOK_SKILLS_DIR: STAGE_SKILLS });
+    const say = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+
+    const refused = step(["done", say.nodeRunId, "--run", "feat-x", ...summary, "--output", "{}"]);
+
+    expect(refused.code).toBe(1);
+    expect(JSON.parse(refused.stderr)).toMatchObject({
+      retryable: true,
+      issues: [expect.objectContaining({ kind: "summary", reason })],
+    });
+    expect(stateOf(run.repo).nodeRuns.say.status).toBe("running");
+  });
+
+  test("done records a link artifact with no file check, and refuses one that is not https", () => {
+    const run = startedRun(
+      `name: one\ninputs:\n  prompt: { type: string, required: true }\nnodes:\n  - { id: pr, type: agent, stage: plain, input: {} }\n`,
+    );
+    const step = (args: readonly string[]) =>
+      orchestrate(run.repo, run.home, args, { YOK_SKILLS_DIR: STAGE_SKILLS });
+    const pr = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
+    const done = [
+      "done",
+      pr.nodeRunId,
+      "--run",
+      "feat-x",
+      "--summary",
+      "Opened a PR.",
+      "--output",
+      "{}",
+    ];
+    const link = { type: "pull-request", name: "lydia", url: "https://github.com/o/lydia/pull/1" };
+
+    const plain = step([...done, "--artifact", JSON.stringify({ ...link, url: "http://x.dev/1" })]);
+    expect(plain.code).toBe(1);
+    expect(plain.stderr).toContain("--artifact");
+
+    expect(step([...done, "--artifact", JSON.stringify(link)]).code).toBe(0);
+    expect(stateOf(run.repo).nodeRuns.pr.artifacts).toEqual([link]);
+  });
+
   test("next hands a stage its skill's variable defaults under the node's values, an expression read from inputs", () => {
     const skills = stageSkills();
     const run = startedRun(`name: tuned
@@ -1349,8 +1487,17 @@ nodes:
     const { repo, step } = stageRun();
     const reply = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
     expect(reply).toMatchObject({ kind: "stage", nodeId: "make", extension: null });
-    const done = ["done", reply.nodeRunId, "--run", "feat-x", "--output", '{"ok":true}'];
-    const artifact = ["--artifact", "plan=artifacts/plan.md"];
+    const done = [
+      "done",
+      reply.nodeRunId,
+      "--run",
+      "feat-x",
+      "--summary",
+      "Did the work.",
+      "--output",
+      '{"ok":true}',
+    ];
+    const artifact = ["--artifact", fileArtifact("plan", "artifacts/plan.md")];
 
     const omitted = step(done);
     expect(omitted.code).toBe(1);
@@ -1381,7 +1528,7 @@ nodes:
     expect(stateOf(repo).nodeRuns.make).toMatchObject({
       nodeRunId: reply.nodeRunId,
       output: { ok: true },
-      artifacts: [{ name: "plan", path: "artifacts/plan.md" }],
+      artifacts: [{ type: "plan", name: "plan", path: "artifacts/plan.md" }],
     });
   });
 
@@ -1392,13 +1539,27 @@ nodes:
     writeFileSync(join(artifactsDir, "plan.md"), "plan\n");
     writeFileSync(join(artifactsDir, "notes.md"), "notes\n");
     const recorded = step([
-      ...["done", reply.nodeRunId, "--run", "feat-x", "--output", '{"ok":true}'],
-      ...["--artifact", "plan=artifacts/plan.md", "--artifact", "notes=artifacts/notes.md"],
+      ...[
+        "done",
+        reply.nodeRunId,
+        "--run",
+        "feat-x",
+        "--summary",
+        "Did the work.",
+        "--output",
+        '{"ok":true}',
+      ],
+      ...[
+        "--artifact",
+        fileArtifact("plan", "artifacts/plan.md"),
+        "--artifact",
+        fileArtifact("notes", "artifacts/notes.md"),
+      ],
     ]);
     expect(recorded.code).toBe(0);
     expect(stateOf(repo).nodeRuns.make.artifacts).toEqual([
-      { name: "plan", path: "artifacts/plan.md" },
-      { name: "notes", path: "artifacts/notes.md" },
+      { type: "plan", name: "plan", path: "artifacts/plan.md" },
+      { type: "notes", name: "notes", path: "artifacts/notes.md" },
     ]);
   });
 
@@ -1413,11 +1574,11 @@ nodes:
       "--run",
       "feat-x",
       "--artifact",
-      "plan=artifacts/plan.md",
+      fileArtifact("plan", "artifacts/plan.md"),
     ];
     const before = (await eventsOf(repo)).length;
 
-    const invalid = step([...command, "--output", "[]"]);
+    const invalid = step([...command, "--summary", "Did the work.", "--output", "[]"]);
     expect(invalid.code).toBe(1);
     expect(JSON.parse(invalid.stderr)).toMatchObject({
       kind: "validation",
@@ -1430,7 +1591,7 @@ nodes:
       false,
     );
 
-    const corrected = step([...command, "--output", '{"ok":true}']);
+    const corrected = step([...command, "--summary", "Did the work.", "--output", '{"ok":true}']);
     expect(corrected.code).toBe(0);
     expect(stateOf(repo).nodeRuns.make).toMatchObject({
       status: "completed",
@@ -1441,7 +1602,16 @@ nodes:
   test("done reports output and artifact issues together", () => {
     const { repo, step } = stageRun();
     const reply = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
-    const invalid = step(["done", reply.nodeRunId, "--run", "feat-x", "--output", "[]"]);
+    const invalid = step([
+      "done",
+      reply.nodeRunId,
+      "--run",
+      "feat-x",
+      "--summary",
+      "Did the work.",
+      "--output",
+      "[]",
+    ]);
     expect(invalid.code).toBe(1);
     expect(JSON.parse(invalid.stderr).issues).toEqual([
       { kind: "required-artifact", name: "plan" },
@@ -1453,7 +1623,16 @@ nodes:
   test("done reports every missing required artifact and missing registered file", () => {
     const { repo, step } = stageRun("[{ artifact: plan }, { artifact: notes }]");
     const reply = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
-    const done = ["done", reply.nodeRunId, "--run", "feat-x", "--output", '{"ok":true}'];
+    const done = [
+      "done",
+      reply.nodeRunId,
+      "--run",
+      "feat-x",
+      "--summary",
+      "Did the work.",
+      "--output",
+      '{"ok":true}',
+    ];
 
     const omitted = step(done);
     expect(JSON.parse(omitted.stderr).issues).toEqual([
@@ -1464,9 +1643,9 @@ nodes:
     const missingFiles = step([
       ...done,
       "--artifact",
-      "plan=artifacts/plan.md",
+      fileArtifact("plan", "artifacts/plan.md"),
       "--artifact",
-      "notes=artifacts/notes.md",
+      fileArtifact("notes", "artifacts/notes.md"),
     ]);
     expect(JSON.parse(missingFiles.stderr).issues).toEqual([
       expect.objectContaining({ kind: "artifact-file", name: "plan", reason: "missing" }),
@@ -1484,10 +1663,12 @@ nodes:
       reply.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       '{"ok":true}',
       "--artifact",
-      "plan=artifacts/plan.md",
+      fileArtifact("plan", "artifacts/plan.md"),
     ];
     const results = await Promise.all([
       orchestrateAsync(repo, home, args, { YOK_SKILLS_DIR: skills }),
@@ -1514,12 +1695,18 @@ nodes:
       reply.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       '{"ok":true}',
       "--artifact",
-      "plan=artifacts/plan.md",
+      fileArtifact("plan", "artifacts/plan.md"),
     ];
-    const missingOptional = step([...done, "--artifact", "notes=artifacts/notes.md"]);
+    const missingOptional = step([
+      ...done,
+      "--artifact",
+      fileArtifact("notes", "artifacts/notes.md"),
+    ]);
     expect(missingOptional.code).toBe(1);
     expect(missingOptional.stderr).toContain("notes.md");
     expect(stateOf(repo).nodeRuns.make.status).toBe("running");
@@ -1527,7 +1714,7 @@ nodes:
     const completed = step(done);
     expect(completed.code).toBe(0);
     expect(stateOf(repo).nodeRuns.make.artifacts).toEqual([
-      { name: "plan", path: "artifacts/plan.md" },
+      { type: "plan", name: "plan", path: "artifacts/plan.md" },
     ]);
   });
 
@@ -1543,10 +1730,12 @@ nodes:
       reply.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       '{"ok":true}',
       "--artifact",
-      "plan=artifacts/plan.md",
+      fileArtifact("plan", "artifacts/plan.md"),
     ];
     const invalid = step(args);
     expect(invalid.code).toBe(1);
@@ -1572,10 +1761,12 @@ nodes:
       reply.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       '{"ok":true}',
       "--artifact",
-      "plan=artifacts/plan.md",
+      fileArtifact("plan", "artifacts/plan.md"),
     ]);
     expect(invalid.code).toBe(1);
     expect(invalid.stderr).toContain("run artifacts/ must be a real directory");
@@ -1593,6 +1784,8 @@ nodes:
       reply.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       text,
     ]);
@@ -1623,7 +1816,16 @@ nodes:
     );
     const reply = JSON.parse(orchestrate(run.repo, run.home, ["next", "--run", "feat-x"]).stdout);
     const done = orchestrate(run.repo, run.home, [
-      ...["done", reply.nodeRunId, "--run", "feat-x", "--output", "looks fine to me"],
+      ...[
+        "done",
+        reply.nodeRunId,
+        "--run",
+        "feat-x",
+        "--summary",
+        "Did the work.",
+        "--output",
+        "looks fine to me",
+      ],
     ]);
     expect(done.code).toBe(1);
     expect(JSON.parse(done.stderr)).toMatchObject({
@@ -1664,6 +1866,8 @@ nodes:
       reply.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       '{"ok":"yes"}',
     ]);
@@ -1679,6 +1883,8 @@ nodes:
       reply.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       '{"ok":true}',
     ]);
@@ -1703,12 +1909,14 @@ nodes:
       reply.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       "null",
       "--artifact",
-      "note=artifacts/first.md",
+      fileArtifact("note", "artifacts/first.md"),
       "--artifact",
-      "note=artifacts/second.md",
+      fileArtifact("note", "artifacts/second.md"),
     ]);
     expect(done.code).toBe(1);
     expect(JSON.parse(done.stderr)).toMatchObject({
@@ -1726,8 +1934,18 @@ nodes:
     const output = '{"note":"can\'t stop; $(touch PWNED)"}';
     mkdirSync(join(runDirOf(repo, "feat-x"), "artifacts"), { recursive: true });
     writeFileSync(join(runDirOf(repo, "feat-x"), "artifacts/plan.md"), "plan\n");
-    const artifact = ["--artifact", "plan=artifacts/plan.md"];
-    const doneArgs = ["done", make.nodeRunId, "--run", "feat-x", "--output", "-", ...artifact];
+    const artifact = ["--artifact", fileArtifact("plan", "artifacts/plan.md")];
+    const doneArgs = [
+      "done",
+      make.nodeRunId,
+      "--run",
+      "feat-x",
+      "--summary",
+      "Did the work.",
+      "--output",
+      "-",
+      ...artifact,
+    ];
     const done = orchestrate(repo, home, doneArgs, env, output);
     expect(done.code).toBe(0);
     expect(stateOf(repo).nodeRuns.make.output).toEqual({ note: "can't stop; $(touch PWNED)" });
@@ -1755,7 +1973,10 @@ nodes:
     const done = ["done", reply.nodeRunId, "--run", "feat-x"];
     const before = (await eventsOf(repo)).length;
     const refusals = [
-      { flags: ["--output", "{}", "--error", "no"], names: ["--output", "--error"] },
+      {
+        flags: ["--summary", "Did the work.", "--output", "{}", "--error", "no"],
+        names: ["--output", "--error"],
+      },
       { flags: [], names: ["--output", "--error"] },
       { flags: ["--error", "x", "--artifact", "plan"], names: ["--artifact", "plan"] },
       { flags: ["--error", "x", "--artifact", "artifacts/plan.md"], names: ["--artifact"] },
@@ -1821,6 +2042,31 @@ nodes:
 `;
 
 describe("SC26: orchestrate next and exec with containers", () => {
+  test("an exec node with a summary template posts, fills it from its output, and one without stays quiet", () => {
+    const { repo, home } = startedRun(`name: lint
+inputs:
+  prompt: { type: string, required: true }
+nodes:
+  - id: lint
+    type: exec
+    runtime: sh
+    script: printf '{"errors":2}'
+    output: { zodSchema: Json }
+    summary: "Lint found {{ nodes.lint.output.errors }} errors"
+    input: {}
+  - { id: tidy, type: exec, runtime: sh, script: "true", dependsOn: [lint], input: {} }
+`);
+    for (const nodeId of ["lint", "tidy"]) {
+      const reply = JSON.parse(orchestrate(repo, home, ["next", "--run", "feat-x"]).stdout);
+      expect(reply).toMatchObject({ kind: "exec", nodeId });
+      orchestrate(repo, home, ["exec", reply.nodeRunId, "--run", "feat-x"]);
+    }
+    const nodes = stateOf(repo).nodeRuns;
+    expect(nodes.lint).toMatchObject({ notify: true, summary: "Lint found 2 errors" });
+    expect(nodes.tidy).toMatchObject({ notify: false });
+    expect(nodes.tidy).not.toHaveProperty("summary");
+  });
+
   test("IW28 — next and exec run a workflow mixing a loop, a switch and an include to finished", () => {
     const { repo, home } = startedRun(MIXED, undefined, {}, { files: { "child.yaml": CHILD } });
     const handedOut = ["test", "test", "test", "greet", "say", "last"].map((nodeId) => {
@@ -1905,32 +2151,42 @@ describe("SC26: orchestrate call log", () => {
 
     const refused = step([
       ...done,
+      "--summary",
+      "Did the work.",
       "--output",
       '{"ok":true}',
       "--artifact",
-      "plan=artifacts/plan.md",
+      fileArtifact("plan", "artifacts/plan.md"),
     ]);
     writeFileSync(join(runDirOf(run.repo, "feat-x"), "artifacts", "plan.md"), "plan\n");
     const report = JSON.parse(
-      step([...done, "--output", '{"ok":true}', "--artifact", "plan=artifacts/plan.md"]).stdout,
+      step([
+        ...done,
+        "--summary",
+        "Did the work.",
+        "--output",
+        '{"ok":true}',
+        "--artifact",
+        fileArtifact("plan", "artifacts/plan.md"),
+      ]).stdout,
     );
     const following = JSON.parse(step(["next", "--run", "feat-x"]).stdout);
 
     expect(refused.code).toBe(1);
     expect(stage).toMatchObject({ kind: "stage", nodeId: "make" });
     expect(following).toMatchObject({ kind: "stage", nodeId: "use" });
-    const artifacts = [{ name: "plan", path: "artifacts/plan.md" }];
+    const artifacts = [{ type: "plan", name: "plan", path: "artifacts/plan.md" }];
     expect(await callsOf(run.repo)).toEqual([
       call("next", {}, stage),
       call(
         "done",
-        { nodeRunId: stage.nodeRunId, output: '{"ok":true}', artifacts },
+        { nodeRunId: stage.nodeRunId, output: '{"ok":true}', summary: "Did the work.", artifacts },
         { kind: "error", message: refused.stderr.trim() },
         "rejected",
       ),
       call(
         "done",
-        { nodeRunId: stage.nodeRunId, output: '{"ok":true}', artifacts },
+        { nodeRunId: stage.nodeRunId, output: '{"ok":true}', summary: "Did the work.", artifacts },
         report,
         "completed",
       ),
@@ -2010,7 +2266,16 @@ describe("SC26: orchestrate call log", () => {
     const before = (await eventsOf(repo)).length;
 
     const exec = orchestrate(repo, home, ["exec", "", "--run", "feat-x"]);
-    const done = orchestrate(repo, home, ["done", "", "--run", "feat-x", "--output", "{}"]);
+    const done = orchestrate(repo, home, [
+      "done",
+      "",
+      "--run",
+      "feat-x",
+      "--summary",
+      "Did the work.",
+      "--output",
+      "{}",
+    ]);
 
     for (const refused of [exec, done]) {
       expect(refused.code).toBe(1);
@@ -2310,6 +2575,8 @@ describe("SC26: the task workflow's ticket-fetcher stage", () => {
       fetcher.nodeRunId,
       "--run",
       "feat-x",
+      "--summary",
+      "Did the work.",
       "--output",
       JSON.stringify(output),
       ...artifact,
@@ -2350,7 +2617,7 @@ describe("SC26: the task workflow's ticket-fetcher stage", () => {
           complete: true,
         },
       },
-      ["--artifact", "ticket=artifacts/ticket/ticket.json"],
+      ["--artifact", fileArtifact("ticket", "artifacts/ticket/ticket.json")],
     );
 
     expect(workspace).toMatchObject({ nodeId: "create-workspace", input: { request: task } });
@@ -2511,7 +2778,18 @@ const runToContextNode = async (
 ) => {
   const flow = await runInPane(header + withContext(node), socket, overrides);
   const first = flow.next();
-  expect(flow.step(["done", first.nodeRunId, "--run", "feat-x", "--output", "{}"]).code).toBe(0);
+  expect(
+    flow.step([
+      "done",
+      first.nodeRunId,
+      "--run",
+      "feat-x",
+      "--summary",
+      "Did the work.",
+      "--output",
+      "{}",
+    ]).code,
+  ).toBe(0);
   return { ...flow, context: flow.next() };
 };
 

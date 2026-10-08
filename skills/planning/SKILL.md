@@ -5,6 +5,7 @@ description: >
   every change written as a diff, and the test scenarios that prove each phase. Writes plan.md and
   one file per phase, and gets the user's approval. Runs as the pipeline's planning stage, after
   design; also use it for "plan this" or "how should we implement" once a design is approved.
+summary: Say how many phases the plan has and what each one builds.
 mode: inline
 allowed-tools: [Agent, AskUserQuestion, Bash, Read, Write, Edit, Grep, Glob, Skill, WebSearch, WebFetch]
 tier: deep
@@ -179,7 +180,7 @@ delete that ADR and its INDEX.md line, and record the new decision.
 ## Step 6 — Finish
 
 The stage has no output: the plan files are all it hands on. Finish it with
-`--artifact plan=artifacts/plan.md` and an empty output.
+`--artifact '{"type":"plan","name":"plan","path":"artifacts/plan.md"}'` and an empty output.
 
 ## Rationalizations
 

@@ -290,6 +290,13 @@ const recordSkipOrFail = async (
 };
 
 // Records that a node started, and gives back the state with its new node run.
+// An agent node posts to the run's thread, and an exec node does when it has a summary to post.
+const postsToThread = (node: PlanNode): boolean => {
+  if (node.type === "agent") return node.notify;
+  if (node.type === "exec") return node.notify && node.summary !== undefined;
+  return false;
+};
+
 const recordStart = async (
   node: PlanNode,
   payload: Readonly<Record<string, JsonValue>>,
@@ -418,7 +425,7 @@ const executeLeaf = async (
   if (target instanceof NodeFailure) return recordSkipOrFail(node, target, walk, state);
   if (target !== undefined) return requestModel(node, target, walk, state);
   const { input, variables } = start;
-  const started = await recordStart(node, { input }, walk, state);
+  const started = await recordStart(node, { input, notify: postsToThread(node) }, walk, state);
   const { nodeRunId } = started.nodeRun;
   return { state: started.state, step: { kind: "leaf", node, nodeRunId, input, variables } };
 };

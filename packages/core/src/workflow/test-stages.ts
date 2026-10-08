@@ -8,6 +8,7 @@ export type DemoStage = Readonly<{
   variables?: string;
   tier?: string;
   references?: string;
+  summary?: string;
 }>;
 
 // Functions the demo stages name as verifiers; `args.file` makes `record` write what it was given.
@@ -37,12 +38,13 @@ export const writeStages = (dir: string, stages: Readonly<Record<string, DemoSta
   );
   writeFileSync(join(dir, "verifiers.ts"), VERIFIERS_MODULE);
   for (const [name, stage] of Object.entries(stages)) {
-    const { consumes, produces, verifiers, variables, references, tier } = stage;
+    const { consumes, produces, verifiers, variables, references, tier, summary } = stage;
     mkdirSync(join(dir, name), { recursive: true });
     const lines = [
       "---",
       `name: ${name}`,
       `description: demo stage ${name}`,
+      ...(summary === undefined ? [] : [`summary: ${summary}`]),
       "mode: inline",
       "allowed-tools: [Bash]",
       ...(tier === undefined ? [] : [`tier: ${tier}`]),
@@ -68,6 +70,7 @@ export const DEMO_STAGES = {
   reader: { consumes: "[{ artifact: plan, optional: true }]" },
   thinker: { tier: "deep" },
   quick: { tier: "fast" },
+  summarized: { summary: "Say how many files changed." },
   plain: {},
   tuned: {
     variables:

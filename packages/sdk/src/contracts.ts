@@ -52,10 +52,16 @@ const ArtifactPathSchema = RunPathSchema.refine(
   "Artifact paths must be inside artifacts/",
 );
 
-export const ArtifactRefSchema = z.strictObject({
-  name: NonEmptyStringSchema,
-  path: ArtifactPathSchema,
+// type says what the artifact is (plan, pr-description, pull-request); produces and consumes
+// match on it. name says which one: the repo, or the type again when there is only one.
+const artifactFields = { type: SlugSchema, name: NonEmptyStringSchema };
+export const FileArtifactSchema = z.strictObject({ ...artifactFields, path: ArtifactPathSchema });
+// A link to something outside the run, such as a pull request.
+export const LinkArtifactSchema = z.strictObject({
+  ...artifactFields,
+  url: z.url({ protocol: /^https$/ }),
 });
+export const ArtifactRefSchema = z.union([FileArtifactSchema, LinkArtifactSchema]);
 
 export const TokenUsageSchema = z.strictObject({
   input: z.int().nonnegative(),
@@ -119,6 +125,10 @@ const NodeRunFieldsSchema = z.strictObject({
   artifacts: z.array(ArtifactRefSchema),
   input: z.json().optional(),
   output: z.json().optional(),
+  // one sentence for people about what the node did; the notifier posts it when the node ends
+  summary: NonEmptyStringSchema.optional(),
+  // whether the node posts its lines to the run's thread
+  notify: z.boolean().optional(),
   branch: NonEmptyStringSchema.optional(),
   iteration: z.int().positive().optional(),
   stage: SlugSchema.optional(),
@@ -301,6 +311,8 @@ export const EventSchema = z
 export type JsonValue = z.infer<z.ZodJSONSchema>;
 export type JsonObject = z.infer<typeof JsonObjectSchema>;
 export type ArtifactRef = z.infer<typeof ArtifactRefSchema>;
+export type FileArtifact = z.infer<typeof FileArtifactSchema>;
+export type LinkArtifact = z.infer<typeof LinkArtifactSchema>;
 export type Layout = z.infer<typeof LayoutSchema>;
 export type SkipOutput = z.infer<typeof SkipOutputSchema>;
 

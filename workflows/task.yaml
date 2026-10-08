@@ -28,6 +28,7 @@ nodes:
   - id: create-workspace
     type: agent
     stage: create-workspace
+    notify: false
     dependsOn: [ticket-fetcher]
     input:
       request: "{{ nodes.ticket-fetcher.output.task }}"
@@ -35,6 +36,7 @@ nodes:
   - id: baseline
     type: agent
     stage: baseline
+    notify: false
     dependsOn: [create-workspace]
     input: {}
 
@@ -118,6 +120,7 @@ nodes:
   - id: retro
     type: agent
     stage: retro
+    notify: false
     dependsOn: [pr]
     always: true
     allowFailure: true

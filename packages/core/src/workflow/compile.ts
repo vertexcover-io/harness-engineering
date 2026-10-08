@@ -287,6 +287,7 @@ const loadPlanStage = async (ref: string, at: Compiling): Promise<PlanStage> => 
     consumes: frontmatter.consumes ?? [],
     produces: frontmatter.produces ?? [],
     variables: frontmatter.variables,
+    summary: frontmatter.summary,
     ...(output === undefined ? {} : { output }),
     verifiers: await loadVerifiers(frontmatter.verifiers, dir),
   };

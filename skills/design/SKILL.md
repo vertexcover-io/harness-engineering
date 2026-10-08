@@ -6,6 +6,7 @@ description: >
   approves in a minute: problem, approach, what changes, the few decisions and risks that matter,
   and what is hard to undo. Runs as the pipeline's design stage; also use it
   for "design this", "grill me on this", "help me think this through".
+summary: Say which approach the design chose and what it changes for the user.
 mode: inline
 allowed-tools: [Agent, AskUserQuestion, Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch]
 tier: deep
@@ -197,7 +198,7 @@ stop and ask about that decision directly; it is unresolved, not badly worded.
 
 Set `status: approved` in `design.md`'s front matter and delete `## Open questions`. The stage
 has no output: `design.md` is all it hands on. Finish it with
-`--artifact design=artifacts/design.md` and an empty output.
+`--artifact '{"type":"design","name":"design","path":"artifacts/design.md"}'` and an empty output.
 
 ## Rationalizations
 

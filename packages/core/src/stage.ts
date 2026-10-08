@@ -75,6 +75,8 @@ const VariableSchema = z.strictObject({
 export const StageSchema = z.strictObject({
   name: SlugSchema,
   description: NonEmptyStringSchema,
+  // what the one-line summary at done must cover; without it, the orchestrate skill's rule applies
+  summary: NonEmptyStringSchema.optional(),
   mode: z.enum(["inline", "subagent"]),
   tags: UniqueSlugsSchema.optional(),
   "allowed-tools": z.array(NonEmptyStringSchema),

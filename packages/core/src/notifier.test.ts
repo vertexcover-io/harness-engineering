@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import type { EmitInput, Event, emitRunEvent, JsonValue, RunRef, State } from "@yok/sdk";
+import type { EmitInput, Event, emitRunEvent, JsonValue, NodeRun, RunRef, State } from "@yok/sdk";
 import {
   createSlackNotifier,
   describeEvent,
@@ -13,6 +13,7 @@ import {
   notify,
   type OpenNotifier,
   openNotifier,
+  UPLOAD_LIMIT_BYTES,
 } from "./notifier.ts";
 
 const state: State = {
@@ -36,18 +37,83 @@ const state: State = {
   subscribers: {},
 };
 
+const nodeRun = (nodeRunId: string, extra: Partial<NodeRun> = {}): NodeRun => ({
+  nodeRunId,
+  nodeType: "agent",
+  status: "completed",
+  startedAt: "2026-10-02T10:00:00Z",
+  completedAt: "2026-10-02T10:30:00Z",
+  artifacts: [],
+  notify: true,
+  ...extra,
+});
+
+const PR = {
+  type: "pull-request",
+  name: "lydia",
+  url: "https://github.com/refrens/lydia/pull/5442",
+} as const;
+
+// A run that took 2h 17m: design wrote a file, a loop ran qa twice, pr opened a PR.
+const finished: State = {
+  ...state,
+  status: "completed",
+  completedAt: "2026-10-02T12:17:00Z",
+  nodeRuns: {
+    "create-workspace": nodeRun("cw-1", { notify: false, summary: "Made the worktree." }),
+    design: nodeRun("design-1", {
+      summary: "Chose two buttons.",
+      artifacts: [{ type: "design", name: "design", path: "artifacts/design.md" }],
+    }),
+    "qa-loop": nodeRun("loop-1", {
+      nodeType: "loop",
+      iteration: 2,
+      notify: undefined,
+      nodes: { qa: nodeRun("qa-2", { summary: "QA passed on round 2." }) },
+    }),
+    pr: nodeRun("pr-1", {
+      completedAt: "2026-10-02T12:10:00Z",
+      summary: "Opened a PR in lydia.",
+      artifacts: [PR],
+    }),
+    retro: nodeRun("retro-1", { completedAt: "2026-10-02T12:16:00Z", notify: false }),
+  },
+};
+
 const failedBuild: State = {
   ...state,
+  status: "failed",
+  completedAt: "2026-10-02T10:12:00Z",
   nodeRuns: {
-    build: {
-      nodeRunId: "build-1",
+    build: nodeRun("build-1", {
       nodeType: "exec",
       status: "failed",
-      startedAt: "2026-10-02T10:00:00Z",
       completedAt: "2026-10-02T10:01:00Z",
-      artifacts: [],
-      output: { kind: "exit", message: "tsc exit 2" },
-    },
+      output: { kind: "exit", message: "tsc exit 2\nsrc/a.ts(1,1): error" },
+    }),
+    retro: nodeRun("retro-1", {
+      status: "failed",
+      completedAt: "2026-10-02T10:11:00Z",
+      output: { kind: "exception", message: "retro broke" },
+    }),
+  },
+};
+
+// design is the node the agent works on now.
+const openDesign: State = {
+  ...state,
+  nodeRuns: { design: nodeRun("design-1", { status: "running", completedAt: null }) },
+};
+
+const openQa: State = {
+  ...state,
+  nodeRuns: {
+    "qa-loop": nodeRun("loop-1", {
+      nodeType: "loop",
+      status: "running",
+      iteration: 3,
+      nodes: { qa: nodeRun("qa-3", { status: "running", completedAt: null }) },
+    }),
   },
 };
 
@@ -63,97 +129,132 @@ const event = (type: string, payload: JsonValue = {}, nodeId?: string): Event =>
   ...(nodeId === undefined ? {} : { nodeId, nodeRunId: `${nodeId}-1` }),
 });
 
+const notice = (title: string, extra: Partial<Notice> = {}): Notice => ({
+  title,
+  body: "",
+  mention: false,
+  files: [],
+  ...extra,
+});
+
 describe("describeEvent", () => {
   test.each([
     [
-      "workflow.started",
+      "the run's start shows the prompt, not the run name",
       event("workflow.started"),
       state,
-      { title: "Yok run started: demo", mention: true, body: "fix it", files: [] },
+      notice("Yok run started", { mention: true, body: "fix it" }),
     ],
     [
-      "workflow.completed",
-      event("workflow.completed"),
+      "a node that posts starts with one line",
+      event("workflow.node.started", { nodeType: "agent", notify: true }, "design"),
       state,
-      { title: "Run complete: demo", mention: true, body: "", files: [] },
+      notice("▶ design · started"),
     ],
     [
-      "workflow.failed",
-      event("workflow.failed"),
-      failedBuild,
-      { title: "Run failed: demo", mention: true, body: "build: tsc exit 2", files: [] },
-    ],
-    [
-      "workflow.node.started",
-      event("workflow.node.started", { nodeType: "agent" }, "design"),
-      state,
-      { title: "Node design · started", mention: false, body: "", files: [] },
-    ],
-    [
-      "workflow.node.completed",
+      "a node inside a loop names the loop and its round",
       event(
-        "workflow.node.completed",
-        {
-          nodeType: "agent",
-          attempts: 1,
-          artifacts: [{ name: "design", path: "artifacts/design.md" }],
-        },
-        "design",
-      ),
-      state,
-      { title: "Node design · done", mention: false, body: "", files: ["artifacts/design.md"] },
-    ],
-    [
-      "workflow.node.failed",
-      event(
-        "workflow.node.failed",
-        { nodeType: "exec", attempts: 1, error: { kind: "exit", message: "tsc exit 2" } },
-        "build",
-      ),
-      state,
-      { title: "Node build · failed", mention: true, body: "tsc exit 2", files: [] },
-    ],
-    [
-      "workflow.node.skipped",
-      event(
-        "workflow.node.skipped",
-        { nodeType: "agent", attempts: 0, skip: { reason: "no UI change" } },
+        "workflow.node.started",
+        { nodeType: "agent", notify: true, parents: ["qa-loop"] },
         "qa",
       ),
-      state,
-      { title: "Node qa · skipped", mention: false, body: "no UI change", files: [] },
+      openQa,
+      notice("▶ qa-loop › qa · round 3 · started"),
     ],
     [
-      "agent.limit.waiting",
-      event("agent.limit.waiting", { resumeAt: "2026-10-02T15:00:00Z" }),
-      state,
-      { title: "Rate limit · waiting until 15:00 UTC", mention: false, body: "", files: [] },
+      "a node ends with its summary, its links and its files",
+      event("workflow.node.completed", { nodeType: "agent", attempts: 1 }, "design"),
+      finished,
+      notice("✓ design · done", { body: "Chose two buttons.", files: ["artifacts/design.md"] }),
     ],
     [
-      "agent.limit.resumed",
-      event("agent.limit.resumed"),
-      state,
-      { title: "Rate limit over · resuming", mention: false, body: "", files: [] },
+      "a link artifact shows as name and url",
+      event("workflow.node.completed", { nodeType: "agent", attempts: 1 }, "pr"),
+      finished,
+      notice("✓ pr · done", {
+        body: "Opened a PR in lydia.\nlydia · https://github.com/refrens/lydia/pull/5442",
+      }),
     ],
     [
-      "agent.stuck",
-      event("agent.stuck", { agent: "claude", sessionId: "s-1", message: "finish the node" }),
-      state,
-      {
-        title: "Agent stuck · the Stop hook gave up",
+      "a question names the open node and where to answer",
+      event("agent.question.asked", {
+        agent: "claude",
+        sessionId: "s-1",
+        toolUseId: "toolu_1",
+        questions: [{ question: "Ship it?", options: ["Yes", "No"] }],
+      }),
+      openDesign,
+      notice("❓ Waiting for you at design", {
         mention: true,
-        body: "finish the node",
-        files: [],
-      },
+        body: "*Ship it?*\n• Yes\n• No\n\n_Answer in the session._",
+      }),
     ],
     [
-      "workflow.blocked",
+      "the run's end shows the duration, the last summary and every link",
+      event("workflow.completed"),
+      finished,
+      notice("✅ Run complete · 2h 17m", {
+        mention: true,
+        body: "Opened a PR in lydia.\nlydia · https://github.com/refrens/lydia/pull/5442",
+      }),
+    ],
+    [
+      "a failed run names the first failed node and the first line of its error",
+      event("workflow.failed"),
+      failedBuild,
+      notice("❌ Run failed at build · 12m", { mention: true, body: "tsc exit 2" }),
+    ],
+    [
+      "a stuck agent names the open node and what to do",
+      event("agent.stuck", { agent: "claude", sessionId: "s-1" }),
+      openDesign,
+      notice("⚠️ Agent stuck at design", {
+        mention: true,
+        body: "The agent stopped twice with the node still open. Open the session and tell it to go on.",
+      }),
+    ],
+    [
+      "an API stop names the node, the error and what to do",
+      event("agent.stopped", {
+        agent: "claude",
+        sessionId: "s-1",
+        error: "billing_error",
+        message: "Credit balance too low",
+      }),
+      openDesign,
+      notice("⛔ Agent stopped at design · billing_error", {
+        mention: true,
+        body: "Credit balance too low\nFix the cause, then resume the session.",
+      }),
+    ],
+    [
+      "a rate limit pings, with the node and when it resumes",
+      event("agent.limit.waiting", {
+        sessionId: "s-1",
+        limitEventId: "e-1",
+        resumeAt: "2026-10-02T15:00:00.000Z",
+        from: "message",
+      }),
+      openQa,
+      notice("⏸ Rate limit at qa-loop › qa · round 3 · resumes at 15:00 UTC", {
+        mention: true,
+        body: "The run goes on by itself. Nothing to do.",
+      }),
+    ],
+    [
+      "the end of a rate limit says which node resumes",
+      event("agent.limit.resumed"),
+      openDesign,
+      notice("▶ Rate limit over · resuming design"),
+    ],
+    [
+      "a blocked run names the stage and what it needs",
       event("workflow.blocked", { nodeId: "plan", stage: "planning", missing: ["design"] }),
       state,
-      { title: "Run blocked · planning needs design", mention: true, body: "", files: [] },
+      notice("Run blocked · planning needs design", { mention: true }),
     ],
     [
-      "subscriber.called",
+      "a failed subscriber names itself and the event",
       event("subscriber.called", {
         subscriber: "asana",
         eventType: "workflow.started",
@@ -161,104 +262,69 @@ describe("describeEvent", () => {
         error: { kind: "threw", message: "401" },
       }),
       state,
-      {
-        title: "Subscriber asana failed on workflow.started",
-        mention: false,
-        body: "401",
-        files: [],
-      },
+      notice("Subscriber asana failed on workflow.started", { body: "401" }),
     ],
-  ])("SC203: %s maps to its title, mention and body", (_type, stored, at, expected) => {
+  ])("%s", (_label, stored, at, expected) => {
     expect(describeEvent(stored, at)).toEqual(expected);
   });
 
-  const asker = { agent: "claude", sessionId: "s-1", toolUseId: "toolu_1" };
   test.each([
     [
-      "agent.question.asked",
-      event("agent.question.asked", {
-        ...asker,
-        questions: [{ question: "Ship it?", options: ["Yes", "No"] }],
-      }),
-      {
-        title: "Waiting for you · demo",
-        mention: true,
-        body: "*Ship it?*\n• Yes\n• No",
-        files: [],
-      },
+      "a quiet node's start",
+      event("workflow.node.started", { nodeType: "agent", notify: false }, "baseline"),
+      state,
     ],
     [
-      "agent.question.answered",
+      "a loop's start, which only holds other nodes",
+      event("workflow.node.started", { nodeType: "loop" }, "qa-loop"),
+      state,
+    ],
+    [
+      "a quiet node's end",
+      event("workflow.node.completed", { nodeType: "agent", attempts: 1 }, "create-workspace"),
+      finished,
+    ],
+    [
+      "a loop's end",
+      event("workflow.node.completed", { nodeType: "loop", attempts: 1 }, "qa-loop"),
+      finished,
+    ],
+    [
+      "a skipped node",
+      event("workflow.node.skipped", { nodeType: "agent", attempts: 0, skip: {} }, "qa"),
+      state,
+    ],
+    [
+      "an answer",
       event("agent.question.answered", {
-        ...asker,
-        answers: [{ question: "Ship it?", answer: "Yes" }],
-      }),
-      { title: "Answered", mention: false, body: "*Ship it?*\n→ Yes", files: [] },
-    ],
-    [
-      "agent.question.answered with notes",
-      event("agent.question.answered", {
-        ...asker,
-        answers: [{ question: "Ship it?", answer: "Yes", notes: "after the demo" }],
-      }),
-      {
-        title: "Answered",
-        mention: false,
-        body: "*Ship it?*\n→ Yes\n_note: after the demo_",
-        files: [],
-      },
-    ],
-    [
-      "agent.stopped",
-      event("agent.stopped", {
         agent: "claude",
         sessionId: "s-1",
-        error: "billing_error",
-        message: "Credit balance too low",
+        answers: [{ question: "Ship it?", answer: "Yes" }],
       }),
-      {
-        title: "Agent stopped · billing_error",
-        mention: true,
-        body: "Credit balance too low",
-        files: [],
-      },
+      state,
     ],
-  ])("SC302: %s maps to its title, mention and body", (_type, stored, expected) => {
-    expect(describeEvent(stored, state)).toEqual(expected);
-  });
-
-  test.each([
+    ["a loop's next round", event("workflow.node.iterated", { iteration: 2 }, "qa-loop"), state],
     [
-      "orchestrate.next with a blocked reply, which workflow.blocked reports",
-      event("orchestrate.next", {
-        input: {},
-        output: { kind: "blocked", nodeId: "plan", stage: "planning", missing: ["design"] },
-      }),
-    ],
-    [
-      "hooks.stop.called with reason max-blocks-reached, which agent.stuck reports",
-      event("hooks.stop.called", { reason: "max-blocks-reached" }),
-    ],
-    [
-      "subscriber.called with status ok",
+      "a subscriber call that went fine",
       event("subscriber.called", {
         subscriber: "asana",
         eventType: "workflow.started",
         status: "ok",
       }),
+      state,
     ],
     [
-      "subscriber.called failed for the notifier itself",
+      "a failed call of the notifier itself",
       event("subscriber.called", {
         subscriber: "notifier",
         eventType: "workflow.started",
         status: "failed",
         error: { kind: "threw", message: "no token" },
       }),
+      state,
     ],
-    ["workflow.node.iterated", event("workflow.node.iterated", { iteration: 2 }, "loop")],
-  ])("SC204: %s produces no notice", (_label, stored) => {
-    expect(describeEvent(stored, state)).toBeUndefined();
+  ])("%s posts nothing", (_label, stored, at) => {
+    expect(describeEvent(stored, at)).toBeUndefined();
   });
 });
 
@@ -397,10 +463,12 @@ describe("the notifier's Slack variables", () => {
 const fakeOpener = () => {
   const opened: string[] = [];
   const posts: (string | undefined)[] = [];
+  const notices: Notice[] = [];
   const uploads: (readonly [string, string])[] = [];
   const notifier: INotifier = {
-    post: async (_notice, threadId) => {
+    post: async (posted, threadId) => {
       posts.push(threadId);
+      notices.push(posted);
       return threadId ?? "171.1";
     },
     upload: async (file, threadId) => {
@@ -411,7 +479,7 @@ const fakeOpener = () => {
     opened.push(type);
     return { ok: true, value: notifier };
   };
-  return { calls: { opened, posts, uploads }, open };
+  return { calls: { opened, posts, notices, uploads }, open };
 };
 
 const inThread171: State = { ...state, notification: { provider: "slack", threadId: "171.1" } };
@@ -442,7 +510,7 @@ describe("notify", () => {
     const second = await notify(
       "slack",
       {
-        event: event("workflow.node.started", { nodeType: "agent" }, "design"),
+        event: event("workflow.node.started", { nodeType: "agent", notify: true }, "design"),
         state: inThread171,
         run,
       },
@@ -463,38 +531,32 @@ describe("notify", () => {
     ]);
   });
 
-  // A run folder holding artifacts/design.md, and artifacts/env.md linking to the checkout's .env.
-  const runFolder = async () => {
+  // A run folder holding artifacts/design.md, artifacts/big.html over the upload limit, and
+  // artifacts/env.md linking to the checkout's .env; design ended listing PATHS.
+  const runFolder = async (...paths: readonly string[]) => {
     const checkout = await realpath(await mkdtemp(join(tmpdir(), "notifier-run-")));
     const runDir = join(checkout, ".yok", "demo");
     await mkdir(join(runDir, "artifacts"), { recursive: true });
     await writeFile(join(runDir, "artifacts", "design.md"), "# design\n");
+    await writeFile(join(runDir, "artifacts", "big.html"), "x".repeat(UPLOAD_LIMIT_BYTES + 1));
     await writeFile(join(checkout, ".env"), "SLACK_BOT_TOKEN=xoxb-secret\n");
     await symlink(join(checkout, ".env"), join(runDir, "artifacts", "env.md"));
-    return { state: { ...inThread171, runDir }, run: { ...run, cwd: checkout } };
+    const artifacts = paths.map((path) => ({
+      type: basename(path).split(".")[0] ?? "x",
+      name: path,
+      path,
+    }));
+    const nodeRuns = { design: nodeRun("design-1", { summary: "Chose two buttons.", artifacts }) };
+    return { state: { ...inThread171, runDir, nodeRuns }, run: { ...run, cwd: checkout } };
   };
 
-  const completedWith = (...paths: readonly string[]) =>
-    event(
-      "workflow.node.completed",
-      {
-        nodeType: "agent",
-        attempts: 1,
-        artifacts: paths.map((path) => ({ name: basename(path, ".md"), path })),
-      },
-      "design",
-    );
+  const designDone = event("workflow.node.completed", { nodeType: "agent", attempts: 1 }, "design");
 
   test("SC212: a completed node's artifact is uploaded from the run folder into thread 171.1", async () => {
     const { calls, open } = fakeOpener();
-    const inRun = await runFolder();
+    const inRun = await runFolder("artifacts/design.md");
 
-    await notify(
-      "slack",
-      { event: completedWith("artifacts/design.md"), ...inRun },
-      open,
-      fakeRecorder().record,
-    );
+    await notify("slack", { event: designDone, ...inRun }, open, fakeRecorder().record);
 
     expect(calls.posts).toEqual(["171.1"]);
     expect(calls.uploads).toEqual([[join(inRun.state.runDir, "artifacts", "design.md"), "171.1"]]);
@@ -502,11 +564,22 @@ describe("notify", () => {
 
   test("an artifact that is now a symlink to the checkout's .env is not uploaded", async () => {
     const { calls, open } = fakeOpener();
-    const inRun = await runFolder();
-    const completed = completedWith("artifacts/env.md", "artifacts/design.md");
+    const inRun = await runFolder("artifacts/env.md", "artifacts/design.md");
 
-    await notify("slack", { event: completed, ...inRun }, open, fakeRecorder().record);
+    await notify("slack", { event: designDone, ...inRun }, open, fakeRecorder().record);
 
+    expect(calls.uploads).toEqual([[join(inRun.state.runDir, "artifacts", "design.md"), "171.1"]]);
+  });
+
+  test("a file over the upload limit is named in the message instead of uploaded", async () => {
+    const { calls, open } = fakeOpener();
+    const inRun = await runFolder("artifacts/big.html", "artifacts/design.md");
+
+    await notify("slack", { event: designDone, ...inRun }, open, fakeRecorder().record);
+
+    expect(calls.notices.map((posted) => posted.body)).toEqual([
+      "Chose two buttons.\nbig.html is too big to attach; open it in the run viewer.",
+    ]);
     expect(calls.uploads).toEqual([[join(inRun.state.runDir, "artifacts", "design.md"), "171.1"]]);
   });
 

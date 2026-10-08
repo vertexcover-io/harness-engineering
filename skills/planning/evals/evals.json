@@ -63,7 +63,7 @@
       "expectations": [
         "AskUserQuestion with header Approve? is called at least twice.",
         "After the revision, the ## Phases digraph and the phase files show the merged phase.",
-        "The done command with --artifact plan=artifacts/plan.md runs only after an Approve answer."
+        "The done command with an --artifact of type plan with path artifacts/plan.md runs only after an Approve answer."
       ],
       "anti_expectations": [
         "Treats the Revise answer as approval",

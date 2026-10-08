@@ -401,7 +401,7 @@ export const openInEditor = ({
 
 const handedOver = (nodeRuns: Readonly<Record<string, NodeRun>>): readonly string[] =>
   Object.values(nodeRuns).flatMap((run) => [
-    ...run.artifacts.map((artifact) => artifact.path),
+    ...run.artifacts.flatMap((artifact) => ("path" in artifact ? [artifact.path] : [])),
     ...handedOver(run.nodes ?? {}),
   ]);
 

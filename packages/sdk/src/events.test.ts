@@ -387,6 +387,20 @@ describe("builtInHandlers", () => {
     });
   });
 
+  test("a started node keeps whether it posts to the thread, and a completed one keeps its summary", () => {
+    const state = project([
+      nodeEvent(1, "started", build, { nodeType: "agent", notify: false }),
+      nodeEvent(2, "completed", build, {
+        nodeType: "agent",
+        attempts: 1,
+        output: "ok",
+        summary: "Built the app.",
+      }),
+    ]);
+    expect(state.nodeRuns.build).toMatchObject({ notify: false, summary: "Built the app." });
+    expect(StateSchema.safeParse(state).success).toBe(true);
+  });
+
   test("SC7: a failed node records status, end time and its error as output, without the stack or process", () => {
     const message = "x".repeat(500);
     const state = project([

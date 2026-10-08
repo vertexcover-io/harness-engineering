@@ -11,7 +11,7 @@
         "Runs the script with `orchestrate skill run baseline.script --run feat-x` and no --packages flag",
         "Waits for the command to finish rather than stopping it early",
         "The stage output is exactly the printed { path, workspace, packages } JSON",
-        "Finishes the stage with `--artifact baseline=artifacts/baseline.json`"
+        "Finishes the stage with an --artifact of type baseline with path artifacts/baseline.json"
       ],
       "anti_expectations": [
         "Runs typecheck, lint or test commands itself instead of the baseline script",
@@ -26,7 +26,7 @@
       "files": [],
       "expectations": [
         "Runs the resolved baseline script with `--run feat-y --packages core,sdk`",
-        "Finishes the stage as completed, with `--artifact baseline=artifacts/baseline.json`",
+        "Finishes the stage as completed, with an --artifact of type baseline with path artifacts/baseline.json",
         "Names core as the script that exited non-zero in its report"
       ],
       "anti_expectations": [

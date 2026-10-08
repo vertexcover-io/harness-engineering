@@ -299,11 +299,25 @@ describe("the compiled yok binary", () => {
     const agent = JSON.parse(next.stdout);
     expect(agent).toMatchObject({ nodeId: "write", stage: "alone-stage" });
 
-    const refused = step(["done", agent.nodeRunId, "--output", '{"title":"x"}']);
+    const refused = step([
+      "done",
+      agent.nodeRunId,
+      "--summary",
+      "Did the work.",
+      "--output",
+      '{"title":"x"}',
+    ]);
     expect(refused.code).toBe(1);
     expect(refused.stderr).toContain("alone-stage wants a title starting with t");
 
-    const done = step(["done", agent.nodeRunId, "--output", '{"title":"tea"}']);
+    const done = step([
+      "done",
+      agent.nodeRunId,
+      "--summary",
+      "Did the work.",
+      "--output",
+      '{"title":"tea"}',
+    ]);
     expect([done.code, done.stderr]).toEqual([0, ""]);
     expect(JSON.parse(step(["next"]).stdout)).toEqual({ kind: "finished", status: "completed" });
   }, 60_000);
@@ -327,7 +341,14 @@ describe("the compiled yok binary", () => {
     });
     const agent = JSON.parse(step(["next"]).stdout);
 
-    const done = step(["done", agent.nodeRunId, "--output", '{"title":"tea"}']);
+    const done = step([
+      "done",
+      agent.nodeRunId,
+      "--summary",
+      "Did the work.",
+      "--output",
+      '{"title":"tea"}',
+    ]);
 
     expect([done.code, done.stderr]).toEqual([0, ""]);
     const subscriber = JSON.parse(readFileSync(join(repo, "subscriber.json"), "utf8"));

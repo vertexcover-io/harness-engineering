@@ -46,6 +46,8 @@ export const TicketSchema = z.strictObject({
   key: NonEmptyStringSchema,
   url: NonEmptyStringSchema,
   title: NonEmptyStringSchema,
+  // who the ticket is assigned to, by name; absent when nobody is
+  assignee: NonEmptyStringSchema.optional(),
   body: z.string(),
   properties: z.record(z.string(), z.json()),
   comments: z.array(

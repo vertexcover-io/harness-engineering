@@ -244,26 +244,27 @@ const execCommand = () =>
 const collect = (value: string, acc: readonly string[]): string[] => [...acc, value];
 
 // A pair with no NAME before its "=" is refused, so a bare path never becomes an artifact name.
-const parseArtifact = (pair: string): ArtifactRef | undefined => {
-  const index = pair.indexOf("=");
-  if (index <= 0) return undefined;
-  const parsed = ArtifactRefSchema.safeParse({
-    name: pair.slice(0, index),
-    path: pair.slice(index + 1),
-  });
-  return parsed.success ? parsed.data : undefined;
+const ARTIFACT_SHAPE =
+  '{"type":"TYPE","name":"NAME","path":"artifacts/PATH"} or {"type":"TYPE","name":"NAME","url":"https://…"}';
+
+const parseArtifact = (text: string): ArtifactRef | undefined => {
+  try {
+    return ArtifactRefSchema.safeParse(JSON.parse(text)).data;
+  } catch {
+    return undefined;
+  }
 };
 
-const parseArtifacts = (pairs: readonly string[]): Result<ArtifactRef[]> => {
-  const refs: ArtifactRef[] = [];
-  for (const pair of pairs) {
-    const ref = parseArtifact(pair);
-    if (ref === undefined) {
-      return { ok: false, error: `--artifact must be NAME=artifacts/PATH, got "${pair}"` };
-    }
-    refs.push(ref);
+const parseArtifacts = (texts: readonly string[]): Result<ArtifactRef[]> => {
+  const refs = texts.map((text) => ({ text, ref: parseArtifact(text) }));
+  const bad = refs.find(({ ref }) => ref === undefined);
+  if (bad !== undefined) {
+    return {
+      ok: false,
+      error: `--artifact must be one JSON object, ${ARTIFACT_SHAPE}; got ${bad.text}`,
+    };
   }
-  return { ok: true, value: refs };
+  return { ok: true, value: refs.flatMap(({ ref }) => (ref === undefined ? [] : [ref])) };
 };
 
 // "-" reads stdin, so an agent can pass text in a quoted heredoc and the shell never touches its
@@ -272,14 +273,16 @@ const readValue = async (value: string): Promise<string> =>
   value === "-" ? (await Bun.stdin.text()).trimEnd() : value;
 
 const parseOutcome = async (
-  flags: Readonly<{ output?: string; error?: string }>,
+  flags: Readonly<{ output?: string; error?: string; summary?: string }>,
 ): Promise<Result<StepOutcome>> => {
   if ((flags.output === undefined) === (flags.error === undefined)) {
     return { ok: false, error: "pass exactly one of --output and --error" };
   }
   if (flags.error !== undefined)
     return { ok: true, value: { error: await readValue(flags.error) } };
-  return { ok: true, value: { output: await readValue(flags.output ?? "") } };
+  const output = await readValue(flags.output ?? "");
+  const summary = flags.summary?.trim();
+  return { ok: true, value: summary ? { output, summary } : { output } };
 };
 
 const doneCommand = () =>
@@ -292,10 +295,14 @@ const doneCommand = () =>
       "--output <text>",
       "the node's output: plain text, or JSON when the node names an output schema; - reads stdin",
     )
+    .option(
+      "--summary <text>",
+      "one plain sentence for a person who has not read the run: what the node did and what it means",
+    )
     .option("--error <message>", "why the node failed, or - to read it from stdin")
     .option(
-      "--artifact <name=path>",
-      "artifact the node wrote, repeatable",
+      "--artifact <json>",
+      `an artifact the node wrote or links to, as one JSON object: ${ARTIFACT_SHAPE}; repeatable`,
       collect,
       [] as string[],
     )

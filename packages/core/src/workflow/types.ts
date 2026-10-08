@@ -43,6 +43,8 @@ const guardedFields = { ...baseFields, when: ExpressionSchema.optional() };
 
 const leafFields = {
   ...guardedFields,
+  // false keeps the node out of the run's Slack thread
+  notify: z.boolean().default(true),
   cwd: NonEmptyStringSchema.optional(),
   timeoutMs: z.number().int().positive().optional(),
   retry: RetrySchema.optional(),
@@ -66,6 +68,8 @@ export const ExecNodeSchema = z
     module: NonEmptyStringSchema.optional(),
     functionName: NonEmptyStringSchema.optional(),
     output: OutputSchemaRefSchema.optional(),
+    // the line the thread shows when the node ends, e.g. "Lint found {{ nodes.lint.output.errors }} errors"
+    summary: NonEmptyStringSchema.optional(),
   })
   .superRefine((node, ctx) => {
     const scriptKeys = [node.runtime, node.script].filter((v) => v !== undefined).length;
@@ -275,6 +279,7 @@ export const NodeRecordSchema = z.object({
   type: NodeTypeSchema,
   status: z.enum(["completed", "failed"]),
   output: z.json().optional(),
+  summary: NonEmptyStringSchema.optional(),
   process: ProcessRecordSchema.optional(),
   attempts: z.number().int().min(1),
   error: z
@@ -312,6 +317,8 @@ export type PlanStage = Readonly<{
   consumes: readonly ArtifactDeclaration[];
   produces: readonly ArtifactDeclaration[];
   variables: Stage["variables"];
+  // what the stage's summary at done must cover, when its SKILL.md says
+  summary?: string | undefined;
   // The schema the stage's SKILL.md names for its output; without one, its output is plain text.
   output?: Readonly<{ name: string; schema: z.ZodType }>;
   verifiers: readonly PlanVerifier[];

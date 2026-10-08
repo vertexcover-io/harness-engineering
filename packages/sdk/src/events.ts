@@ -54,6 +54,7 @@ export const NodeStartedEvent = nodeEvent(
     nodeType: NodeTypeSchema,
     input: z.json().optional(),
     branch: NonEmptyStringSchema.optional(),
+    notify: z.boolean().optional(),
     ...placement,
   }),
 );
@@ -73,6 +74,7 @@ const nodeEndedEvents = {
     z.strictObject({
       ...endFields,
       output: z.json().optional(),
+      summary: NonEmptyStringSchema.optional(),
       process: ProcessRecordSchema.optional(),
       artifacts: z.array(ArtifactRefSchema).optional(),
     }),
@@ -393,7 +395,10 @@ const OrchestrateExecEvent = callEvent(
   z.strictObject({ nodeRunId: NonEmptyStringSchema }),
   reportOrError,
 );
-const OutputOutcomeSchema = z.strictObject({ output: z.string() });
+const OutputOutcomeSchema = z.strictObject({
+  output: z.string(),
+  summary: NonEmptyStringSchema.optional(),
+});
 const ErrorOutcomeSchema = z.strictObject({ error: z.string() });
 const StepOutcomeSchema = z.union([OutputOutcomeSchema, ErrorOutcomeSchema]);
 export type StepOutcome = z.infer<typeof StepOutcomeSchema>;
@@ -651,6 +656,7 @@ const onStarted: EventHandler = (state, event) => {
     artifacts: [],
     ...(payload.input === undefined ? {} : { input: payload.input }),
     ...(payload.branch === undefined ? {} : { branch: payload.branch }),
+    ...(payload.notify === undefined ? {} : { notify: payload.notify }),
     ...(payload.nodeType === "loop" ? { iteration: 1 } : {}),
     ...(CONTAINER_TYPES.has(payload.nodeType) ? { nodes: {} } : {}),
   };
@@ -685,6 +691,7 @@ const onEnded = (status: EndStatus, state: State, event: Event): State => {
   const { nodeId, nodeRunId, payload } = parsed.data;
   const output = endOutputOf(payload);
   const artifacts = "artifacts" in payload ? payload.artifacts : undefined;
+  const summary = "summary" in payload ? payload.summary : undefined;
   const end = (current: NodeRun | undefined): NodeRun => {
     const run: NodeRun =
       current?.nodeRunId === nodeRunId
@@ -700,6 +707,7 @@ const onEnded = (status: EndStatus, state: State, event: Event): State => {
     return {
       ...(status === "completed" ? run : withoutOutput(run)),
       ...(output === undefined ? {} : { output }),
+      ...(summary === undefined ? {} : { summary }),
       artifacts: artifacts ?? run.artifacts,
       status,
       completedAt: event.ts,

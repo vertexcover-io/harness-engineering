@@ -4,6 +4,7 @@ description: >
   Build a requested change, an approved plan, one of its phases, or review feedback test-first,
   with independent phases in parallel, and commit each phase. Runs as the pipeline's implement
   stage after planning; also use it directly to build any change.
+summary: Say which phases were built and whether their tests pass.
 mode: inline
 allowed-tools: [Agent, AskUserQuestion, Bash, Read, Write, Edit, Grep, Glob, Skill]
 tier: deep
@@ -149,7 +150,7 @@ Load `writing-style`, then write `.yok/RUN/artifacts/implementation.md`:
 - the E2E report or skip note per phase
 - for feedback, what was done about each item
 
-Finish the stage with `--artifact implementation=artifacts/implementation.md` and one line as
+Finish the stage with `--artifact '{"type":"implementation","name":"implementation","path":"artifacts/implementation.md"}'` and one line as
 the output: how many phases were built and the last commit. `COMPLETED` means the assignment met
 its checks; it is not a verdict that the work can ship.
 

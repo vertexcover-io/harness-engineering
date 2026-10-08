@@ -13,6 +13,7 @@ import {
   type IGit,
   type ILogger,
   type ITerminal,
+  type JsonObject,
   type JsonValue,
   loadEnv,
   loadRecordedConfig,
@@ -60,7 +61,9 @@ import {
   findConsumedArtifacts,
   findDefaultIssues,
   readOutput,
+  summaryIssues,
 } from "./workflow/done.ts";
+import { resolveValue } from "./workflow/evaluate.ts";
 import { runStepLeaf } from "./workflow/exec.ts";
 import {
   buildParentsField,
@@ -349,6 +352,8 @@ export type StepReply =
       stage: string;
       skill: string;
       extension: string | null;
+      // what the summary at done must cover, from the stage's SKILL.md
+      summaryHint?: string;
       prompt?: string;
       input: JsonValue;
       variables: Readonly<Record<string, string>>;
@@ -510,6 +515,7 @@ const buildLeafReply = (
     stage: node.stage.ref,
     skill: node.stage.skill,
     extension: extension === undefined ? null : join(options.root, extension),
+    ...(node.stage.summary === undefined ? {} : { summaryHint: node.stage.summary }),
     ...(node.prompt === undefined ? {} : { prompt: node.prompt }),
     input,
     variables,
@@ -569,6 +575,7 @@ const buildStepEndEvent = (
     nodeType: record.type,
     attempts: record.attempts,
     ...(record.output === undefined ? {} : { output: record.output }),
+    ...(record.summary === undefined ? {} : { summary: record.summary }),
     ...(record.process === undefined ? {} : { process: record.process }),
     ...(record.error === undefined
       ? {}
@@ -589,6 +596,23 @@ const buildReport = (step: RunningLeaf, record: NodeRecord): StepReport => ({
     : { error: { kind: record.error.kind, message: record.error.message } }),
 });
 
+// An exec node's summary template, filled from its own output as nodes.ID.output. A template that
+// cannot be filled leaves the node without a summary: a summary never fails a node.
+const fillSummary = (
+  nodeId: string,
+  template: string | undefined,
+  record: NodeRecord,
+): NodeRecord => {
+  if (template === undefined || record.status !== "completed") return record;
+  try {
+    const nodes = { [nodeId]: { status: "completed" as const, output: record.output ?? null } };
+    const summary = resolveValue(template, { inputs: null, nodes });
+    return typeof summary === "string" && summary !== "" ? { ...record, summary } : record;
+  } catch {
+    return record;
+  }
+};
+
 const runExecStep = async (run: RunRef, nodeRunId: string): Promise<Result<StepReport>> => {
   const step = await loadRunningLeaf(run, nodeRunId);
   if (!step.ok) return step;
@@ -601,7 +625,8 @@ const runExecStep = async (run: RunRef, nodeRunId: string): Promise<Result<StepR
   }
   const input = step.value.nodeRun.input ?? null;
   const scriptDir = join(runDirOf(run.cwd, run.name), "scripts");
-  const record = await runStepLeaf(node, input, { cwd: run.cwd, path: nodeRunId, scriptDir });
+  const ran = await runStepLeaf(node, input, { cwd: run.cwd, path: nodeRunId, scriptDir });
+  const record = node.type === "exec" ? fillSummary(node.id, node.summary, ran) : ran;
   const stored = await appendRunEvent(run, buildStepEndEvent(step.value, record));
   return stored.ok ? { ok: true, value: buildReport(step.value, record) } : stored;
 };
@@ -728,7 +753,7 @@ const finishStepChecked = async (
     run,
     node,
     nodeRunId,
-    outcome.output,
+    outcome,
     artifacts,
   );
   if (issues.length > 0) return rejectDone(run, step.value, issues, rejected);
@@ -738,6 +763,7 @@ const finishStepChecked = async (
     status: "completed",
     attempts: 1,
     output,
+    ...(outcome.summary === undefined ? {} : { summary: outcome.summary }),
   };
   return storeStepEnd(run, step.value, record, artifacts);
 };
@@ -775,16 +801,20 @@ const checkCompletion = async (
   run: RunRef,
   node: PlanAgentNode,
   nodeRunId: string,
-  text: string,
+  outcome: Readonly<{ output: string; summary?: string | undefined }>,
   artifacts: readonly ArtifactRef[],
 ): Promise<
   Readonly<{ output: JsonValue; issues: readonly CompletionIssue[]; rejected: number }>
 > => {
+  const text = outcome.output;
   const read = readOutput(node, text);
   const output = read.ok ? read.value : text;
-  const defaults = read.ok
-    ? await findDefaultIssues(node, output, artifacts, runDirOf(run.cwd, run.name))
-    : [read.error];
+  const defaults = [
+    ...(read.ok
+      ? await findDefaultIssues(node, output, artifacts, runDirOf(run.cwd, run.name))
+      : [read.error]),
+    ...summaryIssues(outcome.summary),
+  ];
   const verifiers = node.stage?.verifiers ?? [];
   if (defaults.length === 0 && verifiers.length === 0) return { output, issues: [], rejected: 0 };
   const rejected = await countRejectedDones(run, nodeRunId);
@@ -866,6 +896,13 @@ const rejectDone = async (
   };
 };
 
+// The outcome as JSON for the call log: a summary the agent left out is left out here too.
+const loggedOutcome = (outcome: StepOutcome): JsonObject => {
+  if ("error" in outcome) return { error: outcome.error };
+  const { output, summary } = outcome;
+  return summary === undefined ? { output } : { output, summary };
+};
+
 export const finishStep = (
   run: RunRef,
   nodeRunId: string,
@@ -874,7 +911,10 @@ export const finishStep = (
 ): Promise<Result<StepReport, DoneError>> =>
   logCall(
     run,
-    { command: "done", input: { nodeRunId, ...outcome, artifacts: [...artifacts] } },
+    {
+      command: "done",
+      input: { nodeRunId, ...loggedOutcome(outcome), artifacts: [...artifacts] },
+    },
     recordStepEnd(run, nodeRunId, outcome, artifacts),
     doneStatusOf,
   );

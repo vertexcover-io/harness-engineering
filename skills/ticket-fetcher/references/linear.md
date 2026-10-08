@@ -27,8 +27,9 @@ Run `COMMAND issue KEY_OR_URL`. It prints the native issue with its first 50 com
 |---|---|
 | `provider` | `"linear"` |
 | `id`, `key`, `url`, `title` | `id`, `identifier`, `url`, `title` |
+| `assignee` | `assignee.name` (leave it out when null) |
 | `body` | `description` (empty string when null) |
-| `properties` | `state.name` as `status`, `assignee.name` as `assignee`, `labels.nodes[].name` as `labels`, `priorityLabel` as `priority`, `project.name` as `project` (leave out what is null) |
+| `properties` | `state.name` as `status`, `labels.nodes[].name` as `labels`, `priorityLabel` as `priority`, `project.name` as `project` (leave out what is null) |
 | `comments` | each comment: `id`, `body`, `user.name` as `author`, `createdAt` |
 | `references` | task-relevant links that are not downloaded (see below) |
 | `assets` | the files you download |

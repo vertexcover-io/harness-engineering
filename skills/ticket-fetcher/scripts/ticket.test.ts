@@ -52,6 +52,12 @@ const ticket = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("TicketSchema", () => {
+  test("the assignee is an optional top-level name, never an empty one", () => {
+    expect(TicketSchema.safeParse(ticket({ assignee: "Murtaza" })).success).toBe(true);
+    expect(TicketSchema.safeParse(ticket()).success).toBe(true);
+    expect(TicketSchema.safeParse(ticket({ assignee: "" })).success).toBe(false);
+  });
+
   test("SC1: a full ticket with both asset kinds parses", () => {
     const parsed = TicketSchema.safeParse(
       ticket({ assets: [downloaded("m.png"), unavailable], complete: false }),

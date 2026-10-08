@@ -348,7 +348,7 @@ const stage = (id: string, name: string, extra = ""): string => `
     type: agent
     stage: stages/${name}${extra}`;
 
-const PLAN_ARTIFACT = { artifacts: [{ name: "plan", path: "artifacts/plan.md" }] };
+const PLAN_ARTIFACT = { artifacts: [{ type: "plan", name: "plan", path: "artifacts/plan.md" }] };
 
 describe("decideNext with stage and agent nodes", () => {
   test("IW13 — a stage node is handed out with its resolved input, and its reported output feeds the next node", async () => {
@@ -1260,6 +1260,7 @@ describe("the shipped task workflow's qa loop", () => {
   const OUTPUTS: Readonly<Record<string, JsonObject>> = { "ticket-fetcher": { task: "do X" } };
   // Every artifact a stage in task.yaml consumes, listed on each finished node so none is blocked.
   const artifacts = ["design", "plan", "implementation"].map((name) => ({
+    type: name,
     name,
     path: `artifacts/${name}.md`,
   }));

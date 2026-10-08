@@ -4,6 +4,7 @@ description: >
   Create or update a pull request with a clear title, visual change outline, and validation
   evidence. Runs as the pipeline's pr stage, after commit, where it also pushes the branch; also
   use it when asked to raise a PR or improve a PR description.
+summary: Say which PRs were opened or updated, one repo at a time.
 mode: inline
 allowed-tools: [Bash, Read, Write, Grep, Glob]
 tier: deep
@@ -66,8 +67,11 @@ stop and report it; never fall back to a plain `--force`.
 Read the references with `yok orchestrate skill ref visual-pr.description-template` and
 `yok orchestrate skill ref visual-pr.visual-guide`, not by path. Save the body as
 `.yok/RUN/artifacts/pr-description.md`, or `pr-description-NAME.md` per repo when the
-workspace has several, and finish the stage with `--artifact pr-description=artifacts/FILE` for
-the first one. The stage's output is the result below for each repo.
+workspace has several. Finish the stage with two artifacts for each repo, with the repo's name as
+`name`: its description,
+`--artifact '{"type":"pr-description","name":"REPO","path":"artifacts/FILE"}'`, and a link to its
+PR, `--artifact '{"type":"pull-request","name":"REPO","url":"PR_URL"}'`. The run's last Slack
+message lists every `pull-request` link. The stage's output is the result below for each repo.
 
 ## Steps
 

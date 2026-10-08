@@ -65,19 +65,30 @@ Tell the user the run folder `init` printed (`dir`). Then repeat:
      its scripts, run `yok orchestrate skill run STAGE.REF ARGS`, where REF names the script
      and ARGS are the arguments the skill gives it; it needs no `--run` either, and runs the
      project's replacement when there is one. When the skill is done, run the reply's `done`
-     command with `--output -`, plus `--artifact NAME=artifacts/PATH` for each artifact the
-     skill wrote under `.yok/NAME/`, and pass the output on stdin in a quoted heredoc. The
-     output is JSON when the skill declares `outputs` (or the node an `output` schema), and plain
-     text otherwise:
+     command with `--output -`, `--summary`, and one `--artifact` for each artifact the skill
+     names, and pass the output on stdin in a quoted heredoc. The output is JSON when the skill
+     declares `outputs` (or the node an `output` schema), and plain text otherwise:
 
      ```bash
-     yok orchestrate done NODE_RUN_ID --run NAME --output - <<'OUT'
+     yok orchestrate done NODE_RUN_ID --run NAME --summary "Chose two buttons for the header." \
+       --artifact '{"type":"design","name":"design","path":"artifacts/design.md"}' \
+       --output - <<'OUT'
      { "the": "skill's output" }
      OUT
      ```
 
+     The summary is what the run's Slack thread shows when the node ends. Write one sentence, at
+     most 200 characters, for a person who has not read the run. If the reply has a
+     `summaryHint`, say what it asks for. If not, say what the node did and what it means, in
+     plain words. Never paste a verdict code, a raw metric, JSON or the output. Put it in double
+     quotes with no `"`, `$` or backtick inside. Each `--artifact` is one JSON object in single
+     quotes: a file the skill wrote, `{"type":"TYPE","name":"NAME","path":"artifacts/PATH"}`, or
+     a link, `{"type":"TYPE","name":"NAME","url":"https://…"}`. `type` says what it is, in
+     lowercase words joined by `-`; `name` says which one, and is the type again when there is
+     only one.
+
      If the skill could not finish, pass `--error -` instead, with the reason in the heredoc.
-     Always use the quoted heredoc (`<<'OUT'`), never text inside `'…'` on the command line:
+     Always pass the output in the quoted heredoc (`<<'OUT'`), never inside `'…'` on the command line:
      the shell leaves a quoted heredoc alone, while a single apostrophe in quoted text ends the
      quote and lets the rest run as shell. If `done --output` exits non-zero, read its JSON error.
      When `retryable` is `true`, fix the command input or each issue in `issues` and retry `done`

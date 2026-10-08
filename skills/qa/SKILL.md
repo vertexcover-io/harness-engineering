@@ -7,6 +7,7 @@ description: >
   committing. Passing unit and e2e tests are not verification. Trigger on "tests pass",
   "implementation done", "ready for review", "ready to ship", "ship it", "verify this", "is this
   working", "can we merge", or any other move toward calling a feature finished.
+summary: Say whether QA passed, on which round, and how many bugs are left.
 mode: inline
 allowed-tools: [Bash, Read, Write, Edit, Grep, Glob, Skill]
 tier: deep
@@ -187,7 +188,7 @@ report-back or an early exit from Step 1 or Step 2. In a run it is the stage's o
 `qa.output.v1` in `scripts/qa.ts`: the workflow reads these fields and never the prose, so a block that
 is missing, unparseable, or carrying a `status` outside the four words below fails the stage on
 contract rather than on verdict. Finish the stage by passing it to the `done` command with
-`--output -`, adding `--artifact proof-report=artifacts/verification/proof-report.html` only when this
+`--output -`, adding `--artifact '{"type":"proof-report","name":"proof-report","path":"artifacts/verification/proof-report.html"}'` only when this
 pass wrote the report.
 
 ```json

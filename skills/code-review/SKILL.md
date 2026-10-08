@@ -6,6 +6,7 @@ description: >
   into a report, then applies the fixes and records them in it. Runs as the pipeline's
   code-review stage, after implement; also use it when the user says "/code-review", "review my
   code", "review this change", or "review this against the plan".
+summary: Say the verdict, how many findings were fixed, and what was left unfixed.
 mode: inline
 allowed-tools: [Agent, Bash, Read, Write, Edit, Grep, Glob, Skill]
 tier: deep
@@ -231,7 +232,7 @@ when a blocking finding is one you left.
 
 ## Finish
 
-In a run, finish the stage with `--artifact review=artifacts/review.md`. The output is the final
+In a run, finish the stage with `--artifact '{"type":"review","name":"review","path":"artifacts/review.md"}'`. The output is the final
 verdict on its first line, then one line per finding left unfixed.
 
 Standalone, this skill runs only when explicitly invoked — never trigger it on context clues.

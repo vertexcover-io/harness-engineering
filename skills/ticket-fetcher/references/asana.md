@@ -29,8 +29,9 @@ file another service hosts); anything past that is not read. Map it into `ticket
 | `provider` | `"asana"` |
 | `id`, `key` | `gid` |
 | `url`, `title` | `permalink_url`, `name` |
+| `assignee` | `assignee.name` (leave it out when null) |
 | `body` | `notes` (empty string when null) |
-| `properties` | `completed` as `status` (`"completed"` or `"open"`), `assignee.name` as `assignee`, `tags[].name` as `labels`, `projects[].name` as `projects`, `memberships[].section.name` as `section`, `due_on` as `due` (leave out what is null) |
+| `properties` | `completed` as `status` (`"completed"` or `"open"`), `tags[].name` as `labels`, `projects[].name` as `projects`, `memberships[].section.name` as `section`, `due_on` as `due` (leave out what is null) |
 | `comments` | each comment: `gid` as `id`, `text` as `body`, `created_by.name` as `author`, `created_at` as `createdAt` |
 | `references` | task-relevant links that are not downloaded (see below) |
 | `assets` | the files you download |

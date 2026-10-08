@@ -7,7 +7,12 @@ const agentRun = {
   status: "running",
   startedAt: "2026-09-26T10:00:00Z",
   completedAt: null,
-  artifacts: [{ name: "plan", path: "artifacts/plan-1/plan.md" }],
+  artifacts: [
+    { type: "plan", name: "plan", path: "artifacts/plan-1/plan.md" },
+    { type: "pull-request", name: "lydia", url: "https://github.com/refrens/lydia/pull/1" },
+  ],
+  summary: "Wrote the plan.",
+  notify: true,
   stage: "planning",
   agentState: { agent: "claude", model: "opus", sessionId: null, tokens: null },
 };
@@ -104,12 +109,28 @@ describe("StateSchema", () => {
   test.each([
     [
       "an artifact path outside artifacts/",
-      withRun({ artifacts: [{ name: "p", path: "plan.md" }] }),
+      withRun({ artifacts: [{ type: "plan", name: "p", path: "plan.md" }] }),
     ],
     [
       "an artifact path escaping with ..",
-      withRun({ artifacts: [{ name: "p", path: "artifacts/../x" }] }),
+      withRun({ artifacts: [{ type: "plan", name: "p", path: "artifacts/../x" }] }),
     ],
+    ["an artifact without a type", withRun({ artifacts: [{ name: "p", path: "artifacts/x" }] })],
+    [
+      "an artifact type with an underscore",
+      withRun({ artifacts: [{ type: "pull_request", name: "p", url: "https://x.dev/1" }] }),
+    ],
+    [
+      "a link artifact that is not https",
+      withRun({ artifacts: [{ type: "pull-request", name: "p", url: "http://x.dev/1" }] }),
+    ],
+    [
+      "an artifact with both a path and a url",
+      withRun({
+        artifacts: [{ type: "plan", name: "p", path: "artifacts/x", url: "https://x.dev" }],
+      }),
+    ],
+    ["an empty summary", withRun({ summary: "" })],
     ["agentState without stage", { ...validState, nodeRuns: { plan: runWithoutStage } }],
     ["a skipped run with no reason", withRun({ status: "skipped" })],
     [

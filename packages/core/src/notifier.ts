@@ -1,14 +1,16 @@
-import { readFile, realpath } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import {
   AgentStoppedEvent,
-  AgentStuckEvent,
+  type ArtifactRef,
   type AskedQuestion,
   type Event,
   emitRunEvent,
+  LimitWaitingEvent,
+  type LinkArtifact,
   NOTIFIER_SUBSCRIBER,
+  type NodeRun,
   type Notifier,
-  QuestionAnsweredEvent,
   QuestionAskedEvent,
   type Result,
   type State,
@@ -46,12 +48,8 @@ const parsePayload = <T extends z.ZodType>(event: Event, schema: T): z.infer<T> 
   schema.safeParse(event.payload).data;
 
 const MessageSchema = z.looseObject({ message: z.string() });
-const FailedPayload = z.looseObject({ error: MessageSchema });
-const CompletedPayload = z.looseObject({
-  artifacts: z.array(z.looseObject({ path: z.string() })),
-});
-const SkippedPayload = z.looseObject({ skip: z.looseObject({ reason: z.string() }) });
-const WaitingPayload = z.looseObject({ resumeAt: z.string() });
+const PlacementPayload = z.looseObject({ parents: z.array(z.string()).optional() });
+const StartedPayload = z.looseObject({ notify: z.boolean().optional() });
 const FailedCallPayload = z.looseObject({
   subscriber: z.string(),
   eventType: z.string(),
@@ -59,13 +57,94 @@ const FailedCallPayload = z.looseObject({
   error: MessageSchema,
 });
 
-const readNodeId = (event: Event): string => event.nodeId ?? "a node";
+// Loops, switches and includes only hold other nodes, so they never post.
+const CONTAINERS: ReadonlySet<NodeRun["nodeType"]> = new Set(["loop", "switch", "include"]);
 
-const listFailedNodes = (state: State): string =>
-  Object.entries(state.nodeRuns)
-    .filter(([, run]) => run.status === "failed")
-    .map(([id, run]) => `${id}: ${MessageSchema.safeParse(run.output).data?.message ?? "failed"}`)
-    .join("\n");
+type PlacedRun = Readonly<{ path: readonly string[]; run: NodeRun }>;
+
+// Every node run in the tree, parents before children, each with the ids that lead to it.
+const flattenRuns = (
+  runs: Readonly<Record<string, NodeRun>>,
+  parents: readonly string[] = [],
+): readonly PlacedRun[] =>
+  Object.entries(runs).flatMap(([id, run]) => [
+    { path: [...parents, id], run },
+    ...flattenRuns(run.nodes ?? {}, [...parents, id]),
+  ]);
+
+const runAt = (state: State, path: readonly string[]): NodeRun | undefined =>
+  flattenRuns(state.nodeRuns).find((placed) => placed.path.join("/") === path.join("/"))?.run;
+
+const eventPath = (event: Event): readonly string[] => [
+  ...(parsePayload(event, PlacementPayload)?.parents ?? []),
+  event.nodeId ?? "",
+];
+
+// "qa-loop › qa · round 2" inside a loop, else the node id. The loop is the closest one around
+// the node; an include or a switch adds nothing.
+const labelOf = (state: State, path: readonly string[]): string => {
+  const id = path.at(-1) ?? "a node";
+  const loops = path
+    .slice(0, -1)
+    .map((_, index) => ({ id: path[index] ?? "", run: runAt(state, path.slice(0, index + 1)) }))
+    .filter(({ run }) => run?.nodeType === "loop");
+  const loop = loops.at(-1);
+  if (loop === undefined) return id;
+  return `${loop.id} › ${id} · round ${loop.run?.iteration ?? 1}`;
+};
+
+// The leaf node the agent is working on, if any.
+const openNodePath = (state: State): readonly string[] | undefined =>
+  flattenRuns(state.nodeRuns).find(
+    ({ run }) => run.status === "running" && !CONTAINERS.has(run.nodeType),
+  )?.path;
+
+const atOpenNode = (state: State): string => {
+  const path = openNodePath(state);
+  return path === undefined ? "" : ` at ${labelOf(state, path)}`;
+};
+
+const formatDuration = (state: State): string => {
+  const end = state.completedAt === null ? Date.now() : Date.parse(state.completedAt);
+  const minutes = Math.max(0, Math.round((end - Date.parse(state.startedAt)) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+};
+
+const byCompletion = (a: PlacedRun, b: PlacedRun): number =>
+  (a.run.completedAt ?? "").localeCompare(b.run.completedAt ?? "");
+
+// The summary of the last node that posted to the thread: the run's result in one line.
+const lastSummary = (state: State): readonly string[] => {
+  const posted = flattenRuns(state.nodeRuns)
+    .filter(({ run }) => run.notify === true && run.summary !== undefined)
+    .toSorted(byCompletion);
+  const summary = posted.at(-1)?.run.summary;
+  return summary === undefined ? [] : [summary];
+};
+
+const formatLink = (link: LinkArtifact): string => `${link.name} · ${link.url}`;
+
+const linksOf = (artifacts: readonly ArtifactRef[]): readonly LinkArtifact[] =>
+  artifacts.flatMap((artifact) => ("url" in artifact ? [artifact] : []));
+
+// Every link the run's nodes handed over; a type and name given twice shows its latest url.
+const listLinks = (state: State): readonly string[] => {
+  const links = flattenRuns(state.nodeRuns).flatMap(({ run }) => linksOf(run.artifacts));
+  const latest = new Map(links.map((link) => [`${link.type}/${link.name}`, link]));
+  return [...latest.values()].map(formatLink);
+};
+
+// The leaf that failed first: the failure that ended the run, not the cleanup after it.
+const firstFailure = (state: State): PlacedRun | undefined =>
+  flattenRuns(state.nodeRuns)
+    .filter(({ run }) => run.status === "failed" && !CONTAINERS.has(run.nodeType))
+    .toSorted(byCompletion)[0];
+
+const firstLine = (text: string | undefined): readonly string[] => {
+  const line = text?.split("\n")[0]?.trim();
+  return line ? [line] : [];
+};
 
 // The notifier's own failures are not posted: posting them would fail the same way.
 const describeSubscriberFailure = (event: Event): Notice | undefined => {
@@ -81,75 +160,90 @@ const formatQuestion = (question: AskedQuestion): string =>
 
 const describeQuestion = (event: Event, state: State): Notice => {
   const questions = parsePayload(event, QuestionAskedEvent.shape.payload)?.questions ?? [];
-  return makeNotice(`Waiting for you · ${state.runName}`, {
+  return makeNotice(`❓ Waiting for you${atOpenNode(state)}`, {
     mention: true,
-    body: questions.map(formatQuestion).join("\n\n"),
+    body: [...questions.map(formatQuestion), "_Answer in the session._"].join("\n\n"),
   });
 };
 
-const describeAnswer = (event: Event): Notice => {
-  const answers = parsePayload(event, QuestionAnsweredEvent.shape.payload)?.answers ?? [];
-  return makeNotice("Answered", {
-    body: answers
-      .map(({ question, answer, notes }) =>
-        [`*${question}*`, `→ ${answer}`, ...(notes === undefined ? [] : [`_note: ${notes}_`])].join(
-          "\n",
-        ),
-      )
-      .join("\n\n"),
+const describeNodeStart = (event: Event, state: State): Notice | undefined =>
+  parsePayload(event, StartedPayload)?.notify === true
+    ? makeNotice(`▶ ${labelOf(state, eventPath(event))} · started`)
+    : undefined;
+
+// A node's own words: the summary it ended with, its links, and its files to upload.
+const describeNodeEnd = (event: Event, state: State): Notice | undefined => {
+  const path = eventPath(event);
+  const run = runAt(state, path);
+  if (run?.notify !== true) return undefined;
+  return makeNotice(`✓ ${labelOf(state, path)} · done`, {
+    body: [
+      ...(run.summary === undefined ? [] : [run.summary]),
+      ...linksOf(run.artifacts).map(formatLink),
+    ].join("\n"),
+    files: run.artifacts.flatMap((artifact) => ("path" in artifact ? [artifact.path] : [])),
+  });
+};
+
+const describeCompleted = (_: Event, state: State): Notice =>
+  makeNotice(`✅ Run complete · ${formatDuration(state)}`, {
+    mention: true,
+    body: [...lastSummary(state), ...listLinks(state)].join("\n"),
+  });
+
+const describeFailed = (_: Event, state: State): Notice => {
+  const failed = firstFailure(state);
+  const where = failed === undefined ? "" : ` at ${labelOf(state, failed.path)}`;
+  const error = MessageSchema.safeParse(failed?.run.output).data?.message;
+  return makeNotice(`❌ Run failed${where} · ${formatDuration(state)}`, {
+    mention: true,
+    body: [...firstLine(error), ...listLinks(state)].join("\n"),
   });
 };
 
 type BuildNotice = (event: Event, state: State) => Notice | undefined;
 
+// Every message the thread can hold. Node lines carry the node's own summary from state.json;
+// the rest are fixed templates.
 const NOTICE_BY_EVENT: Readonly<Record<string, BuildNotice>> = {
   "workflow.started": (_, state) => {
     const prompt = state.input.prompt;
-    return makeNotice(`Yok run started: ${state.runName}`, {
+    return makeNotice("Yok run started", {
       mention: true,
       body: typeof prompt === "string" ? prompt.slice(0, 500) : "",
     });
   },
-  "workflow.completed": (_, state) =>
-    makeNotice(`Run complete: ${state.runName}`, { mention: true }),
-  "workflow.failed": (_, state) =>
-    makeNotice(`Run failed: ${state.runName}`, { mention: true, body: listFailedNodes(state) }),
-  "workflow.node.started": (event) => makeNotice(`Node ${readNodeId(event)} · started`),
-  "workflow.node.completed": (event) =>
-    makeNotice(`Node ${readNodeId(event)} · done`, {
-      files:
-        parsePayload(event, CompletedPayload)?.artifacts.map((artifact) => artifact.path) ?? [],
-    }),
-  "workflow.node.failed": (event) =>
-    makeNotice(`Node ${readNodeId(event)} · failed`, {
-      mention: true,
-      body: parsePayload(event, FailedPayload)?.error.message ?? "",
-    }),
-  "workflow.node.skipped": (event) =>
-    makeNotice(`Node ${readNodeId(event)} · skipped`, {
-      body: parsePayload(event, SkippedPayload)?.skip.reason ?? "",
-    }),
-  // resumeAt is ISO 8601 UTC, so characters 11-16 are its HH:MM.
-  "agent.limit.waiting": (event) => {
-    const wait = parsePayload(event, WaitingPayload);
-    if (wait === undefined) return makeNotice("Rate limit · waiting");
-    return makeNotice(`Rate limit · waiting until ${wait.resumeAt.slice(11, 16)} UTC`);
-  },
-  "agent.limit.resumed": () => makeNotice("Rate limit over · resuming"),
+  "workflow.node.started": describeNodeStart,
+  "workflow.node.completed": describeNodeEnd,
   "agent.question.asked": describeQuestion,
-  "agent.question.answered": describeAnswer,
-  "agent.stopped": (event) => {
-    const stop = parsePayload(event, AgentStoppedEvent.shape.payload);
-    return makeNotice(`Agent stopped · ${stop?.error ?? "error"}`, {
+  "workflow.completed": describeCompleted,
+  "workflow.failed": describeFailed,
+  "agent.stuck": (_, state) =>
+    makeNotice(`⚠️ Agent stuck${atOpenNode(state)}`, {
       mention: true,
-      body: stop?.message ?? "",
+      body: "The agent stopped twice with the node still open. Open the session and tell it to go on.",
+    }),
+  "agent.stopped": (event, state) => {
+    const stop = parsePayload(event, AgentStoppedEvent.shape.payload);
+    return makeNotice(`⛔ Agent stopped${atOpenNode(state)} · ${stop?.error ?? "error"}`, {
+      mention: true,
+      body: [...firstLine(stop?.message), "Fix the cause, then resume the session."].join("\n"),
     });
   },
-  "agent.stuck": (event) =>
-    makeNotice("Agent stuck · the Stop hook gave up", {
+  // resumeAt is ISO 8601 UTC, so characters 11-16 are its HH:MM.
+  "agent.limit.waiting": (event, state) => {
+    const resumeAt = parsePayload(event, LimitWaitingEvent.shape.payload)?.resumeAt;
+    const when = resumeAt === undefined ? "" : ` · resumes at ${resumeAt.slice(11, 16)} UTC`;
+    return makeNotice(`⏸ Rate limit${atOpenNode(state)}${when}`, {
       mention: true,
-      body: parsePayload(event, AgentStuckEvent.shape.payload)?.message ?? "",
-    }),
+      body: "The run goes on by itself. Nothing to do.",
+    });
+  },
+  "agent.limit.resumed": (_, state) => {
+    const path = openNodePath(state);
+    const node = path === undefined ? "" : ` ${labelOf(state, path)}`;
+    return makeNotice(`▶ Rate limit over · resuming${node}`);
+  },
   "workflow.blocked": (event) => {
     const block = parsePayload(event, WorkflowBlockedEvent.shape.payload);
     if (block === undefined) return undefined;
@@ -285,6 +379,30 @@ const keepArtifactFiles = async (
   return actual.filter((path) => isInsideDir(artifacts, path));
 };
 
+// A file larger than this is named in the message instead of uploaded, so a 4 MB proof report
+// does not land in the channel.
+export const UPLOAD_LIMIT_BYTES = 1_000_000;
+
+const splitBySize = async (
+  files: readonly string[],
+): Promise<Readonly<{ small: readonly string[]; large: readonly string[] }>> => {
+  const sized = await Promise.all(
+    files.map(async (file) => ({ file, size: (await stat(file)).size })),
+  );
+  return {
+    small: sized.filter(({ size }) => size <= UPLOAD_LIMIT_BYTES).map(({ file }) => file),
+    large: sized.filter(({ size }) => size > UPLOAD_LIMIT_BYTES).map(({ file }) => file),
+  };
+};
+
+const withLargeFiles = (notice: Notice, large: readonly string[]): Notice => {
+  if (large.length === 0) return notice;
+  const lines = large.map(
+    (file) => `${basename(file)} is too big to attach; open it in the run viewer.`,
+  );
+  return { ...notice, body: [notice.body, ...lines].filter((line) => line !== "").join("\n") };
+};
+
 // Posts the event's message into the run's thread and uploads its files. The first post opens the
 // thread, recorded as notification.thread.started so later posts reply in it. A failure throws,
 // so the SDK records a failed call.
@@ -294,10 +412,13 @@ export const notify = async (
   open: OpenNotifier,
   record: typeof emitRunEvent,
 ): Promise<{ threadId: string } | undefined> => {
-  const notice = describeEvent(event, state);
-  if (notice === undefined) return undefined;
+  const described = describeEvent(event, state);
+  if (described === undefined) return undefined;
   const opened = open(type);
   if (!opened.ok) throw new Error(opened.error);
+  const files = await keepArtifactFiles(state.runDir, described.files);
+  const { small, large } = await splitBySize(files);
+  const notice = withLargeFiles(described, large);
   const known = state.notification?.threadId;
   const thread = typeof known === "string" ? known : undefined;
   const threadId = await opened.value.post(notice, thread);
@@ -309,9 +430,7 @@ export const notify = async (
     });
     if (!stored.ok) throw new Error(`thread ${threadId} not recorded: ${stored.error}`);
   }
-  for (const file of await keepArtifactFiles(state.runDir, notice.files)) {
-    await opened.value.upload(file, threadId);
-  }
+  for (const file of small) await opened.value.upload(file, threadId);
   return { threadId };
 };
 
