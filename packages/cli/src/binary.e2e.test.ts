@@ -270,6 +270,19 @@ describe("the compiled yok binary", () => {
     expect([verified.code, verified.stderr]).toEqual([0, ""]);
   }, 60_000);
 
+  test("verifies a workflow by bare name from the installed plugin's workflows folder", () => {
+    const claudeHome = pluginHome({ "alone-stage": stageFiles(OUT_MODULE) });
+    const shipped = join(claudeHome, "plugins", "cache", "yok", "yok", VERSION, "workflows");
+    writeFiles(shipped, { "shipped.yaml": workflow(AGENT_NODE("")) });
+
+    const verified = runBinary(["verify", "shipped"], {
+      cwd: tempRepo(),
+      env: { CLAUDE_CONFIG_DIR: claudeHome },
+    });
+
+    expect([verified.code, verified.stderr]).toEqual([0, ""]);
+  }, 60_000);
+
   test("SC91: drives a workflow whose stage comes from the plugin folder and whose schema module imports the SDK", () => {
     const { repo, step } = startRun({
       nodes: `${BUN_NODE}${AGENT_NODE("\n    dependsOn: [count]")}`,
