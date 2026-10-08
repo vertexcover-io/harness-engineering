@@ -23,7 +23,7 @@ _Avoid_: Spec name
 A value given to a run when it starts, declared by the workflow.
 
 **Registry**:
-The machine-wide list of runs, shared by the server and the orchestrate script.
+The machine-wide list of runs, shared by the server and the orchestrate commands.
 
 **Task**:
 The work a run is asked to do, taken from a prompt or a ticket.
@@ -165,25 +165,25 @@ A run's current picture, built by folding its events. It is never the history.
 
 **Event handler**:
 A function that folds one event type into the run's state.
-_Avoid_: Reducer, hook
+_Avoid_: Reducer, subscriber
 
 **Custom state**:
-Values a hook or skill keeps in a run's state between calls, under its own key.
+Values a subscriber or skill keeps in a run's state between calls, under its own key.
 
-## Hooks
+## Subscribers and hooks
 
-**Run hook**:
+**Subscriber**:
 Code the config or workflow attaches to an event type, called once after that event is stored.
-_Avoid_: Event handler, listener
+_Avoid_: Run hook, event handler, listener
 
-**Blocking hook**:
-A run hook the run waits on before it moves on.
+**Blocking subscriber**:
+A subscriber the run waits on before it moves on.
 
-**Detached hook**:
-A run hook that runs on its own, without holding up the run.
+**Detached subscriber**:
+A subscriber that runs on its own, without holding up the run.
 
 **Agent hook**:
-A hook the agent itself fires at points in its session (start, tool use, stop) that yok answers.
+A hook the agent itself fires at points in its session (start, tool use, stop) that yok answers. "Hook" means only this.
 _Avoid_: Run hook
 
 **Stop hook**:
@@ -192,7 +192,7 @@ The agent hook that decides whether the agent may end its turn or must go back t
 ## Workspace and project
 
 **Config**:
-A project's yok settings: packages, commands, environments, tiers, extensions and hooks.
+A project's yok settings: packages, commands, environments, tiers, extensions and subscribers.
 
 **Workspace**:
 The folder where a run makes its changes, holding one or more repositories.
@@ -222,7 +222,7 @@ _Avoid_: Review comment (for PR review comments)
 Something the agent asks the person and waits on.
 
 **Notifier**:
-The built-in run hook that posts a run's progress to a chat thread.
+The built-in subscriber that posts a run's progress to a chat thread.
 
 **Retro**:
 The stage that audits a finished run for yok defects.
@@ -234,12 +234,12 @@ _Avoid_: Post-mortem
 - A **Stage node** runs exactly one **Stage**; a **Stage** is a **Skill** with a stage contract.
 - A **Stage** **produces** and **consumes** **Artifacts**; a missing consumed **Artifact** makes the run **Blocked**.
 - A **Verifier** can **Reject** a **Done**; each rejection carries **Findings**.
-- A **Run** stores every change as an **Event**; **Event handlers** fold events into **State**; **Run hooks** react to events after they are stored.
+- A **Run** stores every change as an **Event**; **Event handlers** fold events into **State**; **Subscribers** react to events after they are stored.
 - **Agent hooks** belong to the **Agent's** session, not to the run's events.
 
 ## Flagged ambiguities
 
-- "Hook" meant two things: hooks the agent fires and hooks the run calls on events. Resolved: **Agent hook** and **Run hook**.
+- "Hook" meant two things: hooks the agent fires and hooks the run calls on events. Resolved: **Agent hook** and **Subscriber**.
 - "Pipeline" and "workflow" were used for the same thing. Resolved: **Workflow**.
 - The orchestrate help text calls a run's name its "spec name". Resolved: **Run name**.
-- "Event handler" and "run hook" both react to events. Resolved: an **Event handler** changes state; a **Run hook** only reacts.
+- "Event handler" and "subscriber" both react to events. Resolved: an **Event handler** changes state; a **Subscriber** only reacts.
