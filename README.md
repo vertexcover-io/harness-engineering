@@ -116,15 +116,14 @@ git push origin v2 --follow-tags
 
 ## Quick Start
 
-The `yok` CLI runs a workflow from start to finish. From this checkout:
+The `yok` CLI runs a workflow from start to finish. Inside a project:
 
 ```bash
-bun install
-bun run cli run task --prompt "Add rate limiting to the API"
+yok run task --prompt "Add rate limiting to the API"
 ```
 
-`task` is a workflow yok ships in `workflows/`. A bare name runs the shipped workflow of
-that name; a path, or a name ending in `.yaml` or `.yml`, runs that file from your project
+`task` is a workflow yok ships in the plugin's `workflows/` (this checkout's, for `yok-dev`). A
+bare name runs the shipped workflow of that name; a path, or a name ending in `.yaml` or `.yml`, runs that file from your project
 (`yok run ./my-flow.yaml …`). `yok verify` and `yok doctor --workflow` take the same.
 
 `yok run` starts the yok server, opens an agent session, and sends it the `orchestrate`

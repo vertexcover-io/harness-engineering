@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   type CheckoutConfig,
   type Config,
@@ -123,15 +123,21 @@ export const findPluginSkills = (
   };
 };
 
-// From source the repo's skills/ is the plugin. YOK_SKILLS_DIR points tests at a demo set.
-export const yokSkillsDir = (env: NodeJS.ProcessEnv = process.env): string => {
-  if (env.YOK_SKILLS_DIR) return env.YOK_SKILLS_DIR;
+// From source the repo is the plugin; a compiled binary reads the installed one.
+const pluginRoot = (env: NodeJS.ProcessEnv): string => {
   const repo = devPluginDir();
-  if (repo !== undefined) return join(repo, "skills");
+  if (repo !== undefined) return repo;
   const found = findPluginSkills(env, VERSION);
   if (!found.ok) throw new Error(found.error);
-  return found.value;
+  return dirname(found.value);
 };
+
+// YOK_SKILLS_DIR points tests at a demo set.
+export const yokSkillsDir = (env: NodeJS.ProcessEnv = process.env): string =>
+  env.YOK_SKILLS_DIR || join(pluginRoot(env), "skills");
+
+export const yokWorkflowsDir = (env: NodeJS.ProcessEnv = process.env): string =>
+  join(pluginRoot(env), "workflows");
 
 // Hooks and helpers start this same program again: a release run calls the binary, a dev run the
 // source.
@@ -152,20 +158,13 @@ export const spawnOrchestrateHelper = ({
 export const extensionPath = (config: Config, skill: string): string | undefined =>
   own(config.extensions, skill)?.skill;
 
-// Yok's default workflows ship beside this code, like its skills.
-export const yokWorkflowsDir = (): string =>
-  join(import.meta.dir, "..", "..", "..", "workflows");
-
 // A bare name is one of yok's own workflows; a name with a "/" or a .yaml/.yml extension
 // is a file in the project at `cwd`.
-export const findWorkflowPath = (
-  workflow: string,
-  cwd: string,
-  workflowsDir = yokWorkflowsDir(),
-): string =>
-  workflow.includes("/") || /\.ya?ml$/.test(workflow)
-    ? resolve(cwd, workflow)
-    : join(workflowsDir, `${workflow}.yaml`);
+// A project file never needs the plugin, so the shipped folder is looked up only for a bare name.
+export const findWorkflowPath = (workflow: string, cwd: string, workflowsDir?: string): string => {
+  if (workflow.includes("/") || /\.ya?ml$/.test(workflow)) return resolve(cwd, workflow);
+  return join(workflowsDir ?? yokWorkflowsDir(), `${workflow}.yaml`);
+};
 
 export const noProjectConfig = (root: string): CheckoutConfig => ({
   config: ConfigSchema.parse({ version: 2 }),
