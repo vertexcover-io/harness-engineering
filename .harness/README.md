@@ -2,7 +2,7 @@
 
 | Zone | Git | Lifetime | Safe to... |
 |---|---|---|---|
-| `knowledge/` | committed | forever — the repo's memory | edit via curator or /learn only |
+| `knowledge/` | committed | forever — the repo's memory | edit by hand; new learnings go in `docs/learnings/` |
 | `features/<spec>/` | committed | frozen once the PR merges | read to review a PR |
 | `runtime/<spec>/` | gitignored | dies with the worktree | delete freely (`rm -rf .harness/runtime/`) |
 

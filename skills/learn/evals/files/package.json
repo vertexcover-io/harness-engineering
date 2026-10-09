@@ -1,0 +1,6 @@
+{
+  "name": "learn-eval-fixture",
+  "private": true,
+  "scripts": { "lint": "eslint ." },
+  "devDependencies": { "eslint": "^9.0.0" }
+}

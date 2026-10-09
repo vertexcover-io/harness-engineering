@@ -5,7 +5,7 @@
 - Try keeping flat folder structure and lesser no of files
 - Keep code simple — no over-engineering
 - Comment only what the code can't say — see code-quality
-- Capture Learnings using learn skill wherever possible
+- Capture learnings with the learn skill: short rules from corrections, in docs/learnings/
 - Use typescript:strict mode, and use type hints for all functions in python
 - Use code-quality skill for writing high quality code and try to make it functional
 
@@ -24,10 +24,8 @@ Ask clarifying questions before architectural changes
 Explain reasoning for non-obvious decisions
 
 ## Prior Learnings
-- Before implementing, check `.harness/knowledge/lessons/` for relevant gotchas and patterns
-- Search by tags/keywords related to the feature area: `Grep pattern="<keyword>" path=.harness/knowledge/lessons/`
-- Critical gotchas that caused pipeline failures:
-  <!-- Updated automatically by learn skill -->
+- Before implementing, read `docs/learnings/index.md` and open the learnings that apply
+- Older repos may also have lessons in `.harness/knowledge/lessons/`; check them the same way
 
 ## Codex compatibility
 - Tool mapping: `references/codex-tools.md`

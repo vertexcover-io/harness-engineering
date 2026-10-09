@@ -1,0 +1,56 @@
+{
+  "skill": "learn",
+  "path": "/Users/savithasuresh/projects/vertexcover/harness-engineering/skills/learn",
+  "findings": [
+    {
+      "id": "T3",
+      "category": "test_coverage",
+      "finding_type": "assertion_not_verifiable",
+      "severity": "major",
+      "deterministic": false,
+      "location": "evals/evals.json:101-105, evals/evals.json:234-239",
+      "evidence": "\"files\": [] … \"Replaces the `any` in src/api/handler.ts with a concrete type\" / \"files\": [] … \"Moves the list into shared-config and updates both apps before asking about a learning\"",
+      "fix": "Evals 6 and 14 ship no fixture, so src/api/handler.ts, apps/ and shared-config do not exist when the prompt runs; the agent can only report that it found nothing, and both positive expectations fail whatever the skill does. Eval 14's scenario is already covered properly by evals/sim/scenarios.mjs (auto-shared-list, with fixture.mjs). Either give each eval a small fixture under evals/files/ and name it in the prompt the way evals 3, 4, 10 and 12 do, or cut the expectations to what a bare repo can show: eval 6 keeps only its anti-expectations; eval 14 asks for the rework to be attempted (or its absence stated) before any learning question."
+    },
+    {
+      "id": "T6",
+      "category": "test_coverage",
+      "finding_type": "out_of_rubric",
+      "severity": "major",
+      "deterministic": false,
+      "location": "evals/baseline.md:35",
+      "evidence": "Other agent models. Every run used Sonnet; step 4's \"only genuinely different fixes\" is the rule most likely to need checking on Haiku and Opus.",
+      "fix": "Still open from the last review, and baseline.md names it honestly. Run the sim's cheapest scenarios (several-real-fixes, auto-one-off, manual-with-text) once each with SIM_MODEL=haiku and SIM_MODEL=opus and add a row to the baseline table. The three rules most at risk of reading differently per model are step 4's option generation, step 1's three-part filter, and the hook nudge's \"end your turn with no further output\"."
+    },
+    {
+      "id": "C13",
+      "category": "content",
+      "finding_type": "out_of_rubric",
+      "severity": "minor",
+      "deterministic": false,
+      "location": "SKILL.md:155-156, evals/evals.json:20",
+      "evidence": "If a snippet still isn't found after two tries, log without `evidence_from`/`evidence_to`. / Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message",
+      "fix": "\"without evidence_from/evidence_to\" reads as both \"drop both\" and \"drop whichever one the error named\". The script's error names exactly one (\"evidence_from was not found before evidence_to\"), and in every single-prompt eval the mistake is narrated inside the user's prompt, so evidence_from can never match an agent message while evidence_to can. Whether evals 1, 3, 4, 5, 7, 8, 9 and 10 meet their non-empty evidence_to_message expectation then depends on which reading the agent picks. Say it once: \"drop only the snippet the error names and keep the other\"."
+    },
+    {
+      "id": "T2",
+      "category": "test_coverage",
+      "finding_type": "guardrail_without_eval",
+      "severity": "minor",
+      "deterministic": false,
+      "location": "SKILL.md:46-48, SKILL.md:138-148",
+      "evidence": "A learning written some other way, say the user asked you to edit `docs/learnings/` directly, still needs its event: log it now as `new` with status `accepted` (and `replaces` if it superseded an old one), without asking again.",
+      "fix": "Minor rather than blocker because it is a positive branch, not a refusal, and the validator accepts the event either way. Two gaps: no eval exercises it (prompt: \"I edited docs/learnings/x.md myself earlier, /learn\"; expect one event, outcome new, status accepted, no AskUserQuestion), and the step-7 table has no row saying what options_shown and option_user_picked hold when nothing was shown. Add the row (`[]` and `\"\"`, by analogy with occurrence) so two runs log it the same way."
+    },
+    {
+      "id": "OOR-1",
+      "category": "out_of_rubric",
+      "finding_type": "out_of_rubric",
+      "severity": "minor",
+      "deterministic": false,
+      "location": "evals/sim/run.mjs:17-18, evals/sim/run.mjs:89, scripts/log-event.mjs:43, scripts/learn-hooks.mjs:17",
+      "evidence": "const plugin = { dir: PLUGIN_ROOT, events: join(`.${pluginName}`, \"learning-events\") }; … [`${pluginName.toUpperCase()}_LEARN_CHECK`]: \"1\" / return join(root || cwd, \".harness\", \"learning-events\"); / const INSIDE_CHECK = \"HARNESS_LEARN_CHECK\";",
+      "fix": "Pattern: one name derived, the same name hardcoded elsewhere. run.mjs reads the plugin name from plugin.json to find the events folder and to set the hook's guard variable, while log-event.mjs and learn-hooks.mjs hardcode `.harness` and `HARNESS_LEARN_CHECK`. They agree today; a renamed plugin (the pre-release manifest already uses another name) makes the noNudge scenarios get nudged and every event check fail with no error naming the cause. Pick one side: hardcode both in run.mjs, or derive both in the scripts (log-event.mjs already reads plugin.json for the version)."
+    }
+  ]
+}
