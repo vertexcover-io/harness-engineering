@@ -383,9 +383,10 @@ Some skills run automatically when you're writing code — through `/tdd`, `/orc
 | `/skill-eval-generator` | Generates eval test suites for skills (pairs with `skill-creator eval`) |
 | `/skill-review` | Grades a skill against the rubric, writes a report plus JSON findings |
 | `/harness-retro` | Post-mortems a finished run: what broke, why, and which skill to fix |
+| `/learn` | Turns a correction into a short learning in `docs/learnings/` after you pick between fix options, and logs every proposal to `.harness/learning-events/`. A hook notices corrections (a small model, with a regex fallback) and asks Claude to offer it once the corrected work is done |
 
 **Run automatically (no command needed):**
-`code-quality` · `refactor` · `quality-gate` · `sync-docs` · `learn` · `review-fixer` · `using-git-worktrees`
+`code-quality` · `refactor` · `quality-gate` · `sync-docs` · `review-fixer` · `using-git-worktrees`
 
 ## Structure
 

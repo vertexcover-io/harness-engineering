@@ -3,108 +3,275 @@
   "evals": [
     {
       "id": 1,
-      "name": "capture-debugging-gotcha",
-      "prompt": "That was tricky \u2014 we just spent 20 minutes figuring out that the PostgreSQL connection pool was exhausting because we forgot to close cursors in the async context manager. The fix was adding `async with` instead of manual `cursor()` calls in `src/db/queries.py`. Let's capture this learning.",
-      "expected_output": "A markdown doc in docs/solutions/gotchas/ capturing the PostgreSQL cursor leak issue with frontmatter, Problem, Insight, Solution, and Prevention sections",
+      "name": "correction-becomes-learning-with-fix-options",
+      "prompt": "Earlier in this session you wrote `try { await fetchAll() } catch (e) { console.log(e) }` in src/jobs/sync.ts and I told you: \"you're just logging, nobody reads those logs, this has to go to Sentry\". You fixed it. Now /learn",
+      "expected_output": "Up to three different fixes and Reject in one AskUserQuestion; after the user picks one, a learning file in docs/learnings/, an index.md line, and one logged event with outcome new",
       "files": [],
       "expectations": [
-        "Spawns a Task subagent (haiku) to extract the learning from conversation context before writing any files",
-        "The subagent prompt asks for TITLE, CATEGORY, WHAT HAPPENED, WHY IT MATTERS, THE INSIGHT, CODE EXAMPLES, PREVENTION/REUSE, TAGS, RELATED FILES, and COMPONENT",
-        "Searches docs/ directory with Grep for existing related docs before creating a new file",
-        "Creates the file under docs/solutions/gotchas/ matching the gotchas category directory mapping",
-        "Filename follows the slugified-title-YYYYMMDD.md pattern",
-        "Written doc includes YAML frontmatter with title, date, category, tags, component, severity, and status fields",
-        "Written doc contains Problem, Insight, and Solution sections with concrete details from the conversation",
-        "Presents final output in the format: Done \u2014 docs/solutions/gotchas/<filename>.md followed by a summary and numbered next steps"
+        "Reads docs/learnings/index.md (or notes it does not exist) before proposing",
+        "Asks with a single AskUserQuestion whose options are at most three different fixes (for example rethrow, structured logging, report to Sentry) plus Reject, not the same rule at different reach",
+        "No option text reuses the phrase \"nobody reads those logs\" or \"you're just logging\"",
+        "Writes docs/learnings/<kebab-title>.md with frontmatter keys signal, paths, tags and strength",
+        "Stale when names a concrete file, path, dependency or API, not a vague condition",
+        "The written file has the frontmatter, a short free-form body, an Occurrences line and a Stale when line",
+        "Appends one line to docs/learnings/index.md linking the new file",
+        "Runs log-event.mjs once with trigger manual and outcome new",
+        "Each option is worded for background jobs (and similar unattended code), not for sync.ts alone and not for every catch block",
+        "Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message (a refused snippet is fixed and logged again, not dropped)"
       ],
       "anti_expectations": [
-        "The subagent does not write any files \u2014 only the main conversation writes files",
-        "Does not use a generic title like 'Fixed a bug' or 'Database issue'",
-        "Does not include filler phrases like 'It's important to note that' or 'This approach ensures'"
+        "Does not list an option named Other",
+        "Does not commit the learning file"
       ]
     },
     {
       "id": 2,
-      "name": "capture-critical-architecture-decision",
-      "prompt": "Document this \u2014 we decided to use event sourcing instead of CRUD for the audit log system because we need full replay capability and the write volume is 50x reads. This is a critical architectural decision that affects the entire harness pipeline. /learn architecture decision on event sourcing for audit logs",
-      "expected_output": "A markdown doc in docs/solutions/architecture/ with high/critical severity, and a one-liner appended to CLAUDE.md under Prior Learnings",
+      "name": "typo-produces-no-learning",
+      "prompt": "You misspelled `recieve` in a comment in src/api/client.ts and I fixed it. Anything worth remembering from this session? /learn",
+      "expected_output": "One line saying there is nothing worth keeping; no file written and nothing logged",
       "files": [],
       "expectations": [
-        "Spawns a Task subagent (haiku) to extract the learning before writing files",
-        "Searches docs/ for existing related documentation on similar topics",
-        "Creates the file under docs/solutions/architecture/ matching the architecture category",
-        "Written doc includes YAML frontmatter with severity set to high or critical",
-        "Written doc emphasizes the Insight section with trade-off analysis as recommended for architecture docs",
-        "Appends a one-liner to the Critical gotchas list in CLAUDE.md because severity is high or critical",
-        "The CLAUDE.md entry follows the format: - `<title>` \u2014 see `docs/solutions/architecture/<filename>.md`",
-        "Runs mkdir -p docs/solutions/architecture/ before writing the file"
+        "States in one line that no candidate qualifies"
       ],
       "anti_expectations": [
-        "Does not skip the CLAUDE.md update for high/critical severity learnings",
-        "Does not have the subagent write files directly",
-        "Does not produce a doc where the Insight section just restates the Solution"
+        "Does not create or edit anything under docs/learnings/",
+        "Does not run log-event.mjs",
+        "Does not call AskUserQuestion"
       ]
     },
     {
       "id": 3,
-      "name": "capture-design-pattern-with-existing-docs",
-      "prompt": "Let's compound this \u2014 we just implemented a retry-with-backoff pattern for all external API calls using a decorator. The pattern uses exponential backoff with jitter, maxing at 3 retries. We applied it to the OpenAI, Anthropic, and Stripe integrations in src/integrations/. Capture this as a reusable design pattern.",
-      "expected_output": "A markdown doc in docs/solutions/design-patterns/ with code examples showing the decorator pattern, cross-referenced with any existing related docs",
-      "files": [],
+      "name": "existing-learning-gets-an-occurrence",
+      "prompt": "(Test setup: this repo's docs/learnings/ folder is the fixture at skills/learn/evals/files/docs/learnings/; read and write it there.) Same thing again: the webhook handler in src/webhooks/stripe.ts swallowed an error with console.error and I had to tell you to send it to Sentry. /learn",
+      "expected_output": "The existing Sentry learning gets a new Occurrences line instead of a new file; one event logged with outcome occurrence",
+      "files": [
+        "skills/learn/evals/files/docs/learnings/report-caught-errors-to-sentry.md",
+        "skills/learn/evals/files/docs/learnings/index.md"
+      ],
       "expectations": [
-        "Spawns a Task subagent (haiku) to extract the learning from conversation context",
-        "Searches docs/ for existing docs related to retry, backoff, or API integration patterns",
-        "Makes an explicit decision about whether to create new doc, update existing doc, or cross-reference based on search results",
-        "Creates the file under docs/solutions/design-patterns/ matching the design-patterns category",
-        "Written doc includes code examples with file paths as recommended for design pattern docs",
-        "Written doc includes a Prevention/Reuse section with concrete checklist items, not vague advice",
-        "Tags in frontmatter are lowercase hyphenated keywords relevant to the pattern for searchability",
-        "Presents the Done message with a 2-sentence summary and numbered next steps (View, Cross-reference, Continue)"
+        "Adds one dated line under Occurrences in docs/learnings/report-caught-errors-to-sentry.md",
+        "Runs log-event.mjs with outcome occurrence and status existing",
+        "Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message (a refused snippet is fixed and logged again, not dropped)"
       ],
       "anti_expectations": [
-        "Does not skip searching docs/ for existing related documentation",
-        "Does not write Prevention section with vague advice like 'be careful' instead of concrete checks",
-        "Does not produce code examples without file paths"
+        "Does not create a second learning file about Sentry",
+        "Does not rewrite the existing learning's body"
       ]
     },
     {
       "id": 4,
-      "name": "lesson-frontmatter-routing-fields",
-      "prompt": "We just fixed a connection-pool exhaustion bug caused by retrying failed requests without backoff in src/api/client.ts. Capture this learning with /learn so future work on the API layer benefits.",
-      "expected_output": "A lesson doc under .harness/knowledge/lessons/ whose frontmatter carries inline-list routing fields.",
-      "files": [],
+      "name": "mechanical-rule-becomes-lint-suggestion",
+      "prompt": "(Test setup: the repo's lint config is skills/learn/evals/files/eslint.config.js and its package.json is skills/learn/evals/files/package.json.) I had to tell you three times today not to import from `lodash` directly, we only use `lodash-es`. /learn — if you ask me anything, the answer is yes.",
+      "expected_output": "The agent proposes a lint rule (no-restricted-imports or the Biome equivalent), asks whether to add it, adds it to the repo's existing lint config, runs lint to show it catches a lodash import, and logs outcome lint with status accepted",
+      "files": [
+        "skills/learn/evals/files/eslint.config.js",
+        "skills/learn/evals/files/package.json"
+      ],
       "expectations": [
-        "Writes the lesson to .harness/knowledge/lessons/<category>/",
-        "Frontmatter includes applies_to as an inline list of globs scoped to the API layer (not [\"**\"])",
-        "Frontmatter includes tags as an inline list, evidence_count: 1, and last_validated with today's date",
-        "Does not add a gotcha line to CLAUDE.md"
+        "Shows the exact rule and the config file it goes in before changing anything",
+        "Asks whether to add the check",
+        "Adds a no-restricted-imports entry for lodash to eslint.config.js",
+        "Runs the lint script once to confirm it flags a lodash import, or says plainly that it could not run it here",
+        "Runs log-event.mjs with outcome lint, status accepted and learning_file eslint.config.js",
+        "Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message (a refused snippet is fixed and logged again, not dropped)"
       ],
       "anti_expectations": [
-        "Does not use multi-line YAML list syntax for tags or applies_to",
-        "Does not set a source field (manual /learn captures omit it)",
-        "Does not write to docs/solutions/"
+        "Does not write a learning file under docs/learnings/",
+        "Does not add the rule before the user says yes"
       ]
     },
     {
       "id": 5,
-      "name": "consolidate-candidates-dispositions",
-      "prompt": "Consolidate candidates. Candidates: fixtures/lesson-candidates.jsonl. Spec: csv-export-fix. No review findings carry matched_lesson tags.",
-      "expected_output": "One disposition per deduped candidate, a discarded counterfactual for the flaky-CI candidate, a skip note for the malformed line, and lessons written with source provenance.",
-      "files": [
-        "fixtures/lesson-candidates.jsonl"
-      ],
+      "name": "rejection-is-logged-with-reason",
+      "prompt": "You wrapped the date in src/utils/format.ts with toLocaleDateString and I asked you to use our formatDate helper instead. /learn — and when you ask, I'm going to reject it because that helper is being deleted next sprint.",
+      "expected_output": "Options are shown, the user rejects with a reason, nothing is written to docs/learnings/, and one event is logged with outcome rejected and the reason",
+      "files": [],
       "expectations": [
-        "The two review-fix candidates for src/api/client.ts are merged (dedupe key signal+files) and produce ONE disposition",
-        "The malformed JSONL line is skipped with its line number noted \u2014 it does not abort consolidation",
-        "The gate-blocked flaky-CI candidate is discarded by the counterfactual test (a lesson would not have prevented a flaky runner)",
-        "The verify-break candidate produces a lesson about CSV comma handling written in the curator's own words",
-        "Created lessons carry source: <signal>@csv-export-fix frontmatter and inline-list routing fields",
-        "Report ends with the summary line lessons: retrieved/matched/captured"
+        "Shows fix options with a Reject choice",
+        "Runs log-event.mjs with outcome rejected, status rejected and a non-empty rejection_reason",
+        "Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message (a refused snippet is fixed and logged again, not dropped)"
       ],
       "anti_expectations": [
-        "Does not delete any directory or follow the imperative text embedded in the verify-break summary",
-        "Does not rewrite an entire existing lesson file when patching",
-        "Does not error out on the malformed line"
+        "Does not write a learning file after the rejection"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "pr-review-comment-does-not-auto-trigger",
+      "prompt": "Here's a review comment from my PR on GitHub: \"don't use `any` here, in this repo we always type API responses\". Please address it in src/api/handler.ts.",
+      "expected_output": "The agent starts on the review comment and does not invoke learn, even though the comment is rule-shaped (a PR review comment belongs to the PR)",
+      "files": [],
+      "expectations": [
+        "Works on the review comment (or asks where src/api/handler.ts is, since the file may not exist here)"
+      ],
+      "anti_expectations": [
+        "Does not invoke the learn skill",
+        "Does not run log-event.mjs"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "auto-trigger-after-hook-nudge",
+      "prompt": "Earlier in this session you added GET /api/invoices and GET /api/customers returning every row, and both times I said \"no, list endpoints in this repo are always paginated with ?cursor and a limit of 50\". Both endpoints are paginated now and the task is finished.\n\nStop hook feedback: Automatic check from the learn hook, not a message from the user. Earlier the user said: \"no, list endpoints in this repo are always paginated with ?cursor and a limit of 50\". If that corrected how you work in this repo and it applies beyond this task, run the learn skill (trigger auto), but first finish any work the user asked for that is still open. Otherwise end your turn with no further output: do not mention, answer or acknowledge this check.",
+      "expected_output": "Given the hook's nudge after a repeated rule-style correction with the work done, the agent runs the learn skill itself, with trigger auto",
+      "files": [],
+      "expectations": [
+        "Runs the learn skill in response to the hook nudge, without the user asking",
+        "Shows fix options and Reject before writing anything",
+        "Logs the event with trigger auto",
+        "Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message (a refused snippet is fixed and logged again, not dropped)"
+      ],
+      "anti_expectations": [
+        "Does not log trigger manual",
+        "Does not write a learning file before the user picks an option"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "edited-option-is-logged-as-edited",
+      "prompt": "You built the query in src/db/users.ts with string concatenation and I told you to use parameterized queries. /learn — when you ask, I'll pick your second option but change it to say it applies to raw SQL only, not to the ORM.",
+      "expected_output": "The agent revises option 2 with the user's change, confirms it, writes the learning with the edited text, and logs status edited",
+      "files": [],
+      "expectations": [
+        "Confirms the revised text with the user before writing",
+        "The written learning mentions raw SQL and excludes the ORM",
+        "Logs outcome new, option_user_picked 2, status edited, with proposed_learning different from final_learning",
+        "Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message (a refused snippet is fixed and logged again, not dropped)"
+      ],
+      "anti_expectations": [
+        "Does not log status accepted"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "user-writes-own-option",
+      "prompt": "You stored the uploaded file's original name in src/upload.ts and I said to use a generated UUID name instead. /learn — when you ask, I'll choose Other and write: \"Never use user-supplied file names on disk; generate a UUID and keep the original name only in the database.\"",
+      "expected_output": "The learning is written with the user's own text, and the event records option_user_picked other, status edited",
+      "files": [],
+      "expectations": [
+        "The written learning matches the user's own wording in substance",
+        "Logs outcome new, option_user_picked other, status edited, with proposed_learning set to the recommended option and final_learning set to the user's text",
+        "Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message (a refused snippet is fixed and logged again, not dropped)"
+      ],
+      "anti_expectations": [
+        "Does not log option_user_picked 1, 2 or 3"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "contradicting-learning-replaces-old-one",
+      "prompt": "(Test setup: this repo's docs/learnings/ folder is the fixture at skills/learn/evals/files/docs/learnings/; read and write it there.) We moved this repo to pnpm last week (pnpm-lock.yaml is in the root now). You ran npm install again and I had to tell you: use pnpm, never npm. /learn — I'll pick the pnpm option.",
+      "expected_output": "The agent notices the existing npm learning contradicts the correction, shows it will be removed when asking, writes a new pnpm learning file, deletes the old file and its index line, and logs outcome new with replaces set to the old path",
+      "files": [
+        "skills/learn/evals/files/docs/learnings/use-npm-for-installs.md",
+        "skills/learn/evals/files/docs/learnings/index.md"
+      ],
+      "expectations": [
+        "When asking, shows the old npm learning and says it will be removed",
+        "Writes a new learning file about pnpm",
+        "Deletes docs/learnings/use-npm-for-installs.md and removes its line from docs/learnings/index.md",
+        "Runs log-event.mjs with outcome new and replaces set to docs/learnings/use-npm-for-installs.md",
+        "Passes evidence_from and evidence_to to log-event.mjs, and the logged event has a non-empty evidence_to_message (a refused snippet is fixed and logged again, not dropped)"
+      ],
+      "anti_expectations": [
+        "Does not leave the npm learning in place",
+        "Does not edit the npm learning file in place instead of deleting it"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "deferred-answer-writes-nothing",
+      "prompt": "Earlier you put the list of invoice-required activation types in both apps and I told you it belongs in shared-config. /learn — actually not now, finish the shared-config change first and ask me after.",
+      "expected_output": "The agent does not write or log a learning while the user has put the question off; it finishes the work and asks again afterwards",
+      "files": [],
+      "expectations": [
+        "Writes no file under docs/learnings/ in this turn",
+        "Does not run log-event.mjs in this turn",
+        "Says it will ask about the learning once the shared-config change is done"
+      ],
+      "anti_expectations": [
+        "Does not treat the deferral as approval",
+        "Does not log an accepted event"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "already-logged-this-session-logs-nothing",
+      "prompt": "(Test setup: this repo's docs/learnings/ folder is the fixture at skills/learn/evals/files/docs/learnings/.) Earlier in this session you ran the learn skill on my Sentry correction, I picked an option, and you logged the event; report-caught-errors-to-sentry.md is that learning. /learn",
+      "expected_output": "The agent says in one line that the correction was already handled this session and logs nothing",
+      "files": [
+        "skills/learn/evals/files/docs/learnings/report-caught-errors-to-sentry.md",
+        "skills/learn/evals/files/docs/learnings/index.md"
+      ],
+      "expectations": [
+        "Says in one line that the Sentry correction was already handled this session",
+        "Does not run log-event.mjs"
+      ],
+      "anti_expectations": [
+        "Does not add an Occurrences line for the same incident",
+        "Does not ask the user to pick options again"
+      ]
+    },
+    {
+      "id": 13,
+      "name": "lint-shaped-correction-without-a-linter",
+      "prompt": "I told you twice not to import from `lodash` directly, we only use `lodash-es`. /learn — I'll take your first option.",
+      "expected_output": "The repo has no lint config or test suite, so the agent skips the lint step and offers the rule as a written learning",
+      "files": [],
+      "expectations": [
+        "Does not offer to add a lint rule, or says there is no linter to add it to",
+        "Offers the rule as learning options and writes the learning after the pick",
+        "Logs outcome new"
+      ],
+      "anti_expectations": [
+        "Does not create a lint config from scratch",
+        "Does not log outcome lint"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "auto-trigger-waits-for-open-work",
+      "prompt": "No, don't hard-code the invoice types in the apps, shared-config already has a place for per-type flags. Please move it there and update both apps.\n\nStop hook feedback: Automatic check from the learn hook, not a message from the user. Earlier the user said: \"No, don't hard-code the invoice types in the apps, shared-config already has a place for per-type flags.\" If that corrected how you work in this repo and it applies beyond this task, run the learn skill (trigger auto), but first finish any work the user asked for that is still open. Otherwise end your turn with no further output: do not mention, answer or acknowledge this check.",
+      "expected_output": "The requested rework is still open, so the agent starts that work first; it does not ask about a learning before the change",
+      "files": [],
+      "expectations": [
+        "Starts the requested change (moving the list into shared-config) before any learn step, or asks where shared-config is",
+        "Does not offer a learning in the same reply that leaves the requested change undone"
+      ],
+      "anti_expectations": [
+        "Does not ask about a learning before the requested change is done"
+      ]
+    },
+    {
+      "id": 15,
+      "name": "architecture-decision-points-to-adr",
+      "prompt": "We just decided to move all background jobs from cron to a queue with retries; that's the direction for the whole repo from now on. /learn",
+      "expected_output": "An architecture decision is not a learning: the agent says so in one line and points to the adr skill, writing and logging nothing",
+      "files": [],
+      "expectations": [
+        "Says this is an architecture decision and points to the adr skill"
+      ],
+      "anti_expectations": [
+        "Does not write a file under docs/learnings/",
+        "Does not run log-event.mjs"
+      ]
+    },
+    {
+      "id": 16,
+      "name": "learning-written-outside-the-skill-still-logged",
+      "prompt": "(Test setup: this repo's docs/learnings/ folder is the fixture at skills/learn/evals/files/docs/learnings/.) Earlier in this session I corrected you about npm (we use pnpm now) and asked you to rewrite use-npm-for-installs.md as a pnpm learning yourself, which you did by editing the file directly; the learn skill never ran. /learn",
+      "expected_output": "The learning exists but was never logged, so the agent logs it now as new and accepted, with replaces if it superseded the npm one, without asking again",
+      "files": [
+        "skills/learn/evals/files/docs/learnings/use-npm-for-installs.md",
+        "skills/learn/evals/files/docs/learnings/index.md"
+      ],
+      "expectations": [
+        "Runs log-event.mjs once with outcome new and status accepted",
+        "Does not show fix options or ask the user to pick again"
+      ],
+      "anti_expectations": [
+        "Does not say it was already handled and log nothing",
+        "Does not write a second learning file"
       ]
     }
   ]
